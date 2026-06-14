@@ -1,0 +1,16 @@
+{
+  "name": "@rapidclash/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@rapidclash/core": "workspace:*",
+    "@rapidclash/game-rps": "workspace:*",
+    "@rapidclash/shared": "workspace:*"
+  }
+}
