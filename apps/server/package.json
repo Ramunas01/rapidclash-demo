@@ -11,6 +11,13 @@
   "dependencies": {
     "@rapidclash/core": "workspace:*",
     "@rapidclash/game-rps": "workspace:*",
-    "@rapidclash/shared": "workspace:*"
+    "@rapidclash/shared": "workspace:*",
+    "better-sqlite3": "^11.9.1",
+    "fastify": "^4.29.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^20.19.0",
+    "vitest": "^2.1.1"
   }
 }
