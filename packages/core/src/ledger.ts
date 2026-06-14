@@ -30,8 +30,7 @@ export interface Ledger {
   getEntries(accountId: string): LedgerEntry[];
 }
 
-export function createLedger(dbPath = ':memory:'): Ledger {
-  const db = new Database(dbPath);
+export function createLedger(db: Database.Database): Ledger {
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS ledger_entry (

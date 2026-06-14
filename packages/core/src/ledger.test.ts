@@ -1,11 +1,12 @@
 import { describe, beforeEach, it, expect } from 'vitest';
+import Database from 'better-sqlite3';
 import { createLedger, GRANT_AMOUNT, PLATFORM_ACCOUNT } from './ledger.js';
 
 describe('ledger', () => {
   let ledger: ReturnType<typeof createLedger>;
 
   beforeEach(() => {
-    ledger = createLedger(':memory:');
+    ledger = createLedger(new Database(':memory:'));
   });
 
   it('starting balance equals one GRANT', () => {
