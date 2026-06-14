@@ -49,7 +49,14 @@ export function buildApp(
   registerAdminRoutes(app, auth, ledger);
   registerGamesRoutes(app, matchmaking);
   registerLeaderboardRoutes(app, matchHistory);
-  registerWsGateway(app, identity, matchmaking, gameModules);
+
+  // The `/ws` route must be added *after* @fastify/websocket has loaded, otherwise the
+  // plugin's onRoute hook never wraps it and real upgrade requests fall through to the
+  // normal HTTP handler (→ 500). buildApp is synchronous, so we register the gateway in a
+  // nested plugin that avvio loads after FastifyWs rather than awaiting the registration.
+  app.register(async (instance) => {
+    registerWsGateway(instance, identity, matchmaking, gameModules);
+  });
 
   if (opts.seedAdmin !== false) {
     const username = opts.adminUsername ?? 'admin';
