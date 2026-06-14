@@ -1,0 +1,14 @@
+# CODEOWNERS — who must approve changes to each surface.
+# GitHub's review gate rests on real accounts, so the human owner is the
+# accountable reviewer. See docs/WORKING_AGREEMENT.md for the intent:
+# treat these as "who must approve," not "who typed it."
+
+# Specs, decisions, and the contract — owner approval required.
+/docs/                       @Ramunas01
+/CODEOWNERS                  @Ramunas01
+/README.md                   @Ramunas01
+
+# Implementation surfaces.
+/packages/                   @Ramunas01
+/apps/                       @Ramunas01
+/infra/                      @Ramunas01
