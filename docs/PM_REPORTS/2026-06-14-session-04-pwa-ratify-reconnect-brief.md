@@ -201,3 +201,80 @@ VERIFY before marking done:
   Then actually follow your own runbook end-to-end for S1–S7 and S9, and fix any step that
   doesn't work as written. Report what you verified vs. what is pending #10 in the PR.
 ```
+
+---
+
+## Addendum (same session) — three Slice-1 blockers found; endgame revised
+
+Programmer B delivered **PR #24** (`docs/DEMO.md`, closes #11) and, while writing it, surfaced
+production bugs. I verified all three independently on `origin/main` (read-only — the #10 agent's
+WIP was live in the shared checkout at the time; it has since been committed as **PR #28**):
+
+| Blocker | Confirmed | Owner | Issue |
+|---------|-----------|-------|-------|
+| **B1** `/ws` registered before `@fastify/websocket` loads → every WS connection 500s | ✅ `server.ts:45` no `await` | **PR #28 (#10)** fixes it (nested-plugin + `gateway.test.ts`) | **#25** (critical) |
+| **B2** no CORS / no Vite proxy → browser can't reach API on :3000 | ✅ | bugfix PR (below) | **#26** |
+| **B3** `GET /wallet` + `GET /matches/:id` (PROTOCOL.md) unimplemented → 404 | ✅ `git grep` empty | bugfix PR (below) | **#27** |
+
+**Why it matters:** the 115-test suite never booted the real HTTP/WS server, so B1 hid behind green
+CI. **#9/#10/#11 merging does NOT make Slice 1 done** — the demo ("open the PWA and play") is
+unreachable until #25/#26/#27 are fixed and S1–S9 re-verified against the running server.
+
+**#9 record corrected:** my S1 review credited "wallet from GET /wallet" on the client calling the
+right endpoint; the **server endpoint is missing** (#27). Client stays ratified; S1 is not green
+until #27. (Correction posted on #9.)
+
+### Owner decisions this session
+- **#26 + #27** → one dedicated bugfix PR, **now, in parallel** with #10. Branch
+  `feature/26-27-demo-reachability`; brief on #26 (agent prompt below).
+- **#11 / PR #24** → **hold merge** until all blockers fixed and the runbook updated to describe a
+  working demo. Merge #11 **last**.
+- Branch protection stays **as-is** (admin bypass, 0 required reviews) — earlier decision unchanged.
+
+### Open PRs right now
+- **PR #28** — Reconnect (closes #10). Review against **S8** + confirm it fixes **B1/#25** with a
+  real-server WS test. Merge **first**.
+- **PR #24** — Demo runbook (closes #11). Honest, high quality; **hold** per above.
+- Bugfix PR (#26/#27) — not yet opened; awaiting the agent.
+
+### Merge order (revised endgame)
+1. **PR #28 (#10)** → S8 + B1 fixed.
+2. **Bugfix PR (#26/#27)** → resolve the expected trivial `server.ts` conflict with #28 at second merge.
+3. **Re-verify S1–S9 end-to-end against the real server** (not just unit tests).
+4. **Update + merge PR #24 (#11)** (drop the now-stale B1/B2 blocker notes; reconcile S8 section).
+5. Only then **declare Slice 1 done** + final report. No second game until the Owner confirms S1–S9.
+
+### Appendix B — handoff prompt: bugfix agent (#26 + #27)
+
+```
+You are a Programmer on RapidClash (Ramunas01/rapidclash-demo — single source of truth). Fix the
+two demo-reachability blockers #26 and #27 in ONE bugfix PR. Branch feature/26-27-demo-reachability
+off latest origin/main; open a PR that says "closes #26" and "closes #27". DO NOT commit to main.
+
+Work in an ISOLATED git worktree off origin/main — other agents are live in the shared checkout
+(git worktree add ../rc-fix origin/main). Expect a trivial apps/server/src/server.ts conflict with
+PR #28 (#10), which also edits the route/WS registration block — keep your server.ts edit minimal
+and localized; the PM resolves the conflict at merge.
+
+READ FIRST: docs/CHARTER.md (invariants #2 server-authoritative, #3 ledger-derived balance),
+docs/WORKING_AGREEMENT.md, docs/SLICE_RPS.md (S1), PROTOCOL.md and WALLET_LEDGER.md (endpoint
+shapes + derived balance), issues #26 and #27 (gh issue view 26/27 --comments), and the existing
+server route pattern: apps/server/src/server.ts + apps/server/src/routes/*.ts (mirror
+leaderboard.ts / games.ts) + the ledger API in packages/core (derived balance) + apps/web
+vite.config.ts and apps/web/src/api.ts/ws.ts (client defaults to same-origin).
+
+TASK #26: add a Vite dev proxy in apps/web/vite.config.ts so the client stays same-origin — proxy
+/auth /wallet /games /leaderboard /matches /admin and the /ws upgrade (ws: true) to
+http://localhost:3000. Verify a browser on :5173 reaches the API.
+
+TASK #27: implement GET /wallet (auth-gated; WalletResponse with balance DERIVED FROM THE LEDGER,
+never a stored number — this is what makes S1 pass) and GET /matches/:id per PROTOCOL.md. Guardrail:
+for an in-progress match, GET /matches/:id must honour viewFor redaction — never leak the opponent's
+concealed move (#2 / S5). Register both via the existing registerXRoutes pattern; add route tests
+mirroring admin.test.ts / games.test.ts.
+
+VERIFY: export PATH="/home/ramunas/.nvm/versions/node/v20.20.2/bin:$PATH" && pnpm install &&
+pnpm run build && pnpm run lint && pnpm run test (stay green + add tests). curl both new endpoints;
+load the PWA at :5173 and confirm the Wallet screen now gets a real GET /wallet. Note: full browser
+PLAY still needs B1/#28 — WS-dependent steps remain pending #28; say so in the PR.
+```
