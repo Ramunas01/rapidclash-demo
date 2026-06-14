@@ -17,6 +17,8 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerGamesRoutes } from './routes/games.js';
 import { registerLeaderboardRoutes } from './routes/leaderboard.js';
+import { registerWalletRoutes } from './routes/wallet.js';
+import { registerMatchesRoutes } from './routes/matches.js';
 import { registerWsGateway } from './ws/gateway.js';
 
 export interface AppOptions {
@@ -49,6 +51,8 @@ export function buildApp(
   registerAdminRoutes(app, auth, ledger);
   registerGamesRoutes(app, matchmaking);
   registerLeaderboardRoutes(app, matchHistory);
+  registerWalletRoutes(app, auth, ledger);
+  registerMatchesRoutes(app, auth, matchmaking, gameModules);
 
   // The `/ws` route must be added *after* @fastify/websocket has loaded, otherwise the
   // plugin's onRoute hook never wraps it and real upgrade requests fall through to the
