@@ -19,12 +19,12 @@ export interface AppServices {
 }
 
 export function buildApp(services: AppServices, opts: AppOptions = {}): FastifyInstance {
-  const { identity } = services;
+  const { identity, ledger } = services;
   const app = Fastify({ logger: false });
 
   const auth = makeAuthMiddleware(identity);
   registerAuthRoutes(app, identity);
-  registerAdminRoutes(app, auth);
+  registerAdminRoutes(app, auth, ledger);
 
   if (opts.seedAdmin !== false) {
     const username = opts.adminUsername ?? 'admin';

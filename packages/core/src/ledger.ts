@@ -26,6 +26,8 @@ export interface Ledger {
     potAmount: number,
     feeRate: number,
   ): void;
+  adminCredit(accountId: string, amount: number, idempotencyKey: string): LedgerEntry;
+  accountExists(accountId: string): boolean;
   getBalance(accountId: string): number;
   getEntries(accountId: string): LedgerEntry[];
 }
@@ -62,6 +64,10 @@ export function createLedger(db: Database.Database): Ledger {
 
   const stmtEntries = db.prepare<[string], DbRow>(
     `SELECT * FROM ledger_entry WHERE account_id = ? ORDER BY rowid ASC`,
+  );
+
+  const stmtHasEntries = db.prepare<[string], { cnt: number }>(
+    `SELECT COUNT(*) AS cnt FROM ledger_entry WHERE account_id = ?`,
   );
 
   const stmtSettleCheck = db.prepare<[string], { cnt: number }>(
@@ -173,5 +179,14 @@ export function createLedger(db: Database.Database): Ledger {
     txn();
   }
 
-  return { grant, escrow, refundEscrow, settle, getBalance, getEntries };
+  function accountExists(accountId: string): boolean {
+    return stmtHasEntries.get(accountId)!.cnt > 0;
+  }
+
+  function adminCredit(accountId: string, amount: number, idempotencyKey: string): LedgerEntry {
+    if (amount <= 0) throw new RangeError('Credit amount must be a positive integer');
+    return writeEntry(accountId, null, 'ADMIN_CREDIT', amount, idempotencyKey);
+  }
+
+  return { grant, escrow, refundEscrow, settle, adminCredit, accountExists, getBalance, getEntries };
 }
