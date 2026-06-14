@@ -1,5 +1,6 @@
 import { randomUUID, randomBytes } from 'node:crypto';
-import type { GameModule, GameState, LedgerEntry, PlayerId, Rng } from '@rapidclash/shared';
+import type { GameModule, GameState, LedgerEntry, PlayerId, Rng, Move, ApplyResult, Outcome } from '@rapidclash/shared';
+import { IllegalMove } from '@rapidclash/shared';
 import type { Ledger } from './ledger.js';
 
 // ─── RNG ─────────────────────────────────────────────────────────────────────
@@ -56,10 +57,34 @@ export interface MatchRecord {
   seed: number;
 }
 
+export interface PlayerSettlement {
+  /** Net wallet change: +stake − rake for the winner, −stake for the loser, 0 for draw/void. */
+  delta: number;
+  /** Derived balance after all settlement entries. */
+  newBalance: number;
+}
+
+export interface SettledMatch {
+  outcome: Outcome;
+  settlement: Record<PlayerId, PlayerSettlement>;
+}
+
+export interface CompletedMatch extends MatchRecord {
+  outcome: Outcome;
+  settlement: Record<PlayerId, PlayerSettlement>;
+}
+
 export interface Matchmaking {
   joinQueue(playerId: PlayerId, gameId: string, stake: number): JoinQueueResult;
   leaveQueue(playerId: PlayerId, gameId: string, stake: number): LedgerEntry;
   getActiveMatch(matchId: string): MatchRecord | undefined;
+  /** Apply a player's move. Throws IllegalMove if the move is not in legalMoves. */
+  applyMove(matchId: string, playerId: PlayerId, move: Move, now: number): ApplyResult;
+  /** Settle a terminal match. Idempotent: second call returns stored result without touching the ledger. */
+  settleMatch(matchId: string, feeRate: number): SettledMatch;
+  /** Apply forfeit for the quitter and immediately settle. Idempotent. */
+  forfeitMatch(matchId: string, quitterId: PlayerId): SettledMatch;
+  getCompletedMatch(matchId: string): CompletedMatch | undefined;
   /** Returns registered GameMeta for all registered game modules. */
   listGames(): Array<GameModule['meta']>;
 }
@@ -81,6 +106,9 @@ export function createMatchmaking(
 
   // Active matches
   const matches = new Map<string, MatchRecord>();
+
+  // Completed matches (terminal, settled)
+  const completed = new Map<string, CompletedMatch>();
 
   function queueKey(gameId: string, stake: number): string {
     return `${gameId}:${stake}`;
@@ -170,9 +198,91 @@ export function createMatchmaking(
     return matches.get(matchId);
   }
 
+  function applyMove(matchId: string, playerId: PlayerId, move: Move, now: number): ApplyResult {
+    const match = matches.get(matchId);
+    if (!match) throw new Error(`Match not found: ${matchId}`);
+    if (!match.players.includes(playerId)) {
+      throw new Error(`Player ${playerId} is not in match ${matchId}`);
+    }
+
+    const mod = moduleByGame.get(match.gameId)!;
+    const legal = mod.legalMoves(match.state, playerId);
+
+    // Use JSON comparison for move equality so module's Move type (unknown) compares correctly.
+    const moveJson = JSON.stringify(move);
+    if (!legal.some((m) => JSON.stringify(m) === moveJson)) {
+      throw new IllegalMove(`Move "${String(move)}" is not legal for player ${playerId} in match ${matchId}`);
+    }
+
+    const result = mod.applyMove(match.state, move, { playerId, now });
+    match.state = result.state;
+    return result;
+  }
+
+  function settleMatch(matchId: string, feeRate: number): SettledMatch {
+    // Idempotent: if already completed, return stored result without touching the ledger.
+    const existing = completed.get(matchId);
+    if (existing) return { outcome: existing.outcome, settlement: existing.settlement };
+
+    const match = matches.get(matchId);
+    if (!match) throw new Error(`Match not found: ${matchId}`);
+
+    const mod = moduleByGame.get(match.gameId)!;
+    const outcome = mod.outcome(match.state);
+
+    const pot = match.stake * 2;
+    const winnerId = outcome.type === 'win' ? outcome.winner : undefined;
+
+    ledger.settle(matchId, outcome.type, winnerId, pot, feeRate);
+
+    const rake = outcome.type === 'win' ? Math.round(pot * feeRate) : 0;
+    const stake = match.stake;
+
+    const settlement: Record<PlayerId, PlayerSettlement> = {};
+    for (const pid of match.players) {
+      let delta: number;
+      if (outcome.type === 'win') {
+        delta = pid === winnerId ? stake - rake : -stake;
+      } else {
+        // draw or void: stake was escrowed then fully refunded — net zero
+        delta = 0;
+      }
+      settlement[pid] = { delta, newBalance: ledger.getBalance(pid) };
+    }
+
+    const completedMatch: CompletedMatch = { ...match, outcome, settlement };
+    completed.set(matchId, completedMatch);
+    matches.delete(matchId);
+
+    return { outcome, settlement };
+  }
+
+  function forfeitMatch(matchId: string, quitterId: PlayerId): SettledMatch {
+    // Idempotent: if already settled, return stored result.
+    const existing = completed.get(matchId);
+    if (existing) return { outcome: existing.outcome, settlement: existing.settlement };
+
+    const match = matches.get(matchId);
+    if (!match) throw new Error(`Match not found: ${matchId}`);
+    if (!match.players.includes(quitterId)) {
+      throw new Error(`Player ${quitterId} is not in match ${matchId}`);
+    }
+
+    const mod = moduleByGame.get(match.gameId)!;
+    const terminalState = mod.forfeit(match.state, quitterId);
+    match.state = terminalState;
+
+    const feeRate = process.env.FEE_RATE ? parseFloat(process.env.FEE_RATE) : 0.05;
+    return settleMatch(matchId, feeRate);
+  }
+
+  function getCompletedMatch(matchId: string): CompletedMatch | undefined {
+    return completed.get(matchId);
+  }
+
   function listGames(): Array<GameModule['meta']> {
     return gameModules.map((m) => m.meta);
   }
 
-  return { joinQueue, leaveQueue, getActiveMatch, listGames };
+  return { joinQueue, leaveQueue, getActiveMatch, applyMove, settleMatch, forfeitMatch, getCompletedMatch, listGames };
 }
