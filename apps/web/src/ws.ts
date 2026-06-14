@@ -2,6 +2,33 @@ import type { Envelope, QueueJoinPayload, QueueLeavePayload, MoveMakePayload, Ma
 
 const WS_BASE = import.meta.env.VITE_WS_URL ?? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
 
+// Key under which the active matchId is persisted so a full page reload (not just a
+// transient socket drop) can auto-resume. sessionStorage is per-tab and clears on tab
+// close, which matches a match's lifetime — a stale id would forfeit after 60 s anyway.
+const MATCH_ID_KEY = 'rc_currentMatchId';
+
+function readStoredMatchId(): string | null {
+  try {
+    return sessionStorage.getItem(MATCH_ID_KEY);
+  } catch {
+    return null; // storage unavailable (private mode / SSR)
+  }
+}
+
+function writeStoredMatchId(id: string | null): void {
+  try {
+    if (id) sessionStorage.setItem(MATCH_ID_KEY, id);
+    else sessionStorage.removeItem(MATCH_ID_KEY);
+  } catch {
+    // storage unavailable — non-fatal; transient-drop resume still works in-memory.
+  }
+}
+
+/** True if a match is persisted from a prior session/reload — lets the app restore the play view on mount. */
+export function hasStoredMatch(): boolean {
+  return readStoredMatchId() !== null;
+}
+
 export type WsMsgHandler = {
   onQueueWaiting?(payload: QueueWaitingPayload): void;
   onMatchStart?(payload: MatchStartPayload, matchId: string): void;
@@ -22,10 +49,19 @@ export class WsClient {
   constructor(token: string, handlers: WsMsgHandler) {
     this.token = token;
     this.handlers = handlers;
+    // Restore a match persisted across a full page reload so onopen auto-resumes
+    // and onclose keeps reconnecting.
+    this.currentMatchId = readStoredMatchId();
   }
 
   setHandlers(handlers: WsMsgHandler): void {
     this.handlers = handlers;
+  }
+
+  /** Update the active matchId in memory and in sessionStorage in lockstep. */
+  private setCurrentMatchId(id: string | null): void {
+    this.currentMatchId = id;
+    writeStoredMatchId(id);
   }
 
   connect(resumeMatchId?: string): void {
@@ -60,10 +96,15 @@ export class WsClient {
       case 'queue.waiting':
         this.handlers.onQueueWaiting?.(msg.payload as QueueWaitingPayload);
         break;
-      case 'match.start':
-        this.currentMatchId = msg.matchId ?? null;
-        this.handlers.onMatchStart?.(msg.payload as MatchStartPayload, msg.matchId ?? '');
+      case 'match.start': {
+        // match.start carries the id in its payload (the contract field), not at the
+        // envelope level — read it from there so persistence + resume actually fire.
+        const startPayload = msg.payload as MatchStartPayload;
+        const startId = startPayload.matchId ?? msg.matchId ?? null;
+        this.setCurrentMatchId(startId);
+        this.handlers.onMatchStart?.(startPayload, startId ?? '');
         break;
+      }
       case 'match.state':
         this.handlers.onMatchState?.(msg.payload as MatchStatePayload, msg.matchId ?? '');
         break;
@@ -71,7 +112,7 @@ export class WsClient {
         this.handlers.onMatchYourTurn?.(msg.payload as MatchYourTurnPayload, msg.matchId ?? '');
         break;
       case 'match.end':
-        this.currentMatchId = null;
+        this.setCurrentMatchId(null);
         this.handlers.onMatchEnd?.(msg.payload as MatchEndPayload, msg.matchId ?? '');
         break;
       case 'error':
@@ -104,7 +145,7 @@ export class WsClient {
   }
 
   resume(matchId: string): void {
-    this.currentMatchId = matchId;
+    this.setCurrentMatchId(matchId);
     this.send('match.resume', { matchId } as MatchResumePayload);
   }
 
