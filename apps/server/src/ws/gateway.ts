@@ -81,6 +81,10 @@ export function registerWsGateway(
       let queuedStake: number | null = null;
 
       socket.on('close', () => {
+        // A fast reconnect may have already registered a newer socket for this player
+        // (the close event for the old socket can fire *after* the new one connects).
+        // If so, this is a stale close — must not clear the live connection or forfeit.
+        if (connections.get(playerId) !== socket) return;
         connections.delete(playerId);
 
         const matchId = playerMatch.get(playerId);

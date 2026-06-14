@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { WsClient, type WsMsgHandler } from '../ws.js';
+import { WsClient, hasStoredMatch, type WsMsgHandler } from '../ws.js';
 
 // Mock WebSocket
 class MockWebSocket {
@@ -103,5 +103,53 @@ describe('WsClient message router', () => {
     const parsed = JSON.parse(mockWs.sent[0]) as { type: string; payload: unknown };
     expect(parsed.type).toBe('queue.join');
     expect((parsed.payload as { gameId: string }).gameId).toBe('rps');
+  });
+});
+
+// S8 — currentMatchId survives a full page reload (not just a transient socket drop).
+describe('WsClient match persistence (page-reload resume)', () => {
+  let mockWs: MockWebSocket;
+
+  beforeEach(() => {
+    sessionStorage.clear();
+    const MockWsConstructor = vi.fn().mockImplementation((url: string) => {
+      mockWs = new MockWebSocket(url);
+      return mockWs;
+    });
+    vi.stubGlobal(
+      'WebSocket',
+      Object.assign(MockWsConstructor, { OPEN: 1, CONNECTING: 0, CLOSING: 2, CLOSED: 3 }),
+    );
+    vi.stubGlobal('location', { protocol: 'http:', host: 'localhost:3000' });
+  });
+
+  it('persists currentMatchId to sessionStorage on match.start and clears it on match.end', () => {
+    const client = new WsClient('tok', {});
+    client.connect();
+    mockWs.simulateOpen();
+
+    // The real server sends the id ONLY in the payload on match.start (no envelope matchId).
+    mockWs.simulateMessage({ type: 'match.start', payload: { matchId: 'm-42', opponent: 'bob', state: {} } });
+    expect(sessionStorage.getItem('rc_currentMatchId')).toBe('m-42');
+    expect(hasStoredMatch()).toBe(true);
+
+    mockWs.simulateMessage({ type: 'match.end', matchId: 'm-42', payload: { outcome: { type: 'draw' }, settlement: { delta: 0, newBalance: 1000 } } });
+    expect(sessionStorage.getItem('rc_currentMatchId')).toBeNull();
+    expect(hasStoredMatch()).toBe(false);
+  });
+
+  it('a fresh client seeded from storage auto-resumes that match on connect (reload path)', () => {
+    // Simulate a prior session having stored a match, then the page reloading.
+    sessionStorage.setItem('rc_currentMatchId', 'm-99');
+
+    const client = new WsClient('tok', {});
+    client.connect();
+    mockWs.simulateOpen();
+
+    // On (re)connect the client must auto-send match.resume for the persisted match.
+    expect(mockWs.sent).toHaveLength(1);
+    const env = JSON.parse(mockWs.sent[0]) as { type: string; payload: { matchId: string } };
+    expect(env.type).toBe('match.resume');
+    expect(env.payload.matchId).toBe('m-99');
   });
 });

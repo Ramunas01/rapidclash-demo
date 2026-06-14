@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { GameMeta, Outcome, SettlementSummary } from '@rapidclash/shared';
-import { WsClient } from './ws.js';
+import { WsClient, hasStoredMatch } from './ws.js';
 import { AuthScreen } from './screens/Auth.js';
 import { WalletScreen } from './screens/Wallet.js';
 import { GameListScreen } from './screens/GameList.js';
@@ -27,7 +27,11 @@ function loadAuth() {
 
 export function App() {
   const { token: savedToken, playerId: savedPlayerId } = loadAuth();
-  const [screen, setScreen] = useState<Screen>(savedToken ? 'wallet' : 'auth');
+  // A match persisted across a reload restores straight to the play view; match.state
+  // (active) keeps us there, match.end (terminal) redirects to the result screen.
+  const [screen, setScreen] = useState<Screen>(
+    savedToken ? (hasStoredMatch() ? 'play' : 'wallet') : 'auth',
+  );
   const [token, setToken] = useState<string | null>(savedToken);
   const [playerId, setPlayerId] = useState<string | null>(savedPlayerId);
   const [balance, setBalance] = useState(0);
@@ -40,6 +44,9 @@ export function App() {
   const [pendingGameId, setPendingGameId] = useState<string | null>(null);
   const [pendingStake, setPendingStake] = useState(0);
   const [pendingGameMeta, setPendingGameMeta] = useState<GameMeta | null>(null);
+  // Bumped when the WS client is (re)created so the handler-wiring effect below re-runs
+  // and binds handlers before the socket's async onopen fires the auto-resume.
+  const [, setWsEpoch] = useState(0);
   const wsRef = useRef<WsClient | null>(null);
 
   const handleLogin = useCallback((tok: string, pid: string, bal: number) => {
@@ -67,8 +74,17 @@ export function App() {
         setLegalMoves([]);
         setScreen('play');
       },
-      onMatchState(payload, _matchId) {
-        setGameState(payload.state as RpsView);
+      onMatchState(payload, matchId) {
+        const state = payload.state as RpsView;
+        setGameState(state);
+        // On a reload-driven resume, restore match identity + opponent + screen so the
+        // user lands back in the live match (these are already set during normal play).
+        if (matchId) setCurrentMatchId(matchId);
+        if (playerId) {
+          const opp = state.players.find((p) => p !== playerId);
+          if (opp) setOpponentId(opp);
+        }
+        setScreen((s) => (s === 'play' ? s : 'play'));
       },
       onMatchYourTurn(payload, _matchId) {
         setLegalMoves(payload.legalMoves as string[]);
@@ -95,6 +111,9 @@ export function App() {
     if (savedToken && !wsRef.current) {
       const ws = new WsClient(savedToken, {});
       wsRef.current = ws;
+      // Re-render so the handler-wiring effect binds handlers before connect()'s onopen
+      // fires the auto-resume (the WsClient constructor seeds currentMatchId from storage).
+      setWsEpoch((n) => n + 1);
       ws.connect();
     }
     return () => {
