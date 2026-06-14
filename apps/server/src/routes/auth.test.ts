@@ -6,8 +6,8 @@ import { GRANT_AMOUNT } from '@rapidclash/core';
 
 function makeApp(): { app: FastifyInstance } {
   const db = new Database(':memory:');
-  const services = createServices(db);
-  const app = buildApp(services, { seedAdmin: false });
+  const services = createServices(db, []);
+  const app = buildApp(services, [], { seedAdmin: false });
   return { app };
 }
 
@@ -109,8 +109,8 @@ describe('admin routes — auth enforcement', () => {
 
   beforeEach(async () => {
     const db = new Database(':memory:');
-    const services = createServices(db);
-    app = buildApp(services, { seedAdmin: false });
+    const services = createServices(db, []);
+    app = buildApp(services, [], { seedAdmin: false });
 
     // Create admin directly via identity to control role (bypasses HTTP register which always creates players)
     const { identity } = services;

@@ -9,6 +9,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@fastify/websocket": "^8.3.1",
     "@rapidclash/core": "workspace:*",
     "@rapidclash/game-rps": "workspace:*",
     "@rapidclash/shared": "workspace:*",
