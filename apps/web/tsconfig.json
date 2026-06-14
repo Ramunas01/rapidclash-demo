@@ -4,10 +4,12 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "composite": true,
-    "outDir": "dist",
+    "outDir": "dist-ts",
     "rootDir": "src",
     "jsx": "react-jsx",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "noEmit": false,
+    "types": ["vite/client"]
   },
   "include": ["src"],
   "references": [{ "path": "../../packages/shared" }]
