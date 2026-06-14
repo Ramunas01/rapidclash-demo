@@ -38,6 +38,12 @@ pnpm run format
 
 CI runs `build`, `lint`, and `test` on every PR. The gate is the `build-and-test` job in `.github/workflows/ci.yml`.
 
+## Running the demo
+
+To run the full two-player RPS demo locally (start the server + two web clients, walk the
+Charter experience, and tick off the S1–S9 acceptance checklist), follow
+[`docs/DEMO.md`](docs/DEMO.md).
+
 ## Team
 
 | Role            | Who               | Owns                                                  |
