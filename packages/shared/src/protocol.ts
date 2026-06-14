@@ -1,0 +1,175 @@
+// packages/shared/src/protocol.ts
+// All message types for the WebSocket channel and REST payloads.
+// Imported by both client (apps/web) and server (apps/server) — define once, never duplicate.
+
+import type { GameEvent, GameMeta, GameState, Move, Outcome, PlayerId } from './game-contract.js';
+
+// ─── WebSocket envelope ──────────────────────────────────────────────────────
+
+export interface Envelope<T = unknown> {
+  type: string;
+  matchId?: string;
+  payload: T;
+}
+
+// ─── Client → Server ─────────────────────────────────────────────────────────
+
+/** Enter matchmaking for a game at a stake; escrow is debited here. */
+export interface QueueJoinPayload {
+  gameId: string;
+  stake: number; // integer minor units; must not exceed the player's balance
+}
+
+/** Leave the lobby before being matched; escrow is refunded. */
+export interface QueueLeavePayload {
+  gameId: string;
+}
+
+/** Submit a move in the current match. */
+export interface MoveMakePayload {
+  move: Move;
+}
+
+/** After reconnect, ask the server for the current redacted state. */
+export interface MatchResumePayload {
+  matchId: string;
+}
+
+/** Concede or leave an in-progress match (triggers forfeit on the server). */
+export type MatchForfeitPayload = Record<string, never>;
+
+// ─── Server → Client ─────────────────────────────────────────────────────────
+
+/** You are in the lobby; no opponent has joined yet. */
+export interface QueueWaitingPayload {
+  gameId: string;
+  since: number; // server ms timestamp when you entered the queue
+}
+
+/** You have been matched; here is your redacted starting view. */
+export interface MatchStartPayload {
+  matchId: string;
+  opponent: PlayerId;
+  state: GameState; // viewFor result — opponent's hidden info already stripped
+}
+
+/** Updated redacted view after a move, plus events to animate on the client. */
+export interface MatchStatePayload {
+  state: GameState;
+  events: GameEvent[];
+}
+
+/** It is your turn; here are the moves you may legally submit. */
+export interface MatchYourTurnPayload {
+  legalMoves: Move[];
+}
+
+/** Net wallet change delivered to each player at settlement. */
+export interface SettlementSummary {
+  /** Signed delta: positive = credit, negative = debit. Zero for void. */
+  delta: number;
+  /** Derived wallet balance after the settlement entries are applied. */
+  newBalance: number;
+}
+
+/** The match is over; result and wallet impact. */
+export interface MatchEndPayload {
+  outcome: Outcome;
+  settlement: SettlementSummary;
+}
+
+/** Server-side error: illegal move, insufficient balance, etc. */
+export interface ErrorPayload {
+  code: string;
+  message: string;
+}
+
+// ─── REST payloads ───────────────────────────────────────────────────────────
+
+export interface AuthRegisterBody {
+  username: string;
+  password: string;
+}
+
+export interface AuthLoginBody {
+  username: string;
+  password: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  playerId: PlayerId;
+  balance: number;
+}
+
+export type LedgerEntryType =
+  | 'GRANT'
+  | 'ADMIN_CREDIT'
+  | 'BET_ESCROW'
+  | 'SETTLE_WIN'
+  | 'SETTLE_REFUND'
+  | 'RAKE';
+
+export interface LedgerEntry {
+  id: string;
+  type: LedgerEntryType;
+  /** Signed minor units: positive = credit, negative = debit. */
+  amount: number;
+  matchId?: string;
+  idempotencyKey: string;
+  createdAt: string; // ISO-8601
+}
+
+export interface WalletResponse {
+  balance: number;
+  entries: LedgerEntry[];
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  playerId: PlayerId;
+  displayName: string;
+  score: number; // interpretation depends on RankingType
+}
+
+export interface MatchRecord {
+  matchId: string;
+  gameId: string;
+  players: PlayerId[];
+  outcome: Outcome;
+  createdAt: string;
+  settledAt: string;
+}
+
+// Admin REST payloads
+
+export interface AdminCreditBody {
+  amount: number; // positive integer minor units
+  idempotencyKey: string;
+}
+
+export interface AdminPlayerSummary {
+  playerId: PlayerId;
+  displayName: string;
+  balance: number;
+  gamesPlayed: number;
+  wins: number;
+  losses: number;
+  draws: number;
+  moneyWon: number;
+  moneyLost: number;
+}
+
+export interface AdminMatchLogEntry {
+  matchId: string;
+  gameId: string;
+  opponent: PlayerId;
+  result: 'win' | 'loss' | 'draw' | 'void';
+  /** Signed net change to this player's wallet. */
+  amount: number;
+  runningBalance: number;
+  createdAt: string;
+}
+
+// Re-export GameMeta so consumers can import it from '@rapidclash/shared' directly.
+export type { GameMeta };
