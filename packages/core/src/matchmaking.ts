@@ -2,6 +2,7 @@ import { randomUUID, randomBytes } from 'node:crypto';
 import type { GameModule, GameState, LedgerEntry, PlayerId, Rng, Move, ApplyResult, Outcome } from '@rapidclash/shared';
 import { IllegalMove } from '@rapidclash/shared';
 import type { Ledger } from './ledger.js';
+import type { MatchHistory } from './match-history.js';
 
 // ─── RNG ─────────────────────────────────────────────────────────────────────
 
@@ -94,6 +95,7 @@ export interface Matchmaking {
 export function createMatchmaking(
   ledger: Ledger,
   gameModules: GameModule[],
+  matchHistory?: MatchHistory,
 ): Matchmaking {
   const moduleByGame = new Map<string, GameModule>(gameModules.map((m) => [m.meta.id, m]));
 
@@ -234,6 +236,7 @@ export function createMatchmaking(
     const winnerId = outcome.type === 'win' ? outcome.winner : undefined;
 
     ledger.settle(matchId, outcome.type, winnerId, pot, feeRate);
+    matchHistory?.recordResult(matchId, match.gameId, match.players, outcome.type, winnerId, match.stake);
 
     const rake = outcome.type === 'win' ? Math.round(pot * feeRate) : 0;
     const stake = match.stake;

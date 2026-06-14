@@ -5,15 +5,18 @@ import {
   createLedger,
   createIdentity,
   createMatchmaking,
+  createMatchHistory,
   type Ledger,
   type Identity,
   type Matchmaking,
+  type MatchHistory,
 } from '@rapidclash/core';
 import type { GameModule } from '@rapidclash/shared';
 import { makeAuthMiddleware } from './middleware/auth.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerGamesRoutes } from './routes/games.js';
+import { registerLeaderboardRoutes } from './routes/leaderboard.js';
 import { registerWsGateway } from './ws/gateway.js';
 
 export interface AppOptions {
@@ -28,6 +31,7 @@ export interface AppServices {
   ledger: Ledger;
   identity: Identity;
   matchmaking: Matchmaking;
+  matchHistory: MatchHistory;
 }
 
 export function buildApp(
@@ -35,7 +39,7 @@ export function buildApp(
   gameModules: GameModule[],
   opts: AppOptions = {},
 ): FastifyInstance {
-  const { identity, ledger, matchmaking } = services;
+  const { identity, ledger, matchmaking, matchHistory } = services;
   const app = Fastify({ logger: false });
 
   app.register(FastifyWs);
@@ -44,6 +48,7 @@ export function buildApp(
   registerAuthRoutes(app, identity);
   registerAdminRoutes(app, auth, ledger);
   registerGamesRoutes(app, matchmaking);
+  registerLeaderboardRoutes(app, matchHistory);
   registerWsGateway(app, identity, matchmaking, gameModules);
 
   if (opts.seedAdmin !== false) {
@@ -63,6 +68,7 @@ export function buildApp(
 export function createServices(db: Database.Database, gameModules: GameModule[]): AppServices {
   const ledger = createLedger(db);
   const identity = createIdentity(db, ledger);
-  const matchmaking = createMatchmaking(ledger, gameModules);
-  return { db, ledger, identity, matchmaking };
+  const matchHistory = createMatchHistory(db);
+  const matchmaking = createMatchmaking(ledger, gameModules, matchHistory);
+  return { db, ledger, identity, matchmaking, matchHistory };
 }
