@@ -3,6 +3,20 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  // Dev proxy: keep the PWA same-origin so api.ts / ws.ts work with their
+  // same-origin defaults. The REST paths and the /ws upgrade are forwarded to
+  // the server on :3000 (override target via the standard Vite env if needed).
+  server: {
+    proxy: {
+      '/auth': 'http://localhost:3000',
+      '/wallet': 'http://localhost:3000',
+      '/games': 'http://localhost:3000',
+      '/leaderboard': 'http://localhost:3000',
+      '/matches': 'http://localhost:3000',
+      '/admin': 'http://localhost:3000',
+      '/ws': { target: 'http://localhost:3000', ws: true },
+    },
+  },
   plugins: [
     react(),
     VitePWA({
