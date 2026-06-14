@@ -1,10 +1,12 @@
 import Database from 'better-sqlite3';
+import { rpsModule } from '@rapidclash/game-rps';
 import { buildApp, createServices } from './server.js';
 
+const gameModules = [rpsModule];
 const db = new Database(process.env.DB_PATH ?? 'rapidclash.db');
-const services = createServices(db);
+const services = createServices(db, gameModules);
 
-const app = buildApp(services);
+const app = buildApp(services, gameModules);
 
 const port = parseInt(process.env.PORT ?? '3000', 10);
 const host = process.env.HOST ?? '0.0.0.0';

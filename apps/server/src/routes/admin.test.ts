@@ -6,8 +6,8 @@ import { GRANT_AMOUNT } from '@rapidclash/core';
 
 function makeApp() {
   const db = new Database(':memory:');
-  const services = createServices(db);
-  const app = buildApp(services, { seedAdmin: false });
+  const services = createServices(db, []);
+  const app = buildApp(services, [], { seedAdmin: false });
   return { app, services };
 }
 
@@ -58,7 +58,7 @@ describe('POST /admin/players/:id/credit', () => {
     const { services } = makeApp();
     // Need a fresh isolated setup to check balance
     const adminRes = await services.identity.register('admin2', 'pw', 'admin');
-    const freshApp = buildApp(services, { seedAdmin: false });
+    const freshApp = buildApp(services, [], { seedAdmin: false });
 
     const regRes = await freshApp.inject({
       method: 'POST',
@@ -81,7 +81,7 @@ describe('POST /admin/players/:id/credit', () => {
   it('replaying the same idempotencyKey returns 200 with the same entry and does not double-credit', async () => {
     const { services } = makeApp();
     const adminRes = await services.identity.register('admin3', 'pw', 'admin');
-    const freshApp = buildApp(services, { seedAdmin: false });
+    const freshApp = buildApp(services, [], { seedAdmin: false });
 
     const regRes = await freshApp.inject({
       method: 'POST',
