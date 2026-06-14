@@ -15,14 +15,37 @@ This repository is the single source of truth for a small team of humans and AI 
 7. [`docs/ADMIN.md`](docs/ADMIN.md) — the operator/admin interface (visibility + demo testing tools).
 8. [`docs/WORKING_AGREEMENT.md`](docs/WORKING_AGREEMENT.md) — how the team collaborates through GitHub.
 
+## Developer setup
+
+Prerequisites: [Node.js 20+](https://nodejs.org) and [pnpm 9+](https://pnpm.io/installation).
+
+```bash
+# Install all workspace dependencies
+pnpm install
+
+# Type-check and compile all packages (respects project reference order)
+pnpm run build
+
+# Run all tests
+pnpm run test
+
+# Lint TypeScript sources
+pnpm run lint
+
+# Format all files with Prettier
+pnpm run format
+```
+
+CI runs `build`, `lint`, and `test` on every PR. The gate is the `build-and-test` job in `.github/workflows/ci.yml`.
+
 ## Team
 
-| Role | Who | Owns |
-|------|-----|------|
-| Advisor | Claude (chat) | Specs, ADRs, the `docs/` directory |
-| Project Manager | WSL AI agent | Roadmap, issues, acceptance criteria, PR review gate |
-| Programmer | Claude Code (WSL) | Implementation under `apps/` and `packages/` |
-| Owner | Ramunas | Direction, the final merge button, anything ambiguous |
+| Role            | Who               | Owns                                                  |
+| --------------- | ----------------- | ----------------------------------------------------- |
+| Advisor         | Claude (chat)     | Specs, ADRs, the `docs/` directory                    |
+| Project Manager | WSL AI agent      | Roadmap, issues, acceptance criteria, PR review gate  |
+| Programmer      | Claude Code (WSL) | Implementation under `apps/` and `packages/`          |
+| Owner           | Ramunas           | Direction, the final merge button, anything ambiguous |
 
 ## Build order (do not deviate)
 
