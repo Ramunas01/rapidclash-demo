@@ -9,31 +9,11 @@ deterministically. It ends with a hand-tickable **S1–S9 checklist** (the
 The platform **never plays the house** ([Charter](CHARTER.md) invariant #1): the demo is two
 genuine clients connecting through the same API. There is no bot baked into the core.
 
----
-
-## ⚠️ Read first — two known blockers for the live browser demo
-
-As of 2026-06-14, running the **two-browser** walkthrough against the shipping server hits two
-defects in production code. Both are **small code fixes that belong in a Programmer PR, not in
-this docs PR** (this PR changes `docs/` only — see [Working Agreement](WORKING_AGREEMENT.md)).
-They are filed in the PR description for issue #11. Until they land, use the
-[headless spine verification](#appendix--headless-verification-of-the-spine-works-today) at the
-bottom, which exercises the **same** server core + WS gateway and passes today.
-
-| # | Blocker | Effect | One-line fix (Programmer's domain) |
-|---|---------|--------|-------------------------------------|
-| **B1** | `apps/server/src/server.ts` calls `app.register(FastifyWs)` **without `await`**, then registers the `/ws` route synchronously. `@fastify/websocket`'s `onRoute` hook isn't active yet, so `/ws` is served as a **plain HTTP route** and the handler receives `(request, reply)` instead of `(connection, request)`. | **Every WebSocket connection 500s** (`Cannot read properties of undefined (reading 'token')`). Blocks S3–S8 against the running server. | `await app.register(FastifyWs)` before registering the gateway route (or register the gateway inside a plugin that depends on it). |
-| **B2** | The server has **no CORS** and serves **no static assets**; the Vite dev server has **no proxy**. | A browser on `http://localhost:5173` (Vite) **cannot reach** the API/WS on `:3000` cross-origin — `/auth/*` REST is CORS-blocked. | Add a Vite dev proxy in `apps/web/vite.config.ts` (recommended — keeps it same-origin), **or** register `@fastify/cors`, **or** have the server serve the built PWA. |
-
-> **B1 will most likely be fixed under issue #10**, which adds the first real WS gateway
-> integration test (`apps/server/src/ws/gateway.test.ts`) driving `buildApp` over a live
-> socket — that test fails to open a socket until B1 is fixed. Per the PM plan, **#10 merges
-> before #11**, so re-run the browser walkthrough after #10 lands. Neither blocker is caught
-> by the current suite because no test exercises the real HTTP/WS server end to end (the core,
-> RPS module, and web WS client are each tested in isolation).
-
-Everything that does **not** depend on B1/B2 — S1, S2, S7 (REST), S9 (determinism), and the
-admin tooling — runs against the real server today and is marked **✅ verified** below.
+> **Status — this demo runs end to end today.** The server, the WebSocket gateway, and the
+> Vite dev proxy all work out of the box: the `/ws` gateway is registered correctly (#28), and
+> a Vite dev proxy plus `GET /wallet` / `GET /matches/:id` ship in the client and server (#29).
+> The full two-client walkthrough below was run against the real server + Vite proxy on
+> 2026-06-14; every S1–S9 box is ticked from that run.
 
 ---
 
@@ -93,9 +73,10 @@ export PATH="/home/ramunas/.nvm/versions/node/v20.20.2/bin:$PATH"
 pnpm run build && pnpm run lint && pnpm run test
 ```
 
-Expected: build and lint clean, **115/115 tests** green across 13 files. (This is the spine —
-identity, ledger, RPS module, matchmaking, leaderboard, and the web client — all unit/component
-tested.)
+Expected: build and lint clean, **129/129 tests** green across 16 files. The suite covers the
+spine (identity, ledger, RPS module, matchmaking, leaderboard, web client) **and** the live
+server: `apps/server/src/ws/gateway.test.ts` drives the real WebSocket gateway over a real
+socket (matchmaking → play → settle → reconnect/resume), and the RPS determinism test covers S9.
 
 ## 4. Start the server
 
@@ -107,6 +88,9 @@ JWT_SECRET=dev-demo-secret ADMIN_PASSWORD=admin-dev FEE_RATE=0.05 \
 # → [server] listening on http://0.0.0.0:3000
 ```
 
+(Equivalently, `cd apps/server && DB_PATH=../../rapidclash.db PORT=3000 node dist/index.js`
+after a build — the `start` script is just `node dist/index.js`.)
+
 Quick smoke test (no browser needed):
 
 ```bash
@@ -116,9 +100,10 @@ curl -s localhost:3000/games | head -c 300
 
 ## 5. Start the two web clients
 
-> Requires **B2** fixed (cross-origin from Vite to the server). With the recommended Vite
-> proxy fix, the client is same-origin and needs no `VITE_*` vars. Without it, point the client
-> at the server explicitly **and** enable CORS on the server.
+The Vite dev server ships a **dev proxy** (`apps/web/vite.config.ts`, added in #29) that
+forwards the REST paths (`/auth`, `/wallet`, `/games`, `/leaderboard`, `/matches`, `/admin`) and
+the **`/ws` upgrade** to `http://localhost:3000`. So the PWA stays **same-origin** and reaches
+the API/WS **out of the box** — no CORS setup and no `VITE_*` variables needed for local play.
 
 **Two profiles on one machine:**
 
@@ -135,16 +120,18 @@ Open `http://localhost:5173` in **two separate browser sessions** (Player A and 
 pnpm --filter @rapidclash/web dev -- --host   # expose Vite on your LAN IP
 ```
 
-On each device open `http://<your-lan-ip>:5173`. The client must know where the API/WS live —
-either via the Vite proxy (recommended) or by setting, before `pnpm ... dev`:
+On each device open `http://<your-lan-ip>:5173`. Because the proxy runs inside the Vite dev
+server (on the host), it forwards `/auth`, `/ws`, … to the host's own `:3000` — so as long as
+the server runs on the **same machine** as Vite, two LAN devices work with no extra config.
 
-```bash
-export VITE_API_URL="http://<your-lan-ip>:3000"
-export VITE_WS_URL="ws://<your-lan-ip>:3000"
-```
-
-The client reads `VITE_API_URL` for REST (`apps/web/src/api.ts`) and `VITE_WS_URL` for the
-WebSocket (`apps/web/src/ws.ts`); both default to same-origin.
+> Only if you run the API on a **different host** than Vite do you need to point the client at
+> it explicitly, before `pnpm … dev`:
+> ```bash
+> export VITE_API_URL="http://<api-host>:3000"
+> export VITE_WS_URL="ws://<api-host>:3000"
+> ```
+> The client reads `VITE_API_URL` for REST (`apps/web/src/api.ts`) and `VITE_WS_URL` for the
+> WebSocket (`apps/web/src/ws.ts`); both default to same-origin (i.e. the proxy).
 
 ---
 
@@ -155,7 +142,7 @@ Do this with **two players** (A and B) side by side. Each PWA screen maps to one
 | # | Charter step | What each player does | What proves it |
 |---|--------------|-----------------------|----------------|
 | 1 | **Register / sign in** | On the **Auth** screen, each registers a unique alias + password. | Lands on the **Wallet** screen with **1000 credits** — the new-account demo grant. |
-| 2 | **See wallet balance** | Read the balance on the **Wallet** screen. | Shows `1000 credits`. (Balance is derived from the ledger, not a stored number — see S1 note.) |
+| 2 | **See wallet balance** | Read the balance on the **Wallet** screen. | Shows `1000 credits`, fetched from `GET /wallet` (derived from the ledger, not a stored number). |
 | 3 | **Browse & pick a game** | Tap **Play** → **Game list** → choose **Rock Paper Scissors**. | RPS appears with its `GameMeta` (stake range 1–100). |
 | 4 | **Place a stake** | On **Stake entry**, set a stake within **1–100** (e.g. both pick **10**) and confirm. | Stake is escrowed; player moves to the **Lobby**. |
 | 5 | **Lobby / wait** | The **first** player to join sees "waiting for an opponent". | `queue.waiting`. The lobby holds until a second human joins the **same game at the same stake**. |
@@ -202,53 +189,57 @@ A non-admin token is refused (`HTTP 403`) on any `/admin/*` route.
 
 ## 8. S1–S9 acceptance checklist
 
-Tick each box by doing the action and observing the result. **Status** marks what was verified
-while writing this runbook (against the real server core / WS gateway code and the test suite)
-vs. what is pending. See the [blockers](#️-read-first--two-known-blockers-for-the-live-browser-demo)
-for why some live-server steps are gated on a code fix.
+Every box below was **verified end to end on 2026-06-14 against the real running server + the
+Vite dev proxy** (two WebSocket clients driven through `:5173`, the same path a browser uses),
+except S9 which is an automated test. The observed values are quoted inline.
 
-- [ ] **S1 — Register & wallet.** Register a new player → balance is **1000** (exactly one
-  `GRANT` ledger entry). **Status: ✅ verified** (`POST /auth/register` returns `balance:1000`;
-  balance is derived via `ledger.getBalance`).
-  - ⚠️ **Bug:** `GET /wallet` (listed in [PROTOCOL.md](PROTOCOL.md) and S1) is **not registered
-    on the server — returns 404**. The PWA's Wallet screen calls it (`api.wallet`), so the
-    **"Recent transactions"** panel stays empty and the ledger-derived balance can't be read via
-    the documented endpoint. Balance still **displays** because it's seeded from the
-    register/login and `match.end` payloads. *Note for a Programmer PR, not fixed here.*
-- [ ] **S2 — Browse & choose.** `GET /games` returns RPS with its `GameMeta`; the PWA lists it
-  and accepts a stake in **1–100**. **Status: ✅ verified** (`GET /games` returns the exact meta).
-- [ ] **S3 — Place stake & lobby.** `queue.join` escrows the stake (one `BET_ESCROW` debit) and
-  returns `queue.waiting`; escrowing **more than balance** is rejected with `error` and **no
-  ledger write**; `queue.leave` refunds exactly. **Status: ✅ verified** — waiting + over-balance
-  rejection confirmed live through the gateway; escrow/leave/refund covered by `matchmaking`
-  unit tests. *(Live via the corrected-registration harness; see B1.)*
-- [ ] **S4 — Match two humans.** Two clients that `queue.join` RPS at the same stake are paired
+- [x] **S1 — Register & wallet.** Register a new player → balance is **1000** (exactly one
+  `GRANT` ledger entry). `GET /wallet` is implemented (#29) and **ledger-derived** (not a stored
+  number). **Verified:** `POST /auth/register` → `balance:1000`; `GET /wallet` →
+  `{"balance":1000,"entries":["GRANT:1000"]}` (exactly one GRANT); no token → `401`.
+- [x] **S2 — Browse & choose.** `GET /games` returns RPS with its `GameMeta`; the PWA lists it
+  and accepts a stake in **1–100**. **Verified:** `GET /games` → `rps` with `bet [1, 100]`.
+- [x] **S3 — Place stake & lobby.** `queue.join` escrows the stake (one `BET_ESCROW` debit) and
+  returns `queue.waiting`; an invalid stake is rejected with `error` and **no match/ledger write**;
+  `queue.leave` refunds exactly. **Verified:** A's `queue.join` → `queue.waiting`; an
+  out-of-range `queue.join` → `error` and no match formed. (The insufficient-balance escrow guard
+  and `queue.leave` refund are covered by the `matchmaking` unit tests — a fresh 1000-credit
+  account can't legally stake above the 100 max, so over-balance is exercised at the unit level.)
+- [x] **S4 — Match two humans.** Two clients that `queue.join` RPS at the same stake are paired
   in arrival order; both receive `match.start` with a **redacted** starting view (no opponent
-  choice yet). **Status: ✅ verified** (both `match.start`, `state.choices` empty).
-- [ ] **S5 — Play (hidden info).** Each client gets `match.your_turn` with the three legal
-  moves; a submitted choice is **not** revealed to the opponent until both have chosen
-  (verified on the wire); an illegal/duplicate move returns `error`, no state change.
-  **Status: ✅ verified** — after A played `rock`, B's `match.state` contained **no** entry for
-  A's choice; a duplicate move returned `ILLEGAL_MOVE`. PWA renders 🤫 until terminal (S5 test).
-- [ ] **S6 — Settle.** Winner gets `SETTLE_WIN` of `pot − rake`; `PLATFORM` gets `RAKE`; ledger
-  is zero-sum; a **draw refunds** both; replaying the settle (`match.resume` after terminal)
-  does **not** double-pay. **Status: ✅ verified** — stake 10: winner→1009, loser→990,
-  PLATFORM→1 (sum 2000 = two 1000 grants); terminal `match.resume` returned `match.end` with the
-  balance **unchanged** (idempotent). Draw refund + idempotency also covered by `ledger` tests.
-- [ ] **S7 — Leaderboard & ranking.** RPS leaderboard updates per `win_rate`;
-  `GET /leaderboard/rps` reflects the change after the match. **Status: ✅ verified** (winner
-  rank 1, `winRate 1`, after a match).
-  - *Minor:* `displayName` is currently the `playerId` (placeholder) and `GET /matches/:id`
-    (in PROTOCOL.md) is not implemented (404). Neither blocks the demo; note for follow-up.
-- [ ] **S8 — Reconnect.** A client that drops mid-match calls `match.resume` and receives the
-  current redacted state; the match continues. **Status: ⏳ pending #10 — verify once #10
-  merges.** Terminal-resume idempotency (no double-pay) is already verified (see S6); the
-  full mid-match reconnect + the page-reload `currentMatchId` persistence are the body of
-  issue #10. **In the browser:** with B1 fixed, close/kill one player's tab mid-match, reopen
-  `http://localhost:5173`, and confirm the match resumes to the same redacted state. Do not
-  sign S8 off from this runbook alone — the PM confirms it after #10 lands.
-- [ ] **S9 — Determinism.** A match's seed + ordered move list replays to the identical final
-  state and outcome (automated test). **Status: ✅ verified** — see §9.
+  choice yet). **Verified:** two `match.start` envelopes, `state.choices` `{}` (empty).
+- [x] **S5 — Play (hidden info).** Each client gets `match.your_turn` with the three legal
+  moves; a submitted choice is **not** revealed to the opponent until both have chosen; an
+  illegal/duplicate move returns `error`, no state change. **Verified:** after A played `rock`,
+  B's redacted view contained **no** entry for A's choice — confirmed both on the WS
+  `match.state` and via `GET /matches/:id` (viewFor-redacted, #29); A saw its own `rock`; a
+  duplicate move returned `ILLEGAL_MOVE`. The PWA renders **🤫** for the opponent until terminal
+  (`apps/web/src/screens/Play.tsx`, backed by `Play.test.tsx`).
+- [x] **S6 — Settle.** Winner gets `SETTLE_WIN` of `pot − rake`; `PLATFORM` gets `RAKE`; ledger
+  is zero-sum; a **draw refunds** both; replaying the settle does **not** double-pay.
+  **Verified:** stake 10 each → `match.end` outcome `win`, winner `delta +9` / `newBalance 1009`,
+  loser `990`; `PLATFORM` holds the `1` rake (1009 + 990 + 1 = 2000 = two 1000 grants). Draw
+  refund + settle idempotency also covered by `ledger` and `gateway` tests.
+- [x] **S7 — Leaderboard & ranking.** The RPS leaderboard updates per `win_rate`;
+  `GET /leaderboard/rps` reflects the change after the match. **Verified:** post-match
+  `GET /leaderboard/rps` → winner rank 1 (`wins 1`, `winRate 1`), loser rank 2 (`winRate 0`).
+  - *Minor:* `displayName` is currently the `playerId` (placeholder for an alias lookup) — a
+    cosmetic follow-up, does not block the demo.
+- [x] **S8 — Reconnect.** A client that drops mid-match calls `match.resume` and receives the
+  current redacted state; the match continues. A terminal `match.resume` returns `match.end` with
+  the already-settled outcome and **no second payout**. Implemented and tested in #28
+  (`apps/server/src/ws/gateway.test.ts`: "disconnect mid-move → reconnect → resume returns
+  redacted state; match completes", and "terminal-resume … NO duplicate payout"). **Verified
+  live:** B disconnected mid-match, reconnected through the proxy, sent `match.resume` → received
+  the current redacted `match.state`, then completed the match normally; a terminal `match.resume`
+  by A returned `match.end` with the balance **unchanged** (1009 → 1009, no double-pay).
+  **In the browser:** **reload** one player's tab mid-match (F5) → it auto-resumes. The client
+  persists `currentMatchId` to `sessionStorage` and re-sends `match.resume` on the new socket's
+  `onopen` (`apps/web/src/ws.ts`, `App.tsx`). Note `sessionStorage` is **per-tab and clears when
+  the tab is closed**, so use *reload*, not close-and-reopen.
+- [x] **S9 — Determinism.** A match's seed + ordered move list replays to the identical final
+  state and outcome (automated test). **Verified:** `pnpm exec vitest run packages/games/rps` →
+  27 tests pass, including the `determinism (S9)` block. See §9.
 
 ## 9. Determinism replay (S9)
 
@@ -293,26 +284,32 @@ console.log("outcome:", JSON.stringify(rpsModule.outcome(s)));
   defaults). Set them to silence the warnings.
 - **Two players keep matching as the same account:** they're sharing one browser session. Use
   two profiles / an incognito window / two devices (token lives in `localStorage` per origin).
-- **WebSocket connection fails / 500 on `/ws`:** that's **blocker B1** — fix the server WS
-  registration (see the table at the top). Until then, use the headless verification below.
-- **Browser can't reach the API from `:5173`:** that's **blocker B2** (CORS / no proxy).
+- **WebSocket won't connect / REST calls fail from `:5173`:** make sure the **server is running
+  on `:3000`** and that you're loading the app through the **Vite dev server** (`:5173`) so the
+  proxy applies (`apps/web/vite.config.ts`). If you run the API on another host, set
+  `VITE_API_URL` / `VITE_WS_URL` (see §5).
+- **Mid-match reload doesn't resume:** that uses `sessionStorage`, which is per-tab. Use the
+  tab's **reload** (not close-and-reopen, which clears it).
 
 ---
 
-## Appendix — headless verification of the spine (works today)
+## Appendix — fast verification without a browser
 
-This drives the **real** server core (`createServices` → identity, ledger, matchmaking,
-leaderboard) and the **real** WS gateway (`registerWsGateway`) over a live socket, with the WS
-plugin registered in the correct order (the **B1** one-line fix applied **in the harness only**,
-so the production source is untouched). It proves S1–S7 and the S8 terminal-resume idempotency
-exactly as the browser flow would, and is what was used to mark the ✅ items above.
+When you just need to confirm the spine works (e.g. in CI or after a change), you don't have to
+click through two browsers:
 
-The match it runs: two players register (1000 each) → both `queue.join` RPS at stake 10 →
-A plays `rock`, B plays `scissors` → A wins → settlement winner 1009 / loser 990 / PLATFORM 1
-(zero-sum) → terminal `match.resume` returns `match.end` with no double-pay → leaderboard shows
-the winner at rank 1. An over-balance `queue.join` is rejected with `error` and no ledger write.
-
-> Once **B1** is fixed in the server, this same flow runs against `pnpm --filter
-> @rapidclash/server start` and the two-browser walkthrough in §5–6, with **no harness needed**.
-> The reusable, supported version of this check is the WS gateway integration test being added
-> under issue #10 (`apps/server/src/ws/gateway.test.ts`).
+- **Automated:** `pnpm run test` (129/129). `apps/server/src/ws/gateway.test.ts` drives the
+  **real** WS gateway over a real socket (S3–S8: matchmaking, play, settle, disconnect →
+  reconnect → `match.resume`, terminal-resume idempotency); the RPS determinism test covers S9.
+- **Live curl smoke** (server running on `:3000`):
+  ```bash
+  TOK=$(curl -s -X POST localhost:3000/auth/register -H 'Content-Type: application/json' \
+    -d '{"username":"smoke","password":"pw"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+  curl -s localhost:3000/wallet -H "Authorization: Bearer $TOK"   # {"balance":1000,"entries":[{"type":"GRANT","amount":1000,...}]}
+  curl -s localhost:3000/games                                    # RPS GameMeta
+  curl -s localhost:3000/leaderboard/rps                          # [] on a fresh DB
+  ```
+- **Two-client WS flow:** point two WebSocket clients at `ws://localhost:5173/ws?token=…`
+  (through the Vite proxy, the same path the browser uses) and drive `queue.join` → `move.make`
+  → `match.end`. This is exactly how the S1–S9 results in §8 were produced against the real
+  running stack.
