@@ -1,8 +1,14 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import confetti from 'canvas-confetti';
 import { CoinflipPlayScreen } from '../screens/CoinflipPlay.js';
 import type { CoinflipView } from '../App.js';
+
+// canvas-confetti needs a real <canvas> (absent in jsdom) — mock it and assert calls.
+vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
+
+beforeEach(() => vi.clearAllMocks());
 
 // alice = caller (players[0]); bob = non-caller.
 const callerProps = { playerId: 'alice', username: 'alice', opponentId: 'bob', onMove: vi.fn(), onForfeit: vi.fn() };
@@ -107,5 +113,31 @@ describe('CoinflipPlayScreen', () => {
       <CoinflipPlayScreen {...nonCallerProps} gameState={view({ call: 'heads' })} legalMoves={[]} />,
     );
     expect(screen.getByTestId('call-status').textContent).toContain('Opponent called');
+  });
+
+  it('NEVER reveals the flip pre-terminal even when a call is in flight (redaction)', () => {
+    // The call is PUBLIC, but the flip `result` is absent until terminal → suspense only.
+    // Caller view: call made, no result yet.
+    const { unmount } = render(
+      <CoinflipPlayScreen {...callerProps} gameState={view({ call: 'tails' })} legalMoves={[]} />,
+    );
+    expect(screen.getByTestId('flip-result').textContent).toBe('?');
+    unmount();
+
+    // Non-caller view: same redaction — the flip is hidden.
+    render(<CoinflipPlayScreen {...nonCallerProps} gameState={view({ call: 'heads' })} legalMoves={[]} />);
+    expect(screen.getByTestId('flip-result').textContent).toBe('?');
+  });
+
+  it('fires confetti when the LOCAL player wins the flip (call === result)', () => {
+    // caller calls heads, flip lands heads → caller wins.
+    render(<CoinflipPlayScreen {...callerProps} gameState={view({ call: 'heads', result: 'heads' })} legalMoves={[]} />);
+    expect(confetti).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT fire confetti when the local player loses', () => {
+    // caller calls heads, flip lands tails → caller loses.
+    render(<CoinflipPlayScreen {...callerProps} gameState={view({ call: 'heads', result: 'tails' })} legalMoves={[]} />);
+    expect(confetti).not.toHaveBeenCalled();
   });
 });
