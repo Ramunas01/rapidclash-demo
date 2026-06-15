@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { GameMeta, Outcome, SettlementSummary } from '@rapidclash/shared';
-import { WsClient, hasStoredMatch } from './ws.js';
+import { WsClient, hasStoredMatch, readStoredGameId, writeStoredGameId } from './ws.js';
 import { AuthScreen } from './screens/Auth.js';
 import { WalletScreen } from './screens/Wallet.js';
 import { GameListScreen } from './screens/GameList.js';
 import { StakeEntryScreen } from './screens/StakeEntry.js';
 import { LobbyScreen } from './screens/Lobby.js';
 import { PlayScreen } from './screens/Play.js';
+import { CoinflipPlayScreen } from './screens/CoinflipPlay.js';
 import { ResultScreen } from './screens/Result.js';
 import { LeaderboardScreen } from './screens/Leaderboard.js';
 
@@ -17,6 +18,20 @@ export interface RpsView {
   choices: Partial<Record<string, string>>;
   forcedOutcome?: { type: string; winner?: string };
 }
+
+export interface CoinflipView {
+  players: [string, string];
+  caller: string;
+  /** Public once made. */
+  call?: string;
+  /** Present ONLY at terminal — the server strips it pre-terminal via viewFor. */
+  result?: string;
+  forcedOutcome?: { type: string; winner?: string };
+}
+
+/** A per-game redacted view as it arrives from the server. The active game (and so
+ *  which screen renders it) is tracked separately in `activeGameId`. */
+export type GameView = RpsView | CoinflipView;
 
 function loadAuth() {
   return {
@@ -37,7 +52,10 @@ export function App() {
   const [balance, setBalance] = useState(0);
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
   const [opponentId, setOpponentId] = useState<string | null>(null);
-  const [gameState, setGameState] = useState<RpsView | null>(null);
+  const [gameState, setGameState] = useState<GameView | null>(null);
+  // The game whose match is currently active — drives which play screen renders.
+  // Persisted alongside currentMatchId (#10) so a mid-match reload resumes the right one.
+  const [activeGameId, setActiveGameId] = useState<string | null>(readStoredGameId());
   const [legalMoves, setLegalMoves] = useState<string[]>([]);
   const [lastOutcome, setLastOutcome] = useState<Outcome | null>(null);
   const [lastSettlement, setLastSettlement] = useState<SettlementSummary | null>(null);
@@ -70,12 +88,17 @@ export function App() {
       onMatchStart(payload, matchId) {
         setCurrentMatchId(matchId);
         setOpponentId(payload.opponent);
-        setGameState(payload.state as RpsView);
+        setGameState(payload.state as GameView);
+        // Persist the game we queued for so a reload resumes the correct play screen.
+        if (pendingGameId) {
+          setActiveGameId(pendingGameId);
+          writeStoredGameId(pendingGameId);
+        }
         setLegalMoves([]);
         setScreen('play');
       },
       onMatchState(payload, matchId) {
-        const state = payload.state as RpsView;
+        const state = payload.state as GameView;
         setGameState(state);
         // On a reload-driven resume, restore match identity + opponent + screen so the
         // user lands back in the live match (these are already set during normal play).
@@ -94,6 +117,8 @@ export function App() {
         setLastSettlement(payload.settlement);
         setBalance(payload.settlement.newBalance);
         setCurrentMatchId(null);
+        // Match over — clear the persisted active game in lockstep with the matchId.
+        writeStoredGameId(null);
         setLegalMoves([]);
         setScreen('result');
       },
@@ -183,7 +208,9 @@ export function App() {
     case 'lobby':
       return <LobbyScreen stake={pendingStake} onLeave={handleLeaveQueue} />;
     case 'play':
-      return <PlayScreen playerId={playerId!} opponentId={opponentId!} gameState={gameState} legalMoves={legalMoves} onMove={handleMakeMove} onForfeit={handleForfeit} />;
+      return activeGameId === 'coinflip'
+        ? <CoinflipPlayScreen playerId={playerId!} opponentId={opponentId!} gameState={gameState as CoinflipView | null} legalMoves={legalMoves} onMove={handleMakeMove} onForfeit={handleForfeit} />
+        : <PlayScreen playerId={playerId!} opponentId={opponentId!} gameState={gameState as RpsView | null} legalMoves={legalMoves} onMove={handleMakeMove} onForfeit={handleForfeit} />;
     case 'result':
       return <ResultScreen outcome={lastOutcome!} settlement={lastSettlement!} playerId={playerId ?? undefined} onPlayAgain={goToGameListFromResult} onLeaderboard={goToLeaderboard} />;
     case 'leaderboard':
