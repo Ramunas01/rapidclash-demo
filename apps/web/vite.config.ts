@@ -1,8 +1,15 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  resolve: {
+    // shadcn/ui primitives import each other via the `@/` alias → src.
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
+  },
   // Dev proxy: keep the PWA same-origin so api.ts / ws.ts work with their
   // same-origin defaults. The REST paths and the /ws upgrade are forwarded to
   // the server on :3000 (override target via the standard Vite env if needed).
