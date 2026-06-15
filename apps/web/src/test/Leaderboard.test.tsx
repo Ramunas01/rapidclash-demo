@@ -13,12 +13,16 @@ describe('LeaderboardScreen — render by ranking kind', () => {
     vi.stubGlobal('fetch', vi.fn());
   });
 
-  it('renders a win_rate row as a percentage', async () => {
+  it('renders a win_rate row as a percentage with a wins/games subline', async () => {
     mockEntries([
       { rank: 1, playerId: 'alice', displayName: 'alice', score: 1, kind: 'win_rate', gamesPlayed: 2, wins: 2, winRate: 1 },
     ]);
     render(<LeaderboardScreen token="tok" gameId="rps" onBack={() => {}} />);
     await waitFor(() => expect(screen.getByText('100% win rate')).toBeInTheDocument());
+    // win_rate rows expose the underlying W/games counts, not a money amount.
+    expect(screen.getByText('2W · 2 games')).toBeInTheDocument();
+    // never frame a skill board as money.
+    expect(screen.queryByText(/credits/i)).not.toBeInTheDocument();
   });
 
   it('renders net_winnings rows as signed credits (positive and negative)', async () => {
@@ -28,7 +32,10 @@ describe('LeaderboardScreen — render by ranking kind', () => {
     ]);
     render(<LeaderboardScreen token="tok" gameId="coinflip" onBack={() => {}} />);
     await waitFor(() => expect(screen.getByText('+9 credits')).toBeInTheDocument());
+    // ADR-007: a row can be negative because net_winnings sums to −rake across players.
     expect(screen.getByText('-10 credits')).toBeInTheDocument();
+    // and that negative is explained as the platform fee, not a bug.
+    expect(screen.getAllByText('net of platform fee').length).toBeGreaterThan(0);
   });
 
   // #46 — the board fetched is the ACTIVE game's, not hardcoded 'rps'.
@@ -40,6 +47,22 @@ describe('LeaderboardScreen — render by ranking kind', () => {
     await waitFor(() => expect(fetch).toHaveBeenCalled());
     const url = vi.mocked(fetch).mock.calls[0][0] as string;
     expect(url).toContain('/leaderboard/coinflip');
+  });
+
+  it('shows an empty state when there are no entries', async () => {
+    mockEntries([]);
+    render(<LeaderboardScreen token="tok" gameId="rps" onBack={() => {}} />);
+    await waitFor(() => expect(screen.getByText('No matches yet')).toBeInTheDocument());
+  });
+
+  // Play-money guard: no crypto/deposit/buy-chips framing in the rendered board.
+  it('keeps play-money framing (no deposit / crypto / buy-chips copy)', async () => {
+    mockEntries([
+      { rank: 1, playerId: 'alice', displayName: 'alice', score: 9, kind: 'net_winnings', netWinnings: 9 },
+    ]);
+    const { container } = render(<LeaderboardScreen token="tok" gameId="coinflip" onBack={() => {}} />);
+    await waitFor(() => expect(screen.getByText('+9 credits')).toBeInTheDocument());
+    expect(container.textContent).not.toMatch(/deposit|crypto|buy chips|usd|\$/i);
   });
 });
 
