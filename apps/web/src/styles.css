@@ -58,6 +58,16 @@ p  { color: var(--muted); margin-bottom: 12px; }
 .btn-secondary { background: var(--surface); border: 1px solid var(--muted); }
 .btn-ghost { background: transparent; color: var(--muted); border: none; }
 
+/* Stake +/- steppers: fixed tappable squares that don't stretch the flex row. */
+.stake-step {
+  width: 56px;
+  flex: 0 0 auto;
+  margin-bottom: 0;
+  padding: 12px 0;
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
 .input {
   display: block;
   width: 100%;
