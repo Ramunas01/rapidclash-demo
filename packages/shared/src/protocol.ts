@@ -2,7 +2,15 @@
 // All message types for the WebSocket channel and REST payloads.
 // Imported by both client (apps/web) and server (apps/server) — define once, never duplicate.
 
-import type { GameEvent, GameMeta, GameState, Move, Outcome, PlayerId } from './game-contract.js';
+import type {
+  GameEvent,
+  GameMeta,
+  GameState,
+  Move,
+  Outcome,
+  PlayerId,
+  RankingType,
+} from './game-contract.js';
 
 // ─── WebSocket envelope ──────────────────────────────────────────────────────
 
@@ -125,12 +133,38 @@ export interface WalletResponse {
   entries: LedgerEntry[];
 }
 
-export interface LeaderboardEntry {
+/** The ranking strategy a leaderboard row was produced by (= RankingType['kind']).
+ *  The core ranks generically by each game's declared RankingType (ADR-007); the
+ *  client renders `score` per `kind` (a win-rate fraction vs a signed money amount). */
+export type RankingKind = RankingType['kind'];
+
+interface LeaderboardEntryBase {
   rank: number;
   playerId: PlayerId;
   displayName: string;
-  score: number; // interpretation depends on RankingType
+  /** Sort key. Interpretation depends on `kind`. */
+  score: number;
+  kind: RankingKind;
 }
+
+/** win_rate row (skill games, e.g. RPS): score = winRate. */
+export interface WinRateLeaderboardEntry extends LeaderboardEntryBase {
+  kind: 'win_rate';
+  gamesPlayed: number;
+  wins: number;
+  /** = score */
+  winRate: number;
+}
+
+/** net_winnings row (chance games, e.g. Coinflip): score = signed net P&L from
+ *  the ledger. May be negative; the field across all players sums to −rake. */
+export interface NetWinningsLeaderboardEntry extends LeaderboardEntryBase {
+  kind: 'net_winnings';
+  /** = score */
+  netWinnings: number;
+}
+
+export type LeaderboardEntry = WinRateLeaderboardEntry | NetWinningsLeaderboardEntry;
 
 export interface MatchRecord {
   matchId: string;

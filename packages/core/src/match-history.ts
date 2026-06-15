@@ -1,14 +1,14 @@
 import type Database from 'better-sqlite3';
+import type {
+  LeaderboardEntry,
+  NetWinningsLeaderboardEntry,
+  RankingType,
+  WinRateLeaderboardEntry,
+} from '@rapidclash/shared';
+import { PLATFORM_ACCOUNT } from './ledger.js';
 
-export interface WinRateEntry {
-  rank: number;
-  playerId: string;
-  /** Placeholder until identity exposes username lookup. */
-  displayName: string;
-  gamesPlayed: number;
-  wins: number;
-  winRate: number;
-}
+/** Back-compat alias: a win_rate row used to be the only leaderboard shape. */
+export type WinRateEntry = WinRateLeaderboardEntry;
 
 export interface MatchHistory {
   recordResult(
@@ -19,7 +19,7 @@ export interface MatchHistory {
     winnerId: string | undefined,
     stake: number,
   ): void;
-  getLeaderboard(gameId: string): WinRateEntry[];
+  getLeaderboard(gameId: string): LeaderboardEntry[];
 }
 
 interface ResultRow {
@@ -29,7 +29,21 @@ interface ResultRow {
   winner_id: string | null;
 }
 
-export function createMatchHistory(db: Database.Database): MatchHistory {
+interface NetRow {
+  account_id: string;
+  net: number;
+}
+
+/**
+ * @param rankingByGame  gameId → declared RankingType, seeded from the game
+ *   modules' `meta.ranking`. getLeaderboard dispatches GENERICALLY on the
+ *   declared `kind` (ADR-007) — there is no per-game branching here. A gameId
+ *   absent from the map falls back to `win_rate`, the historical default.
+ */
+export function createMatchHistory(
+  db: Database.Database,
+  rankingByGame: Map<string, RankingType> = new Map(),
+): MatchHistory {
   db.exec(`
     CREATE TABLE IF NOT EXISTS match_results (
       match_id   TEXT PRIMARY KEY,
@@ -58,6 +72,31 @@ export function createMatchHistory(db: Database.Database): MatchHistory {
      WHERE game_id = ?`,
   );
 
+  // net_winnings is derived from the LEDGER — the single source of money truth —
+  // NOT from the match_results.stake column. For each player, sum their SIGNED
+  // ledger amounts over entries whose match belongs to this game. That set is
+  // exactly BET_ESCROW (already negative), SETTLE_WIN, and SETTLE_REFUND, so this
+  // is ONE signed sum — do NOT add wins/refunds and subtract escrow again (escrow
+  // is already negative; that would double-count). GRANT/ADMIN_CREDIT are excluded
+  // automatically (null match_id); RAKE is excluded automatically (it lands on the
+  // PLATFORM account, which never appears on a leaderboard). Across all players the
+  // per-game sum is therefore −rake, i.e. a net-negative board, which is correct.
+  //
+  // Prepared lazily: `ledger_entry` is owned and created by the ledger, which a
+  // win_rate-only consumer never instantiates. By the time a net_winnings board is
+  // requested, a ledger (hence the table and its entries) necessarily exists.
+  let stmtNet: Database.Statement<[string, string], NetRow> | undefined;
+  function netStmt(): Database.Statement<[string, string], NetRow> {
+    stmtNet ??= db.prepare<[string, string], NetRow>(
+      `SELECT account_id, SUM(amount) AS net
+       FROM ledger_entry
+       WHERE match_id IN (SELECT match_id FROM match_results WHERE game_id = ?)
+         AND account_id != ?
+       GROUP BY account_id`,
+    );
+    return stmtNet;
+  }
+
   function recordResult(
     matchId: string,
     gameId: string,
@@ -78,7 +117,7 @@ export function createMatchHistory(db: Database.Database): MatchHistory {
     );
   }
 
-  function getLeaderboard(gameId: string): WinRateEntry[] {
+  function winRateLeaderboard(gameId: string): WinRateLeaderboardEntry[] {
     const rows = stmtRows.all(gameId);
 
     // Accumulate per-player stats from the result rows.
@@ -121,10 +160,46 @@ export function createMatchHistory(db: Database.Database): MatchHistory {
       rank: i + 1,
       playerId: e.playerId,
       displayName: e.playerId,
+      score: e.winRate,
+      kind: 'win_rate',
       gamesPlayed: e.gamesPlayed,
       wins: e.wins,
       winRate: e.winRate,
     }));
+  }
+
+  function netWinningsLeaderboard(gameId: string): NetWinningsLeaderboardEntry[] {
+    // Single signed sum per player, straight from the ledger (PLATFORM excluded).
+    const rows = netStmt().all(gameId, PLATFORM_ACCOUNT);
+
+    // Sort: net DESC, then playerId ASC for a deterministic tiebreak.
+    const ranked = [...rows].sort((a, b) => {
+      if (b.net !== a.net) return b.net - a.net;
+      return a.account_id < b.account_id ? -1 : a.account_id > b.account_id ? 1 : 0;
+    });
+
+    return ranked.map((r, i) => ({
+      rank: i + 1,
+      playerId: r.account_id,
+      displayName: r.account_id,
+      score: r.net,
+      kind: 'net_winnings',
+      netWinnings: r.net,
+    }));
+  }
+
+  function getLeaderboard(gameId: string): LeaderboardEntry[] {
+    // Dispatch generically on the game's declared ranking kind (ADR-007).
+    const kind = rankingByGame.get(gameId)?.kind ?? 'win_rate';
+    switch (kind) {
+      case 'win_rate':
+        return winRateLeaderboard(gameId);
+      case 'net_winnings':
+        return netWinningsLeaderboard(gameId);
+      default:
+        // elo/glicko are declared by the contract but not yet implemented.
+        throw new Error(`Unsupported ranking kind: ${kind}`);
+    }
   }
 
   return { recordResult, getLeaderboard };
