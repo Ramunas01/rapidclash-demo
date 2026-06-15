@@ -27,7 +27,7 @@ These hold for every game and every code path. A pull request that violates one 
 2. **The server is authoritative.** All game logic, all randomness, and all outcome calculation happen on the server. Clients send *intent*, receive *state*. A client cannot be trusted, even with play money.
 3. **The wallet is an append-only ledger.** Balance is derived from a transaction log, never mutated in place. Settlement is atomic and idempotent — a reconnect or retry can never double-pay or double-charge. See `WALLET_LEDGER.md`.
 4. **No real currency.** Wallet credit is granted to new accounts for demonstration only. No payment rails, no crypto, no cash-out.
-5. **Games are plug-ins behind a fixed contract.** The core knows nothing about a specific game's rules. Adding a game is implementing the contract in `GAME_MODULE_INTERFACE.md` — no core changes.
+5. **Games are plug-ins behind a fixed contract.** The core contains no *game-specific* branches — it never tests which game it is running (`if (gameId === …)` is forbidden). It may and must act **generically** on the metadata a module declares through the contract (player count, bet rules, ranking type). Adding a game is implementing the contract in `GAME_MODULE_INTERFACE.md`; it requires no game-specific core code, though it may require the core to gain generic capability the contract already promised — e.g. dispatching on a declared `RankingType`. See ADR-007.
 
 ### A note on the "demo opponent"
 
@@ -42,6 +42,17 @@ Empty lobbies are the obvious risk at low player counts. We solve it **outside t
 | Chess | Yes | Skill game, ELO/Glicko ranking. Use an existing move-validation library; do not hand-roll legality. |
 | Baccarat | **No (house-banked by default)** | Needs a redefined head-to-head ruleset — see below. |
 | Blackjack | **No (house-banked by default)** | Needs a redefined head-to-head ruleset — see below. |
+
+### Confirmed spec: Coinflip (Slice 2)
+
+Settled in issue #36. Coinflip is natively two-player and house-free:
+
+- **Stake:** both players stake equally into the pot (`symmetricStake`).
+- **The call:** the match's first player (deterministic, server-assigned) makes one move — call `heads` or `tails`. The call is **public**; the opponent sees it. It confers no advantage: the coin is fair and the result is a deterministic function of the **server-held match seed**, which clients never receive.
+- **The flip:** the result is a deterministic function of the match seed, **independent of the call**, computed server-side. `viewFor` must hide the result from both players until the match is terminal.
+- **Resolution:** the caller wins `pot − rake` iff the call equals the result; otherwise the opponent wins `pot − rake`. Exactly one winner.
+- **No draws.** A fair coin always resolves. Abandonment before the call resolves as `void` via `forfeit` (both refunded) — which is not a draw.
+- **Ranking:** `net_winnings` (see ADR-007). `win_rate` on a 50/50 game is noise; net_winnings captures volume and the rake drag, the only meaningful signal.
 
 ### Open spec: re-defining the house-banked games
 
