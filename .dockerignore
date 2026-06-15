@@ -1,0 +1,15 @@
+# Build context hygiene — never ship host artifacts; they're rebuilt in the image.
+node_modules
+**/node_modules
+**/dist
+**/dist-ts
+.git
+.github
+*.db
+*.db-journal
+*.log
+.DS_Store
+# Local env / editor cruft
+.vscode
+.idea
+*.local
