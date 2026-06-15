@@ -3,8 +3,8 @@ import type { Rng } from '@rapidclash/shared';
 import { IllegalMove } from '@rapidclash/shared';
 import { coinflipModule } from './coinflip.js';
 
-const P1 = 'player-1'; // caller (players[0])
-const P2 = 'player-2'; // opponent
+const P1 = 'player-1';
+const P2 = 'player-2';
 
 const ctx = (playerId: string) => ({ playerId, now: 0 });
 
@@ -26,21 +26,31 @@ function seededRng(seed: number): Rng {
   };
 }
 
-/** Forces the flip: int(0,1) → 0 = 'heads', 1 = 'tails'. Lets a test pin the
- *  result independently of the call so outcome/redaction can be asserted exactly. */
+/** Forces the flip: int(0,1) → 0 = 'heads', 1 = 'tails'. Pins the result so the
+ *  win/draw resolution can be asserted exactly. */
 function fixedRng(intVal: 0 | 1): Rng {
   return { next: () => intVal, int: () => intVal };
 }
 
+type Side = 'heads' | 'tails';
 type CoinflipView = {
   players: [string, string];
-  caller: string;
-  call?: string;
-  result?: string;
+  choices: Partial<Record<string, Side>>;
+  result?: Side;
   forcedOutcome?: unknown;
+  caller?: unknown;
+  call?: unknown;
 };
 function view(state: unknown): CoinflipView {
   return state as CoinflipView;
+}
+
+/** Play a full match: P1 chooses c1, then P2 chooses c2. */
+function play(rng: Rng, c1: Side, c2: Side) {
+  let s = coinflipModule.init([P1, P2], rng);
+  s = coinflipModule.applyMove(s, c1, ctx(P1)).state;
+  s = coinflipModule.applyMove(s, c2, ctx(P2)).state;
+  return s;
 }
 
 // Find two seeds that flip to opposite sides, so seed-driven assertions are concrete.
@@ -68,10 +78,11 @@ describe('coinflipModule.meta', () => {
 });
 
 describe('coinflipModule.init', () => {
-  it('sets caller = players[0] and leaves call unset', () => {
+  it('starts with empty choices and no caller role', () => {
     const s = view(coinflipModule.init([P1, P2], fixedRng(0)));
-    expect(s.caller).toBe(P1);
     expect(s.players).toEqual([P1, P2]);
+    expect(s.choices).toEqual({});
+    expect(s.caller).toBeUndefined();
     expect(s.call).toBeUndefined();
   });
 
@@ -82,159 +93,142 @@ describe('coinflipModule.init', () => {
 });
 
 describe('coinflipModule.legalMoves', () => {
-  it('offers the caller heads/tails before any call', () => {
+  it('offers BOTH players heads/tails before they choose (no caller)', () => {
     const state = coinflipModule.init([P1, P2], fixedRng(0));
     expect(coinflipModule.legalMoves(state, P1)).toEqual(['heads', 'tails']);
+    expect(coinflipModule.legalMoves(state, P2)).toEqual(['heads', 'tails']);
   });
 
-  it('offers the non-caller nothing', () => {
-    const state = coinflipModule.init([P1, P2], fixedRng(0));
-    expect(coinflipModule.legalMoves(state, P2)).toEqual([]);
-  });
-
-  it('offers nothing once the call has been made', () => {
+  it('offers nothing to a player who has already chosen; the other may still choose', () => {
     let state = coinflipModule.init([P1, P2], fixedRng(0));
     state = coinflipModule.applyMove(state, 'heads', ctx(P1)).state;
+    expect(coinflipModule.legalMoves(state, P1)).toEqual([]);
+    expect(coinflipModule.legalMoves(state, P2)).toEqual(['heads', 'tails']);
+  });
+
+  it('offers nothing once both have chosen', () => {
+    const state = play(fixedRng(0), 'heads', 'tails');
     expect(coinflipModule.legalMoves(state, P1)).toEqual([]);
     expect(coinflipModule.legalMoves(state, P2)).toEqual([]);
   });
 });
 
 describe('coinflipModule.applyMove', () => {
-  it('records the call and emits a public call_made event (call included)', () => {
+  it('records the choice and emits move_made WITHOUT leaking the side', () => {
     const state = coinflipModule.init([P1, P2], fixedRng(0));
     const { state: next, events } = coinflipModule.applyMove(state, 'tails', ctx(P1));
-    expect(view(next).call).toBe('tails');
+    expect(view(next).choices[P1]).toBe('tails');
     expect(events).toHaveLength(1);
-    expect(events[0].type).toBe('call_made');
-    expect(events[0].payload).toEqual({ playerId: P1, call: 'tails' });
+    expect(events[0].type).toBe('move_made');
+    // The side must NOT appear in the public event (it's hidden until terminal).
+    expect(events[0].payload).toEqual({ playerId: P1 });
+    expect(JSON.stringify(events)).not.toContain('tails');
   });
 
-  it('makes the match terminal', () => {
-    let state = coinflipModule.init([P1, P2], fixedRng(0));
-    expect(coinflipModule.isTerminal(state)).toBe(false);
-    state = coinflipModule.applyMove(state, 'heads', ctx(P1)).state;
-    expect(coinflipModule.isTerminal(state)).toBe(true);
-  });
-
-  it('rejects a call from the non-caller with IllegalMove', () => {
-    const state = coinflipModule.init([P1, P2], fixedRng(0));
-    expect(() => coinflipModule.applyMove(state, 'heads', ctx(P2))).toThrow(IllegalMove);
-  });
-
-  it('rejects an invalid call value with IllegalMove', () => {
-    const state = coinflipModule.init([P1, P2], fixedRng(0));
-    expect(() => coinflipModule.applyMove(state, 'edge', ctx(P1))).toThrow(IllegalMove);
-  });
-
-  it('rejects a second (double) call with IllegalMove', () => {
+  it('rejects a second choice from the same player with IllegalMove', () => {
     let state = coinflipModule.init([P1, P2], fixedRng(0));
     state = coinflipModule.applyMove(state, 'heads', ctx(P1)).state;
     expect(() => coinflipModule.applyMove(state, 'tails', ctx(P1))).toThrow(IllegalMove);
   });
+
+  it('rejects an invalid side with IllegalMove', () => {
+    const state = coinflipModule.init([P1, P2], fixedRng(0));
+    expect(() => coinflipModule.applyMove(state, 'edge', ctx(P1))).toThrow(IllegalMove);
+  });
+});
+
+describe('coinflipModule.isTerminal', () => {
+  it('is false until BOTH have chosen, then true', () => {
+    let state = coinflipModule.init([P1, P2], fixedRng(0));
+    expect(coinflipModule.isTerminal(state)).toBe(false);
+    state = coinflipModule.applyMove(state, 'heads', ctx(P1)).state;
+    expect(coinflipModule.isTerminal(state)).toBe(false); // only one chose
+    state = coinflipModule.applyMove(state, 'tails', ctx(P2)).state;
+    expect(coinflipModule.isTerminal(state)).toBe(true);
+  });
 });
 
 describe('coinflipModule.outcome', () => {
-  it('caller wins when the call matches the flip', () => {
-    let state = coinflipModule.init([P1, P2], fixedRng(0)); // result = heads
-    state = coinflipModule.applyMove(state, 'heads', ctx(P1)).state;
-    expect(coinflipModule.outcome(state)).toEqual({ type: 'win', winner: P1 });
+  it('SAME choice → draw (both refunded), no flip needed', () => {
+    expect(coinflipModule.outcome(play(fixedRng(0), 'heads', 'heads'))).toEqual({ type: 'draw' });
+    expect(coinflipModule.outcome(play(fixedRng(1), 'tails', 'tails'))).toEqual({ type: 'draw' });
   });
 
-  it('opponent wins when the call misses the flip', () => {
-    let state = coinflipModule.init([P1, P2], fixedRng(0)); // result = heads
-    state = coinflipModule.applyMove(state, 'tails', ctx(P1)).state;
-    expect(coinflipModule.outcome(state)).toEqual({ type: 'win', winner: P2 });
-  });
-
-  it('never draws — exactly one winner for either call', () => {
-    for (const call of ['heads', 'tails'] as const) {
-      let state = coinflipModule.init([P1, P2], fixedRng(1)); // result = tails
-      state = coinflipModule.applyMove(state, call, ctx(P1)).state;
-      const out = coinflipModule.outcome(state);
-      expect(out.type).toBe('win');
-    }
+  it('DIFFERENT choices → the player whose side matches the flip wins', () => {
+    // result = heads → whoever chose heads wins.
+    expect(coinflipModule.outcome(play(fixedRng(0), 'heads', 'tails'))).toEqual({ type: 'win', winner: P1 });
+    expect(coinflipModule.outcome(play(fixedRng(0), 'tails', 'heads'))).toEqual({ type: 'win', winner: P2 });
+    // result = tails → whoever chose tails wins.
+    expect(coinflipModule.outcome(play(fixedRng(1), 'heads', 'tails'))).toEqual({ type: 'win', winner: P2 });
+    expect(coinflipModule.outcome(play(fixedRng(1), 'tails', 'heads'))).toEqual({ type: 'win', winner: P1 });
   });
 });
 
-describe('coinflipModule.viewFor — the flip is hidden until terminal', () => {
-  it('strips result from BOTH players before the call (pre-terminal)', () => {
-    const state = coinflipModule.init([P1, P2], fixedRng(0));
-    const p1 = view(coinflipModule.viewFor(state, P1));
-    const p2 = view(coinflipModule.viewFor(state, P2));
-    expect('result' in p1).toBe(false);
-    expect('result' in p2).toBe(false);
-    // Non-secret fields remain.
-    expect(p1.caller).toBe(P1);
-  });
-
-  it('reveals result to BOTH players at terminal', () => {
-    let state = coinflipModule.init([P1, P2], fixedRng(0)); // result = heads
-    state = coinflipModule.applyMove(state, 'heads', ctx(P1)).state;
-    expect(view(coinflipModule.viewFor(state, P1)).result).toBe('heads');
-    expect(view(coinflipModule.viewFor(state, P2)).result).toBe('heads');
-  });
-
-  it('keeps the call visible to BOTH players once made', () => {
+describe('coinflipModule.viewFor — opponent choice AND flip hidden until terminal', () => {
+  it('leaks NO opponent choice and NO result pre-terminal (from BOTH views)', () => {
+    // Only P1 has chosen → not terminal.
     let state = coinflipModule.init([P1, P2], fixedRng(0));
-    state = coinflipModule.applyMove(state, 'tails', ctx(P1)).state;
-    expect(view(coinflipModule.viewFor(state, P1)).call).toBe('tails');
-    expect(view(coinflipModule.viewFor(state, P2)).call).toBe('tails');
+    state = coinflipModule.applyMove(state, 'heads', ctx(P1)).state;
+
+    const p1View = view(coinflipModule.viewFor(state, P1));
+    const p2View = view(coinflipModule.viewFor(state, P2));
+
+    // Neither view exposes the flip result.
+    expect('result' in p1View).toBe(false);
+    expect('result' in p2View).toBe(false);
+    // P1 sees their own choice; P2 must NOT see P1's choice.
+    expect(p1View.choices[P1]).toBe('heads');
+    expect(P1 in p2View.choices).toBe(false);
+    expect(JSON.stringify(p2View)).not.toContain('heads');
+  });
+
+  it('reveals BOTH choices and the flip to BOTH players at terminal', () => {
+    const state = play(fixedRng(0), 'heads', 'tails'); // result heads
+    for (const viewer of [P1, P2]) {
+      const v = view(coinflipModule.viewFor(state, viewer));
+      expect(v.result).toBe('heads');
+      expect(v.choices[P1]).toBe('heads');
+      expect(v.choices[P2]).toBe('tails');
+    }
   });
 });
 
 describe('coinflipModule.forfeit', () => {
-  it('voids the match when abandoned before the call (both refunded)', () => {
-    const state = coinflipModule.init([P1, P2], fixedRng(0));
-    const terminal = coinflipModule.forfeit(state, P1);
-    expect(coinflipModule.isTerminal(terminal)).toBe(true);
-    expect(coinflipModule.outcome(terminal)).toEqual({ type: 'void' });
-  });
+  it('voids when abandoned before BOTH have chosen (both refunded), never a draw', () => {
+    // No one has chosen.
+    const fresh = coinflipModule.init([P1, P2], fixedRng(0));
+    const v0 = coinflipModule.forfeit(fresh, P1);
+    expect(coinflipModule.isTerminal(v0)).toBe(true);
+    expect(coinflipModule.outcome(v0)).toEqual({ type: 'void' });
 
-  it('voids regardless of which player abandons before the call', () => {
-    const state = coinflipModule.init([P1, P2], fixedRng(0));
-    expect(coinflipModule.outcome(coinflipModule.forfeit(state, P2))).toEqual({ type: 'void' });
+    // One player has chosen, the other abandons → still void (not a draw/win).
+    let mid = coinflipModule.init([P1, P2], fixedRng(0));
+    mid = coinflipModule.applyMove(mid, 'heads', ctx(P1)).state;
+    expect(coinflipModule.outcome(coinflipModule.forfeit(mid, P2))).toEqual({ type: 'void' });
   });
 });
 
-// S9 analogue — determinism of the seeded flip.
-describe('determinism (S9 analogue)', () => {
-  it('same seed → same flip result', () => {
-    const a = view(coinflipModule.init([P1, P2], seededRng(HEADS_SEED))).result;
-    const b = view(coinflipModule.init([P1, P2], seededRng(HEADS_SEED))).result;
-    expect(a).toBe(b);
-  });
-
-  it('same seed + same call replays to byte-identical final state and outcome', () => {
-    function runMatch(seed: number, call: 'heads' | 'tails') {
-      let state = coinflipModule.init([P1, P2], seededRng(seed));
-      state = coinflipModule.applyMove(state, call, ctx(P1)).state;
-      return { state, outcome: coinflipModule.outcome(state) };
-    }
+describe('coinflipModule — determinism (S9 analogue)', () => {
+  it('same seed + same choices replays to byte-identical final state and outcome', () => {
+    const combos: Array<[Side, Side]> = [
+      ['heads', 'heads'],
+      ['heads', 'tails'],
+      ['tails', 'heads'],
+      ['tails', 'tails'],
+    ];
     for (const seed of [HEADS_SEED, TAILS_SEED]) {
-      for (const call of ['heads', 'tails'] as const) {
-        const r1 = runMatch(seed, call);
-        const r2 = runMatch(seed, call);
-        expect(JSON.stringify(r1.state)).toBe(JSON.stringify(r2.state));
-        expect(r1.outcome).toEqual(r2.outcome);
+      for (const [c1, c2] of combos) {
+        const a = play(seededRng(seed), c1, c2);
+        const b = play(seededRng(seed), c1, c2);
+        expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+        expect(coinflipModule.outcome(a)).toEqual(coinflipModule.outcome(b));
       }
     }
   });
 
-  it('the flip is INDEPENDENT of the call: heads vs tails share one result, only the winner differs', () => {
-    const heads = (() => {
-      let s = coinflipModule.init([P1, P2], seededRng(HEADS_SEED));
-      s = coinflipModule.applyMove(s, 'heads', ctx(P1)).state;
-      return { result: view(s).result, outcome: coinflipModule.outcome(s) };
-    })();
-    const tails = (() => {
-      let s = coinflipModule.init([P1, P2], seededRng(HEADS_SEED));
-      s = coinflipModule.applyMove(s, 'tails', ctx(P1)).state;
-      return { result: view(s).result, outcome: coinflipModule.outcome(s) };
-    })();
-    // Same seed → identical flip, no matter what was called.
-    expect(heads.result).toBe(tails.result);
-    // But the calls land on opposite sides, so the winners differ.
-    expect(heads.outcome).not.toEqual(tails.outcome);
+  it('same seed → same flip, INDEPENDENT of the choices', () => {
+    const a = view(play(seededRng(HEADS_SEED), 'heads', 'tails')).result;
+    const b = view(play(seededRng(HEADS_SEED), 'tails', 'heads')).result;
+    expect(a).toBe(b); // identical flip; only who-matches-it differs
   });
 });

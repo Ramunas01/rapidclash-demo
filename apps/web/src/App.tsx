@@ -24,9 +24,9 @@ export interface RpsView {
 
 export interface CoinflipView {
   players: [string, string];
-  caller: string;
-  /** Public once made. */
-  call?: string;
+  /** Both players choose a side independently (mirrors RpsView). The opponent's choice is
+   *  stripped by viewFor until terminal. */
+  choices: Partial<Record<string, string>>;
   /** Present ONLY at terminal — the server strips it pre-terminal via viewFor. */
   result?: string;
   forcedOutcome?: { type: string; winner?: string };

@@ -31,27 +31,41 @@ const coinFace: Record<'heads' | 'tails', string> = {
   tails: 'from-indigo-400 via-indigo-500 to-indigo-700 text-indigo-950/40',
 };
 
-export function CoinflipPlayScreen({
-  playerId,
-  username,
-  opponentId: _opponentId,
-  gameState,
-  legalMoves,
-  onMove,
-  onForfeit,
-}: Props) {
+type LocalOutcome = 'win' | 'lose' | 'draw' | 'void';
+const outcomeCopy: Record<LocalOutcome, { text: string; cls: string }> = {
+  win: { text: 'You win! 🏆', cls: 'text-green-400' },
+  lose: { text: 'You lose 😔', cls: 'text-red-400' },
+  draw: { text: 'Draw — same side 🤝', cls: 'text-white/70' },
+  void: { text: 'Match voided', cls: 'text-white/70' },
+};
+
+export function CoinflipPlayScreen({ playerId, username, opponentId, gameState, legalMoves, onMove, onForfeit }: Props) {
   const canMove = legalMoves.length > 0;
-  const isCaller = gameState != null && playerId === gameState.caller;
-  const call = gameState?.call;
+  const myChoice = gameState?.choices?.[playerId];
   const result = gameState?.result;
 
-  // Terminal = the server has revealed the flip, or the match was forced (forfeit/void).
-  // The flip `result` is PRESENT ONLY at terminal — pre-terminal viewFor strips it, so
-  // its mere presence is the reveal signal. NEVER infer or render it before then.
-  const isTerminal = gameState != null && (result !== undefined || gameState.forcedOutcome !== undefined);
+  // Terminal: both players have chosen (server reveals both + result), or forcedOutcome set.
+  // Same gating as RPS — the server sends a redacted view before then. NEVER reveal early.
+  const isTerminal =
+    gameState != null &&
+    (gameState.forcedOutcome !== undefined || gameState.players.every((p) => p in (gameState.choices ?? {})));
 
-  // Caller wins iff call === result; the local player wins iff that matches their role.
-  const localWon = result !== undefined && call !== undefined && (call === result) === isCaller;
+  // The opponent's choice and the flip are ONLY available at terminal.
+  const opponentChoice = isTerminal ? gameState?.choices?.[opponentId] : undefined;
+  const showFlip = isTerminal && result !== undefined;
+
+  // Local outcome (cosmetic) — only computed from the revealed terminal state.
+  let localOutcome: LocalOutcome | null = null;
+  if (isTerminal && gameState) {
+    if (gameState.forcedOutcome) {
+      localOutcome = gameState.forcedOutcome.type === 'win'
+        ? gameState.forcedOutcome.winner === playerId ? 'win' : 'lose'
+        : gameState.forcedOutcome.type === 'draw' ? 'draw' : 'void';
+    } else if (myChoice !== undefined && opponentChoice !== undefined) {
+      localOutcome = myChoice === opponentChoice ? 'draw' : myChoice === result ? 'win' : 'lose';
+    }
+  }
+  const localWon = localOutcome === 'win';
 
   const confettiFired = useRef(false);
   useEffect(() => {
@@ -71,15 +85,15 @@ export function CoinflipPlayScreen({
           Coinflip
         </h1>
         {username && (
-          <p data-testid="play-you" className="mb-6 text-center text-xs font-medium text-white/60">
+          <p data-testid="play-you" className="mb-4 text-center text-xs font-medium text-white/60">
             You (<strong className="text-white">{username}</strong>)
           </p>
         )}
 
-        {/* The coin: spinning suspense until the server includes `result` at terminal. */}
-        <div className="flex flex-col items-center gap-4 py-6">
+        {/* The coin: spinning suspense until the server reveals `result` at terminal. */}
+        <div className="flex flex-col items-center gap-3 py-4">
           <div className="relative h-40 w-40" style={{ perspective: '800px' }}>
-            {isTerminal && result ? (
+            {showFlip ? (
               <motion.div
                 initial={{ rotateY: 540, scale: 0.9 }}
                 animate={{ rotateY: 0, scale: 1 }}
@@ -104,30 +118,42 @@ export function CoinflipPlayScreen({
               </motion.div>
             )}
           </div>
-          <div
-            className={cn('text-xl font-bold', isTerminal && result ? 'text-white' : 'text-white/50')}
-            data-testid="flip-result"
-          >
-            {isTerminal && result ? sideLabel(result) : '?'}
+          <div className={cn('text-xl font-bold', showFlip ? 'text-white' : 'text-white/50')} data-testid="flip-result">
+            {showFlip ? sideLabel(result) : '?'}
           </div>
         </div>
 
-        {/* The call is PUBLIC once made — show it to both players. */}
-        {call && (
-          <p className="mb-4 text-center text-sm" data-testid="call-status">
-            {isCaller ? 'You called ' : 'Opponent called '}
-            <strong className="text-brand">{sideLabel(call)}</strong>
+        {/* Picks — your own is always visible; the opponent's stays hidden until terminal. */}
+        <div className="mb-4 flex items-stretch justify-center gap-3 text-center">
+          <div className="flex-1 rounded-xl border border-white/10 bg-white/[0.03] py-2">
+            <p className="text-[10px] uppercase tracking-wide text-white/40">Your pick</p>
+            <p className="text-sm font-semibold text-white" data-testid="my-pick">{myChoice ? sideLabel(myChoice) : '—'}</p>
+          </div>
+          <div className="flex-1 rounded-xl border border-white/10 bg-white/[0.03] py-2">
+            <p className="text-[10px] uppercase tracking-wide text-white/40">Opponent</p>
+            {/* NEVER reveal the opponent's choice until terminal. */}
+            <p className="text-sm font-semibold text-white" data-testid="opponent-pick">
+              {isTerminal && opponentChoice ? sideLabel(opponentChoice) : '🤫'}
+            </p>
+          </div>
+        </div>
+
+        {isTerminal && localOutcome && (
+          <p className={cn('mb-4 text-center text-lg font-black', outcomeCopy[localOutcome].cls)} data-testid="cf-outcome">
+            {outcomeCopy[localOutcome].text}
           </p>
         )}
 
-        {isCaller ? (
-          <div className="grid grid-cols-2 gap-3" role="group" aria-label="Coin call">
+        {/* Both players choose a side (no caller). Rendered from server legalMoves; disabled once chosen. */}
+        {!isTerminal && (
+          <div className="grid grid-cols-2 gap-3" role="group" aria-label="Coin side">
             {SIDES.map(({ id, label }) => {
               const accent =
                 id === 'heads'
                   ? 'hover:border-amber-500/50 focus-visible:ring-amber-400'
                   : 'hover:border-indigo-500/50 focus-visible:ring-indigo-400';
               const dot = id === 'heads' ? 'bg-amber-400' : 'bg-indigo-400';
+              const picked = myChoice === id;
               return (
                 <motion.button
                   key={id}
@@ -139,7 +165,8 @@ export function CoinflipPlayScreen({
                   aria-label={label}
                   data-testid={`move-${id}`}
                   className={cn(
-                    'flex items-center justify-center gap-2 rounded-xl border-2 border-white/[0.08] bg-white/[0.03] py-4 text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2',
+                    'flex items-center justify-center gap-2 rounded-xl border-2 bg-white/[0.03] py-4 text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2',
+                    picked ? 'border-brand/60' : 'border-white/[0.08]',
                     accent,
                   )}
                 >
@@ -149,17 +176,12 @@ export function CoinflipPlayScreen({
               );
             })}
           </div>
-        ) : (
-          !isTerminal && (
-            <p className="my-4 text-center text-sm text-white/50" data-testid="waiting">
-              Waiting for opponent to call…
-            </p>
-          )
         )}
 
-        {/* Caller has called but the flip hasn't landed yet (resume edge). */}
-        {isCaller && call && !isTerminal && (
-          <p className="my-2 text-center text-sm text-white/50">Flipping…</p>
+        {myChoice && !isTerminal && (
+          <p className="my-4 text-center text-sm text-white/50" data-testid="waiting">
+            Locked in — waiting for opponent…
+          </p>
         )}
 
         {!isTerminal && (
