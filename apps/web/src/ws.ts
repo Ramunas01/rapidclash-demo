@@ -51,6 +51,9 @@ export function hasStoredMatch(): boolean {
   return readStoredMatchId() !== null;
 }
 
+/** Connection lifecycle the UI can reflect (e.g. a "Reconnecting…" banner). */
+export type WsStatus = 'connected' | 'reconnecting' | 'disconnected';
+
 export type WsMsgHandler = {
   onQueueWaiting?(payload: QueueWaitingPayload): void;
   onMatchStart?(payload: MatchStartPayload, matchId: string): void;
@@ -60,6 +63,7 @@ export type WsMsgHandler = {
   onChallengesList?(payload: ChallengesListPayload): void;
   onChallengesUpdate?(payload: ChallengesUpdatePayload): void;
   onChallengeExpired?(payload: ChallengeExpiredPayload): void;
+  onStatus?(status: WsStatus): void;
   onError?(payload: ErrorPayload): void;
 };
 
@@ -69,7 +73,13 @@ export class WsClient {
   private handlers: WsMsgHandler;
   private currentMatchId: string | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempts = 0;
+  private status: WsStatus = 'disconnected';
   private closed = false;
+
+  // Exponential backoff: 1s → 2s → 4s → 8s → 10s (capped), reset on a successful open.
+  private static readonly BASE_RECONNECT_MS = 1000;
+  private static readonly MAX_RECONNECT_MS = 10000;
 
   constructor(token: string, handlers: WsMsgHandler) {
     this.token = token;
@@ -81,6 +91,16 @@ export class WsClient {
 
   setHandlers(handlers: WsMsgHandler): void {
     this.handlers = handlers;
+  }
+
+  getStatus(): WsStatus {
+    return this.status;
+  }
+
+  private setStatus(status: WsStatus): void {
+    if (this.status === status) return;
+    this.status = status;
+    this.handlers.onStatus?.(status);
   }
 
   /** Update the active matchId in memory and in sessionStorage in lockstep. */
@@ -97,6 +117,8 @@ export class WsClient {
     this.ws = ws;
 
     ws.onopen = () => {
+      this.reconnectAttempts = 0; // success → reset the backoff
+      this.setStatus('connected');
       if (resumeMatchId ?? this.currentMatchId) {
         this.send('match.resume', { matchId: resumeMatchId ?? this.currentMatchId } as MatchResumePayload);
       }
@@ -108,12 +130,25 @@ export class WsClient {
     };
 
     ws.onclose = () => {
-      if (this.closed) return;
-      if (this.currentMatchId) {
-        // Reconnect after 2 s if mid-match
-        this.reconnectTimer = setTimeout(() => this.connect(), 2000);
-      }
+      if (this.closed) return; // intentional disconnect() → stay down
+      // Always reconnect (not only mid-match) so an idle tab recovers after a drop.
+      this.scheduleReconnect();
     };
+  }
+
+  /** Schedule a backed-off reconnect. Idempotent: a pending timer is not duplicated. */
+  private scheduleReconnect(): void {
+    this.setStatus('reconnecting');
+    if (this.reconnectTimer !== null) return;
+    const delay = Math.min(
+      WsClient.MAX_RECONNECT_MS,
+      WsClient.BASE_RECONNECT_MS * 2 ** this.reconnectAttempts,
+    );
+    this.reconnectAttempts += 1;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (!this.closed) this.connect();
+    }, delay);
   }
 
   private route(msg: Envelope): void {
@@ -155,46 +190,54 @@ export class WsClient {
     }
   }
 
-  send(type: string, payload: unknown, matchId?: string): void {
+  /** Send an envelope. Returns false (and never throws) if the socket isn't open, so
+   *  callers can surface "reconnecting — try again" instead of silently dropping. */
+  send(type: string, payload: unknown, matchId?: string): boolean {
     if (this.ws?.readyState === WebSocket.OPEN) {
       const env: Envelope = { type, payload, ...(matchId ? { matchId } : {}) };
       this.ws.send(JSON.stringify(env));
+      return true;
     }
+    // Not open — nudge a reconnect if nothing is already in flight, then report failure.
+    if (!this.closed && this.reconnectTimer === null && (!this.ws || this.ws.readyState === 3)) {
+      this.connect();
+    }
+    return false;
   }
 
-  joinQueue(gameId: string, stake: number): void {
-    this.send('queue.join', { gameId, stake } as QueueJoinPayload);
+  joinQueue(gameId: string, stake: number): boolean {
+    return this.send('queue.join', { gameId, stake } as QueueJoinPayload);
   }
 
-  leaveQueue(gameId: string): void {
-    this.send('queue.leave', { gameId } as QueueLeavePayload);
+  leaveQueue(gameId: string): boolean {
+    return this.send('queue.leave', { gameId } as QueueLeavePayload);
   }
 
   /** Start receiving the open-challenge feed for a game (challenges.list, then updates). */
-  subscribeChallenges(gameId: string): void {
-    this.send('challenges.subscribe', { gameId } as ChallengeSubscribePayload);
+  subscribeChallenges(gameId: string): boolean {
+    return this.send('challenges.subscribe', { gameId } as ChallengeSubscribePayload);
   }
 
-  unsubscribeChallenges(gameId: string): void {
-    this.send('challenges.unsubscribe', { gameId } as ChallengeSubscribePayload);
+  unsubscribeChallenges(gameId: string): boolean {
+    return this.send('challenges.unsubscribe', { gameId } as ChallengeSubscribePayload);
   }
 
   /** Claim a specific resting bet. Escrow happens server-side only on a successful claim. */
-  takeChallenge(matchId: string): void {
-    this.send('challenge.take', { matchId } as ChallengeTakePayload);
+  takeChallenge(matchId: string): boolean {
+    return this.send('challenge.take', { matchId } as ChallengeTakePayload);
   }
 
-  makeMove(move: string, matchId: string): void {
-    this.send('move.make', { move } as MoveMakePayload, matchId);
+  makeMove(move: string, matchId: string): boolean {
+    return this.send('move.make', { move } as MoveMakePayload, matchId);
   }
 
-  forfeit(matchId: string): void {
-    this.send('match.forfeit', {}, matchId);
+  forfeit(matchId: string): boolean {
+    return this.send('match.forfeit', {}, matchId);
   }
 
-  resume(matchId: string): void {
+  resume(matchId: string): boolean {
     this.setCurrentMatchId(matchId);
-    this.send('match.resume', { matchId } as MatchResumePayload);
+    return this.send('match.resume', { matchId } as MatchResumePayload);
   }
 
   disconnect(): void {
@@ -205,5 +248,6 @@ export class WsClient {
     }
     this.ws?.close();
     this.ws = null;
+    this.setStatus('disconnected');
   }
 }

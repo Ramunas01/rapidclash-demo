@@ -1,5 +1,21 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Connection banner (#30): fixed, slim, unobtrusive — overlays the top of any screen. */
+.ws-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  padding: 6px 12px;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #fff;
+  background: #b58900; /* amber: reconnecting */
+}
+.ws-banner-error { background: var(--accent); top: auto; bottom: 0; } /* action drop: red, bottom */
+
 :root {
   --bg: #1a1a2e;
   --surface: #16213e;

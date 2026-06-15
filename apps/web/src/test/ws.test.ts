@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WsClient, hasStoredMatch, type WsMsgHandler } from '../ws.js';
 
 // Mock WebSocket
@@ -37,6 +37,7 @@ describe('WsClient message router', () => {
       onChallengesList: vi.fn(),
       onChallengesUpdate: vi.fn(),
       onChallengeExpired: vi.fn(),
+      onStatus: vi.fn(),
       onError: vi.fn(),
     };
 
@@ -178,5 +179,115 @@ describe('WsClient match persistence (page-reload resume)', () => {
     const env = JSON.parse(mockWs.sent[0]) as { type: string; payload: { matchId: string } };
     expect(env.type).toBe('match.resume');
     expect(env.payload.matchId).toBe('m-99');
+  });
+});
+
+// #30 — idle reconnect, exponential backoff, status callback, no silent send drops.
+describe('WsClient reconnect + status (#30)', () => {
+  let WsCtor: ReturnType<typeof vi.fn>;
+  let sockets: MockWebSocket[];
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    sessionStorage.clear();
+    sockets = [];
+    WsCtor = vi.fn().mockImplementation((url: string) => {
+      const s = new MockWebSocket(url);
+      sockets.push(s);
+      return s;
+    });
+    vi.stubGlobal('WebSocket', Object.assign(WsCtor, { OPEN: 1, CONNECTING: 0, CLOSING: 2, CLOSED: 3 }));
+    vi.stubGlobal('location', { protocol: 'http:', host: 'localhost:3000' });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const last = () => sockets[sockets.length - 1];
+
+  it('reconnects after an IDLE drop (not gated on currentMatchId)', () => {
+    const onStatus = vi.fn();
+    const client = new WsClient('tok', { onStatus }); // no stored match → idle
+    client.connect();
+    last().simulateOpen();
+    expect(WsCtor).toHaveBeenCalledTimes(1);
+
+    last().simulateClose(); // idle socket drops
+    expect(onStatus).toHaveBeenCalledWith('reconnecting');
+
+    // First backoff step is 1s; the client opens a fresh socket.
+    vi.advanceTimersByTime(1000);
+    expect(WsCtor).toHaveBeenCalledTimes(2);
+
+    client.disconnect();
+  });
+
+  it('uses exponential backoff that RESETS on a successful open', () => {
+    const client = new WsClient('tok', {});
+    client.connect();
+    last().simulateOpen(); // socket #1
+    expect(WsCtor).toHaveBeenCalledTimes(1);
+
+    last().simulateClose(); // → retry in 1s
+    vi.advanceTimersByTime(1000);
+    expect(WsCtor).toHaveBeenCalledTimes(2); // socket #2
+
+    last().simulateClose(); // → retry in 2s (backoff grew)
+    vi.advanceTimersByTime(1999);
+    expect(WsCtor).toHaveBeenCalledTimes(2); // not yet
+    vi.advanceTimersByTime(1);
+    expect(WsCtor).toHaveBeenCalledTimes(3); // socket #3 at 2s
+
+    last().simulateOpen(); // success resets the backoff
+    last().simulateClose(); // → retry back at 1s, not 4s
+    vi.advanceTimersByTime(1000);
+    expect(WsCtor).toHaveBeenCalledTimes(4); // socket #4
+
+    client.disconnect();
+  });
+
+  it('does not reconnect after an intentional disconnect()', () => {
+    const onStatus = vi.fn();
+    const client = new WsClient('tok', { onStatus });
+    client.connect();
+    last().simulateOpen();
+
+    client.disconnect();
+    expect(onStatus).toHaveBeenLastCalledWith('disconnected');
+
+    vi.advanceTimersByTime(60_000);
+    expect(WsCtor).toHaveBeenCalledTimes(1); // never reconnected
+  });
+
+  it('fires status transitions connected → reconnecting → connected', () => {
+    const onStatus = vi.fn();
+    const client = new WsClient('tok', { onStatus });
+    client.connect();
+    last().simulateOpen();
+    expect(onStatus).toHaveBeenNthCalledWith(1, 'connected');
+
+    last().simulateClose();
+    expect(onStatus).toHaveBeenNthCalledWith(2, 'reconnecting');
+
+    vi.advanceTimersByTime(1000);
+    last().simulateOpen();
+    expect(onStatus).toHaveBeenLastCalledWith('connected');
+
+    client.disconnect();
+  });
+
+  it('send() returns false when the socket is closed (no silent drop) and true when open', () => {
+    const client = new WsClient('tok', {});
+    client.connect();
+    last().simulateOpen();
+    expect(client.joinQueue('rps', 10)).toBe(true); // open → delivered
+
+    last().simulateClose();
+    expect(client.joinQueue('rps', 10)).toBe(false); // closed → reported, not dropped silently
+    expect(client.makeMove('rock', 'm1')).toBe(false);
+    expect(client.takeChallenge('m2')).toBe(false);
+
+    client.disconnect();
   });
 });
