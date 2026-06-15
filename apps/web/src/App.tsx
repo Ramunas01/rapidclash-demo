@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { GameMeta, Outcome, SettlementSummary, OpenChallenge } from '@rapidclash/shared';
-import { WsClient, hasStoredMatch, readStoredGameId, writeStoredGameId } from './ws.js';
+import { WsClient, hasStoredMatch, readStoredGameId, writeStoredGameId, type WsStatus } from './ws.js';
 import { applyChallengesUpdate } from './screens/OpenChallengesList.js';
 import { AuthScreen } from './screens/Auth.js';
 import { WalletScreen } from './screens/Wallet.js';
@@ -13,6 +13,8 @@ import { ResultScreen } from './screens/Result.js';
 import { LeaderboardScreen } from './screens/Leaderboard.js';
 
 type Screen = 'auth' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard';
+
+const RECONNECT_NOTICE = 'Connection lost — reconnecting. Try again in a moment.';
 
 export interface RpsView {
   players: [string, string];
@@ -73,6 +75,10 @@ export function App() {
   const [challengeNotice, setChallengeNotice] = useState<string | null>(null);
   const [waitingExpiresAt, setWaitingExpiresAt] = useState<number | null>(null);
   const [lobbyExpired, setLobbyExpired] = useState(false);
+  // Connection status (#30): drives the "Reconnecting…" banner. `actionNotice` surfaces a
+  // dropped action (join/move/take attempted while the socket was down) instead of a silent no-op.
+  const [wsStatus, setWsStatus] = useState<WsStatus>('connected');
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
   // Bumped when the WS client is (re)created so the handler-wiring effect below re-runs
   // and binds handlers before the socket's async onopen fires the auto-resume.
   const [, setWsEpoch] = useState(0);
@@ -152,6 +158,19 @@ export function App() {
         // Owner's resting bet expired (escrow already refunded server-side) — offer re-post.
         setLobbyExpired(true);
       },
+      onStatus(status) {
+        setWsStatus(status);
+        if (status === 'connected') {
+          // Back online — drop any "reconnecting" notice and re-establish a feed the
+          // current screen depends on (the stake screen's challenge subscription is
+          // server-side per-socket, so a new socket needs re-subscribing). Mid-match
+          // resume is handled by the socket's own onopen → match.resume.
+          setActionNotice(null);
+          if (screen === 'stake-entry' && pendingGameId) {
+            wsRef.current?.subscribeChallenges(pendingGameId);
+          }
+        }
+      },
       onError(payload) {
         // A failed take (CHALLENGE_TAKEN / SELF_TAKE / INSUFFICIENT_BALANCE) → brief notice;
         // the list's `removed` update drops the stale row on its own.
@@ -211,16 +230,22 @@ export function App() {
   const handleJoinQueue = useCallback((stake: number) => {
     if (!pendingGameId || !wsRef.current) return;
     setPendingStake(stake);
+    // No silent drop (#30): if the socket is down, stay put and tell the user — don't
+    // strand them on the lobby "waiting" screen never actually queued.
+    if (!wsRef.current.joinQueue(pendingGameId, stake)) {
+      setActionNotice(RECONNECT_NOTICE);
+      return;
+    }
     // Reset lobby countdown state; queue.waiting will deliver the fresh expiresAt.
     setWaitingExpiresAt(null);
     setLobbyExpired(false);
-    wsRef.current.joinQueue(pendingGameId, stake);
+    setActionNotice(null);
     setScreen('lobby');
   }, [pendingGameId]);
 
   const handleLeaveQueue = useCallback(() => {
     if (!pendingGameId || !wsRef.current) return;
-    wsRef.current.leaveQueue(pendingGameId);
+    wsRef.current.leaveQueue(pendingGameId); // best-effort; leaving the UI is a local nav
     setScreen('wallet');
   }, [pendingGameId]);
 
@@ -242,55 +267,82 @@ export function App() {
     if (!wsRef.current) return;
     setChallengeNotice(null);
     // On success the server pushes match.start → we land in the match; on failure → onError.
-    wsRef.current.takeChallenge(matchId);
+    if (!wsRef.current.takeChallenge(matchId)) setActionNotice(RECONNECT_NOTICE);
   }, []);
 
   // ── Owner lobby re-post (OC7) ───────────────────────────────────────────────
   const handleRepost = useCallback(() => {
     if (!pendingGameId || !wsRef.current) return;
+    if (!wsRef.current.joinQueue(pendingGameId, pendingStake)) {
+      setActionNotice(RECONNECT_NOTICE);
+      return;
+    }
     setLobbyExpired(false);
-    wsRef.current.joinQueue(pendingGameId, pendingStake);
+    setActionNotice(null);
   }, [pendingGameId, pendingStake]);
 
   const handleMakeMove = useCallback((move: string) => {
     if (!currentMatchId || !wsRef.current) return;
-    setLegalMoves([]); // disable buttons immediately
-    wsRef.current.makeMove(move, currentMatchId);
+    // Send first; only disable the buttons if it actually went out, so a dropped move
+    // can be retried (and resume re-delivers your_turn on reconnect anyway).
+    if (!wsRef.current.makeMove(move, currentMatchId)) {
+      setActionNotice(RECONNECT_NOTICE);
+      return;
+    }
+    setActionNotice(null);
+    setLegalMoves([]); // disable buttons after a successful submit
   }, [currentMatchId]);
 
   const handleForfeit = useCallback(() => {
     if (!currentMatchId || !wsRef.current) return;
-    wsRef.current.forfeit(currentMatchId);
+    if (!wsRef.current.forfeit(currentMatchId)) setActionNotice(RECONNECT_NOTICE);
   }, [currentMatchId]);
 
-  switch (screen) {
-    case 'auth':
-      return <AuthScreen onLogin={handleLogin} />;
-    case 'wallet':
-      return <WalletScreen token={token!} username={username} balance={balance} onPlay={goToGameList} onLogout={handleLogout} />;
-    case 'game-list':
-      return <GameListScreen token={token!} onSelect={handleSelectGame} onBack={goToWallet} />;
-    case 'stake-entry':
-      return <StakeEntryScreen
-        meta={pendingGameMeta!}
-        onJoin={handleJoinQueue}
-        onBack={() => setScreen('game-list')}
-        challenges={challenges}
-        challengesMore={challengesMore}
-        challengeNotice={challengeNotice}
-        onSubscribe={handleSubscribeChallenges}
-        onUnsubscribe={handleUnsubscribeChallenges}
-        onTakeChallenge={handleTakeChallenge}
-      />;
-    case 'lobby':
-      return <LobbyScreen username={username} stake={pendingStake} expiresAt={waitingExpiresAt} expired={lobbyExpired} onRepost={handleRepost} onLeave={handleLeaveQueue} />;
-    case 'play':
-      return activeGameId === 'coinflip'
-        ? <CoinflipPlayScreen playerId={playerId!} username={username} opponentId={opponentId!} gameState={gameState as CoinflipView | null} legalMoves={legalMoves} onMove={handleMakeMove} onForfeit={handleForfeit} />
-        : <PlayScreen playerId={playerId!} username={username} opponentId={opponentId!} gameState={gameState as RpsView | null} legalMoves={legalMoves} onMove={handleMakeMove} onForfeit={handleForfeit} />;
-    case 'result':
-      return <ResultScreen outcome={lastOutcome!} settlement={lastSettlement!} playerId={playerId ?? undefined} onPlayAgain={goToGameListFromResult} onLeaderboard={goToLeaderboard} />;
-    case 'leaderboard':
-      return <LeaderboardScreen token={token!} gameId={activeGameId ?? 'rps'} onBack={goToGameList} />;
+  function renderScreen() {
+    switch (screen) {
+      case 'auth':
+        return <AuthScreen onLogin={handleLogin} />;
+      case 'wallet':
+        return <WalletScreen token={token!} username={username} balance={balance} onPlay={goToGameList} onLogout={handleLogout} />;
+      case 'game-list':
+        return <GameListScreen token={token!} onSelect={handleSelectGame} onBack={goToWallet} />;
+      case 'stake-entry':
+        return <StakeEntryScreen
+          meta={pendingGameMeta!}
+          onJoin={handleJoinQueue}
+          onBack={() => setScreen('game-list')}
+          challenges={challenges}
+          challengesMore={challengesMore}
+          challengeNotice={challengeNotice}
+          onSubscribe={handleSubscribeChallenges}
+          onUnsubscribe={handleUnsubscribeChallenges}
+          onTakeChallenge={handleTakeChallenge}
+        />;
+      case 'lobby':
+        return <LobbyScreen username={username} stake={pendingStake} expiresAt={waitingExpiresAt} expired={lobbyExpired} onRepost={handleRepost} onLeave={handleLeaveQueue} />;
+      case 'play':
+        return activeGameId === 'coinflip'
+          ? <CoinflipPlayScreen playerId={playerId!} username={username} opponentId={opponentId!} gameState={gameState as CoinflipView | null} legalMoves={legalMoves} onMove={handleMakeMove} onForfeit={handleForfeit} />
+          : <PlayScreen playerId={playerId!} username={username} opponentId={opponentId!} gameState={gameState as RpsView | null} legalMoves={legalMoves} onMove={handleMakeMove} onForfeit={handleForfeit} />;
+      case 'result':
+        return <ResultScreen outcome={lastOutcome!} settlement={lastSettlement!} playerId={playerId ?? undefined} onPlayAgain={goToGameListFromResult} onLeaderboard={goToLeaderboard} />;
+      case 'leaderboard':
+        return <LeaderboardScreen token={token!} gameId={activeGameId ?? 'rps'} onBack={goToGameList} />;
+    }
   }
+
+  // Unobtrusive connection banner: only while logged in (the auth screen has no socket).
+  const showReconnecting = token !== null && wsStatus !== 'connected';
+
+  return (
+    <>
+      {showReconnecting && (
+        <div className="ws-banner" role="status" data-testid="ws-banner">Reconnecting…</div>
+      )}
+      {actionNotice && (
+        <div className="ws-banner ws-banner-error" role="alert" data-testid="action-notice">{actionNotice}</div>
+      )}
+      {renderScreen()}
+    </>
+  );
 }
