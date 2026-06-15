@@ -1,6 +1,7 @@
 {
   "name": "rapidclash-demo",
   "private": true,
+  "packageManager": "pnpm@9.15.9",
   "scripts": {
     "build": "tsc -b",
     "lint": "eslint --ext .ts,.tsx packages apps",
