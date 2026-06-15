@@ -1,5 +1,9 @@
+import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import Fastify, { type FastifyInstance } from 'fastify';
 import FastifyWs from '@fastify/websocket';
+import FastifyStatic from '@fastify/static';
 import type Database from 'better-sqlite3';
 import {
   createLedger,
@@ -26,6 +30,49 @@ export interface AppOptions {
   seedAdmin?: boolean;
   adminUsername?: string;
   adminPassword?: string;
+  /** Serve the built PWA (apps/web/dist) + SPA fallback. Default: auto (on when the dist exists).
+   *  Production (the Docker image) ships the dist; dev/tests have none and use the Vite proxy. */
+  serveStatic?: boolean;
+}
+
+// Anything under these prefixes is the API (or the WS upgrade) — an unknown path here must
+// 404 as JSON, never fall back to the SPA shell. Everything else GET → index.html.
+const API_PREFIXES = ['/auth', '/wallet', '/games', '/leaderboard', '/matches', '/admin', '/ws'];
+
+/** Where the built PWA lives. WEB_DIST overrides; otherwise resolve relative to this
+ *  compiled file (apps/server/dist → apps/web/dist) so it works from the repo layout. */
+function resolveWebDist(): string {
+  if (process.env.WEB_DIST) return process.env.WEB_DIST;
+  const here = dirname(fileURLToPath(import.meta.url));
+  return resolve(here, '../../web/dist');
+}
+
+/** In production the one container also serves the PWA on the same origin (ADR-009): no
+ *  CORS, no second service. Static assets are served by path; unknown browser GETs fall
+ *  back to index.html (SPA routing) while the API/`/ws` keep precedence and JSON 404s. */
+function maybeServeStatic(app: FastifyInstance, opts: AppOptions): void {
+  const webDist = resolveWebDist();
+  const enabled = opts.serveStatic ?? existsSync(webDist);
+  if (!enabled) return;
+
+  // wildcard:true → real files (assets, sw.js, manifest, icons) are served by path; a
+  // missing file calls the not-found handler below. Specific API routes and `/ws` are
+  // more specific than the static `/*`, so they always win.
+  app.register(FastifyStatic, { root: webDist });
+
+  app.setNotFoundHandler((request, reply) => {
+    const url = request.url;
+    const isApi = API_PREFIXES.some(
+      (p) => url === p || url.startsWith(`${p}/`) || url.startsWith(`${p}?`),
+    );
+    if (request.method === 'GET' && !isApi) {
+      // A client-side route (or the bare origin) — hand back the app shell.
+      return reply.type('text/html').sendFile('index.html');
+    }
+    return reply.code(404).send({ error: 'Not Found' });
+  });
+
+  console.log(`[server] serving PWA from ${webDist}`);
 }
 
 export interface AppServices {
@@ -61,6 +108,9 @@ export function buildApp(
   app.register(async (instance) => {
     registerWsGateway(instance, identity, matchmaking, gameModules);
   });
+
+  // Serve the built PWA on the same origin (prod only — see maybeServeStatic).
+  maybeServeStatic(app, opts);
 
   if (opts.seedAdmin !== false) {
     const username = opts.adminUsername ?? 'admin';
