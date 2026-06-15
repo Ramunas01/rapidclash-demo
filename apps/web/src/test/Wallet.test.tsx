@@ -39,4 +39,37 @@ describe('WalletScreen', () => {
 
     expect(screen.getByTestId('signed-in-as').textContent).toBe('Signed in as alice');
   });
+
+  it('renders the most recent ledger entries newest-first (last 5, reversed)', async () => {
+    const entries = Array.from({ length: 7 }, (_, i) => ({
+      id: String(i),
+      type: 'SETTLE_WIN' as const,
+      amount: i, // amounts 0..6; only the last 5 (2..6) survive the slice
+      idempotencyKey: `k${i}`,
+      createdAt: '2024-01-01',
+    }));
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: true, json: async () => ({ balance: 100, entries }) } as Response);
+
+    render(<WalletScreen token="tok" username="alice" balance={0} onPlay={() => {}} onLogout={() => {}} />);
+
+    // newest entry (amount +6) shown; the trimmed-off oldest (+1) is not.
+    await waitFor(() => expect(screen.getByText('+6')).toBeInTheDocument());
+    expect(screen.queryByText('+1')).not.toBeInTheDocument();
+    expect(screen.getAllByText('SETTLE WIN').length).toBe(5);
+  });
+
+  it('keeps play-money framing — no deposit / crypto / buy-chips affordance', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ balance: 1000, entries: [] }),
+    } as Response);
+
+    const { container } = render(
+      <WalletScreen token="tok" username="alice" balance={1000} onPlay={() => {}} onLogout={() => {}} />,
+    );
+    await waitFor(() => expect(screen.getByLabelText('balance')).toBeInTheDocument());
+    expect(container.textContent).not.toMatch(/deposit|crypto|buy chips|buy credits|add funds|top up|\$/i);
+    // and it states the credits are play-money.
+    expect(container.textContent).toMatch(/play-money/i);
+  });
 });
