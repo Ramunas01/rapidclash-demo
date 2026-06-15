@@ -4,7 +4,7 @@ import { WebSocket } from 'ws';
 import type { FastifyInstance } from 'fastify';
 import { createServices, buildApp, type AppServices } from '../server.js';
 import { rpsModule } from '@rapidclash/game-rps';
-import { PLATFORM_ACCOUNT } from '@rapidclash/core';
+import { PLATFORM_ACCOUNT, GRANT_AMOUNT } from '@rapidclash/core';
 import type { Envelope, MatchStartPayload } from '@rapidclash/shared';
 
 // ─── Test harness ──────────────────────────────────────────────────────────────
@@ -256,5 +256,103 @@ describe('S8 — WS reconnect / match.resume', () => {
     eve.send('match.resume', { matchId });
     const err = await eve.waitFor('error');
     expect((err.payload as { code: string }).code).toBe('FORBIDDEN');
+  });
+});
+
+// ─── #31 — server-authoritative move timeout (socket stays OPEN) ─────────────────
+//
+// The socket-close forfeit (S8 above) can't help a client that is stuck but still
+// CONNECTED. This drives the real gateway, pairs two players, lets one move and the
+// other go silent (sockets stay open), and asserts the periodic sweep resolves the
+// match and pushes match.end to BOTH — with the stake settled, never orphaned.
+
+describe('#31 — stuck-but-connected match resolves via the timeout sweep', () => {
+  let app: FastifyInstance;
+  let services: AppServices;
+  let port: number;
+  let aliceToken: string;
+  let aliceId: string;
+  let bobToken: string;
+  let bobId: string;
+  const sockets: SocketRecorder[] = [];
+  let prevTimeout: string | undefined;
+
+  beforeEach(async () => {
+    // Tiny per-move timeout so the (1s) sweep resolves the stuck match quickly; the
+    // window is still far larger than the sub-100ms it takes the mover to act, so the
+    // pre-first-move void branch can't race in ahead of the move.
+    prevTimeout = process.env.MATCH_TURN_TIMEOUT_MS;
+    process.env.MATCH_TURN_TIMEOUT_MS = '300';
+
+    const db = new Database(':memory:');
+    services = createServices(db, [rpsModule]);
+    app = buildApp(services, [rpsModule], { seedAdmin: false });
+
+    const reg = async (username: string) => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/register',
+        payload: { username, password: 'pw' },
+      });
+      return res.json<{ token: string; playerId: string }>();
+    };
+
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const addr = app.server.address();
+    port = typeof addr === 'object' && addr ? addr.port : 0;
+
+    const a = await reg('alice');
+    aliceToken = a.token;
+    aliceId = a.playerId;
+    const b = await reg('bob');
+    bobToken = b.token;
+    bobId = b.playerId;
+  });
+
+  afterEach(async () => {
+    for (const s of sockets) s.close();
+    sockets.length = 0;
+    await app.close();
+    if (prevTimeout === undefined) delete process.env.MATCH_TURN_TIMEOUT_MS;
+    else process.env.MATCH_TURN_TIMEOUT_MS = prevTimeout;
+  });
+
+  async function startMatch(alice: SocketRecorder, bob: SocketRecorder): Promise<string> {
+    alice.send('queue.join', { gameId: 'rps', stake: STAKE });
+    await alice.waitFor('queue.waiting');
+    bob.send('queue.join', { gameId: 'rps', stake: STAKE });
+    const aStart = await alice.waitFor('match.start');
+    await bob.waitFor('match.start');
+    await alice.waitFor('match.your_turn');
+    await bob.waitFor('match.your_turn');
+    return (aStart.payload as MatchStartPayload).matchId;
+  }
+
+  it('one player moved, the other is silent → non-responder forfeits, both get match.end, no orphaned escrow', async () => {
+    const alice = await openSocket(port, aliceToken);
+    const bob = await openSocket(port, bobToken);
+    sockets.push(alice, bob);
+
+    const matchId = await startMatch(alice, bob);
+
+    // bob moves; alice stays CONNECTED but never responds (the close-forfeit never fires).
+    bob.send('move.make', { move: 'rock' }, matchId);
+    await bob.waitFor('match.state');
+
+    // The sweep resolves it server-side and pushes match.end to BOTH open sockets.
+    const bobEnd = await bob.waitFor('match.end', 3000);
+    const aliceEnd = await alice.waitFor('match.end', 3000);
+
+    const rake = Math.round(STAKE * 2 * FEE_RATE);
+    expect((bobEnd.payload as { outcome: unknown }).outcome).toEqual({ type: 'win', winner: bobId });
+    expect((bobEnd.payload as { settlement: { delta: number } }).settlement.delta).toBe(STAKE - rake);
+    expect((aliceEnd.payload as { settlement: { delta: number } }).settlement.delta).toBe(-STAKE);
+
+    // Stake settled, nothing left escrowed: balances + rake reconstruct both grants.
+    const total =
+      services.ledger.getBalance(aliceId) +
+      services.ledger.getBalance(bobId) +
+      services.ledger.getBalance(PLATFORM_ACCOUNT);
+    expect(total).toBe(GRANT_AMOUNT * 2);
   });
 });

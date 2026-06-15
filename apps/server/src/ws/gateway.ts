@@ -135,6 +135,33 @@ export function registerWsGateway(
         removed: { matchId: ex.matchId, reason: 'expired' },
       });
     }
+
+    // Server-authoritative move-timeout sweep (#31): resolve matches stuck past their
+    // deadline even while the socket stays OPEN. Core has already settled each (void →
+    // both refunded, or forfeit → non-responder loses), so no escrow is orphaned — we
+    // only push match.end and clean up. Complements the socket-close forfeit below.
+    const stale = matchmaking.sweepStaleMatches(Date.now());
+    for (const r of stale) {
+      for (const pid of r.players) {
+        playerMatch.delete(pid);
+        // A close-forfeit timer may also be pending for this player — cancel it so the
+        // already-settled match isn't processed twice.
+        const pending = pendingForfeits.get(pid);
+        if (pending !== undefined) {
+          clearTimeout(pending);
+          pendingForfeits.delete(pid);
+        }
+        const s = connections.get(pid);
+        if (s?.readyState === 1) {
+          send<MatchEndPayload>(
+            s,
+            'match.end',
+            { outcome: r.outcome, settlement: r.settlement[pid] },
+            r.matchId,
+          );
+        }
+      }
+    }
   }, SWEEP_INTERVAL_MS);
   // Don't keep the event loop alive on the sweeper alone; clear it on shutdown (tests).
   sweepTimer.unref?.();
