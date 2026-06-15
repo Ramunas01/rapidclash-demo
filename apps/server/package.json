@@ -11,6 +11,7 @@
   "dependencies": {
     "@fastify/websocket": "^8.3.1",
     "@rapidclash/core": "workspace:*",
+    "@rapidclash/game-coinflip": "workspace:*",
     "@rapidclash/game-rps": "workspace:*",
     "@rapidclash/shared": "workspace:*",
     "better-sqlite3": "^11.9.1",
