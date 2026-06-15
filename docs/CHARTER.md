@@ -38,21 +38,21 @@ Empty lobbies are the obvious risk at low player counts. We solve it **outside t
 | Game | Natively 2-player? | Notes |
 |------|--------------------|-------|
 | Rock-Paper-Scissors | Yes | First slice. Simultaneous single move, instant outcome, trivial hidden state. |
-| Coinflip | Yes | Pure chance. One player calls, server flips with seeded RNG. Ranks by net winnings, not skill. |
+| Coinflip | Yes | Pure chance. Both players secretly pick a side; on a mismatch the server flips a seeded coin (same side = draw). Ranks by net winnings, not skill. |
 | Chess | Yes | Skill game, ELO/Glicko ranking. Use an existing move-validation library; do not hand-roll legality. |
 | Baccarat | **No (house-banked by default)** | Needs a redefined head-to-head ruleset — see below. |
 | Blackjack | **No (house-banked by default)** | Needs a redefined head-to-head ruleset — see below. |
 
 ### Confirmed spec: Coinflip (Slice 2)
 
-Settled in issue #36. Coinflip is natively two-player and house-free:
+Reworked to a **both-players-choose** mechanic (this supersedes the original one-caller design). Coinflip is natively two-player and house-free:
 
-- **Stake:** both players stake equally into the pot (`symmetricStake`).
-- **The call:** the match's first player (deterministic, server-assigned) makes one move — call `heads` or `tails`. The call is **public**; the opponent sees it. It confers no advantage: the coin is fair and the result is a deterministic function of the **server-held match seed**, which clients never receive.
-- **The flip:** the result is a deterministic function of the match seed, **independent of the call**, computed server-side. `viewFor` must hide the result from both players until the match is terminal.
-- **Resolution:** the caller wins `pot − rake` iff the call equals the result; otherwise the opponent wins `pot − rake`. Exactly one winner.
-- **No draws.** A fair coin always resolves. Abandonment before the call resolves as `void` via `forfeit` (both refunded) — which is not a draw.
-- **Ranking:** `net_winnings` (see ADR-007). `win_rate` on a 50/50 game is noise; net_winnings captures volume and the rake drag, the only meaningful signal.
+- **Stake:** both players stake equally into the pot (`symmetricStake`) — unchanged.
+- **Choice:** both players **simultaneously and independently** choose a coin side — `heads` or `tails` — with equal ability. **No caller role.** Each choice is hidden from the opponent until both have chosen (exactly like RPS).
+- **Resolution:** if both chose the **same** side → **draw** (stakes refunded, no rake). If they chose **different** sides → the server flips the coin (deterministic from the **match seed**, independent of both choices) and the player whose choice matches the flip result wins `pot − rake`; the other loses. Exactly one winner.
+- **Hidden info:** `viewFor` hides **each player's choice and the flip result** until the match is terminal.
+- **Abandonment** before both have chosen → `void` (refund both), **not** a draw.
+- **Determinism:** flip = f(seed); replays identically. **Ranking:** `net_winnings` (see ADR-007) — unchanged.
 
 ### Open spec: re-defining the house-banked games
 
