@@ -38,6 +38,9 @@ importers:
       '@rapidclash/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@rapidclash/game-coinflip':
+        specifier: workspace:*
+        version: link:../../packages/games/coinflip
       '@rapidclash/game-rps':
         specifier: workspace:*
         version: link:../../packages/games/rps
@@ -140,6 +143,12 @@ importers:
       vitest:
         specifier: ^2.1.1
         version: 2.1.9(@types/node@20.19.43)(jsdom@25.0.1)(terser@5.48.0)
+
+  packages/games/coinflip:
+    dependencies:
+      '@rapidclash/shared':
+        specifier: workspace:*
+        version: link:../../shared
 
   packages/games/rps:
     dependencies:
