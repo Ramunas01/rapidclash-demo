@@ -58,13 +58,17 @@ The server reads these (see `.env.example`). For a local demo, sensible values:
 A **pre-seeded `admin` account** is created on every startup (username `admin`, password
 `$ADMIN_PASSWORD`). You do not register it.
 
-### Start from a fresh database
+### Resetting the demo (and freeing aliases)
 
-The runbook assumes **no prior state**. The DB is a single SQLite file — delete it to reset:
+The runbook assumes **no prior state**, and **wipe-and-restart is the canonical reset** — there is no account-removal flow by design. To clear all players, wallets, and matches (and free any taken alias for re-use), stop the server, delete the single SQLite DB file, and restart; the `admin` account **re-seeds automatically** on startup:
 
 ```bash
+# stop the server, then:
 rm -f rapidclash.db        # or whatever DB_PATH points at
+# restart the server → fresh state, admin re-seeded
 ```
+
+The admin **add-money** endpoint plus this **full reset** are the entire operator-tooling story for the demo (see `ADMIN.md`) — no per-account deletion is needed or scoped.
 
 ## 3. Build
 
