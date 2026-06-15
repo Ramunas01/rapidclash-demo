@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { SocketStream } from '@fastify/websocket';
-import type { Identity, Matchmaking } from '@rapidclash/core';
+import type { Identity, Matchmaking, JoinMatched } from '@rapidclash/core';
+import { ChallengeError } from '@rapidclash/core';
 import { IllegalMove } from '@rapidclash/shared';
 import type {
   Envelope,
@@ -14,6 +15,12 @@ import type {
   MatchYourTurnPayload,
   MatchEndPayload,
   ErrorPayload,
+  ChallengeSubscribePayload,
+  ChallengeTakePayload,
+  ChallengesListPayload,
+  ChallengesUpdatePayload,
+  ChallengeExpiredPayload,
+  OpenChallenge,
 } from '@rapidclash/shared';
 import type { GameModule } from '@rapidclash/shared';
 
@@ -26,10 +33,17 @@ const connections = new Map<string, WsSocket>();
 // Reverse-lookup: which matchId is a player currently in?
 const playerMatch = new Map<string, string>();
 
+// Open-challenge feed subscribers, keyed by gameId → set of sockets.
+const challengeSubscribers = new Map<string, Set<WsSocket>>();
+
 // Pending forfeit timers: set on disconnect, cancelled on reconnect/resume.
 const pendingForfeits = new Map<string, ReturnType<typeof setTimeout>>();
 
 const FORFEIT_DELAY_MS = 60_000;
+const SWEEP_INTERVAL_MS = (() => {
+  const n = parseInt(process.env.CHALLENGE_SWEEP_MS ?? '', 10);
+  return Number.isFinite(n) ? n : 1_000;
+})();
 
 function send<T>(socket: WsSocket, type: string, payload: T, matchId?: string): void {
   const env: Envelope<T> = { type, payload, ...(matchId ? { matchId } : {}) };
@@ -48,6 +62,83 @@ export function registerWsGateway(
 ): void {
   const moduleByGame = new Map<string, GameModule>(gameModules.map((m) => [m.meta.id, m]));
   const feeRate = parseFloat(process.env.FEE_RATE ?? '0.05');
+
+  /** Push an incremental feed update to every socket subscribed to this game (OC8). */
+  function pushChallengesUpdate(gameId: string, update: ChallengesUpdatePayload): void {
+    const subs = challengeSubscribers.get(gameId);
+    if (!subs) return;
+    for (const s of subs) {
+      if (s.readyState === 1) send<ChallengesUpdatePayload>(s, 'challenges.update', update);
+    }
+  }
+
+  /** Build the wire shape for a newly-rested challenge (owner name resolved once, here). */
+  function openChallengeOf(
+    matchId: string,
+    ownerId: string,
+    stake: number,
+    openedAt: number,
+    expiresAt: number,
+  ): OpenChallenge {
+    return { matchId, ownerName: identity.getUsername(ownerId) ?? ownerId, stake, openedAt, expiresAt };
+  }
+
+  /**
+   * Deliver match.start (per-player redacted) + initial match.your_turn to both players
+   * of a freshly-formed match. Shared by the typed-amount FIFO path and challenge.take.
+   */
+  function deliverMatchStart(curId: string, curSocket: WsSocket, result: JoinMatched, gameId: string): void {
+    const mod = moduleByGame.get(gameId);
+    playerMatch.set(curId, result.matchId);
+    playerMatch.set(result.opponentId, result.matchId);
+
+    const curState = mod ? mod.viewFor(result.initialState, curId) : result.initialState;
+    send<MatchStartPayload>(curSocket, 'match.start', {
+      matchId: result.matchId,
+      opponent: result.opponentId,
+      state: curState,
+    });
+
+    const oppSocket = connections.get(result.opponentId);
+    if (oppSocket && oppSocket.readyState === 1) {
+      const oppState = mod ? mod.viewFor(result.initialState, result.opponentId) : result.initialState;
+      send<MatchStartPayload>(oppSocket, 'match.start', {
+        matchId: result.matchId,
+        opponent: curId,
+        state: oppState,
+      });
+    }
+
+    if (mod) {
+      for (const [pid, pSocket] of [
+        [curId, curSocket],
+        [result.opponentId, connections.get(result.opponentId)],
+      ] as [string, WsSocket | undefined][]) {
+        const lm = mod.legalMoves(result.initialState, pid);
+        if (lm.length > 0 && pSocket?.readyState === 1) {
+          send<MatchYourTurnPayload>(pSocket, 'match.your_turn', { legalMoves: lm }, result.matchId);
+        }
+      }
+    }
+  }
+
+  // Server-authoritative expiry sweep: refund (in core) + notify owner & subscribers (OC6).
+  const sweepTimer = setInterval(() => {
+    const expired = matchmaking.sweepExpired(Date.now());
+    for (const ex of expired) {
+      const ownerSocket = connections.get(ex.ownerId);
+      if (ownerSocket?.readyState === 1) {
+        send<ChallengeExpiredPayload>(ownerSocket, 'challenge.expired', { matchId: ex.matchId });
+      }
+      pushChallengesUpdate(ex.gameId, {
+        gameId: ex.gameId,
+        removed: { matchId: ex.matchId, reason: 'expired' },
+      });
+    }
+  }, SWEEP_INTERVAL_MS);
+  // Don't keep the event loop alive on the sweeper alone; clear it on shutdown (tests).
+  sweepTimer.unref?.();
+  app.addHook('onClose', async () => clearInterval(sweepTimer));
 
   app.get(
     '/ws',
@@ -81,6 +172,10 @@ export function registerWsGateway(
       let queuedStake: number | null = null;
 
       socket.on('close', () => {
+        // Drop this socket from every challenge feed it was subscribed to (this is
+        // always safe — it targets this exact socket, not the player's live one).
+        for (const subs of challengeSubscribers.values()) subs.delete(socket);
+
         // A fast reconnect may have already registered a newer socket for this player
         // (the close event for the old socket can fire *after* the new one connects).
         // If so, this is a stale close — must not clear the live connection or forfeit.
@@ -135,52 +230,26 @@ export function registerWsGateway(
               if (result.status === 'waiting') {
                 queuedGameId = gameId;
                 queuedStake = stake;
-                send<QueueWaitingPayload>(socket, 'queue.waiting', { gameId, since: result.since });
+                send<QueueWaitingPayload>(socket, 'queue.waiting', {
+                  gameId,
+                  matchId: result.matchId,
+                  since: result.since,
+                  expiresAt: result.expiresAt, // OC7
+                });
+                // A new resting bet appeared — announce it to the feed (OC8).
+                pushChallengesUpdate(gameId, {
+                  gameId,
+                  added: openChallengeOf(result.matchId, playerId, stake, result.since, result.expiresAt),
+                });
               } else {
-                // Match formed — send match.start to both players.
-                const mod = moduleByGame.get(gameId);
+                // Match formed via the FIFO path — the waiter's resting bet is consumed.
                 queuedGameId = null;
                 queuedStake = null;
-
-                // Register reverse-lookups for both players.
-                playerMatch.set(playerId, result.matchId);
-                playerMatch.set(result.opponentId, result.matchId);
-
-                // Current player (joiner)
-                const joinerState = mod
-                  ? mod.viewFor(result.initialState, playerId)
-                  : result.initialState;
-                send<MatchStartPayload>(socket, 'match.start', {
-                  matchId: result.matchId,
-                  opponent: result.opponentId,
-                  state: joinerState,
+                deliverMatchStart(playerId, socket, result, gameId);
+                pushChallengesUpdate(gameId, {
+                  gameId,
+                  removed: { matchId: result.matchId, reason: 'taken' },
                 });
-
-                // Waiting player
-                const waiterSocket = connections.get(result.opponentId);
-                if (waiterSocket && waiterSocket.readyState === 1 /* OPEN */) {
-                  const waiterState = mod
-                    ? mod.viewFor(result.initialState, result.opponentId)
-                    : result.initialState;
-                  send<MatchStartPayload>(waiterSocket, 'match.start', {
-                    matchId: result.matchId,
-                    opponent: playerId,
-                    state: waiterState,
-                  });
-                }
-
-                // Send initial your_turn to whoever has legal moves.
-                if (mod) {
-                  for (const [pid, pSocket] of [
-                    [playerId, socket],
-                    [result.opponentId, connections.get(result.opponentId)],
-                  ] as [string, WsSocket | undefined][]) {
-                    const lm = mod.legalMoves(result.initialState, pid);
-                    if (lm.length > 0 && pSocket?.readyState === 1) {
-                      send<MatchYourTurnPayload>(pSocket, 'match.your_turn', { legalMoves: lm }, result.matchId);
-                    }
-                  }
-                }
               }
               break;
             }
@@ -192,10 +261,61 @@ export function registerWsGateway(
                 sendError(socket, 'NOT_IN_QUEUE', `Not in queue for game "${gameId}"`);
                 break;
               }
-              matchmaking.leaveQueue(playerId, gameId, stake);
+              const refund = matchmaking.leaveQueue(playerId, gameId, stake);
               queuedGameId = null;
               queuedStake = null;
               send(socket, 'queue.left', { gameId });
+              // The owner cancelled — drop it from the feed (OC8).
+              if (refund.matchId) {
+                pushChallengesUpdate(gameId, {
+                  gameId,
+                  removed: { matchId: refund.matchId, reason: 'cancelled' },
+                });
+              }
+              break;
+            }
+
+            case 'challenges.subscribe': {
+              const { gameId } = msg.payload as ChallengeSubscribePayload;
+              let subs = challengeSubscribers.get(gameId);
+              if (!subs) {
+                subs = new Set();
+                challengeSubscribers.set(gameId, subs);
+              }
+              subs.add(socket);
+              const { entries, more } = matchmaking.listOpenChallenges(gameId, playerId, Date.now());
+              send<ChallengesListPayload>(socket, 'challenges.list', { gameId, entries, more });
+              break;
+            }
+
+            case 'challenges.unsubscribe': {
+              const { gameId } = msg.payload as ChallengeSubscribePayload;
+              challengeSubscribers.get(gameId)?.delete(socket);
+              break;
+            }
+
+            case 'challenge.take': {
+              const { matchId } = msg.payload as ChallengeTakePayload;
+              let result: JoinMatched;
+              try {
+                result = matchmaking.takeChallenge(playerId, matchId);
+              } catch (err) {
+                if (err instanceof ChallengeError) {
+                  sendError(socket, err.code, err.message);
+                  break;
+                }
+                throw err;
+              }
+              const match = matchmaking.getActiveMatch(result.matchId);
+              const gameId = match?.gameId ?? '';
+              queuedGameId = null;
+              queuedStake = null;
+              deliverMatchStart(playerId, socket, result, gameId);
+              // The claimed bet leaves the feed (OC8).
+              pushChallengesUpdate(gameId, {
+                gameId,
+                removed: { matchId: result.matchId, reason: 'taken' },
+              });
               break;
             }
 

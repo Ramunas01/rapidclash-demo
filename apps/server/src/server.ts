@@ -79,10 +79,13 @@ export function buildApp(
 export function createServices(db: Database.Database, gameModules: GameModule[]): AppServices {
   const ledger = createLedger(db);
   const identity = createIdentity(db, ledger);
+  // One shared username lookup (#40 / ADR-008): owner names in the open-challenge
+  // feed AND the leaderboard's displayName resolve through the same function.
+  const lookupUsername = identity.getUsername;
   // Seed the leaderboard with each game's declared RankingType so it can dispatch
   // generically by kind (ADR-007) — no game-specific code in the core.
   const rankingByGame = new Map(gameModules.map((m) => [m.meta.id, m.meta.ranking]));
-  const matchHistory = createMatchHistory(db, rankingByGame);
-  const matchmaking = createMatchmaking(ledger, gameModules, matchHistory);
+  const matchHistory = createMatchHistory(db, rankingByGame, lookupUsername);
+  const matchmaking = createMatchmaking(ledger, gameModules, matchHistory, { lookupUsername });
   return { db, ledger, identity, matchmaking, matchHistory };
 }

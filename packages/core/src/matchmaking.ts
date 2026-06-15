@@ -1,8 +1,9 @@
 import { randomUUID, randomBytes } from 'node:crypto';
-import type { GameModule, GameState, LedgerEntry, PlayerId, Rng, Move, ApplyResult, Outcome } from '@rapidclash/shared';
+import type { GameModule, GameState, LedgerEntry, PlayerId, Rng, Move, ApplyResult, Outcome, OpenChallenge } from '@rapidclash/shared';
 import { IllegalMove } from '@rapidclash/shared';
 import type { Ledger } from './ledger.js';
 import type { MatchHistory } from './match-history.js';
+import type { UsernameLookup } from './identity.js';
 
 // ─── RNG ─────────────────────────────────────────────────────────────────────
 
@@ -29,14 +30,18 @@ interface QueueEntry {
   playerId: PlayerId;
   /** Pre-generated at join time; becomes the canonical matchId for the match. */
   matchId: string;
+  gameId: string;
   stake: number;
   since: number;
+  /** since + TTL. Server-authoritative; uniform across bets so oldest-first ≡ soonest-to-expire (OC9). */
+  expiresAt: number;
 }
 
 export interface JoinWaiting {
   status: 'waiting';
   matchId: string;
   since: number;
+  expiresAt: number;
 }
 
 export interface JoinMatched {
@@ -75,9 +80,54 @@ export interface CompletedMatch extends MatchRecord {
   settlement: Record<PlayerId, PlayerSettlement>;
 }
 
+/** Removed from the open-challenges store by the sweeper; returned so the gateway can notify. */
+export interface ExpiredChallenge {
+  matchId: string;
+  ownerId: PlayerId;
+  gameId: string;
+}
+
+/** A capped, ordered slice of the open-challenge feed for one game. */
+export interface OpenChallengeList {
+  entries: OpenChallenge[];
+  /** How many eligible challenges exist beyond the cap (the "+N more" count). */
+  more: number;
+}
+
+export type ChallengeErrorCode = 'CHALLENGE_TAKEN' | 'SELF_TAKE' | 'INSUFFICIENT_BALANCE';
+
+/** Thrown by takeChallenge when a claim is refused. `code` maps to a gateway error code. */
+export class ChallengeError extends Error {
+  constructor(readonly code: ChallengeErrorCode, message: string) {
+    super(message);
+    this.name = 'ChallengeError';
+  }
+}
+
+export interface MatchmakingOptions {
+  /** Uniform platform TTL for resting bets. Default: env CHALLENGE_TTL_MS or 90000 (owner-confirmed 90s). */
+  ttlMs?: number;
+  /** Minimum rest before a bet is listable. Default: env CHALLENGE_MIN_REST_MS or 5000. */
+  minRestMs?: number;
+  /** Safe margin before expiry below which a bet is hidden. Default: env CHALLENGE_SAFE_MARGIN_MS or 3000. */
+  safeMarginMs?: number;
+  /** Max rows in a listing before "+N more". Default: env CHALLENGE_LIST_CAP or 5. */
+  listCap?: number;
+  /** Resolve a playerId → display username for challenge owner names. */
+  lookupUsername?: UsernameLookup;
+  /** Injectable clock (testing). Default: Date.now. */
+  now?: () => number;
+}
+
 export interface Matchmaking {
   joinQueue(playerId: PlayerId, gameId: string, stake: number): JoinQueueResult;
   leaveQueue(playerId: PlayerId, gameId: string, stake: number): LedgerEntry;
+  /** Atomic specific-claim of a resting bet (OC3). Escrow on success only; throws ChallengeError on refusal. */
+  takeChallenge(takerId: PlayerId, matchId: string): JoinMatched;
+  /** Eligible (rested + safe margin), self-excluded, longest-waiting-first, capped, username-joined (OC2). */
+  listOpenChallenges(gameId: string, viewerId: PlayerId, now?: number): OpenChallengeList;
+  /** Remove + idempotently refund every bet past its TTL; return them so the gateway can notify (OC6). */
+  sweepExpired(now?: number): ExpiredChallenge[];
   getActiveMatch(matchId: string): MatchRecord | undefined;
   /** Apply a player's move. Throws IllegalMove if the move is not in legalMoves. */
   applyMove(matchId: string, playerId: PlayerId, move: Move, now: number): ApplyResult;
@@ -92,12 +142,28 @@ export interface Matchmaking {
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
+function intEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined) return fallback;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 export function createMatchmaking(
   ledger: Ledger,
   gameModules: GameModule[],
   matchHistory?: MatchHistory,
+  options: MatchmakingOptions = {},
 ): Matchmaking {
   const moduleByGame = new Map<string, GameModule>(gameModules.map((m) => [m.meta.id, m]));
+
+  // Open-challenge config — single source per knob: explicit option ?? env ?? default.
+  const ttlMs = options.ttlMs ?? intEnv('CHALLENGE_TTL_MS', 90_000);
+  const minRestMs = options.minRestMs ?? intEnv('CHALLENGE_MIN_REST_MS', 5_000);
+  const safeMarginMs = options.safeMarginMs ?? intEnv('CHALLENGE_SAFE_MARGIN_MS', 3_000);
+  const listCap = options.listCap ?? intEnv('CHALLENGE_LIST_CAP', 5);
+  const lookupUsername = options.lookupUsername;
+  const nowFn = options.now ?? (() => Date.now());
 
   // FIFO queues keyed by `${gameId}:${stake}` → [earliest, ...]
   const queues = new Map<string, QueueEntry[]>();
@@ -105,6 +171,22 @@ export function createMatchmaking(
   // Reverse-lookup: which queue entry does this player currently hold?
   // Key: `${playerId}:${gameId}`
   const playerEntry = new Map<string, QueueEntry>();
+
+  // Open-challenge index: canonical matchId → resting entry, for O(1) atomic claim/sweep.
+  const entryByMatchId = new Map<string, QueueEntry>();
+
+  /** Remove a resting entry from every index in one synchronous step (the claim/sweep primitive). */
+  function removeEntry(entry: QueueEntry): void {
+    const key = queueKey(entry.gameId, entry.stake);
+    const q = queues.get(key);
+    if (q) {
+      const idx = q.indexOf(entry);
+      if (idx !== -1) q.splice(idx, 1);
+      if (q.length === 0) queues.delete(key);
+    }
+    playerEntry.delete(`${entry.playerId}:${entry.gameId}`);
+    entryByMatchId.delete(entry.matchId);
+  }
 
   // Active matches
   const matches = new Map<string, MatchRecord>();
@@ -140,6 +222,7 @@ export function createMatchmaking(
       const waiter = queue.shift()!;
       if (queue.length === 0) queues.delete(key);
       playerEntry.delete(`${waiter.playerId}:${gameId}`);
+      entryByMatchId.delete(waiter.matchId); // no longer a resting open challenge
 
       // Use the waiter's pre-generated matchId as the canonical matchId.
       const matchId = waiter.matchId;
@@ -165,16 +248,18 @@ export function createMatchmaking(
       return { status: 'matched', matchId, opponentId: waiter.playerId, initialState };
     }
 
-    // No waiter — add this player to the queue.
+    // No waiter — add this player to the queue as an open challenge.
     const matchId = randomUUID();
     ledger.escrow(playerId, matchId, stake);
 
-    const since = Date.now();
-    const entry: QueueEntry = { playerId, matchId, stake, since };
+    const since = nowFn();
+    const expiresAt = since + ttlMs;
+    const entry: QueueEntry = { playerId, matchId, gameId, stake, since, expiresAt };
     queues.set(key, [...(queues.get(key) ?? []), entry]);
     playerEntry.set(`${playerId}:${gameId}`, entry);
+    entryByMatchId.set(matchId, entry);
 
-    return { status: 'waiting', matchId, since };
+    return { status: 'waiting', matchId, since, expiresAt };
   }
 
   function leaveQueue(playerId: PlayerId, gameId: string, stake: number): LedgerEntry {
@@ -185,15 +270,99 @@ export function createMatchmaking(
       throw new Error(`Stake mismatch: expected ${entry.stake}, got ${stake}`);
     }
 
-    // Remove from queue
-    const key = queueKey(gameId, stake);
-    const q = queues.get(key) ?? [];
-    const idx = q.indexOf(entry);
-    if (idx !== -1) q.splice(idx, 1);
-    if (q.length === 0) queues.delete(key);
-    playerEntry.delete(entryKey);
+    // Remove from queue (and the open-challenge index).
+    removeEntry(entry);
 
     return ledger.refundEscrow(playerId, entry.matchId);
+  }
+
+  // ── Open challenges (ADR-008) ──────────────────────────────────────────────
+
+  function takeChallenge(takerId: PlayerId, matchId: string): JoinMatched {
+    // One synchronous critical section — JS is single-threaded, so two concurrent
+    // takers of the same challenge cannot both pass: the first removes the entry
+    // before yielding, and the second's lookup misses (CHALLENGE_TAKEN), never
+    // escrowing. Every validation below runs BEFORE any escrow (OC3/OC4/OC5).
+    const entry = entryByMatchId.get(matchId);
+    if (!entry) {
+      throw new ChallengeError('CHALLENGE_TAKEN', `Challenge "${matchId}" is no longer available`);
+    }
+    const ownerId = entry.playerId;
+    if (takerId === ownerId) {
+      throw new ChallengeError('SELF_TAKE', 'You cannot take your own challenge');
+    }
+    const mod = moduleByGame.get(entry.gameId);
+    if (!mod) throw new Error(`Unknown gameId: ${entry.gameId}`);
+
+    const balance = ledger.getBalance(takerId);
+    if (balance < entry.stake) {
+      throw new ChallengeError(
+        'INSUFFICIENT_BALANCE',
+        `Insufficient balance: have ${balance}, need ${entry.stake}`,
+      );
+    }
+
+    // Claim it: drop from every index, THEN escrow + form the match (mirrors joinQueue's
+    // matched branch — owner keeps players[0], the canonical matchId is the owner's).
+    removeEntry(entry);
+    ledger.escrow(takerId, matchId, entry.stake);
+
+    const seed = randomBytes(4).readUInt32LE(0);
+    const rng = createRng(seed);
+    const initialState = mod.init([ownerId, takerId], rng);
+
+    const record: MatchRecord = {
+      matchId,
+      gameId: entry.gameId,
+      players: [ownerId, takerId],
+      state: initialState,
+      stake: entry.stake,
+      seed,
+    };
+    matches.set(matchId, record);
+
+    return { status: 'matched', matchId, opponentId: ownerId, initialState };
+  }
+
+  function listOpenChallenges(
+    gameId: string,
+    viewerId: PlayerId,
+    now: number = nowFn(),
+  ): OpenChallengeList {
+    const eligible = [...entryByMatchId.values()]
+      .filter(
+        (e) =>
+          e.gameId === gameId &&
+          e.playerId !== viewerId && // exclude the viewer's own (OC4 also rejects server-side)
+          now - e.since >= minRestMs && // rested long enough to read (OC2)
+          e.expiresAt - now >= safeMarginMs, // safe margin so a tap won't land on a just-expired bet
+      )
+      // Longest-waiting first. Under the uniform TTL this is identical to
+      // soonest-to-expire first (OC9): smaller `since` ⇒ smaller `expiresAt`.
+      .sort((a, b) => a.since - b.since);
+
+    const entries: OpenChallenge[] = eligible.slice(0, listCap).map((e) => ({
+      matchId: e.matchId,
+      ownerName: lookupUsername?.(e.playerId) ?? e.playerId,
+      stake: e.stake,
+      openedAt: e.since,
+      expiresAt: e.expiresAt,
+    }));
+
+    return { entries, more: Math.max(0, eligible.length - listCap) };
+  }
+
+  function sweepExpired(now: number = nowFn()): ExpiredChallenge[] {
+    const expired: ExpiredChallenge[] = [];
+    for (const entry of [...entryByMatchId.values()]) {
+      if (now < entry.expiresAt) continue;
+      // Remove first so the same bet can never be swept (or refunded) twice. The
+      // ledger refund is itself idempotency-keyed, so this is doubly safe (OC6).
+      removeEntry(entry);
+      ledger.refundEscrow(entry.playerId, entry.matchId);
+      expired.push({ matchId: entry.matchId, ownerId: entry.playerId, gameId: entry.gameId });
+    }
+    return expired;
   }
 
   function getActiveMatch(matchId: string): MatchRecord | undefined {
@@ -287,5 +456,17 @@ export function createMatchmaking(
     return gameModules.map((m) => m.meta);
   }
 
-  return { joinQueue, leaveQueue, getActiveMatch, applyMove, settleMatch, forfeitMatch, getCompletedMatch, listGames };
+  return {
+    joinQueue,
+    leaveQueue,
+    takeChallenge,
+    listOpenChallenges,
+    sweepExpired,
+    getActiveMatch,
+    applyMove,
+    settleMatch,
+    forfeitMatch,
+    getCompletedMatch,
+    listGames,
+  };
 }
