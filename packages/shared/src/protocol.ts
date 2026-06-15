@@ -51,7 +51,53 @@ export type MatchForfeitPayload = Record<string, never>;
 /** You are in the lobby; no opponent has joined yet. */
 export interface QueueWaitingPayload {
   gameId: string;
+  /** The owner's own resting-bet id (lets the client identify it for re-post/cancel). */
+  matchId: string;
   since: number; // server ms timestamp when you entered the queue
+  expiresAt: number; // server ms when this resting bet auto-expires + refunds (OC7)
+}
+
+// ─── Open-challenges lobby (ADR-008) ─────────────────────────────────────────
+
+/** Client → Server: start/stop receiving the resting-bet feed for a game. */
+export interface ChallengeSubscribePayload {
+  gameId: string;
+}
+export type ChallengeUnsubscribePayload = ChallengeSubscribePayload;
+
+/** Client → Server: claim a specific resting bet (atomic; escrow on success only). */
+export interface ChallengeTakePayload {
+  matchId: string;
+}
+
+/** One resting bet as shown in the feed. */
+export interface OpenChallenge {
+  matchId: string;
+  ownerName: string;
+  stake: number;
+  openedAt: number; // server ms when the bet was placed
+  expiresAt: number; // server ms when it auto-expires
+}
+
+/** Server → Client: full snapshot, sent on subscribe. `more` = count beyond the cap. */
+export interface ChallengesListPayload {
+  gameId: string;
+  entries: OpenChallenge[];
+  more: number;
+}
+
+export type ChallengeRemovedReason = 'taken' | 'expired' | 'cancelled';
+
+/** Server → Client: incremental feed update (event-driven, no polling — OC8). */
+export interface ChallengesUpdatePayload {
+  gameId: string;
+  added?: OpenChallenge;
+  removed?: { matchId: string; reason: ChallengeRemovedReason };
+}
+
+/** Server → Client: your own resting bet expired; escrow already refunded (OC6). */
+export interface ChallengeExpiredPayload {
+  matchId: string;
 }
 
 /** You have been matched; here is your redacted starting view. */

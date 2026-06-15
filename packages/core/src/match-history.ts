@@ -6,6 +6,7 @@ import type {
   WinRateLeaderboardEntry,
 } from '@rapidclash/shared';
 import { PLATFORM_ACCOUNT } from './ledger.js';
+import type { UsernameLookup } from './identity.js';
 
 /** Back-compat alias: a win_rate row used to be the only leaderboard shape. */
 export type WinRateEntry = WinRateLeaderboardEntry;
@@ -43,7 +44,11 @@ interface NetRow {
 export function createMatchHistory(
   db: Database.Database,
   rankingByGame: Map<string, RankingType> = new Map(),
+  /** Shared playerId → username lookup (same one the open-challenge feed uses). When
+   *  omitted, displayName falls back to the playerId — the historical placeholder. */
+  lookupUsername?: UsernameLookup,
 ): MatchHistory {
+  const displayNameFor = (playerId: string): string => lookupUsername?.(playerId) ?? playerId;
   db.exec(`
     CREATE TABLE IF NOT EXISTS match_results (
       match_id   TEXT PRIMARY KEY,
@@ -159,7 +164,7 @@ export function createMatchHistory(
     return ranked.map((e, i) => ({
       rank: i + 1,
       playerId: e.playerId,
-      displayName: e.playerId,
+      displayName: displayNameFor(e.playerId),
       score: e.winRate,
       kind: 'win_rate',
       gamesPlayed: e.gamesPlayed,
@@ -181,7 +186,7 @@ export function createMatchHistory(
     return ranked.map((r, i) => ({
       rank: i + 1,
       playerId: r.account_id,
-      displayName: r.account_id,
+      displayName: displayNameFor(r.account_id),
       score: r.net,
       kind: 'net_winnings',
       netWinnings: r.net,

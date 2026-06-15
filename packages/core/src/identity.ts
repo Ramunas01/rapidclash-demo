@@ -11,6 +11,11 @@ export interface TokenPayload {
   role: UserRole;
 }
 
+/** Resolve a playerId to its display username (undefined if unknown). The single,
+ *  shared lookup used for both open-challenge owner names and the leaderboard's
+ *  displayName — defined once here, injected where needed. */
+export type UsernameLookup = (playerId: string) => string | undefined;
+
 export interface Identity {
   register(
     username: string,
@@ -19,6 +24,8 @@ export interface Identity {
   ): Promise<{ token: string; playerId: string; balance: number }>;
   login(username: string, password: string): Promise<{ token: string; playerId: string; balance: number }>;
   verifyToken(token: string): TokenPayload;
+  /** Display username for a playerId, or undefined if no such account. */
+  getUsername: UsernameLookup;
   /** Creates the admin account if it does not already exist. Safe to call on every startup. */
   ensureAdmin(username: string, password: string): Promise<void>;
 }
@@ -54,6 +61,10 @@ export function createIdentity(db: Database.Database, ledger: Ledger): Identity 
 
   const stmtFindByUsername = db.prepare<[string], AccountRow>(
     `SELECT id, username, password_hash, role FROM accounts WHERE username = ?`,
+  );
+
+  const stmtFindUsernameById = db.prepare<[string], { username: string }>(
+    `SELECT username FROM accounts WHERE id = ?`,
   );
 
   function signToken(playerId: string, role: UserRole): string {
@@ -96,11 +107,15 @@ export function createIdentity(db: Database.Database, ledger: Ledger): Identity 
     return jwt.verify(token, jwtSecret) as TokenPayload;
   }
 
+  function getUsername(playerId: string): string | undefined {
+    return stmtFindUsernameById.get(playerId)?.username;
+  }
+
   async function ensureAdmin(username: string, password: string): Promise<void> {
     if (!stmtFindByUsername.get(username)) {
       await register(username, password, 'admin');
     }
   }
 
-  return { register, login, verifyToken, ensureAdmin };
+  return { register, login, verifyToken, getUsername, ensureAdmin };
 }

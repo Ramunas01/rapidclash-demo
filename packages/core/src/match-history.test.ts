@@ -102,6 +102,18 @@ describe('createMatchHistory', () => {
     expect(mh.getLeaderboard('chess').map((e) => e.playerId)).not.toContain('alice');
   });
 
+  it('resolves displayName via the shared username lookup (#40), playerId as fallback', () => {
+    // The same lookup the open-challenge feed uses, injected here (server shares one).
+    const lookup = (id: string) => (id === 'alice-id' ? 'Alice' : undefined);
+    const mh = createMatchHistory(freshDb(), new Map(), lookup);
+    mh.recordResult('m1', 'rps', ['alice-id', 'bob-id'], 'win', 'alice-id', 100);
+
+    const board = winRateBoard(mh, 'rps');
+    const byId = Object.fromEntries(board.map((e) => [e.playerId, e.displayName]));
+    expect(byId['alice-id']).toBe('Alice'); // resolved
+    expect(byId['bob-id']).toBe('bob-id'); // unknown → playerId placeholder
+  });
+
   it('tags win_rate rows with kind and exposes score = winRate (generalized shape)', () => {
     const mh = createMatchHistory(freshDb(), new Map([['rps', RPS_WIN_RATE]]));
     mh.recordResult('m1', 'rps', ['alice', 'bob'], 'win', 'alice', 100);
