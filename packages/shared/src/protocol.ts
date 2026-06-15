@@ -154,6 +154,8 @@ export interface AuthResponse {
   token: string;
   playerId: PlayerId;
   balance: number;
+  /** The player's own alias, so the client can show "who you are" (#34). */
+  username: string;
 }
 
 export type LedgerEntryType =

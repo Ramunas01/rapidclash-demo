@@ -8,6 +8,8 @@ const RPS_CHOICES = [
 
 interface Props {
   playerId: string;
+  /** The signed-in player's own alias (#34); null only on a legacy session pre-dating the field. */
+  username: string | null;
   opponentId: string;
   gameState: RpsView | null;
   legalMoves: string[];
@@ -19,7 +21,7 @@ function getChoiceLabel(choice: string | undefined): string {
   return RPS_CHOICES.find(c => c.id === choice)?.emoji ?? '?';
 }
 
-export function PlayScreen({ playerId, opponentId, gameState, legalMoves, onMove, onForfeit }: Props) {
+export function PlayScreen({ playerId, username, opponentId, gameState, legalMoves, onMove, onForfeit }: Props) {
   const canMove = legalMoves.length > 0;
   const myChoice = gameState?.choices?.[playerId];
 
@@ -38,7 +40,9 @@ export function PlayScreen({ playerId, opponentId, gameState, legalMoves, onMove
 
       <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ textAlign: 'center' }}>
-          <p style={{ color: 'var(--muted)', marginBottom: 4 }}>You</p>
+          <p style={{ color: 'var(--muted)', marginBottom: 4 }} data-testid="play-you">
+            {username ? <>You (<strong>{username}</strong>)</> : 'You'}
+          </p>
           <div style={{ fontSize: '2rem' }}>{myChoice ? getChoiceLabel(myChoice) : '—'}</div>
         </div>
         <div style={{ color: 'var(--muted)', fontWeight: 'bold' }}>VS</div>

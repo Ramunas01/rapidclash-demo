@@ -29,10 +29,12 @@ describe('POST /auth/register', () => {
       payload: { username: 'alice', password: 'hunter2' },
     });
     expect(res.statusCode).toBe(201);
-    const body = res.json<{ token: string; playerId: string; balance: number }>();
+    const body = res.json<{ token: string; playerId: string; balance: number; username: string }>();
     expect(body.token).toBeTruthy();
     expect(body.playerId).toBeTruthy();
     expect(body.balance).toBe(GRANT_AMOUNT);
+    // #34: the client needs its own alias to show "who you are".
+    expect(body.username).toBe('alice');
   });
 
   it('returns 409 on duplicate username', async () => {
@@ -73,9 +75,11 @@ describe('POST /auth/login', () => {
       payload: { username: 'bob', password: 'secret' },
     });
     expect(res.statusCode).toBe(200);
-    const body = res.json<{ token: string; playerId: string }>();
+    const body = res.json<{ token: string; playerId: string; username: string }>();
     expect(body.token).toBeTruthy();
     expect(body.playerId).toBeTruthy();
+    // #34: login must also echo the alias back.
+    expect(body.username).toBe('bob');
   });
 
   it('returns 401 on wrong password', async () => {

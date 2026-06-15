@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { formatClock } from '../format.js';
 
 interface Props {
+  /** The signed-in player's own alias (#34); null only on a legacy session pre-dating the field. */
+  username: string | null;
   stake: number;
   /** Server-authoritative expiry of the owner's own resting bet (OC7); null until queue.waiting. */
   expiresAt: number | null;
@@ -11,7 +13,7 @@ interface Props {
   onLeave(): void;
 }
 
-export function LobbyScreen({ stake, expiresAt, expired, onRepost, onLeave }: Props) {
+export function LobbyScreen({ username, stake, expiresAt, expired, onRepost, onLeave }: Props) {
   // ONE client-side timer for the owner's countdown (no polling).
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -35,6 +37,7 @@ export function LobbyScreen({ stake, expiresAt, expired, onRepost, onLeave }: Pr
     <div className="screen" style={{ justifyContent: 'center', alignItems: 'center', textAlign: 'center' }}>
       <div style={{ fontSize: '3rem', marginBottom: 16 }}>⏳</div>
       <h1>Waiting for opponent…</h1>
+      {username && <p data-testid="lobby-you">You (<strong>{username}</strong>)</p>}
       <p>Stake: {stake} credits</p>
       <div style={{ margin: '32px 0' }}>
         <div style={{ width: 40, height: 40, border: '3px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto' }} />

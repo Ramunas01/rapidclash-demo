@@ -38,11 +38,12 @@ function loadAuth() {
   return {
     token: localStorage.getItem('rc_token'),
     playerId: localStorage.getItem('rc_playerId'),
+    username: localStorage.getItem('rc_username'),
   };
 }
 
 export function App() {
-  const { token: savedToken, playerId: savedPlayerId } = loadAuth();
+  const { token: savedToken, playerId: savedPlayerId, username: savedUsername } = loadAuth();
   // A match persisted across a reload restores straight to the play view; match.state
   // (active) keeps us there, match.end (terminal) redirects to the result screen.
   const [screen, setScreen] = useState<Screen>(
@@ -50,6 +51,9 @@ export function App() {
   );
   const [token, setToken] = useState<string | null>(savedToken);
   const [playerId, setPlayerId] = useState<string | null>(savedPlayerId);
+  // The player's own alias — shown so they always know "who you are" (#34). Persisted
+  // in lockstep with playerId so a reload still knows the alias before any WS traffic.
+  const [username, setUsername] = useState<string | null>(savedUsername);
   const [balance, setBalance] = useState(0);
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
   const [opponentId, setOpponentId] = useState<string | null>(null);
@@ -74,11 +78,13 @@ export function App() {
   const [, setWsEpoch] = useState(0);
   const wsRef = useRef<WsClient | null>(null);
 
-  const handleLogin = useCallback((tok: string, pid: string, bal: number) => {
+  const handleLogin = useCallback((tok: string, pid: string, bal: number, name: string) => {
     localStorage.setItem('rc_token', tok);
     localStorage.setItem('rc_playerId', pid);
+    localStorage.setItem('rc_username', name);
     setToken(tok);
     setPlayerId(pid);
+    setUsername(name);
     setBalance(bal);
 
     const ws = new WsClient(tok, {});
@@ -178,10 +184,12 @@ export function App() {
   const handleLogout = useCallback(() => {
     localStorage.removeItem('rc_token');
     localStorage.removeItem('rc_playerId');
+    localStorage.removeItem('rc_username');
     wsRef.current?.disconnect();
     wsRef.current = null;
     setToken(null);
     setPlayerId(null);
+    setUsername(null);
     setScreen('auth');
   }, []);
 
@@ -259,7 +267,7 @@ export function App() {
     case 'auth':
       return <AuthScreen onLogin={handleLogin} />;
     case 'wallet':
-      return <WalletScreen token={token!} balance={balance} onPlay={goToGameList} onLogout={handleLogout} />;
+      return <WalletScreen token={token!} username={username} balance={balance} onPlay={goToGameList} onLogout={handleLogout} />;
     case 'game-list':
       return <GameListScreen token={token!} onSelect={handleSelectGame} onBack={goToWallet} />;
     case 'stake-entry':
@@ -275,11 +283,11 @@ export function App() {
         onTakeChallenge={handleTakeChallenge}
       />;
     case 'lobby':
-      return <LobbyScreen stake={pendingStake} expiresAt={waitingExpiresAt} expired={lobbyExpired} onRepost={handleRepost} onLeave={handleLeaveQueue} />;
+      return <LobbyScreen username={username} stake={pendingStake} expiresAt={waitingExpiresAt} expired={lobbyExpired} onRepost={handleRepost} onLeave={handleLeaveQueue} />;
     case 'play':
       return activeGameId === 'coinflip'
-        ? <CoinflipPlayScreen playerId={playerId!} opponentId={opponentId!} gameState={gameState as CoinflipView | null} legalMoves={legalMoves} onMove={handleMakeMove} onForfeit={handleForfeit} />
-        : <PlayScreen playerId={playerId!} opponentId={opponentId!} gameState={gameState as RpsView | null} legalMoves={legalMoves} onMove={handleMakeMove} onForfeit={handleForfeit} />;
+        ? <CoinflipPlayScreen playerId={playerId!} username={username} opponentId={opponentId!} gameState={gameState as CoinflipView | null} legalMoves={legalMoves} onMove={handleMakeMove} onForfeit={handleForfeit} />
+        : <PlayScreen playerId={playerId!} username={username} opponentId={opponentId!} gameState={gameState as RpsView | null} legalMoves={legalMoves} onMove={handleMakeMove} onForfeit={handleForfeit} />;
     case 'result':
       return <ResultScreen outcome={lastOutcome!} settlement={lastSettlement!} playerId={playerId ?? undefined} onPlayAgain={goToGameListFromResult} onLeaderboard={goToLeaderboard} />;
     case 'leaderboard':

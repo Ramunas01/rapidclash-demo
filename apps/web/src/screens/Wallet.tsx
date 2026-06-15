@@ -4,12 +4,14 @@ import { api } from '../api.js';
 
 interface Props {
   token: string;
+  /** The signed-in player's own alias (#34); null only on a legacy session pre-dating the field. */
+  username: string | null;
   balance: number;
   onPlay(): void;
   onLogout(): void;
 }
 
-export function WalletScreen({ token, balance: initialBalance, onPlay, onLogout }: Props) {
+export function WalletScreen({ token, username, balance: initialBalance, onPlay, onLogout }: Props) {
   const [balance, setBalance] = useState(initialBalance);
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,6 +29,11 @@ export function WalletScreen({ token, balance: initialBalance, onPlay, onLogout 
         <h1>Wallet</h1>
         <button className="btn-ghost btn" style={{ width: 'auto' }} onClick={onLogout}>Sign out</button>
       </div>
+      {username && (
+        <p style={{ color: 'var(--muted)', marginBottom: 16 }} data-testid="signed-in-as">
+          Signed in as <strong style={{ color: 'var(--text)' }}>{username}</strong>
+        </p>
+      )}
       <div className="card" style={{ textAlign: 'center' }}>
         <p style={{ color: 'var(--muted)', marginBottom: 4 }}>Balance</p>
         <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: 'var(--text)' }} aria-label="balance">

@@ -8,7 +8,7 @@ const noop = () => {};
 describe('LobbyScreen (OC7)', () => {
   it('shows a countdown from expiresAt with the auto-refund reassurance', () => {
     render(
-      <LobbyScreen stake={10} expiresAt={Date.now() + 48000} expired={false} onRepost={noop} onLeave={noop} />,
+      <LobbyScreen username="alice" stake={10} expiresAt={Date.now() + 48000} expired={false} onRepost={noop} onLeave={noop} />,
     );
     const countdown = screen.getByTestId('owner-countdown');
     expect(countdown.textContent).toMatch(/\d:\d\d/); // ~0:48
@@ -19,7 +19,7 @@ describe('LobbyScreen (OC7)', () => {
     const onRepost = vi.fn();
     const onLeave = vi.fn();
     render(
-      <LobbyScreen stake={10} expiresAt={Date.now()} expired={true} onRepost={onRepost} onLeave={onLeave} />,
+      <LobbyScreen username="alice" stake={10} expiresAt={Date.now()} expired={true} onRepost={onRepost} onLeave={onLeave} />,
     );
     fireEvent.click(screen.getByTestId('repost'));
     expect(onRepost).toHaveBeenCalled();
@@ -28,8 +28,13 @@ describe('LobbyScreen (OC7)', () => {
   });
 
   it('shows the spinner waiting state (not expired) when no expiry yet', () => {
-    render(<LobbyScreen stake={5} expiresAt={null} expired={false} onRepost={noop} onLeave={noop} />);
+    render(<LobbyScreen username="alice" stake={5} expiresAt={null} expired={false} onRepost={noop} onLeave={noop} />);
     expect(screen.getByText('Waiting for opponent…')).toBeInTheDocument();
     expect(screen.queryByTestId('owner-countdown')).toBeNull();
+  });
+
+  it('shows the player their own alias as "You (<alias>)" while waiting (#34)', () => {
+    render(<LobbyScreen username="alice" stake={5} expiresAt={null} expired={false} onRepost={noop} onLeave={noop} />);
+    expect(screen.getByTestId('lobby-you').textContent).toBe('You (alice)');
   });
 });

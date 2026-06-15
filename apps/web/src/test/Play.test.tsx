@@ -6,12 +6,24 @@ import type { RpsView } from '../App.js';
 
 const baseProps = {
   playerId: 'alice',
+  username: 'alice',
   opponentId: 'bob',
   onMove: vi.fn(),
   onForfeit: vi.fn(),
 };
 
 describe('PlayScreen', () => {
+  it('shows the player their own alias as "You (<alias>)" (#34)', () => {
+    render(
+      <PlayScreen
+        {...baseProps}
+        gameState={{ players: ['alice', 'bob'], choices: {} } as RpsView}
+        legalMoves={['rock', 'paper', 'scissors']}
+      />,
+    );
+    expect(screen.getByTestId('play-you').textContent).toBe('You (alice)');
+  });
+
   it('enables move buttons when legalMoves is non-empty', () => {
     render(
       <PlayScreen

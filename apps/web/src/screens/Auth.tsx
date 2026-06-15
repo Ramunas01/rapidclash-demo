@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { api } from '../api.js';
 
 interface Props {
-  onLogin(token: string, playerId: string, balance: number): void;
+  onLogin(token: string, playerId: string, balance: number, username: string): void;
 }
 
 export function AuthScreen({ onLogin }: Props) {
@@ -20,7 +20,7 @@ export function AuthScreen({ onLogin }: Props) {
       const res = tab === 'register'
         ? await api.register({ username, password })
         : await api.login({ username, password });
-      onLogin(res.token, res.playerId, res.balance);
+      onLogin(res.token, res.playerId, res.balance, res.username);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
