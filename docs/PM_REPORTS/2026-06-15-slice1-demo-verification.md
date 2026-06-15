@@ -108,6 +108,10 @@ eyeball — **S5 redaction** and **S9 determinism** — are explicitly confirmed
 ## 8. Stop & report
 
 Hands-on demo verified end-to-end (incl. a real two-device human match with correct rake/settlement and
-leaderboard). **Awaiting the owner's sign-off on the S1–S9 gate. Do NOT scope Coinflip until the owner
-confirms.** Next, with sign-off: land a permanent Mobile-access section in `docs/DEMO.md` (PR), then scope
-Coinflip as Slice 2's first issue (proves the plug-in contract + `net_winnings` ranking, no core changes).
+leaderboard).
+
+**✅ GATE SIGNED OFF — the owner confirmed S1–S9 on 2026-06-15. Slice 1 is officially DONE.** Mobile-access
+docs landed in `docs/DEMO.md` (#32). Coinflip is now **unblocked** as Slice 2's first issue — it proves the
+plug-in contract + `net_winnings` ranking through the *same* core with **no core changes** (`docs/SLICE_RPS.md`,
+"After the slice"). Robustness follow-ups #30/#31 remain open and are recommended (not required) before
+unattended/public demos.
