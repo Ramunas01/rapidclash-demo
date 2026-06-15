@@ -37,4 +37,16 @@ describe('LobbyScreen (OC7)', () => {
     render(<LobbyScreen username="alice" stake={5} expiresAt={null} expired={false} onRepost={noop} onLeave={noop} />);
     expect(screen.getByTestId('lobby-you').textContent).toBe('You (alice)');
   });
+
+  it('Leave Queue calls onLeave (queue.leave) — play-money credits, no crypto wording', () => {
+    const onLeave = vi.fn();
+    const { container } = render(
+      <LobbyScreen username="alice" stake={25} expiresAt={null} expired={false} onRepost={noop} onLeave={onLeave} />,
+    );
+    fireEvent.click(screen.getByText('Leave Queue'));
+    expect(onLeave).toHaveBeenCalled();
+    const text = container.textContent ?? '';
+    expect(text).toContain('25 credits');
+    expect(text).not.toMatch(/USDT|\bETH\b|\bBTC\b|deposit|\$/i);
+  });
 });

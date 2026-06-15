@@ -119,4 +119,27 @@ describe('StakeEntryScreen — stake input (#33)', () => {
     fireEvent.click(submit);
     expect(onJoin).toHaveBeenCalledWith(100);
   });
+
+  // Re-skin guardrail: the investor demo must read as play-money, never crypto/real-money.
+  it('frames stakes as play-money credits with no crypto / deposit affordance', () => {
+    const { container } = render(
+      <StakeEntryScreen
+        meta={meta}
+        onJoin={vi.fn()}
+        onBack={vi.fn()}
+        challenges={[]}
+        challengesMore={0}
+        challengeNotice={null}
+        onSubscribe={vi.fn()}
+        onUnsubscribe={vi.fn()}
+        onTakeChallenge={vi.fn()}
+      />,
+    );
+    const text = container.textContent ?? '';
+    expect(text).toMatch(/credits/i);
+    // No real-money / crypto wording lifted from the Base44 source (USDT/ETH/BTC, $, deposit, buy chips).
+    expect(text).not.toMatch(/USDT|\bETH\b|\bBTC\b|deposit|buy chips|\$/i);
+    // The crypto currency selector from the design source must not survive the port.
+    expect(screen.queryByText(/currency/i)).toBeNull();
+  });
 });
