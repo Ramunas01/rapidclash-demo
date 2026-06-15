@@ -45,19 +45,13 @@ Credit play-money to a player's wallet. Implemented as a single `ADMIN_CREDIT` l
 
 ### Remove account
 
-A destructive reset, primarily so the operator can re-register the **same alias** repeatedly during testing.
+A **basic, best-effort convenience** so the operator can re-register the **same alias** during testing. It is **refused** if the account has an active match or any stake in escrow (a reset must never strand money in a pot); otherwise it removes the player's own record and ledger entries and frees the alias for reuse. It is the one sanctioned, out-of-band exception to the append-only rule in `WALLET_LEDGER.md` — reachable only through this admin function, never from any player or game code path.
 
-Rules:
-- **Refused** if the account has an active match or any stake currently in escrow. The account must be idle. (A demo reset must never strand money in a pot.)
-- On success, the account's player record and its own ledger entries are removed, and the **alias is freed for reuse** (alias uniqueness is enforced across *active* accounts only).
+For a full reset, prefer wiping the database (below) — that is the canonical reset and needs no per-account logic.
 
-This is the single sanctioned exception to the append-only rule in `WALLET_LEDGER.md`: it is an out-of-band operator reset, not a mutation during play, and it is reachable only through this admin function — never from any player or game code path.
+### Resetting demo data
 
-> **Decision needed from owner (`needs-owner`):** when account A is removed, what happens to matches A played against B?
-> - **(a) Retain, recommended:** keep the match records so B's history and stats stay intact; show A as its former alias or "(removed)". B's ledger is independent and untouched.
-> - **(b) Cascade purge:** delete those match records too, for a totally clean database. Simpler, but it silently rewrites B's history.
->
-> The spec assumes **(a)** until decided.
+The **canonical reset** is to wipe the database and restart: stop the server, delete the SQLite DB file (`DB_PATH`), and start it again. All players, wallets, and matches are cleared and the `admin` account **re-seeds automatically** on startup (via `ensureAdmin`). Add-money plus this full reset are the entire operator-reset story; no per-account deletion beyond the convenience above is needed or scoped.
 
 ## What this interface must not do
 
