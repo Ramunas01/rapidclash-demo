@@ -38,7 +38,7 @@ Empty lobbies are the obvious risk at low player counts. We solve it **outside t
 | Game | Natively 2-player? | Notes |
 |------|--------------------|-------|
 | Rock-Paper-Scissors | Yes | First slice. Simultaneous single move, instant outcome, trivial hidden state. |
-| Coinflip | Yes | Pure chance. One player calls, server flips with seeded RNG. Ranks by net winnings, not skill. |
+| Coinflip | Yes | Pure chance. Both players secretly pick a side; on a mismatch the server flips a seeded coin (same side = draw). Ranks by net winnings, not skill. |
 | Chess | Yes | Skill game, ELO/Glicko ranking. Use an existing move-validation library; do not hand-roll legality. |
 | Baccarat | **No (house-banked by default)** | Needs a redefined head-to-head ruleset — see below. |
 | Blackjack | **No (house-banked by default)** | Needs a redefined head-to-head ruleset — see below. |
