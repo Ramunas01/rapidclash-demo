@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      '@': path.resolve('./apps/web/src'),
       react: path.resolve('./apps/web/node_modules/react'),
       'react-dom': path.resolve('./apps/web/node_modules/react-dom'),
       'react/jsx-runtime': path.resolve('./apps/web/node_modules/react/jsx-runtime'),
