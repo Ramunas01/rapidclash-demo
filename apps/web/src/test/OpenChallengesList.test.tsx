@@ -10,12 +10,18 @@ function challenge(over: Partial<OpenChallenge> = {}): OpenChallenge {
 }
 
 describe('OpenChallengesList (OC2)', () => {
-  it('renders a row per entry with owner, stake, and a live countdown', () => {
+  it('renders a card per entry with owner, stake, and a live countdown', () => {
     render(<OpenChallengesList entries={[challenge()]} more={0} onTake={vi.fn()} />);
     expect(screen.getByText('alice')).toBeInTheDocument();
-    expect(screen.getByText('10 credits')).toBeInTheDocument();
-    // Countdown renders as M:SS (~0:48 for a 48s-out expiry).
+    // Play-money stake (credits, not crypto).
+    expect(screen.getByTestId('stake-m1').textContent).toBe('10 cr');
+    // Countdown renders as M:SS (~0:48 for a 48s-out expiry), driven by expiresAt.
     expect(screen.getByTestId('countdown-m1').textContent).toMatch(/\d:\d\d/);
+  });
+
+  it('uses play-money framing — no crypto / deposit / buy-chips copy', () => {
+    const { container } = render(<OpenChallengesList entries={[challenge()]} more={2} onTake={vi.fn()} />);
+    expect(container.textContent?.toLowerCase()).not.toMatch(/crypto|deposit|buy chips|buy-chips|usdc|\$/);
   });
 
   it('tapping a row calls onTake with that challenge\'s matchId', () => {
