@@ -78,6 +78,11 @@ Cloud platforms don't hard-stop spending by default, so this is non-negotiable. 
 
 ## 3. Deploy
 
+**Run this from the repo root** (`cd` into the cloned `rapidclash-demo` directory first) — `--source .`
+uploads the *current* directory, so gcloud only finds the `Dockerfile` when you're at the repo root.
+Confirm with `ls Dockerfile` first. The first build line should read **`Building using Dockerfile`**; if it
+says **`Building using Buildpacks`**, you're in the wrong directory — the Dockerfile wasn't found.
+
 One command builds the container from the repo and deploys it:
 
 ```bash
