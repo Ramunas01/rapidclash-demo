@@ -6,6 +6,9 @@ const WS_BASE = import.meta.env.VITE_WS_URL ?? `${location.protocol === 'https:'
 // transient socket drop) can auto-resume. sessionStorage is per-tab and clears on tab
 // close, which matches a match's lifetime — a stale id would forfeit after 60 s anyway.
 const MATCH_ID_KEY = 'rc_currentMatchId';
+// The active gameId is persisted alongside the matchId so a full reload mid-match can
+// resume into the CORRECT play screen (RPS vs Coinflip), not just the right match.
+const GAME_ID_KEY = 'rc_currentGameId';
 
 function readStoredMatchId(): string | null {
   try {
@@ -21,6 +24,25 @@ function writeStoredMatchId(id: string | null): void {
     else sessionStorage.removeItem(MATCH_ID_KEY);
   } catch {
     // storage unavailable — non-fatal; transient-drop resume still works in-memory.
+  }
+}
+
+/** Read the persisted active gameId (set by the app when a match starts). */
+export function readStoredGameId(): string | null {
+  try {
+    return sessionStorage.getItem(GAME_ID_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Persist/clear the active gameId in lockstep with the matchId. */
+export function writeStoredGameId(id: string | null): void {
+  try {
+    if (id) sessionStorage.setItem(GAME_ID_KEY, id);
+    else sessionStorage.removeItem(GAME_ID_KEY);
+  } catch {
+    // storage unavailable — non-fatal.
   }
 }
 

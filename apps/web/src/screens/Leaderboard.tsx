@@ -7,6 +7,16 @@ interface Props {
   onBack(): void;
 }
 
+/** Render a row's stat according to its ranking kind (ADR-007): win_rate shows a
+ *  percentage; net_winnings shows signed credits (the sign is part of the value). */
+export function formatStat(entry: LeaderboardEntry): string {
+  if (entry.kind === 'net_winnings') {
+    const v = entry.netWinnings;
+    return `${v > 0 ? '+' : ''}${v} credits`;
+  }
+  return `${Math.round(entry.score * 100)}% win rate`;
+}
+
 export function LeaderboardScreen({ token, onBack }: Props) {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,7 +39,7 @@ export function LeaderboardScreen({ token, onBack }: Props) {
         <div key={e.playerId} className="lb-row">
           <span className="lb-rank">#{e.rank}</span>
           <span className="lb-name">{e.displayName}</span>
-          <span className="lb-stat">{Math.round(e.score * 100)}% win rate</span>
+          <span className="lb-stat">{formatStat(e)}</span>
         </div>
       ))}
     </div>
