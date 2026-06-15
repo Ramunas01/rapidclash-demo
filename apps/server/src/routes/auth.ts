@@ -7,7 +7,7 @@ export function registerAuthRoutes(app: FastifyInstance, identity: Identity): vo
     const { username, password } = request.body;
     try {
       const result = await identity.register(username, password);
-      const body: AuthResponse = { token: result.token, playerId: result.playerId, balance: result.balance };
+      const body: AuthResponse = { token: result.token, playerId: result.playerId, balance: result.balance, username };
       reply.code(201).send(body);
     } catch (err: unknown) {
       const code = (err as { code?: string }).code;
@@ -23,7 +23,7 @@ export function registerAuthRoutes(app: FastifyInstance, identity: Identity): vo
     const { username, password } = request.body;
     try {
       const result = await identity.login(username, password);
-      const body: AuthResponse = { token: result.token, playerId: result.playerId, balance: result.balance };
+      const body: AuthResponse = { token: result.token, playerId: result.playerId, balance: result.balance, username };
       reply.code(200).send(body);
     } catch (err: unknown) {
       const code = (err as { code?: string }).code;

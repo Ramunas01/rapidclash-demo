@@ -19,7 +19,7 @@ describe('AuthScreen', () => {
     const onLogin = vi.fn();
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ token: 'tok123', playerId: 'pid1', balance: 1000 }),
+      json: async () => ({ token: 'tok123', playerId: 'pid1', balance: 1000, username: 'alice' }),
     } as Response);
 
     render(<AuthScreen onLogin={onLogin} />);
@@ -28,7 +28,8 @@ describe('AuthScreen', () => {
     fireEvent.click(screen.getByText('Create Account'));
 
     await waitFor(() => {
-      expect(onLogin).toHaveBeenCalledWith('tok123', 'pid1', 1000);
+      // #34: the alias is forwarded so the app can show "who you are".
+      expect(onLogin).toHaveBeenCalledWith('tok123', 'pid1', 1000, 'alice');
     });
   });
 

@@ -5,14 +5,21 @@ import { CoinflipPlayScreen } from '../screens/CoinflipPlay.js';
 import type { CoinflipView } from '../App.js';
 
 // alice = caller (players[0]); bob = non-caller.
-const callerProps = { playerId: 'alice', opponentId: 'bob', onMove: vi.fn(), onForfeit: vi.fn() };
-const nonCallerProps = { playerId: 'bob', opponentId: 'alice', onMove: vi.fn(), onForfeit: vi.fn() };
+const callerProps = { playerId: 'alice', username: 'alice', opponentId: 'bob', onMove: vi.fn(), onForfeit: vi.fn() };
+const nonCallerProps = { playerId: 'bob', username: 'bob', opponentId: 'alice', onMove: vi.fn(), onForfeit: vi.fn() };
 
 function view(partial: Partial<CoinflipView>): CoinflipView {
   return { players: ['alice', 'bob'], caller: 'alice', ...partial };
 }
 
 describe('CoinflipPlayScreen', () => {
+  it('shows the player their own alias as "You (<alias>)" (#34)', () => {
+    render(
+      <CoinflipPlayScreen {...callerProps} gameState={view({})} legalMoves={['heads', 'tails']} />,
+    );
+    expect(screen.getByTestId('play-you').textContent).toBe('You (alice)');
+  });
+
   it('shows heads/tails to the caller and they are enabled on their turn', () => {
     render(
       <CoinflipPlayScreen

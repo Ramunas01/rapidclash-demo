@@ -7,6 +7,8 @@ const SIDES = [
 
 interface Props {
   playerId: string;
+  /** The signed-in player's own alias (#34); null only on a legacy session pre-dating the field. */
+  username: string | null;
   opponentId: string;
   gameState: CoinflipView | null;
   legalMoves: string[];
@@ -20,6 +22,7 @@ function sideLabel(side: string | undefined): string {
 
 export function CoinflipPlayScreen({
   playerId,
+  username,
   opponentId: _opponentId,
   gameState,
   legalMoves,
@@ -40,6 +43,11 @@ export function CoinflipPlayScreen({
   return (
     <div className="screen">
       <h1>Coinflip</h1>
+      {username && (
+        <p style={{ textAlign: 'center', color: 'var(--muted)', marginBottom: 8 }} data-testid="play-you">
+          You (<strong>{username}</strong>)
+        </p>
+      )}
 
       {/* The coin. Suspense (spinning ?) until the server includes `result` at terminal. */}
       <div className="card" style={{ textAlign: 'center', padding: '24px 0' }}>
