@@ -7,3 +7,6 @@ dist-ts/
 
 # Windows alternate-data-stream metadata (from files edited on the Windows side)
 *:Zone.Identifier
+
+# Base44 design export — visual reference only, lifted by hand; never committed
+design-ref/
