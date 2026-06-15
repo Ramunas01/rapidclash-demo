@@ -44,8 +44,11 @@ interface Envelope<T = unknown> {
 
 | type | payload | meaning |
 |------|---------|---------|
-| `queue.join` | `{ gameId, stake }` | enter matchmaking for a game at a stake (escrow happens here) |
+| `queue.join` | `{ gameId, stake }` | enter matchmaking for a game at a stake (escrow happens here). **Typed-amount path: behaves exactly as before** — FIFO auto-match against the oldest resting bet at that stake, else rest as a new open challenge. |
 | `queue.leave` | `{ gameId }` | leave the lobby before matched (refund escrow) |
+| `challenges.subscribe` | `{ gameId }` | start receiving the open-challenges feed for a game (on opening the stake screen) |
+| `challenges.unsubscribe` | `{ gameId }` | stop receiving the feed (on leaving the screen) |
+| `challenge.take` | `{ matchId }` | claim a specific resting bet by id. Escrow is **conditional on winning the claim**; a failed claim charges nothing |
 | `move.make` | `{ move }` | submit a move in the current match |
 | `match.resume` | `{ matchId }` | after reconnect, ask for current redacted state |
 | `match.forfeit` | `{}` | concede / leave an in-progress match |
@@ -54,12 +57,15 @@ interface Envelope<T = unknown> {
 
 | type | payload | meaning |
 |------|---------|---------|
-| `queue.waiting` | `{ gameId, since }` | you are in the lobby; no opponent yet |
+| `queue.waiting` | `{ gameId, since, expiresAt }` | you are in the lobby; no opponent yet. `expiresAt` lets your own lobby show a countdown ("expires in 0:48, auto-refunds — no need to cancel") |
+| `challenges.list` | `{ gameId, entries: [{ matchId, ownerName, stake, openedAt, expiresAt }] }` | the current visible open challenges (sent on subscribe) |
+| `challenges.update` | `{ gameId, added?: Entry, removed?: { matchId, reason } }` | incremental feed change; `reason` ∈ `taken` \| `expired` \| `cancelled` |
+| `challenge.expired` | `{ matchId }` | your resting bet expired unmatched; escrow refunded. Client offers a one-tap re-post |
 | `match.start` | `{ matchId, opponent, state }` | matched; here is your redacted starting view |
 | `match.state` | `{ state, events }` | updated redacted view + events to animate |
 | `match.your_turn` | `{ legalMoves }` | it is your turn; here are your legal moves |
 | `match.end` | `{ outcome, settlement }` | terminal; result + what changed in your wallet |
-| `error` | `{ code, message }` | illegal move, insufficient balance, etc. |
+| `error` | `{ code, message }` | illegal move, insufficient balance, challenge already taken/expired, etc. |
 
 ### Rules the protocol enforces
 
@@ -67,6 +73,8 @@ interface Envelope<T = unknown> {
 - `move.make` is validated against the server's `legalMoves` before `applyMove`; an illegal or out-of-turn move returns `error`, never mutates state.
 - `match.resume` is safe to call any number of times; it reads state, never advances it.
 - `queue.join` is the escrow point. If matchmaking fails or the player leaves the lobby, the escrow is refunded via the ledger. A player who is matched is committed.
+- `challenge.take` is an **atomic claim**: the server transitions the target challenge from open to matched and binds it to exactly one taker. Concurrent takers of the same challenge produce exactly one match; every loser is refused with no escrow written. A player cannot take their own challenge, and a taker with insufficient balance is refused before any escrow.
+- Challenge expiry is **server-authoritative**. The server holds `expiresAt`, sweeps expired challenges, and refunds the owner's escrow (idempotently). Client countdowns are cosmetic — they animate the server's `expiresAt` and never decide anything.
 
 ## Matchmaking & lobby
 

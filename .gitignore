@@ -4,3 +4,6 @@ dist-ts/
 *.tsbuildinfo
 .env
 .env.local
+
+# Windows alternate-data-stream metadata (from files edited on the Windows side)
+*:Zone.Identifier
