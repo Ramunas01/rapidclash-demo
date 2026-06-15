@@ -57,6 +57,19 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
 
 # Store the admin password as a secret (the server reads ADMIN_PASSWORD)
 printf 'choose-a-strong-password' | gcloud secrets create admin-password --data-file=-
+
+# Grant the build/runtime service account the roles a --source deploy needs.
+# Newer Cloud Build runs source builds AS the default compute SA, which by default
+# lacks both the build roles and read access to the secret. Without these the first
+# deploy fails (storage.objects.get 403 / secret access denied).
+PROJECT_NUMBER=$(gcloud projects describe "$(gcloud config get-value project)" --format='value(projectNumber)')
+COMPUTE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+gcloud projects add-iam-policy-binding "$(gcloud config get-value project)" \
+  --member="serviceAccount:${COMPUTE_SA}" \
+  --role="roles/cloudbuild.builds.builder" --condition=None
+gcloud secrets add-iam-policy-binding admin-password \
+  --member="serviceAccount:${COMPUTE_SA}" \
+  --role="roles/secretmanager.secretAccessor"
 ```
 
 ## 2. Set a budget alert (do this before deploying)
@@ -98,6 +111,16 @@ Open the printed URL on your phone over cellular (not just Wi-Fi — proving it'
 - **Reset for testing** = redeploy or recycle the instance; SQLite is ephemeral, so data clears on its own (this is the accepted reset story — see `ADMIN.md`). The admin account re-seeds on startup via `ensureAdmin`, so a reset never locks you out.
 - **Cost control** = `--min-instances 0` between demos; the budget alert is your backstop.
 - **When to graduate:** the moment you want data to persist across restarts, or more than one instance, switch to Cloud SQL (Postgres, ~$10–15/month to keep running) for the ledger/history and Redis (Memorystore) for live session/matchmaking state, then raise `--max-instances`. That's the ADR-005 scale shape — not needed for the demo.
+
+## 5b. Troubleshooting the first deploy
+
+Two errors hit on the very first `--source` deploy (both one-time; §1 and the repo now handle them):
+
+- **`...-compute@developer.gserviceaccount.com does not have storage.objects.get access ... forbidden`** (deploy never reaches the build) — the default compute service account lacks the build roles. Fixed by the IAM grants in §1 (`roles/cloudbuild.builds.builder` on the project, `secretmanager.secretAccessor` on the secret). Newer Cloud Build runs `--source` builds **as the compute SA**, not the legacy `@cloudbuild` SA.
+- **`Build failed; check build logs` at build step 0 (the Docker build), with no app-level error** — the `Dockerfile` uses `corepack`, so the container needs the pnpm version pinned. The repo sets `"packageManager": "pnpm@9.15.9"` in the root `package.json`; **keep that field in sync with the lockfile's pnpm** or the container grabs a mismatched pnpm major and the build dies silently.
+- **Reading regional build logs:** `gcloud builds log <BUILD_ID> --region us-central1`, or open the console build URL printed on failure (the CLI log fetch is sometimes empty for regional builds).
+
+A failed build is harmless and recoverable — fix and re-run the same `gcloud run deploy` command.
 
 ## 6. Later: CI/CD
 
