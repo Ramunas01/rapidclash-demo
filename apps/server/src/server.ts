@@ -79,7 +79,10 @@ export function buildApp(
 export function createServices(db: Database.Database, gameModules: GameModule[]): AppServices {
   const ledger = createLedger(db);
   const identity = createIdentity(db, ledger);
-  const matchHistory = createMatchHistory(db);
+  // Seed the leaderboard with each game's declared RankingType so it can dispatch
+  // generically by kind (ADR-007) — no game-specific code in the core.
+  const rankingByGame = new Map(gameModules.map((m) => [m.meta.id, m.meta.ranking]));
+  const matchHistory = createMatchHistory(db, rankingByGame);
   const matchmaking = createMatchmaking(ledger, gameModules, matchHistory);
   return { db, ledger, identity, matchmaking, matchHistory };
 }
