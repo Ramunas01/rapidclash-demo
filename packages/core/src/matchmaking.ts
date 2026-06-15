@@ -61,6 +61,9 @@ export interface MatchRecord {
   state: GameState;
   stake: number;
   seed: number;
+  /** Server-authoritative move deadline (#31). Set at match start, refreshed on every
+   *  applyMove. Past this, sweepStaleMatches resolves the match independent of socket state. */
+  deadlineAt: number;
 }
 
 export interface PlayerSettlement {
@@ -85,6 +88,16 @@ export interface ExpiredChallenge {
   matchId: string;
   ownerId: PlayerId;
   gameId: string;
+}
+
+/** An active match resolved by sweepStaleMatches because it blew its move deadline (#31).
+ *  Already settled in the ledger (void → both refunded, or forfeit → non-responder loses),
+ *  so no escrow is left orphaned; the gateway only needs to push match.end. Socket-free. */
+export interface ResolvedStaleMatch {
+  matchId: string;
+  players: [PlayerId, PlayerId];
+  outcome: Outcome;
+  settlement: Record<PlayerId, PlayerSettlement>;
 }
 
 /** A capped, ordered slice of the open-challenge feed for one game. */
@@ -113,6 +126,9 @@ export interface MatchmakingOptions {
   safeMarginMs?: number;
   /** Max rows in a listing before "+N more". Default: env CHALLENGE_LIST_CAP or 5. */
   listCap?: number;
+  /** Server-authoritative move timeout for an active match (#31). Default: env
+   *  MATCH_TURN_TIMEOUT_MS or 120000 (owner-tunable). Injectable for tests. */
+  turnTimeoutMs?: number;
   /** Resolve a playerId → display username for challenge owner names. */
   lookupUsername?: UsernameLookup;
   /** Injectable clock (testing). Default: Date.now. */
@@ -128,6 +144,10 @@ export interface Matchmaking {
   listOpenChallenges(gameId: string, viewerId: PlayerId, now?: number): OpenChallengeList;
   /** Remove + idempotently refund every bet past its TTL; return them so the gateway can notify (OC6). */
   sweepExpired(now?: number): ExpiredChallenge[];
+  /** Resolve every active match past its move deadline (#31): void if no move was made (both
+   *  refunded, no rake), else forfeit the non-responder. Settles each so escrow is never orphaned;
+   *  returns the resolved matches so the gateway can push match.end. Socket-free, like sweepExpired. */
+  sweepStaleMatches(now?: number): ResolvedStaleMatch[];
   getActiveMatch(matchId: string): MatchRecord | undefined;
   /** Apply a player's move. Throws IllegalMove if the move is not in legalMoves. */
   applyMove(matchId: string, playerId: PlayerId, move: Move, now: number): ApplyResult;
@@ -162,6 +182,8 @@ export function createMatchmaking(
   const minRestMs = options.minRestMs ?? intEnv('CHALLENGE_MIN_REST_MS', 5_000);
   const safeMarginMs = options.safeMarginMs ?? intEnv('CHALLENGE_SAFE_MARGIN_MS', 3_000);
   const listCap = options.listCap ?? intEnv('CHALLENGE_LIST_CAP', 5);
+  // Active-match move timeout (#31) — independent of socket state.
+  const turnTimeoutMs = options.turnTimeoutMs ?? intEnv('MATCH_TURN_TIMEOUT_MS', 120_000);
   const lookupUsername = options.lookupUsername;
   const nowFn = options.now ?? (() => Date.now());
 
@@ -242,6 +264,7 @@ export function createMatchmaking(
         state: initialState,
         stake,
         seed,
+        deadlineAt: nowFn() + turnTimeoutMs,
       };
       matches.set(matchId, record);
 
@@ -318,6 +341,7 @@ export function createMatchmaking(
       state: initialState,
       stake: entry.stake,
       seed,
+      deadlineAt: nowFn() + turnTimeoutMs,
     };
     matches.set(matchId, record);
 
@@ -365,6 +389,35 @@ export function createMatchmaking(
     return expired;
   }
 
+  function sweepStaleMatches(now: number = nowFn()): ResolvedStaleMatch[] {
+    const resolved: ResolvedStaleMatch[] = [];
+    const feeRate = process.env.FEE_RATE ? parseFloat(process.env.FEE_RATE) : 0.05;
+    // Snapshot first: settleMatch/forfeitMatch delete from `matches`, so we must not
+    // iterate the live map while mutating it.
+    for (const match of [...matches.values()]) {
+      if (now < match.deadlineAt) continue;
+      const mod = moduleByGame.get(match.gameId)!;
+      // Non-responders = players who still owe a legal move. In our 2-player games this is
+      // either the single laggard (the other side already moved → that laggard forfeits and
+      // loses) or, before any decisive move, everyone still owes one (the module's forfeit
+      // yields `void` → both refunded, no rake). Player order is stable, so the pick is
+      // deterministic. Delegating to forfeitMatch reuses the module's own
+      // "forfeit, or void if pre-first-move" contract, keeping this game-agnostic.
+      const pending = match.players.filter((p) => mod.legalMoves(match.state, p).length > 0);
+      const settled =
+        pending.length > 0
+          ? forfeitMatch(match.matchId, pending[0])
+          : settleMatch(match.matchId, feeRate); // already terminal but unsettled — just settle
+      resolved.push({
+        matchId: match.matchId,
+        players: match.players,
+        outcome: settled.outcome,
+        settlement: settled.settlement,
+      });
+    }
+    return resolved;
+  }
+
   function getActiveMatch(matchId: string): MatchRecord | undefined {
     return matches.get(matchId);
   }
@@ -387,6 +440,9 @@ export function createMatchmaking(
 
     const result = mod.applyMove(match.state, move, { playerId, now });
     match.state = result.state;
+    // A move was made → the match is progressing; push the deadline out so an active,
+    // responsive match is never swept as stale (#31).
+    match.deadlineAt = now + turnTimeoutMs;
     return result;
   }
 
@@ -462,6 +518,7 @@ export function createMatchmaking(
     takeChallenge,
     listOpenChallenges,
     sweepExpired,
+    sweepStaleMatches,
     getActiveMatch,
     applyMove,
     settleMatch,

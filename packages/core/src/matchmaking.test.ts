@@ -438,3 +438,98 @@ describe('forfeitMatch', () => {
     expect(second.settlement['bob'].delta).toBe(first.settlement['bob'].delta);
   });
 });
+
+// ─── Stale-match move-timeout sweep (#31) ─────────────────────────────────────
+// Server-authoritative: resolves matches stuck past their move deadline regardless
+// of socket state, so escrow is never orphaned. Uses an injectable clock.
+
+describe('sweepStaleMatches', () => {
+  const TIMEOUT = 120_000;
+
+  function setupWithClock(stake = 100) {
+    let clock = 1_000_000;
+    const db = new Database(':memory:');
+    const ledger = createLedger(db);
+    const matchmaking = createMatchmaking(ledger, [rpsLikeModule], undefined, {
+      now: () => clock,
+      turnTimeoutMs: TIMEOUT,
+    });
+    ledger.grant('alice');
+    ledger.grant('bob');
+    matchmaking.joinQueue('alice', 'rpslike', stake);
+    const r = matchmaking.joinQueue('bob', 'rpslike', stake);
+    if (r.status !== 'matched') throw new Error('expected matched');
+    return {
+      ledger,
+      matchmaking,
+      matchId: r.matchId,
+      advance: (ms: number) => {
+        clock += ms;
+      },
+      now: () => clock,
+    };
+  }
+
+  it('a stuck match with NO move past the deadline → void; both refunded (ledger net unchanged)', () => {
+    const { ledger, matchmaking, matchId, advance, now } = setupWithClock(100);
+
+    advance(TIMEOUT + 1);
+    const resolved = matchmaking.sweepStaleMatches(now());
+
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0].matchId).toBe(matchId);
+    expect(resolved[0].outcome).toEqual({ type: 'void' });
+    // Both stakes refunded in full, no rake — net ledger movement is zero.
+    expect(ledger.getBalance('alice')).toBe(GRANT_AMOUNT);
+    expect(ledger.getBalance('bob')).toBe(GRANT_AMOUNT);
+    expect(ledger.getBalance(PLATFORM_ACCOUNT)).toBe(0);
+    // The match is settled and removed from the active set — no orphaned escrow.
+    expect(matchmaking.getActiveMatch(matchId)).toBeUndefined();
+  });
+
+  it('one player moved, the other times out → non-responder forfeits, mover settled, no orphaned escrow', () => {
+    const stake = 100;
+    const { ledger, matchmaking, matchId, advance, now } = setupWithClock(stake);
+    const rake = Math.round(stake * 2 * 0.05);
+
+    // bob moves; alice never responds and blows the deadline.
+    matchmaking.applyMove(matchId, 'bob', 'rock', now());
+    advance(TIMEOUT + 1);
+    const resolved = matchmaking.sweepStaleMatches(now());
+
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0].outcome).toEqual({ type: 'win', winner: 'bob' });
+    expect(ledger.getBalance('bob')).toBe(GRANT_AMOUNT + stake - rake);
+    expect(ledger.getBalance('alice')).toBe(GRANT_AMOUNT - stake);
+    // Conservation: nothing left escrowed — the two balances plus rake reconstruct both grants.
+    const total =
+      ledger.getBalance('alice') + ledger.getBalance('bob') + ledger.getBalance(PLATFORM_ACCOUNT);
+    expect(total).toBe(GRANT_AMOUNT * 2);
+    expect(matchmaking.getActiveMatch(matchId)).toBeUndefined();
+  });
+
+  it('refreshes the deadline on a move — an active, progressing match is NOT swept', () => {
+    const { matchmaking, matchId, advance, now } = setupWithClock(100);
+
+    // Just before the deadline, bob moves → the deadline pushes out by another TIMEOUT.
+    advance(TIMEOUT - 1);
+    matchmaking.applyMove(matchId, 'bob', 'rock', now());
+
+    // Past the ORIGINAL deadline, but inside the refreshed window: must NOT sweep.
+    advance(2);
+    expect(matchmaking.sweepStaleMatches(now())).toEqual([]);
+    expect(matchmaking.getActiveMatch(matchId)).toBeDefined();
+
+    // Once the refreshed deadline elapses, it sweeps (bob moved → alice forfeits).
+    advance(TIMEOUT);
+    const resolved = matchmaking.sweepStaleMatches(now());
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0].outcome).toEqual({ type: 'win', winner: 'bob' });
+  });
+
+  it('does not sweep a match that is still within its deadline', () => {
+    const { matchmaking, advance, now } = setupWithClock(100);
+    advance(TIMEOUT - 1);
+    expect(matchmaking.sweepStaleMatches(now())).toEqual([]);
+  });
+});
