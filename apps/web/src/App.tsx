@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { GameMeta, Outcome, SettlementSummary } from '@rapidclash/shared';
+import type { GameMeta, Outcome, SettlementSummary, OpenChallenge } from '@rapidclash/shared';
 import { WsClient, hasStoredMatch, readStoredGameId, writeStoredGameId } from './ws.js';
+import { applyChallengesUpdate } from './screens/OpenChallengesList.js';
 import { AuthScreen } from './screens/Auth.js';
 import { WalletScreen } from './screens/Wallet.js';
 import { GameListScreen } from './screens/GameList.js';
@@ -62,6 +63,12 @@ export function App() {
   const [pendingGameId, setPendingGameId] = useState<string | null>(null);
   const [pendingStake, setPendingStake] = useState(0);
   const [pendingGameMeta, setPendingGameMeta] = useState<GameMeta | null>(null);
+  // Open-challenges feed (stake screen) + owner lobby countdown/expiry state.
+  const [challenges, setChallenges] = useState<OpenChallenge[]>([]);
+  const [challengesMore, setChallengesMore] = useState(0);
+  const [challengeNotice, setChallengeNotice] = useState<string | null>(null);
+  const [waitingExpiresAt, setWaitingExpiresAt] = useState<number | null>(null);
+  const [lobbyExpired, setLobbyExpired] = useState(false);
   // Bumped when the WS client is (re)created so the handler-wiring effect below re-runs
   // and binds handlers before the socket's async onopen fires the auto-resume.
   const [, setWsEpoch] = useState(0);
@@ -122,10 +129,31 @@ export function App() {
         setLegalMoves([]);
         setScreen('result');
       },
-      onQueueWaiting() {
-        // already on lobby screen
+      onQueueWaiting(payload) {
+        // OC7: surface the owner's server-authoritative expiry for the lobby countdown.
+        setWaitingExpiresAt(payload.expiresAt);
+        setLobbyExpired(false);
+      },
+      onChallengesList(payload) {
+        setChallenges(payload.entries);
+        setChallengesMore(payload.more);
+      },
+      onChallengesUpdate(payload) {
+        // Event-driven incremental add/remove — no polling (OC8).
+        setChallenges((prev) => applyChallengesUpdate(prev, payload));
+      },
+      onChallengeExpired() {
+        // Owner's resting bet expired (escrow already refunded server-side) — offer re-post.
+        setLobbyExpired(true);
       },
       onError(payload) {
+        // A failed take (CHALLENGE_TAKEN / SELF_TAKE / INSUFFICIENT_BALANCE) → brief notice;
+        // the list's `removed` update drops the stale row on its own.
+        if (['CHALLENGE_TAKEN', 'SELF_TAKE', 'INSUFFICIENT_BALANCE'].includes(payload.code)) {
+          setChallengeNotice(
+            payload.code === 'CHALLENGE_TAKEN' ? 'That challenge was just taken.' : payload.message,
+          );
+        }
         console.error('[ws error]', payload.code, payload.message);
       },
     });
@@ -175,6 +203,9 @@ export function App() {
   const handleJoinQueue = useCallback((stake: number) => {
     if (!pendingGameId || !wsRef.current) return;
     setPendingStake(stake);
+    // Reset lobby countdown state; queue.waiting will deliver the fresh expiresAt.
+    setWaitingExpiresAt(null);
+    setLobbyExpired(false);
     wsRef.current.joinQueue(pendingGameId, stake);
     setScreen('lobby');
   }, [pendingGameId]);
@@ -184,6 +215,34 @@ export function App() {
     wsRef.current.leaveQueue(pendingGameId);
     setScreen('wallet');
   }, [pendingGameId]);
+
+  // ── Open challenges (stake screen) ──────────────────────────────────────────
+  const handleSubscribeChallenges = useCallback(() => {
+    if (!pendingGameId || !wsRef.current) return;
+    setChallenges([]);
+    setChallengesMore(0);
+    setChallengeNotice(null);
+    wsRef.current.subscribeChallenges(pendingGameId);
+  }, [pendingGameId]);
+
+  const handleUnsubscribeChallenges = useCallback(() => {
+    if (!pendingGameId || !wsRef.current) return;
+    wsRef.current.unsubscribeChallenges(pendingGameId);
+  }, [pendingGameId]);
+
+  const handleTakeChallenge = useCallback((matchId: string) => {
+    if (!wsRef.current) return;
+    setChallengeNotice(null);
+    // On success the server pushes match.start → we land in the match; on failure → onError.
+    wsRef.current.takeChallenge(matchId);
+  }, []);
+
+  // ── Owner lobby re-post (OC7) ───────────────────────────────────────────────
+  const handleRepost = useCallback(() => {
+    if (!pendingGameId || !wsRef.current) return;
+    setLobbyExpired(false);
+    wsRef.current.joinQueue(pendingGameId, pendingStake);
+  }, [pendingGameId, pendingStake]);
 
   const handleMakeMove = useCallback((move: string) => {
     if (!currentMatchId || !wsRef.current) return;
@@ -204,9 +263,19 @@ export function App() {
     case 'game-list':
       return <GameListScreen token={token!} onSelect={handleSelectGame} onBack={goToWallet} />;
     case 'stake-entry':
-      return <StakeEntryScreen meta={pendingGameMeta!} onJoin={handleJoinQueue} onBack={() => setScreen('game-list')} />;
+      return <StakeEntryScreen
+        meta={pendingGameMeta!}
+        onJoin={handleJoinQueue}
+        onBack={() => setScreen('game-list')}
+        challenges={challenges}
+        challengesMore={challengesMore}
+        challengeNotice={challengeNotice}
+        onSubscribe={handleSubscribeChallenges}
+        onUnsubscribe={handleUnsubscribeChallenges}
+        onTakeChallenge={handleTakeChallenge}
+      />;
     case 'lobby':
-      return <LobbyScreen stake={pendingStake} onLeave={handleLeaveQueue} />;
+      return <LobbyScreen stake={pendingStake} expiresAt={waitingExpiresAt} expired={lobbyExpired} onRepost={handleRepost} onLeave={handleLeaveQueue} />;
     case 'play':
       return activeGameId === 'coinflip'
         ? <CoinflipPlayScreen playerId={playerId!} opponentId={opponentId!} gameState={gameState as CoinflipView | null} legalMoves={legalMoves} onMove={handleMakeMove} onForfeit={handleForfeit} />
@@ -214,6 +283,6 @@ export function App() {
     case 'result':
       return <ResultScreen outcome={lastOutcome!} settlement={lastSettlement!} playerId={playerId ?? undefined} onPlayAgain={goToGameListFromResult} onLeaderboard={goToLeaderboard} />;
     case 'leaderboard':
-      return <LeaderboardScreen token={token!} onBack={goToGameList} />;
+      return <LeaderboardScreen token={token!} gameId={activeGameId ?? 'rps'} onBack={goToGameList} />;
   }
 }

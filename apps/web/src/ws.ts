@@ -1,4 +1,4 @@
-import type { Envelope, QueueJoinPayload, QueueLeavePayload, MoveMakePayload, MatchResumePayload, MatchStartPayload, MatchStatePayload, MatchYourTurnPayload, MatchEndPayload, QueueWaitingPayload, ErrorPayload } from '@rapidclash/shared';
+import type { Envelope, QueueJoinPayload, QueueLeavePayload, MoveMakePayload, MatchResumePayload, MatchStartPayload, MatchStatePayload, MatchYourTurnPayload, MatchEndPayload, QueueWaitingPayload, ErrorPayload, ChallengeSubscribePayload, ChallengeTakePayload, ChallengesListPayload, ChallengesUpdatePayload, ChallengeExpiredPayload } from '@rapidclash/shared';
 
 const WS_BASE = import.meta.env.VITE_WS_URL ?? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
 
@@ -57,6 +57,9 @@ export type WsMsgHandler = {
   onMatchState?(payload: MatchStatePayload, matchId: string): void;
   onMatchYourTurn?(payload: MatchYourTurnPayload, matchId: string): void;
   onMatchEnd?(payload: MatchEndPayload, matchId: string): void;
+  onChallengesList?(payload: ChallengesListPayload): void;
+  onChallengesUpdate?(payload: ChallengesUpdatePayload): void;
+  onChallengeExpired?(payload: ChallengeExpiredPayload): void;
   onError?(payload: ErrorPayload): void;
 };
 
@@ -137,6 +140,15 @@ export class WsClient {
         this.setCurrentMatchId(null);
         this.handlers.onMatchEnd?.(msg.payload as MatchEndPayload, msg.matchId ?? '');
         break;
+      case 'challenges.list':
+        this.handlers.onChallengesList?.(msg.payload as ChallengesListPayload);
+        break;
+      case 'challenges.update':
+        this.handlers.onChallengesUpdate?.(msg.payload as ChallengesUpdatePayload);
+        break;
+      case 'challenge.expired':
+        this.handlers.onChallengeExpired?.(msg.payload as ChallengeExpiredPayload);
+        break;
       case 'error':
         this.handlers.onError?.(msg.payload as ErrorPayload);
         break;
@@ -156,6 +168,20 @@ export class WsClient {
 
   leaveQueue(gameId: string): void {
     this.send('queue.leave', { gameId } as QueueLeavePayload);
+  }
+
+  /** Start receiving the open-challenge feed for a game (challenges.list, then updates). */
+  subscribeChallenges(gameId: string): void {
+    this.send('challenges.subscribe', { gameId } as ChallengeSubscribePayload);
+  }
+
+  unsubscribeChallenges(gameId: string): void {
+    this.send('challenges.unsubscribe', { gameId } as ChallengeSubscribePayload);
+  }
+
+  /** Claim a specific resting bet. Escrow happens server-side only on a successful claim. */
+  takeChallenge(matchId: string): void {
+    this.send('challenge.take', { matchId } as ChallengeTakePayload);
   }
 
   makeMove(move: string, matchId: string): void {

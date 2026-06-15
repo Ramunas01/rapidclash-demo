@@ -17,7 +17,7 @@ describe('LeaderboardScreen — render by ranking kind', () => {
     mockEntries([
       { rank: 1, playerId: 'alice', displayName: 'alice', score: 1, kind: 'win_rate', gamesPlayed: 2, wins: 2, winRate: 1 },
     ]);
-    render(<LeaderboardScreen token="tok" onBack={() => {}} />);
+    render(<LeaderboardScreen token="tok" gameId="rps" onBack={() => {}} />);
     await waitFor(() => expect(screen.getByText('100% win rate')).toBeInTheDocument());
   });
 
@@ -26,9 +26,20 @@ describe('LeaderboardScreen — render by ranking kind', () => {
       { rank: 1, playerId: 'alice', displayName: 'alice', score: 9, kind: 'net_winnings', netWinnings: 9 },
       { rank: 2, playerId: 'bob', displayName: 'bob', score: -10, kind: 'net_winnings', netWinnings: -10 },
     ]);
-    render(<LeaderboardScreen token="tok" onBack={() => {}} />);
+    render(<LeaderboardScreen token="tok" gameId="coinflip" onBack={() => {}} />);
     await waitFor(() => expect(screen.getByText('+9 credits')).toBeInTheDocument());
     expect(screen.getByText('-10 credits')).toBeInTheDocument();
+  });
+
+  // #46 — the board fetched is the ACTIVE game's, not hardcoded 'rps'.
+  it('fetches the active game\'s board (coinflip → /leaderboard/coinflip)', async () => {
+    mockEntries([
+      { rank: 1, playerId: 'alice', displayName: 'alice', score: 9, kind: 'net_winnings', netWinnings: 9 },
+    ]);
+    render(<LeaderboardScreen token="tok" gameId="coinflip" onBack={() => {}} />);
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    const url = vi.mocked(fetch).mock.calls[0][0] as string;
+    expect(url).toContain('/leaderboard/coinflip');
   });
 });
 
