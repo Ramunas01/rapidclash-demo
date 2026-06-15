@@ -135,6 +135,60 @@ the server runs on the **same machine** as Vite, two LAN devices work with no ex
 
 ---
 
+## 5b. Mobile access (phone + PWA install)
+
+Two ways to reach the demo from a phone. **The tunnel is recommended** — installing the PWA
+(Add to Home Screen / service worker) requires **HTTPS**, which a tunnel provides and plain-HTTP
+LAN does not.
+
+### (a) HTTPS tunnel — recommended
+
+A Cloudflare *quick tunnel* gives a public HTTPS URL with no account/login:
+
+```bash
+cloudflared tunnel --url http://localhost:5173 --no-autoupdate
+# → prints https://<random>.trycloudflare.com  (regenerated each run)
+```
+
+Vite must accept the tunnel hostname — set `server.allowedHosts` in `apps/web/vite.config.ts`:
+
+```ts
+server: {
+  allowedHosts: true,           // or ['.trycloudflare.com']
+  proxy: { /* … existing /auth, /ws, … */ },
+}
+```
+
+Open the `https://…trycloudflare.com` URL on the phone → **Add to Home Screen** (iOS Safari) or
+**Install app** (Android Chrome). Because the tunnel points at the Vite dev server, the same
+single origin carries REST **and** the `/ws` WebSocket — a phone player can match a desktop player
+for a real two-device human match.
+
+### (b) LAN (no HTTPS — page works, PWA install does not)
+
+WSL2 uses NAT, so the WSL IP is **not** directly reachable from other LAN devices. Bridge it from
+the Windows host:
+
+- **Windows 11 — mirrored networking:** add to `%UserProfile%\.wslconfig`:
+  ```ini
+  [wsl2]
+  networkingMode=mirrored
+  ```
+  then `wsl --shutdown` and restart. WSL services are now reachable on the host's LAN IP. Open
+  Windows Firewall for ports `5173` (and `3000` if the API isn't behind the proxy).
+- **Windows 10 — portproxy:** forward the host port to WSL:
+  ```powershell
+  netsh interface portproxy add v4tov4 listenport=5173 listenaddress=0.0.0.0 \
+    connectport=5173 connectaddress=<wsl-ip>
+  ```
+  add an inbound firewall rule for `5173`, then open `http://<windows-lan-ip>:5173` on the phone.
+
+> **PWA caveat:** service workers / install prompts need a secure context (HTTPS or `localhost`).
+> Over plain-HTTP LAN the app runs as a normal web page but will **not** install as a PWA — use the
+> tunnel (a) for the installable experience.
+
+---
+
 ## 6. The walkthrough — the Charter's 8-step experience
 
 Do this with **two players** (A and B) side by side. Each PWA screen maps to one Charter step.
