@@ -34,6 +34,9 @@ describe('WsClient message router', () => {
       onMatchState: vi.fn(),
       onMatchYourTurn: vi.fn(),
       onMatchEnd: vi.fn(),
+      onChallengesList: vi.fn(),
+      onChallengesUpdate: vi.fn(),
+      onChallengeExpired: vi.fn(),
       onError: vi.fn(),
     };
 
@@ -94,6 +97,30 @@ describe('WsClient message router', () => {
     makeClient();
     mockWs.simulateMessage({ type: 'error', payload: { code: 'ILLEGAL_MOVE', message: 'already moved' } });
     expect(handlers.onError).toHaveBeenCalledWith({ code: 'ILLEGAL_MOVE', message: 'already moved' });
+  });
+
+  it('routes the open-challenge messages to their handlers', () => {
+    makeClient();
+    const list = { gameId: 'rps', entries: [], more: 0 };
+    mockWs.simulateMessage({ type: 'challenges.list', payload: list });
+    expect(handlers.onChallengesList).toHaveBeenCalledWith(list);
+
+    const update = { gameId: 'rps', removed: { matchId: 'm1', reason: 'taken' } };
+    mockWs.simulateMessage({ type: 'challenges.update', payload: update });
+    expect(handlers.onChallengesUpdate).toHaveBeenCalledWith(update);
+
+    mockWs.simulateMessage({ type: 'challenge.expired', payload: { matchId: 'm9' } });
+    expect(handlers.onChallengeExpired).toHaveBeenCalledWith({ matchId: 'm9' });
+  });
+
+  it('subscribeChallenges / takeChallenge emit the right envelopes', () => {
+    const client = makeClient();
+    client.subscribeChallenges('coinflip');
+    client.takeChallenge('m-7');
+    const types = mockWs.sent.map((s) => (JSON.parse(s) as { type: string }).type);
+    expect(types).toEqual(['challenges.subscribe', 'challenge.take']);
+    const take = JSON.parse(mockWs.sent[1]) as { payload: { matchId: string } };
+    expect(take.payload.matchId).toBe('m-7');
   });
 
   it('send emits a properly formed envelope', () => {

@@ -147,3 +147,16 @@ p  { color: var(--muted); margin-bottom: 12px; }
 .lb-rank { font-size: 1.2rem; font-weight: bold; width: 32px; color: var(--muted); }
 .lb-name { flex: 1; }
 .lb-stat { font-size: 0.85rem; color: var(--muted); }
+
+/* Open-challenge rows: a full-width tappable list item (no horizontal scroll). */
+.oc-row {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #2a2a4e;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.oc-row:active { background: var(--surface); }

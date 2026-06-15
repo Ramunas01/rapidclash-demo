@@ -4,6 +4,8 @@ import { api } from '../api.js';
 
 interface Props {
   token: string;
+  /** The active/just-played game whose board to show (#46) — not hardcoded to rps. */
+  gameId: string;
   onBack(): void;
 }
 
@@ -17,14 +19,15 @@ export function formatStat(entry: LeaderboardEntry): string {
   return `${Math.round(entry.score * 100)}% win rate`;
 }
 
-export function LeaderboardScreen({ token, onBack }: Props) {
+export function LeaderboardScreen({ token, gameId, onBack }: Props) {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    api.leaderboard('rps', token).then(setEntries).catch(e => setError(e instanceof Error ? e.message : 'Error')).finally(() => setLoading(false));
-  }, [token]);
+    setLoading(true);
+    api.leaderboard(gameId, token).then(setEntries).catch(e => setError(e instanceof Error ? e.message : 'Error')).finally(() => setLoading(false));
+  }, [token, gameId]);
 
   return (
     <div className="screen">
