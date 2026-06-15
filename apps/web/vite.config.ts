@@ -7,6 +7,8 @@ export default defineConfig({
   // same-origin defaults. The REST paths and the /ws upgrade are forwarded to
   // the server on :3000 (override target via the standard Vite env if needed).
   server: {
+    // Demo-only: allow tunnel hostnames (e.g. *.trycloudflare.com) to reach the dev server.
+    allowedHosts: true,
     proxy: {
       '/auth': 'http://localhost:3000',
       '/wallet': 'http://localhost:3000',
