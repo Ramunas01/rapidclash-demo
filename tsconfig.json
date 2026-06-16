@@ -5,6 +5,7 @@
     { "path": "./packages/core" },
     { "path": "./packages/games/rps" },
     { "path": "./packages/games/coinflip" },
+    { "path": "./packages/games/chess" },
     { "path": "./apps/server" },
     { "path": "./apps/web" }
   ]

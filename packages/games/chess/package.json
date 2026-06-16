@@ -1,0 +1,21 @@
+{
+  "name": "@rapidclash/game-chess",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@rapidclash/shared": "workspace:*",
+    "chess.js": "^1.4.0"
+  }
+}
