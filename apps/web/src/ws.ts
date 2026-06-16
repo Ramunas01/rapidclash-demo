@@ -1,4 +1,4 @@
-import type { Envelope, QueueJoinPayload, QueueLeavePayload, MoveMakePayload, MatchResumePayload, MatchStartPayload, MatchStatePayload, MatchYourTurnPayload, MatchEndPayload, QueueWaitingPayload, ErrorPayload, ChallengeSubscribePayload, ChallengeTakePayload, ChallengesListPayload, ChallengesUpdatePayload, ChallengeExpiredPayload } from '@rapidclash/shared';
+import type { Envelope, Move, QueueJoinPayload, QueueLeavePayload, MoveMakePayload, MatchResumePayload, MatchStartPayload, MatchStatePayload, MatchYourTurnPayload, MatchEndPayload, QueueWaitingPayload, ErrorPayload, ChallengeSubscribePayload, ChallengeTakePayload, ChallengesListPayload, ChallengesUpdatePayload, ChallengeExpiredPayload } from '@rapidclash/shared';
 
 const WS_BASE = import.meta.env.VITE_WS_URL ?? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
 
@@ -227,7 +227,9 @@ export class WsClient {
     return this.send('challenge.take', { matchId } as ChallengeTakePayload);
   }
 
-  makeMove(move: string, matchId: string): boolean {
+  /** `move` is the contract's opaque Move — a string for RPS/Coinflip, a {from,to,promotion?}
+   *  object for chess. The server's game module validates the shape. */
+  makeMove(move: Move, matchId: string): boolean {
     return this.send('move.make', { move } as MoveMakePayload, matchId);
   }
 
