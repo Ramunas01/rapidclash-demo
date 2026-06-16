@@ -96,6 +96,7 @@ export function registerWsGateway(
     send<MatchStartPayload>(curSocket, 'match.start', {
       matchId: result.matchId,
       opponent: result.opponentId,
+      gameId,
       state: curState,
     });
 
@@ -105,6 +106,7 @@ export function registerWsGateway(
       send<MatchStartPayload>(oppSocket, 'match.start', {
         matchId: result.matchId,
         opponent: curId,
+        gameId,
         state: oppState,
       });
     }

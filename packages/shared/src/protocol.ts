@@ -104,6 +104,7 @@ export interface ChallengeExpiredPayload {
 export interface MatchStartPayload {
   matchId: string;
   opponent: PlayerId;
+  gameId: string; // authoritative game to route to (Charter invariant #2: server-authoritative)
   state: GameState; // viewFor result — opponent's hidden info already stripped
 }
 

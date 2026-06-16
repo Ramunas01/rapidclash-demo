@@ -127,11 +127,12 @@ export function App() {
         setCurrentMatchId(matchId);
         setOpponentId(payload.opponent);
         setGameState(payload.state as GameView);
-        // Persist the game we queued for so a reload resumes the correct play screen.
-        if (pendingGameId) {
-          setActiveGameId(pendingGameId);
-          writeStoredGameId(pendingGameId);
-        }
+        // Route from the server-authoritative gameId (Charter invariant #2), not the
+        // local pendingGameId — the take-challenge path never set pendingGameId, which
+        // silently rendered the default (RPS) board for the wrong game. Persist it so a
+        // reload resumes the correct play screen.
+        setActiveGameId(payload.gameId);
+        writeStoredGameId(payload.gameId);
         setLegalMoves([]);
         setScreen('play');
       },
