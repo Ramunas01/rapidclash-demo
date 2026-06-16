@@ -12,7 +12,12 @@ const rng: Rng = { next: () => 0, int: () => 0 };
 const ctx = (playerId: string) => ({ playerId, now: 0 });
 
 type ChessMove = { from: string; to: string; promotion?: string };
-type ChessView = { players: [string, string]; fen: string; forcedOutcome?: unknown };
+type ChessView = {
+  players: [string, string];
+  fen: string;
+  history?: string[];
+  forcedOutcome?: unknown;
+};
 function view(state: unknown): ChessView {
   return state as ChessView;
 }
@@ -166,6 +171,49 @@ describe('chessModule.outcome — draws', () => {
     const state = { players: [WHITE, BLACK], fen: '4k3/8/8/8/8/8/7R/4K3 w - - 100 1' };
     expect(chessModule.isTerminal(state)).toBe(true);
     expect(chessModule.outcome(state)).toEqual({ type: 'draw' });
+  });
+});
+
+describe('chessModule.outcome — threefold repetition', () => {
+  // Shuffle both knights out and back: g1-f3-g1 / g8-f6-g8, twice. Each full
+  // cycle returns to the starting position, so after two cycles the start
+  // position has occurred three times → threefold repetition.
+  const KNIGHT_CYCLE: ChessMove[] = [
+    { from: 'g1', to: 'f3' },
+    { from: 'g8', to: 'f6' },
+    { from: 'f3', to: 'g1' },
+    { from: 'f6', to: 'g8' },
+  ];
+  const THREEFOLD: ChessMove[] = [...KNIGHT_CYCLE, ...KNIGHT_CYCLE];
+
+  it('stores the move history as a SAN list (needed for replay)', () => {
+    const state = play(KNIGHT_CYCLE);
+    expect(view(state).history).toEqual(['Nf3', 'Nf6', 'Ng1', 'Ng8']);
+  });
+
+  it('a position repeated three times is terminal and a draw', () => {
+    const state = play(THREEFOLD);
+    expect(chessModule.isTerminal(state)).toBe(true);
+    expect(chessModule.outcome(state)).toEqual({ type: 'draw' });
+    // No moves are offered once the game is drawn.
+    expect(chessModule.legalMoves(state, WHITE)).toEqual([]);
+  });
+
+  it('a position seen only twice is NOT falsely flagged as terminal', () => {
+    // 7 plies in: every repeated position has occurred at most twice, so the
+    // game is still live (Black is on move and has legal replies).
+    const state = play(THREEFOLD.slice(0, 7));
+    expect(chessModule.isTerminal(state)).toBe(false);
+    expect(chessModule.legalMoves(state, BLACK).length).toBeGreaterThan(0);
+  });
+
+  it('replaying the same threefold move list reaches an identical terminal state', () => {
+    const r1 = play(THREEFOLD);
+    const r2 = play(THREEFOLD);
+    expect(JSON.stringify(r1)).toBe(JSON.stringify(r2));
+    expect(chessModule.isTerminal(r1)).toBe(true);
+    expect(chessModule.isTerminal(r2)).toBe(true);
+    expect(chessModule.outcome(r1)).toEqual(chessModule.outcome(r2));
   });
 });
 

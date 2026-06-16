@@ -24,26 +24,46 @@ export interface ChessMove {
 }
 
 /**
- * State is JSON-serializable: the whole game position lives in a single FEN
- * string. A fresh chess.js instance is reconstructed from it inside every
- * method (the instance is never stored).
+ * State is JSON-serializable. The authoritative record of the game is the SAN
+ * `history`; the `fen` is kept alongside it as a convenience (current position,
+ * side-to-move). A fresh chess.js instance is reconstructed inside every method
+ * (the instance is never stored).
  *
- * Note: threefold-repetition draws need move history, which a FEN alone does
- * not carry, so they are not auto-detected here. The other game-over states —
- * checkmate, stalemate, fifty-move (the halfmove clock lives in the FEN) and
- * insufficient material — are all decidable from the FEN and are detected.
+ * Threefold repetition needs the move history, which a FEN alone does not carry,
+ * so the instance is rebuilt by replaying `history` into a fresh chess.js — that
+ * populates its internal position counter so `isThreefoldRepetition()` works.
+ * The other game-over states — checkmate, stalemate, fifty-move (halfmove clock
+ * in the FEN) and insufficient material — are decidable from the FEN too, so a
+ * state hydrated from a bare FEN (no history) still resolves all of them.
  */
 interface ChessState {
   /** players[0] = white, players[1] = black. */
   players: [PlayerId, PlayerId];
-  /** Current position as a FEN string. */
+  /** Current position as a FEN string (convenience / side-to-move). */
   fen: string;
+  /** Moves played from the start, in SAN — the source of truth for replay. */
+  history: string[];
   /** Present only when the match ended via forfeit, bypassing normal play. */
   forcedOutcome?: Outcome;
 }
 
 function cast(state: GameState): ChessState {
   return state as ChessState;
+}
+
+/**
+ * Rebuild a chess.js instance for the current position. When a SAN `history` is
+ * present it is replayed from the standard start so chess.js can see repetition;
+ * otherwise (a state hydrated straight from a FEN) we fall back to the FEN, which
+ * still decides every non-repetition terminal state.
+ */
+function reconstruct(s: ChessState): Chess {
+  if (s.history && s.history.length > 0) {
+    const chess = new Chess();
+    for (const san of s.history) chess.move(san);
+    return chess;
+  }
+  return new Chess(s.fen);
 }
 
 /** The player whose side is to move per the FEN ('w' → white/players[0]). */
@@ -76,7 +96,7 @@ export const chessModule: GameModule = {
 
   init(players: PlayerId[], _rng: Rng): GameState {
     // rng unused: chess is fully deterministic from the move list.
-    const state: ChessState = { players: [players[0], players[1]], fen: START_FEN };
+    const state: ChessState = { players: [players[0], players[1]], fen: START_FEN, history: [] };
     return state;
   },
 
@@ -84,7 +104,7 @@ export const chessModule: GameModule = {
     const s = cast(state);
     if (s.forcedOutcome !== undefined) return [];
     if (playerId !== sideToMovePlayer(s)) return [];
-    const chess = new Chess(s.fen);
+    const chess = reconstruct(s);
     if (chess.isGameOver()) return [];
     return chess.moves({ verbose: true }).map((m) => {
       const move: ChessMove = { from: m.from, to: m.to };
@@ -106,15 +126,23 @@ export const chessModule: GameModule = {
       throw new IllegalMove(`"${JSON.stringify(move)}" is not a valid chess move`);
     }
 
+    // The FEN fully describes the current position, so a single move can be
+    // validated and converted to SAN from it; the SAN is appended to `history`
+    // so the full game can be replayed (and repetition seen) later.
     const chess = new Chess(s.fen);
+    let san: string;
     try {
       // chess.js validates legality and throws on an illegal move.
-      chess.move(move as string | ChessMove);
+      san = chess.move(move as string | ChessMove).san;
     } catch {
       throw new IllegalMove(`"${JSON.stringify(move)}" is not a legal move in this position`);
     }
 
-    const newState: ChessState = { ...s, fen: chess.fen() };
+    const newState: ChessState = {
+      ...s,
+      fen: chess.fen(),
+      history: [...(s.history ?? []), san],
+    };
     return {
       state: newState,
       events: [{ type: 'move_made', payload: { playerId, move, fen: newState.fen } }],
@@ -124,21 +152,22 @@ export const chessModule: GameModule = {
   isTerminal(state: GameState): boolean {
     const s = cast(state);
     if (s.forcedOutcome !== undefined) return true;
-    return new Chess(s.fen).isGameOver();
+    // Replay the history so chess.js can also see threefold repetition.
+    return reconstruct(s).isGameOver();
   },
 
   outcome(state: GameState): Outcome {
     const s = cast(state);
     if (s.forcedOutcome !== undefined) return s.forcedOutcome;
-    const chess = new Chess(s.fen);
+    const chess = reconstruct(s);
     if (chess.isCheckmate()) {
       // The side to move is the one that was mated; the mover (opposite side)
       // delivered mate and wins.
       const winner = chess.turn() === 'w' ? s.players[1] : s.players[0];
       return { type: 'win', winner };
     }
-    // Stalemate, fifty-move, insufficient material (and threefold, if ever
-    // reflected in the FEN) all resolve to a draw.
+    // Stalemate, fifty-move, insufficient material and threefold repetition
+    // all resolve to a draw.
     return { type: 'draw' };
   },
 
