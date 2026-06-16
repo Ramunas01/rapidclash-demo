@@ -145,8 +145,11 @@ function PlayableTile({ meta, index, onSelect }: { meta: GameMeta; index: number
           )}
         </div>
         <div className="text-center">
-          <h3 className="mb-0.5 text-sm font-bold leading-tight tracking-wide">{meta.displayName}</h3>
-          <p className={cn('text-[10px] font-medium', art.accent)}>{art.tagline}</p>
+          {/* Option B: name is hidden on art tiles (the title is baked into the artwork). */}
+          {!art.image && (
+            <h3 className="mb-0.5 text-sm font-bold leading-tight tracking-wide">{meta.displayName}</h3>
+          )}
+          {!art.image && <p className={cn('text-[10px] font-medium', art.accent)}>{art.tagline}</p>}
           <div className="mt-1.5 flex flex-col items-center gap-1 text-[9px] text-white/60">
             <span>
               {meta.bet.minStake}–{meta.bet.maxStake} cr · ~{meta.averageDurationSec}s
@@ -188,8 +191,13 @@ function ComingSoonTile({ id, index }: { id: string; index: number }) {
           )}
         </div>
         <div className="text-center">
-          <h3 className="mb-0.5 text-sm font-bold leading-tight tracking-wide text-white/80">{art.name}</h3>
-          <p className={cn('text-[10px] font-medium opacity-70', art.accent)}>{art.tagline}</p>
+          {/* Option B: name/tagline hidden on art tiles (baked into the artwork). */}
+          {!art.image && (
+            <h3 className="mb-0.5 text-sm font-bold leading-tight tracking-wide text-white/80">{art.name}</h3>
+          )}
+          {!art.image && (
+            <p className={cn('text-[10px] font-medium opacity-70', art.accent)}>{art.tagline}</p>
+          )}
         </div>
       </div>
     </motion.div>
