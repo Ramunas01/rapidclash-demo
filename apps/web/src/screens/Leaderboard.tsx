@@ -24,11 +24,15 @@ interface Props {
 }
 
 /** Render a row's stat according to its ranking kind (ADR-007): win_rate shows a
- *  percentage; net_winnings shows signed credits (the sign is part of the value). */
+ *  percentage; net_winnings shows signed credits (the sign is part of the value);
+ *  elo shows the rounded rating. */
 export function formatStat(entry: LeaderboardEntry): string {
   if (entry.kind === 'net_winnings') {
     const v = entry.netWinnings;
     return `${v > 0 ? '+' : ''}${v} credits`;
+  }
+  if (entry.kind === 'elo') {
+    return `${Math.round(entry.rating)} ELO`;
   }
   return `${Math.round(entry.score * 100)}% win rate`;
 }
@@ -45,9 +49,11 @@ function gameName(gameId: string): string {
   return GAME_ART[gameId]?.name ?? gameId.toUpperCase();
 }
 
-/** The two ranking shapes carry different headline stats (ADR-007). */
+/** Each ranking shape carries a different headline stat (ADR-007). */
 function kindLabel(kind: RankingKind | undefined): string {
-  return kind === 'net_winnings' ? 'Net winnings' : 'Win rate';
+  if (kind === 'net_winnings') return 'Net winnings';
+  if (kind === 'elo') return 'ELO rating';
+  return 'Win rate';
 }
 
 const entrance = (index: number) => ({
@@ -102,6 +108,18 @@ function StatCell({ entry }: { entry: LeaderboardEntry }) {
         </span>
         {/* ADR-007: net_winnings sums to −rake across players, so a row can be negative. */}
         <span className="text-[10px] font-medium text-white/40">net of platform fee</span>
+      </div>
+    );
+  }
+
+  if (entry.kind === 'elo') {
+    return (
+      <div className="flex flex-col items-end text-right">
+        <span className="flex items-center gap-1 text-sm font-bold tabular-nums text-white">
+          <Trophy className="h-3.5 w-3.5 text-brand" />
+          {formatStat(entry)}
+        </span>
+        <span className="text-[10px] font-medium text-white/40">rating</span>
       </div>
     );
   }

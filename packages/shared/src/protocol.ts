@@ -212,7 +212,19 @@ export interface NetWinningsLeaderboardEntry extends LeaderboardEntryBase {
   netWinnings: number;
 }
 
-export type LeaderboardEntry = WinRateLeaderboardEntry | NetWinningsLeaderboardEntry;
+/** elo row (skill games, e.g. Chess): score = ELO rating. Both players start at
+ *  1500; ratings are derived by replaying the game's results with a fixed K=32
+ *  (ADR-007 — additive variant). */
+export interface EloLeaderboardEntry extends LeaderboardEntryBase {
+  kind: 'elo';
+  /** = score */
+  rating: number;
+}
+
+export type LeaderboardEntry =
+  | WinRateLeaderboardEntry
+  | NetWinningsLeaderboardEntry
+  | EloLeaderboardEntry;
 
 export interface MatchRecord {
   matchId: string;

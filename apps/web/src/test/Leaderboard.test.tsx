@@ -25,6 +25,17 @@ describe('LeaderboardScreen — render by ranking kind', () => {
     expect(screen.queryByText(/credits/i)).not.toBeInTheDocument();
   });
 
+  it('renders an elo row as a rounded rating with a "rating" subline', async () => {
+    mockEntries([
+      { rank: 1, playerId: 'alice', displayName: 'alice', score: 1531.26, kind: 'elo', rating: 1531.26 },
+    ]);
+    render(<LeaderboardScreen token="tok" gameId="chess" onBack={() => {}} />);
+    await waitFor(() => expect(screen.getByText('1531 ELO')).toBeInTheDocument());
+    expect(screen.getByText('rating')).toBeInTheDocument();
+    // elo is a skill board, never framed as money.
+    expect(screen.queryByText(/credits/i)).not.toBeInTheDocument();
+  });
+
   it('renders net_winnings rows as signed credits (positive and negative)', async () => {
     mockEntries([
       { rank: 1, playerId: 'alice', displayName: 'alice', score: 9, kind: 'net_winnings', netWinnings: 9 },
@@ -78,5 +89,11 @@ describe('formatStat', () => {
     expect(formatStat({ ...base, score: 9, netWinnings: 9 })).toBe('+9 credits');
     expect(formatStat({ ...base, score: -10, netWinnings: -10 })).toBe('-10 credits');
     expect(formatStat({ ...base, score: 0, netWinnings: 0 })).toBe('0 credits');
+  });
+
+  it('formats elo as a rounded rating', () => {
+    const base = { rank: 1, playerId: 'a', displayName: 'a', kind: 'elo' as const };
+    expect(formatStat({ ...base, score: 1500, rating: 1500 })).toBe('1500 ELO');
+    expect(formatStat({ ...base, score: 1531.26, rating: 1531.26 })).toBe('1531 ELO');
   });
 });

@@ -10,6 +10,7 @@ function freshDb() {
 
 const RPS_WIN_RATE: RankingType = { kind: 'win_rate' };
 const COINFLIP_NET: RankingType = { kind: 'net_winnings' };
+const CHESS_ELO: RankingType = { kind: 'elo', k: 32 };
 
 /** getLeaderboard now returns the generalized union; these legacy win_rate
  *  assertions narrow to the win_rate row shape (runtime output is unchanged). */
@@ -227,5 +228,122 @@ describe('createMatchHistory — net_winnings leaderboard', () => {
 
     const board = mh.getLeaderboard('coinflip');
     expect(board.every((e) => e.score === 0)).toBe(true);
+  });
+});
+
+// ─── elo (ADR-007, additive) ────────────────────────────────────────────────
+// ELO is DERIVED-ON-QUERY: replay the game's results in chronological order,
+// applying the standard update (start 1500, K=32) to both players each result.
+// No stored rating, no persistence beyond the existing match_results store.
+
+describe('createMatchHistory — elo leaderboard', () => {
+  function eloMh() {
+    return createMatchHistory(freshDb(), new Map([['chess', CHESS_ELO]]));
+  }
+
+  /** Narrow the union to the elo row shape for assertions. */
+  function eloBoard(mh: ReturnType<typeof createMatchHistory>) {
+    return mh.getLeaderboard('chess') as Array<{
+      rank: number;
+      playerId: string;
+      score: number;
+      kind: 'elo';
+      rating: number;
+    }>;
+  }
+
+  it('dispatches chess → elo and tags rows with kind/score = rating', () => {
+    const mh = eloMh();
+    mh.recordResult('m1', 'chess', ['alice', 'bob'], 'win', 'alice', 100);
+
+    const board = eloBoard(mh);
+    expect(board.every((e) => e.kind === 'elo' && e.score === e.rating)).toBe(true);
+  });
+
+  it('a single win from 1500/1500 with K=32 yields exactly 1516 / 1484', () => {
+    // Hand-computed: Ea = 1/(1+10^0) = 0.5.
+    //   winner: 1500 + 32*(1 − 0.5) = 1516
+    //   loser:  1500 + 32*(0 − 0.5) = 1484
+    const mh = eloMh();
+    mh.recordResult('m1', 'chess', ['alice', 'bob'], 'win', 'alice', 100);
+
+    const board = eloBoard(mh);
+    const byId = Object.fromEntries(board.map((e) => [e.playerId, e]));
+    expect(byId['alice'].rating).toBe(1516);
+    expect(byId['bob'].rating).toBe(1484);
+    // Ranked by rating DESC.
+    expect(board.map((e) => e.playerId)).toEqual(['alice', 'bob']);
+    expect(board.map((e) => e.rank)).toEqual([1, 2]);
+  });
+
+  it('a draw between unequally-rated players moves their ratings toward each other', () => {
+    const mh = eloMh();
+    // First make them unequal: alice 1516, bob 1484 (gap 32).
+    mh.recordResult('m1', 'chess', ['alice', 'bob'], 'win', 'alice', 100);
+    // Then a draw. Hand-computed from 1516/1484:
+    //   Ea = 1/(1+10^(-32/400)) ≈ 0.545922
+    //   alice: 1516 + 32*(0.5 − 0.545922) ≈ 1514.53  (down)
+    //   bob:   1484 + 32*(0.5 − 0.454078) ≈ 1485.47  (up)
+    mh.recordResult('m2', 'chess', ['alice', 'bob'], 'draw', undefined, 100);
+
+    const board = eloBoard(mh);
+    const byId = Object.fromEntries(board.map((e) => [e.playerId, e]));
+    expect(byId['alice'].rating).toBeCloseTo(1514.53, 2);
+    expect(byId['bob'].rating).toBeCloseTo(1485.47, 2);
+    // Moved toward each other: higher came down, lower came up, gap shrank < 32.
+    expect(byId['alice'].rating).toBeLessThan(1516);
+    expect(byId['bob'].rating).toBeGreaterThan(1484);
+    expect(byId['alice'].rating - byId['bob'].rating).toBeLessThan(32);
+    // Order preserved: alice still ahead.
+    expect(board.map((e) => e.playerId)).toEqual(['alice', 'bob']);
+  });
+
+  it('replays a fixed multi-match sequence into the correct order and ratings', () => {
+    const mh = eloMh();
+    mh.recordResult('m1', 'chess', ['alice', 'bob'], 'win', 'alice', 100); // alice 1516, bob 1484
+    mh.recordResult('m2', 'chess', ['bob', 'carol'], 'win', 'bob', 100); // bob 1500.74, carol 1483.26
+
+    const board = eloBoard(mh);
+    const byId = Object.fromEntries(board.map((e) => [e.playerId, e]));
+    expect(byId['alice'].rating).toBe(1516);
+    expect(byId['bob'].rating).toBeCloseTo(1500.74, 2);
+    expect(byId['carol'].rating).toBeCloseTo(1483.26, 2);
+    expect(board.map((e) => e.playerId)).toEqual(['alice', 'bob', 'carol']);
+    expect(board.map((e) => e.rank)).toEqual([1, 2, 3]);
+  });
+
+  it('ELO is zero-sum: total rating is conserved at n × 1500', () => {
+    const mh = eloMh();
+    mh.recordResult('m1', 'chess', ['alice', 'bob'], 'win', 'alice', 100);
+    mh.recordResult('m2', 'chess', ['bob', 'carol'], 'win', 'bob', 100);
+    mh.recordResult('m3', 'chess', ['carol', 'alice'], 'draw', undefined, 100);
+
+    const board = eloBoard(mh);
+    const total = board.reduce((acc, e) => acc + e.rating, 0);
+    expect(total).toBeCloseTo(3 * 1500, 6); // three players, perfectly conserved
+  });
+
+  it('a void-only match yields an empty board (never played — like win_rate)', () => {
+    const mh = eloMh();
+    mh.recordResult('m1', 'chess', ['alice', 'bob'], 'void', undefined, 100);
+    expect(mh.getLeaderboard('chess')).toEqual([]);
+  });
+
+  it('void matches are skipped but real ones still count (player keeps 1500 baseline)', () => {
+    const mh = eloMh();
+    // A void between alice & bob changes nothing; then alice actually beats bob.
+    mh.recordResult('m1', 'chess', ['alice', 'bob'], 'void', undefined, 100);
+    mh.recordResult('m2', 'chess', ['alice', 'bob'], 'win', 'alice', 100);
+
+    const board = eloBoard(mh);
+    const byId = Object.fromEntries(board.map((e) => [e.playerId, e.rating]));
+    // Identical to a single win from the 1500 baseline — the void had no effect.
+    expect(byId['alice']).toBe(1516);
+    expect(byId['bob']).toBe(1484);
+  });
+
+  it('rejects glicko (declared but unimplemented, post-demo)', () => {
+    const mh = createMatchHistory(freshDb(), new Map([['x', { kind: 'glicko' }]]));
+    expect(() => mh.getLeaderboard('x')).toThrow(/Unsupported ranking kind/);
   });
 });

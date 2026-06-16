@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import type {
+  EloLeaderboardEntry,
   LeaderboardEntry,
   NetWinningsLeaderboardEntry,
   RankingType,
@@ -10,6 +11,10 @@ import type { UsernameLookup } from './identity.js';
 
 /** Back-compat alias: a win_rate row used to be the only leaderboard shape. */
 export type WinRateEntry = WinRateLeaderboardEntry;
+
+/** ELO parameters (Advisor decision: fixed K, no tiered K, no Glicko). */
+const START_RATING = 1500;
+const ELO_K = 32;
 
 export interface MatchHistory {
   recordResult(
@@ -75,6 +80,16 @@ export function createMatchHistory(
     `SELECT player1_id, player2_id, outcome, winner_id
      FROM match_results
      WHERE game_id = ?`,
+  );
+
+  // ELO is derived by replaying results in settlement order, so this query is
+  // ordered chronologically. `rowid` (insertion order) is the deterministic
+  // tiebreak for results that share a settled_at timestamp.
+  const stmtRowsChrono = db.prepare<[string], ResultRow>(
+    `SELECT player1_id, player2_id, outcome, winner_id
+     FROM match_results
+     WHERE game_id = ?
+     ORDER BY settled_at ASC, rowid ASC`,
   );
 
   // net_winnings is derived from the LEDGER — the single source of money truth —
@@ -193,6 +208,63 @@ export function createMatchHistory(
     }));
   }
 
+  function eloLeaderboard(gameId: string): EloLeaderboardEntry[] {
+    // DERIVED-ON-QUERY (ADR-007, like win_rate/net_winnings): replay this game's
+    // results in chronological order, applying the standard ELO update to both
+    // players each time. No stored rating, no update-on-settle hook — the
+    // ephemeral match_results store is the single source of truth.
+    //
+    // Fixed K=32 (Advisor decision); both players start at 1500. Ratings are kept
+    // at full floating-point precision through the replay; the client rounds for
+    // display (e.g. "1532 ELO"). void matches were never played and are skipped.
+    const rows = stmtRowsChrono.all(gameId);
+
+    const ratings = new Map<string, number>();
+    const rating = (pid: string): number => ratings.get(pid) ?? START_RATING;
+
+    for (const row of rows) {
+      if (row.outcome === 'void') continue;
+      const a = row.player1_id;
+      const b = row.player2_id;
+      const Ra = rating(a);
+      const Rb = rating(b);
+      // Expected scores (logistic; Ea + Eb === 1).
+      const Ea = 1 / (1 + 10 ** ((Rb - Ra) / 400));
+      const Eb = 1 - Ea;
+      // Actual scores: win = 1/0, draw = 0.5/0.5.
+      let Sa: number;
+      let Sb: number;
+      if (row.outcome === 'draw' || row.winner_id == null) {
+        Sa = 0.5;
+        Sb = 0.5;
+      } else if (row.winner_id === a) {
+        Sa = 1;
+        Sb = 0;
+      } else {
+        Sa = 0;
+        Sb = 1;
+      }
+      ratings.set(a, Ra + ELO_K * (Sa - Ea));
+      ratings.set(b, Rb + ELO_K * (Sb - Eb));
+    }
+
+    // Sort: rating DESC, then playerId ASC for a deterministic tiebreak
+    // (matches the net_winnings ordering convention).
+    const ranked = [...ratings.entries()].sort((x, y) => {
+      if (y[1] !== x[1]) return y[1] - x[1];
+      return x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0;
+    });
+
+    return ranked.map(([playerId, r], i) => ({
+      rank: i + 1,
+      playerId,
+      displayName: displayNameFor(playerId),
+      score: r,
+      kind: 'elo',
+      rating: r,
+    }));
+  }
+
   function getLeaderboard(gameId: string): LeaderboardEntry[] {
     // Dispatch generically on the game's declared ranking kind (ADR-007).
     const kind = rankingByGame.get(gameId)?.kind ?? 'win_rate';
@@ -201,8 +273,10 @@ export function createMatchHistory(
         return winRateLeaderboard(gameId);
       case 'net_winnings':
         return netWinningsLeaderboard(gameId);
+      case 'elo':
+        return eloLeaderboard(gameId);
       default:
-        // elo/glicko are declared by the contract but not yet implemented.
+        // glicko is declared by the contract but not yet implemented (post-demo).
         throw new Error(`Unsupported ranking kind: ${kind}`);
     }
   }
