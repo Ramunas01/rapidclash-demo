@@ -4,6 +4,7 @@ import { WebSocket } from 'ws';
 import type { FastifyInstance } from 'fastify';
 import { createServices, buildApp, type AppServices } from '../server.js';
 import { rpsModule } from '@rapidclash/game-rps';
+import { chessModule } from '@rapidclash/game-chess';
 import type {
   Envelope,
   ChallengesListPayload,
@@ -95,8 +96,10 @@ describe('OC8 — open-challenges feed over the WS gateway', () => {
     process.env.CHALLENGE_SWEEP_MS = '30';
 
     const db = new Database(':memory:');
-    services = createServices(db, [rpsModule]);
-    app = buildApp(services, [rpsModule], { seedAdmin: false });
+    // Register a second game (chess) so gameId assertions prove match.start carries
+    // the *queued* game, not a hardcoded/default value.
+    services = createServices(db, [rpsModule, chessModule]);
+    app = buildApp(services, [rpsModule, chessModule], { seedAdmin: false });
 
     await app.listen({ port: 0, host: '127.0.0.1' });
     const addr = app.server.address();
@@ -170,10 +173,42 @@ describe('OC8 — open-challenges feed over the WS gateway', () => {
     expect(bobStart.matchId).toBe(matchId);
     expect(aliceStart.matchId).toBe(matchId);
     expect(bobStart.opponent).toBe(aliceId); // bob's opponent is alice
+    // Both sides are told the authoritative game to render (the queued game).
+    expect(bobStart.gameId).toBe('rps');
+    expect(aliceStart.gameId).toBe('rps');
     await bob.waitFor('match.your_turn');
 
     const removed = (await carol.waitFor('challenges.update')).payload as ChallengesUpdatePayload;
     expect(removed.removed).toEqual({ matchId, reason: 'taken' });
+  });
+
+  it('match.start carries the queued gameId on BOTH the FIFO and challenge.take paths', async () => {
+    // FIFO path: both players queue for chess; the auto-match fires match.start.
+    const alice = await openSocket(port, aliceToken);
+    const bob = await openSocket(port, bobToken);
+    sockets.push(alice, bob);
+
+    alice.send('queue.join', { gameId: 'chess', stake: 10 });
+    await alice.waitFor('queue.waiting');
+    bob.send('queue.join', { gameId: 'chess', stake: 10 });
+    const fifoAlice = (await alice.waitFor('match.start')).payload as MatchStartPayload;
+    const fifoBob = (await bob.waitFor('match.start')).payload as MatchStartPayload;
+    expect(fifoAlice.gameId).toBe('chess');
+    expect(fifoBob.gameId).toBe('chess');
+
+    // challenge.take path: a fresh resting chess bet, taken from the lobby. This is the
+    // bug's path — the taker (dave) must be told gameId 'chess', not the default.
+    const carol = await openSocket(port, (await registerExtra(app, 'carol')).token);
+    const dave = await openSocket(port, (await registerExtra(app, 'dave')).token);
+    sockets.push(carol, dave);
+
+    carol.send('queue.join', { gameId: 'chess', stake: 10 });
+    const restingId = ((await carol.waitFor('queue.waiting')).payload as QueueWaitingPayload).matchId;
+    dave.send('challenge.take', { matchId: restingId });
+    const takeDave = (await dave.waitFor('match.start')).payload as MatchStartPayload;
+    const takeCarol = (await carol.waitFor('match.start')).payload as MatchStartPayload;
+    expect(takeDave.gameId).toBe('chess');
+    expect(takeCarol.gameId).toBe('chess');
   });
 
   it('SELF_TAKE: an owner taking their own challenge is rejected', async () => {

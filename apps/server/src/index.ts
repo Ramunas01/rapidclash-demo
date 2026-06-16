@@ -1,9 +1,7 @@
 import Database from 'better-sqlite3';
-import { rpsModule } from '@rapidclash/game-rps';
-import { coinflipModule } from '@rapidclash/game-coinflip';
 import { buildApp, createServices } from './server.js';
+import { gameModules } from './games.js';
 
-const gameModules = [rpsModule, coinflipModule];
 const db = new Database(process.env.DB_PATH ?? 'rapidclash.db');
 const services = createServices(db, gameModules);
 

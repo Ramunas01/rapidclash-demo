@@ -12,6 +12,7 @@
     "@fastify/static": "^7.0.4",
     "@fastify/websocket": "^8.3.1",
     "@rapidclash/core": "workspace:*",
+    "@rapidclash/game-chess": "workspace:*",
     "@rapidclash/game-coinflip": "workspace:*",
     "@rapidclash/game-rps": "workspace:*",
     "@rapidclash/shared": "workspace:*",

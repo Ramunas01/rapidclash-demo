@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { GameMeta, Outcome, SettlementSummary, OpenChallenge } from '@rapidclash/shared';
+import type { GameMeta, Move, Outcome, SettlementSummary, OpenChallenge } from '@rapidclash/shared';
 import { WsClient, hasStoredMatch, readStoredGameId, writeStoredGameId, type WsStatus } from './ws.js';
 import { applyChallengesUpdate } from './screens/OpenChallengesList.js';
 import { AuthScreen } from './screens/Auth.js';
@@ -9,6 +9,7 @@ import { StakeEntryScreen } from './screens/StakeEntry.js';
 import { LobbyScreen } from './screens/Lobby.js';
 import { PlayScreen } from './screens/Play.js';
 import { CoinflipPlayScreen } from './screens/CoinflipPlay.js';
+import { ChessPlayScreen } from './screens/ChessPlay.js';
 import { ResultScreen } from './screens/Result.js';
 import { LeaderboardScreen } from './screens/Leaderboard.js';
 
@@ -32,9 +33,25 @@ export interface CoinflipView {
   forcedOutcome?: { type: string; winner?: string };
 }
 
+/** A chess move in the module's JSON shape (see packages/games/chess). `applyMove`
+ *  expects exactly this; `legalMoves` arrives as an array of these. */
+export interface ChessMove {
+  from: string;
+  to: string;
+  promotion?: string;
+}
+
+export interface ChessView {
+  /** players[0] = white, players[1] = black. */
+  players: [string, string];
+  /** Whole position as a FEN string (chess is perfect-info — nothing redacted). */
+  fen: string;
+  forcedOutcome?: { type: string; winner?: string };
+}
+
 /** A per-game redacted view as it arrives from the server. The active game (and so
  *  which screen renders it) is tracked separately in `activeGameId`. */
-export type GameView = RpsView | CoinflipView;
+export type GameView = RpsView | CoinflipView | ChessView;
 
 function loadAuth() {
   return {
@@ -63,7 +80,9 @@ export function App() {
   // The game whose match is currently active — drives which play screen renders.
   // Persisted alongside currentMatchId (#10) so a mid-match reload resumes the right one.
   const [activeGameId, setActiveGameId] = useState<string | null>(readStoredGameId());
-  const [legalMoves, setLegalMoves] = useState<string[]>([]);
+  // Heterogeneous across games: RPS/Coinflip send string moves, chess sends {from,to,…}
+  // objects. Typed as the contract's opaque Move; each play screen narrows it.
+  const [legalMoves, setLegalMoves] = useState<Move[]>([]);
   const [lastOutcome, setLastOutcome] = useState<Outcome | null>(null);
   const [lastSettlement, setLastSettlement] = useState<SettlementSummary | null>(null);
   const [pendingGameId, setPendingGameId] = useState<string | null>(null);
@@ -108,11 +127,12 @@ export function App() {
         setCurrentMatchId(matchId);
         setOpponentId(payload.opponent);
         setGameState(payload.state as GameView);
-        // Persist the game we queued for so a reload resumes the correct play screen.
-        if (pendingGameId) {
-          setActiveGameId(pendingGameId);
-          writeStoredGameId(pendingGameId);
-        }
+        // Route from the server-authoritative gameId (Charter invariant #2), not the
+        // local pendingGameId — the take-challenge path never set pendingGameId, which
+        // silently rendered the default (RPS) board for the wrong game. Persist it so a
+        // reload resumes the correct play screen.
+        setActiveGameId(payload.gameId);
+        writeStoredGameId(payload.gameId);
         setLegalMoves([]);
         setScreen('play');
       },
@@ -129,7 +149,7 @@ export function App() {
         setScreen((s) => (s === 'play' ? s : 'play'));
       },
       onMatchYourTurn(payload, _matchId) {
-        setLegalMoves(payload.legalMoves as string[]);
+        setLegalMoves(payload.legalMoves);
       },
       onMatchEnd(payload, _matchId) {
         setLastOutcome(payload.outcome);
@@ -281,7 +301,7 @@ export function App() {
     setActionNotice(null);
   }, [pendingGameId, pendingStake]);
 
-  const handleMakeMove = useCallback((move: string) => {
+  const handleMakeMove = useCallback((move: Move) => {
     if (!currentMatchId || !wsRef.current) return;
     // Send first; only disable the buttons if it actually went out, so a dropped move
     // can be retried (and resume re-delivers your_turn on reconnect anyway).
@@ -321,9 +341,11 @@ export function App() {
       case 'lobby':
         return <LobbyScreen username={username} stake={pendingStake} expiresAt={waitingExpiresAt} expired={lobbyExpired} onRepost={handleRepost} onLeave={handleLeaveQueue} />;
       case 'play':
+        if (activeGameId === 'chess')
+          return <ChessPlayScreen playerId={playerId!} username={username} opponentId={opponentId!} gameState={gameState as ChessView | null} legalMoves={legalMoves as ChessMove[]} onMove={handleMakeMove} onForfeit={handleForfeit} />;
         return activeGameId === 'coinflip'
-          ? <CoinflipPlayScreen playerId={playerId!} username={username} opponentId={opponentId!} gameState={gameState as CoinflipView | null} legalMoves={legalMoves} onMove={handleMakeMove} onForfeit={handleForfeit} />
-          : <PlayScreen playerId={playerId!} username={username} opponentId={opponentId!} gameState={gameState as RpsView | null} legalMoves={legalMoves} onMove={handleMakeMove} onForfeit={handleForfeit} />;
+          ? <CoinflipPlayScreen playerId={playerId!} username={username} opponentId={opponentId!} gameState={gameState as CoinflipView | null} legalMoves={legalMoves as string[]} onMove={handleMakeMove} onForfeit={handleForfeit} />
+          : <PlayScreen playerId={playerId!} username={username} opponentId={opponentId!} gameState={gameState as RpsView | null} legalMoves={legalMoves as string[]} onMove={handleMakeMove} onForfeit={handleForfeit} />;
       case 'result':
         return <ResultScreen outcome={lastOutcome!} settlement={lastSettlement!} playerId={playerId ?? undefined} onPlayAgain={goToGameListFromResult} onLeaderboard={goToLeaderboard} />;
       case 'leaderboard':
