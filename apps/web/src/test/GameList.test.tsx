@@ -38,8 +38,9 @@ describe('GameListScreen (re-skin)', () => {
 
     await waitFor(() => expect(screen.getByTestId('game-tile-rps')).toBeInTheDocument());
     expect(screen.getByTestId('game-tile-coinflip')).toBeInTheDocument();
-    // The data-driven name + stake range + ranking are shown.
-    expect(screen.getByText('Rock Paper Scissors')).toBeInTheDocument();
+    // Option B: the name is baked into the art (not shown as text), but kept as the button's
+    // accessible name; the stake range + ranking remain visible.
+    expect(screen.getByLabelText('Play Rock Paper Scissors')).toBeInTheDocument();
     expect(screen.getByText(/1–100 cr · ~10s/)).toBeInTheDocument();
     expect(screen.getByText('Net winnings')).toBeInTheDocument(); // coinflip ranking
   });

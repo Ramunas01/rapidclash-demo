@@ -19,6 +19,14 @@ import type { GameMeta } from '@rapidclash/shared';
 import { api } from '../api.js';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+// Designed tile art (Vite-hashed/bundled WebP). Only games with a tile image here use it;
+// the rest fall back to the gradient below. RPS was flattened onto the card backdrop at
+// export time, so there are no see-through edges.
+import coinflipArt from '../assets/games/coinflip.webp';
+import rpsArt from '../assets/games/rps.webp';
+import chessArt from '../assets/games/chess.webp';
+import blackjackArt from '../assets/games/blackjack.webp';
+import diceArt from '../assets/games/dice.webp';
 
 interface Props {
   token: string;
@@ -34,15 +42,17 @@ interface GameArt {
   gradient: string;
   accent: string;
   tagline: string;
+  /** Designed tile background. When set, it replaces the gradient (which stays as fallback). */
+  image?: string;
 }
 
 const GAME_ART: Record<string, GameArt> = {
-  rps: { name: 'RPS', icon: Scissors, gradient: 'from-violet-500 via-purple-600 to-indigo-900', accent: 'text-violet-200', tagline: 'Best of Three' },
-  coinflip: { name: 'Coinflip', icon: Coins, gradient: 'from-purple-600 via-purple-700 to-indigo-900', accent: 'text-purple-300', tagline: '50/50 Chance' },
-  chess: { name: 'Chess', icon: Crown, gradient: 'from-violet-600 via-violet-700 to-purple-900', accent: 'text-violet-300', tagline: 'Strategy PvP' },
-  blackjack: { name: 'Blackjack', icon: Spade, gradient: 'from-purple-700 via-purple-800 to-purple-900', accent: 'text-purple-300', tagline: 'Classic 21' },
+  rps: { name: 'RPS', icon: Scissors, gradient: 'from-violet-500 via-purple-600 to-indigo-900', accent: 'text-violet-200', tagline: 'Best of Three', image: rpsArt },
+  coinflip: { name: 'Coinflip', icon: Coins, gradient: 'from-purple-600 via-purple-700 to-indigo-900', accent: 'text-purple-300', tagline: '50/50 Chance', image: coinflipArt },
+  chess: { name: 'Chess', icon: Crown, gradient: 'from-violet-600 via-violet-700 to-purple-900', accent: 'text-violet-300', tagline: 'Strategy PvP', image: chessArt },
+  blackjack: { name: 'Blackjack', icon: Spade, gradient: 'from-purple-700 via-purple-800 to-purple-900', accent: 'text-purple-300', tagline: 'Classic 21', image: blackjackArt },
   baccarat: { name: 'Baccarat', icon: Diamond, gradient: 'from-purple-500 via-fuchsia-600 to-purple-900', accent: 'text-fuchsia-300', tagline: 'Card Showdown' },
-  dice: { name: 'Dice', icon: Dice5, gradient: 'from-purple-600 via-purple-700 to-purple-900', accent: 'text-purple-300', tagline: 'Roll & Win' },
+  dice: { name: 'Dice', icon: Dice5, gradient: 'from-purple-600 via-purple-700 to-purple-900', accent: 'text-purple-300', tagline: 'Roll & Win', image: diceArt },
   mines: { name: 'Mines', icon: Bomb, gradient: 'from-purple-700 via-purple-900 to-black', accent: 'text-purple-200', tagline: 'Risk vs Reward' },
   poker: { name: 'Poker', icon: Club, gradient: 'from-purple-700 via-violet-800 to-indigo-950', accent: 'text-purple-200', tagline: 'Bluff & Win' },
   roulette: { name: 'Roulette', icon: Disc, gradient: 'from-purple-600 via-purple-700 to-violet-900', accent: 'text-purple-200', tagline: 'Spin the Wheel' },
@@ -80,6 +90,29 @@ const entrance = (index: number) => ({
   transition: { delay: index * 0.05, duration: 0.4 },
 });
 
+/** The tile backdrop: designed art when available, else the original gradient (graceful
+ *  fallback for any gameId without a tile). Always tops it with a scrim so the badges/name
+ *  stay legible over whatever pixels are behind them. */
+function TileBackground({ art }: { art: GameArt }) {
+  if (art.image) {
+    return (
+      <>
+        <img
+          src={art.image}
+          alt=""
+          aria-hidden="true"
+          loading="lazy"
+          decoding="async"
+          className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+        />
+        {/* Readability scrim: dark at top (P2P/LIVE) and bottom (name/stats), clear in the middle. */}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/10 to-black/85" />
+      </>
+    );
+  }
+  return <div className={cn('absolute inset-0 bg-gradient-to-b opacity-80', art.gradient)} />;
+}
+
 /** A playable game — data-driven from `/games`. Tap → onSelect(meta) (the typed-amount path). */
 function PlayableTile({ meta, index, onSelect }: { meta: GameMeta; index: number; onSelect: (m: GameMeta) => void }) {
   const art = GAME_ART[meta.id] ?? FALLBACK_ART;
@@ -93,7 +126,7 @@ function PlayableTile({ meta, index, onSelect }: { meta: GameMeta; index: number
       {...entrance(index)}
       className="group relative aspect-[3/4] w-full overflow-hidden rounded-2xl border border-white/5 transition-all duration-300 hover:-translate-y-1 hover:scale-[1.03] hover:border-purple-500/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
     >
-      <div className={cn('absolute inset-0 bg-gradient-to-b opacity-80', art.gradient)} />
+      <TileBackground art={art} />
       <div className="absolute left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/5 blur-3xl transition-all duration-500 group-hover:bg-white/10" />
       <div className="relative flex h-full flex-col justify-between p-3 text-white">
         <div className="flex items-start justify-between">
@@ -104,13 +137,19 @@ function PlayableTile({ meta, index, onSelect }: { meta: GameMeta; index: number
           </div>
         </div>
         <div className="flex flex-1 items-center justify-center py-1">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/10 backdrop-blur-sm transition-all duration-300 group-hover:scale-110 group-hover:bg-white/15">
-            <Icon className="h-7 w-7 text-white" />
-          </div>
+          {/* The designed art is the focal point when present; the glass icon is the fallback face. */}
+          {!art.image && (
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/10 backdrop-blur-sm transition-all duration-300 group-hover:scale-110 group-hover:bg-white/15">
+              <Icon className="h-7 w-7 text-white" />
+            </div>
+          )}
         </div>
         <div className="text-center">
-          <h3 className="mb-0.5 text-sm font-bold leading-tight tracking-wide">{meta.displayName}</h3>
-          <p className={cn('text-[10px] font-medium', art.accent)}>{art.tagline}</p>
+          {/* Option B: name is hidden on art tiles (the title is baked into the artwork). */}
+          {!art.image && (
+            <h3 className="mb-0.5 text-sm font-bold leading-tight tracking-wide">{meta.displayName}</h3>
+          )}
+          {!art.image && <p className={cn('text-[10px] font-medium', art.accent)}>{art.tagline}</p>}
           <div className="mt-1.5 flex flex-col items-center gap-1 text-[9px] text-white/60">
             <span>
               {meta.bet.minStake}–{meta.bet.maxStake} cr · ~{meta.averageDurationSec}s
@@ -136,7 +175,7 @@ function ComingSoonTile({ id, index }: { id: string; index: number }) {
       {...entrance(index)}
       className="relative aspect-[3/4] overflow-hidden rounded-2xl border border-white/5 opacity-60"
     >
-      <div className={cn('absolute inset-0 bg-gradient-to-b opacity-50', art.gradient)} />
+      <TileBackground art={art} />
       <div className="relative flex h-full flex-col justify-between p-3 text-white">
         <div className="flex items-start justify-between">
           <span className="text-[7px] font-bold uppercase tracking-widest text-white/40">P2P</span>
@@ -145,13 +184,20 @@ function ComingSoonTile({ id, index }: { id: string; index: number }) {
           </Badge>
         </div>
         <div className="flex flex-1 items-center justify-center py-1">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm">
-            <Icon className="h-7 w-7 text-white/70" />
-          </div>
+          {!art.image && (
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm">
+              <Icon className="h-7 w-7 text-white/70" />
+            </div>
+          )}
         </div>
         <div className="text-center">
-          <h3 className="mb-0.5 text-sm font-bold leading-tight tracking-wide text-white/80">{art.name}</h3>
-          <p className={cn('text-[10px] font-medium opacity-70', art.accent)}>{art.tagline}</p>
+          {/* Option B: name/tagline hidden on art tiles (baked into the artwork). */}
+          {!art.image && (
+            <h3 className="mb-0.5 text-sm font-bold leading-tight tracking-wide text-white/80">{art.name}</h3>
+          )}
+          {!art.image && (
+            <p className={cn('text-[10px] font-medium opacity-70', art.accent)}>{art.tagline}</p>
+          )}
         </div>
       </div>
     </motion.div>
