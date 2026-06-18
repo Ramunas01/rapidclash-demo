@@ -12,8 +12,9 @@ import { CoinflipPlayScreen } from './screens/CoinflipPlay.js';
 import { ChessPlayScreen } from './screens/ChessPlay.js';
 import { ResultScreen } from './screens/Result.js';
 import { LeaderboardScreen } from './screens/Leaderboard.js';
+import { CoinflipHubScreen } from './screens/CoinflipHub.js';
 
-type Screen = 'auth' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard';
+type Screen = 'auth' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub';
 
 const RECONNECT_NOTICE = 'Connection lost — reconnecting. Try again in a moment.';
 
@@ -244,7 +245,8 @@ export function App() {
     setPendingGameId(meta.id);
     setPendingGameMeta(meta);
     setPendingStake(meta.bet.minStake);
-    setScreen('stake-entry');
+    // Coinflip gets the one-screen hub; RPS/Chess keep the multi-screen flow (COINFLIP_HUB.md).
+    setScreen(meta.id === 'coinflip' ? 'coinflip-hub' : 'stake-entry');
   }, []);
 
   const handleJoinQueue = useCallback((stake: number) => {
@@ -326,6 +328,8 @@ export function App() {
         return <WalletScreen token={token!} username={username} balance={balance} onPlay={goToGameList} onLogout={handleLogout} />;
       case 'game-list':
         return <GameListScreen token={token!} onSelect={handleSelectGame} onBack={goToWallet} />;
+      case 'coinflip-hub':
+        return <CoinflipHubScreen token={token!} initialBalance={balance} onOpenWallet={() => goToWallet()} onOpenGameList={goToGameList} />;
       case 'stake-entry':
         return <StakeEntryScreen
           meta={pendingGameMeta!}
