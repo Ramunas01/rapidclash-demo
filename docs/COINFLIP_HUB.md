@@ -22,10 +22,35 @@ data exactly as the four screens do today — only the layout and navigation col
 - **Chrome is hub-local for now.** The sticky top ribbon + bottom toolbar live on the hub
   screen, **not** promoted to a global app shell yet (later step once proven). Build them so
   promotion is easy.
-- **Build from spec + assets** (no full mock). Expect a round of owner eyeball corrections on
-  spacing/hierarchy.
+- **Build from this spec + the supplied mock/assets.** A full-screen mock now exists (see Visual
+  reference & required sanitization); lift its layout but apply the mandatory sanitizations.
+  Expect a round of owner eyeball corrections on spacing/hierarchy.
 - **Credits `¢`** notation ships first as its own foundation PR (`format.ts`); the hub consumes
   `formatCredits` everywhere it shows money. See `DEMO_PRESENTATION.md` → Credits display.
+
+## Visual reference & required sanitization
+
+A full-screen mock of the hub ships at **`apps/web/src/assets/coinflip/Coinflip-mock-with-bet-placed.png`**
+— use it as the **layout / spacing / hierarchy reference**. Other supplied assets: logo
+(`assets/brand/RapidClash_main_logo.02b204a9.png`), nav icons (`assets/icons/nav/nav-{menu,games,account,rewards,chat}.png`),
+banners (`assets/banners/banner-Bring-the-rival.png`, `banner-Bottom-static.png`).
+
+**The mock is a real-money-gambling design — lift the visuals, NOT the framing.** These
+sanitizations are mandatory (re-skin principle + `CHARTER.md`), not optional polish:
+
+- **Currency → `¢` integer credits.** The mock shows `$` (`$128.76`, `$10 LIMIT`, `$` bet chips).
+  Render integer credits with `formatCredits` (no `$`, no decimal cents).
+- **Related games (§5): drop the house-edge tiles.** The mock's tiles are **Blackjack, Limbo 500x,
+  Crash** — **forbidden by the PvP-only corollary to invariant #1** (`CHARTER.md`). Do **not**
+  reproduce them. The ribbon is data-driven from `/games` (registered PvP games only); roadmap
+  tiles = Chess / duel-redefined Baccarat-Blackjack only.
+- **No gambling-trope framing.** Drop "provably fair", "500x"/multiplier copy, and any crypto /
+  real-money cues. This is a play-money investor demo.
+- **Social links out of scope.** The mock's Discord / Telegram buttons + footer socials are not
+  built — omit or render as inert placeholders.
+- **Labels (open question).** Mock green button = "PLAY", section = "OPEN BETS"; this spec uses
+  "Join" / "open challenges". Mapping that fits both: **green "PLAY" posts your own challenge**
+  (joinQueue); **resting rows use "JOIN"** (takeChallenge). Confirm with owner.
 
 ## Invariants preserved (non-negotiable — `CHARTER.md`)
 
