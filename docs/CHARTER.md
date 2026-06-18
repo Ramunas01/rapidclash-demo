@@ -23,7 +23,7 @@ If any one of these is faked or skipped, the demo has failed at its job.
 
 These hold for every game and every code path. A pull request that violates one is rejected regardless of how well it works.
 
-1. **Humans play humans, never the house.** The platform never takes a side in a match. There is no dealer account, no bot opponent baked into the engine.
+1. **Humans play humans, never the house.** The platform never takes a side in a match. There is no dealer account, no bot opponent baked into the engine. **Corollary — the roster is PvP-only:** the platform only lists or offers games that *have* a human opponent. Pure house-banked or house-edge games, where a player plays against the system rather than a person (e.g. Limbo, Crash, Keno, Hilo), are never offered. House-banked classics (Baccarat, Blackjack) may appear only in a two-player, duel-redefined form — see the game roster.
 2. **The server is authoritative.** All game logic, all randomness, and all outcome calculation happen on the server. Clients send *intent*, receive *state*. A client cannot be trusted, even with play money.
 3. **The wallet is an append-only ledger.** Balance is derived from a transaction log, never mutated in place. Settlement is atomic and idempotent — a reconnect or retry can never double-pay or double-charge. See `WALLET_LEDGER.md`.
 4. **No real currency.** Wallet credit is granted to new accounts for demonstration only. No payment rails, no crypto, no cash-out.
