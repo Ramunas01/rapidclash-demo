@@ -48,9 +48,9 @@ sanitizations are mandatory (re-skin principle + `CHARTER.md`), not optional pol
   real-money cues. This is a play-money investor demo.
 - **Social links out of scope.** The mock's Discord / Telegram buttons + footer socials are not
   built — omit or render as inert placeholders.
-- **Labels (open question).** Mock green button = "PLAY", section = "OPEN BETS"; this spec uses
-  "Join" / "open challenges". Mapping that fits both: **green "PLAY" posts your own challenge**
-  (joinQueue); **resting rows use "JOIN"** (takeChallenge). Confirm with owner.
+- **Labels (resolved, owner 2026-06-19).** **Green "PLAY" button posts your own challenge**
+  (`joinQueue`); **resting-challenge rows each say "JOIN"** (`takeChallenge`). Section header
+  "OPEN BETS" (mock) or "open challenges" — keep one consistently.
 
 ## Invariants preserved (non-negotiable — `CHARTER.md`)
 
@@ -78,7 +78,7 @@ bet precedes Join):
 │   1  Coinflip game area (coin + H/T)        │ │
 │   ┌─ "stake & play" block ───────────────┐  │ │
 │   │ 2  BET AMOUNT selector               │  │ │  scrollable body
-│   │ 3  Join button (green)               │  │ │
+│   │ 3  PLAY button (green)               │  │ │
 │   └──────────────────────────────────────┘  │ │
 │   4  Open challenges ("players waiting")    │ │
 │   5  Related games (PvP only)              │ │
@@ -105,7 +105,7 @@ bet precedes Join):
 |---|---------|----------------------|--------------------|--------|
 | 1 | **Coinflip game area** (hero) | Coin image + heads/tails choice; the visual anchor at the top, **greyed/inactive in Idle**. When a match starts it activates; on `your_turn` the H/T choices enable; player taps a side → `ws.makeMove(side)`. Opponent's choice + flip stay hidden until `match.end`. The **result is presented as a brief self-dismissing overlay** (see Result, below), not buried in place. | `match.start` / `match.state` / `match.your_turn` / `match.end`; `CoinflipView` (`{players, choices, result?, forcedOutcome?}`) | `CoinflipPlay.tsx`, `Result.tsx` |
 | 2 | **BET AMOUNT selector** | Six presets: `1¢ 5¢ 10¢ 25¢ 50¢ 100¢` (within Coinflip's 1–100 stake range). Selecting one **arms** that stake and enables the Join button (3). Sits directly above Join as one "stake & play" block. Art at `apps/web/src/assets/coinflip/` (the piece that used `$` → render `¢`). | local selection (stake) | `StakeEntry.tsx` |
-| 3 | **Join button** (green) | The "post and play" action. **Inactive until a bet (2) is selected.** Pressing it posts the armed stake as an open challenge — `ws.joinQueue('coinflip', stake)` — and the player enters **Waiting** in place. | `queue.join` → `queue.waiting` | `StakeEntry.tsx` + `Lobby.tsx` |
+| 3 | **PLAY button** (green) | Labelled **"PLAY"** (per mock). The "post and play" action. **Inactive until a bet (2) is selected.** Pressing it posts the armed stake as an open challenge — `ws.joinQueue('coinflip', stake)` — and the player enters **Waiting** in place. (Resting-challenge rows in §4 use **"JOIN"**.) | `queue.join` → `queue.waiting` | `StakeEntry.tsx` + `Lobby.tsx` |
 | 4 | **Open challenges** ("players waiting") | Other players' resting Coinflip challenges: owner name, **stake in `¢`**, countdown, and a **join** button per row. Kept prominent right under the stake block — joining a resting bet is the fastest path to a live match (and the bot crowd seeds it). Tapping **takes the owner's stake**, not the player's armed amount (see Precedence). | `ws.subscribeChallenges('coinflip')` → `challenges.list` / `challenges.update`; `OpenChallenge` | `OpenChallengesList.tsx` |
 | 5 | **Related games** | A ribbon of tiles linking to other games. Data-driven from `/games` (registered PvP games only — safe). **Any roadmap/"coming soon" tiles must be PvP games only** (see Product integrity). | `api.games(token)` | `GameList.tsx` tiles |
 | 6 | **"Bring the rival" banner** | Static banner image for now. *(Later: this should become a real "challenge a friend / send a match link" invite — the most honest cold-start primitive we have. Static is fine until then.)* | static asset → `apps/web/src/assets/banners/` | — |
