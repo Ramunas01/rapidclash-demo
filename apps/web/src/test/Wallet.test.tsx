@@ -53,8 +53,8 @@ describe('WalletScreen', () => {
     render(<WalletScreen token="tok" username="alice" balance={0} onPlay={() => {}} onLogout={() => {}} />);
 
     // newest entry (amount +6) shown; the trimmed-off oldest (+1) is not.
-    await waitFor(() => expect(screen.getByText('+6')).toBeInTheDocument());
-    expect(screen.queryByText('+1')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('+6¢')).toBeInTheDocument());
+    expect(screen.queryByText('+1¢')).not.toBeInTheDocument();
     expect(screen.getAllByText('SETTLE WIN').length).toBe(5);
   });
 

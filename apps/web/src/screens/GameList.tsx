@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import type { GameMeta } from '@rapidclash/shared';
 import { api } from '../api.js';
+import { CREDIT_SYMBOL } from '../format.js';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 // Designed tile art (Vite-hashed/bundled WebP). Only games with a tile image here use it;
@@ -152,7 +153,7 @@ function PlayableTile({ meta, index, onSelect }: { meta: GameMeta; index: number
           {!art.image && <p className={cn('text-[10px] font-medium', art.accent)}>{art.tagline}</p>}
           <div className="mt-1.5 flex flex-col items-center gap-1 text-[9px] text-white/60">
             <span>
-              {meta.bet.minStake}–{meta.bet.maxStake} cr · ~{meta.averageDurationSec}s
+              {meta.bet.minStake}–{meta.bet.maxStake}{CREDIT_SYMBOL} · ~{meta.averageDurationSec}s
             </span>
             <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[8px] uppercase tracking-wide text-white/70">
               {rankingLabel(meta.ranking.kind)}

@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { ChevronLeft, Coins, Gamepad2, Minus, Plus, Scissors, Zap, type LucideIcon } from 'lucide-react';
 import type { GameMeta, OpenChallenge } from '@rapidclash/shared';
 import { cn } from '@/lib/utils';
+import { CREDIT_SYMBOL, formatCredits } from '../format.js';
 import { OpenChallengesList } from './OpenChallengesList.js';
 
 interface Props {
@@ -208,12 +209,12 @@ export function StakeEntryScreen({
                       : 'border-white/10 bg-white/5 text-white/70 hover:border-brand/50 hover:text-white',
                   )}
                 >
-                  {v} cr
+                  {formatCredits(v)}
                 </button>
               ))}
             </div>
 
-            <p className="mt-4 text-xs text-white/50">Range: {minStake}–{maxStake} credits</p>
+            <p className="mt-4 text-xs text-white/50">Range: {minStake}–{maxStake}{CREDIT_SYMBOL}</p>
             {error && (
               <p className="mt-2 text-sm text-red-400" data-testid="stake-error" role="alert">
                 {error}
