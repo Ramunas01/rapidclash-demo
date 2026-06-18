@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import type { LeaderboardEntry, RankingKind } from '@rapidclash/shared';
 import { api } from '../api.js';
+import { formatCredits } from '../format.js';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -29,7 +30,7 @@ interface Props {
 export function formatStat(entry: LeaderboardEntry): string {
   if (entry.kind === 'net_winnings') {
     const v = entry.netWinnings;
-    return `${v > 0 ? '+' : ''}${v} credits`;
+    return `${v > 0 ? '+' : ''}${formatCredits(v)}`;
   }
   if (entry.kind === 'elo') {
     return `${Math.round(entry.rating)} ELO`;

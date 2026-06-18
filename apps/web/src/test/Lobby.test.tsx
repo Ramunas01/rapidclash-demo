@@ -46,7 +46,7 @@ describe('LobbyScreen (OC7)', () => {
     fireEvent.click(screen.getByText('Leave Queue'));
     expect(onLeave).toHaveBeenCalled();
     const text = container.textContent ?? '';
-    expect(text).toContain('25 credits');
+    expect(text).toContain('25¢');
     expect(text).not.toMatch(/USDT|\bETH\b|\bBTC\b|deposit|\$/i);
   });
 });

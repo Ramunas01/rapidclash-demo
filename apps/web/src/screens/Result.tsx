@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { Trophy } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatCredits } from '../format.js';
 import type { Outcome, SettlementSummary } from '@rapidclash/shared';
 
 interface Props {
@@ -79,10 +80,10 @@ export function ResultScreen({ outcome, settlement, playerId, onPlayAgain, onLea
             data-testid="delta"
           >
             {delta > 0 ? '+' : ''}
-            {delta} credits
+            {formatCredits(delta)}
           </div>
           <p className="mt-3 text-sm text-white/50">
-            New balance: <strong className="text-white">{settlement.newBalance.toLocaleString()}</strong> credits
+            New balance: <strong className="text-white">{formatCredits(settlement.newBalance)}</strong>
           </p>
         </motion.div>
 

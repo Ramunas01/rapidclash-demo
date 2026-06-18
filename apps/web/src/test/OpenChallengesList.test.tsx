@@ -14,7 +14,7 @@ describe('OpenChallengesList (OC2)', () => {
     render(<OpenChallengesList entries={[challenge()]} more={0} onTake={vi.fn()} />);
     expect(screen.getByText('alice')).toBeInTheDocument();
     // Play-money stake (credits, not crypto).
-    expect(screen.getByTestId('stake-m1').textContent).toBe('10 cr');
+    expect(screen.getByTestId('stake-m1').textContent).toBe('10¢');
     // Countdown renders as M:SS (~0:48 for a 48s-out expiry), driven by expiresAt.
     expect(screen.getByTestId('countdown-m1').textContent).toMatch(/\d:\d\d/);
   });

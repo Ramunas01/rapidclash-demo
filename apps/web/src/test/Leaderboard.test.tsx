@@ -42,9 +42,9 @@ describe('LeaderboardScreen — render by ranking kind', () => {
       { rank: 2, playerId: 'bob', displayName: 'bob', score: -10, kind: 'net_winnings', netWinnings: -10 },
     ]);
     render(<LeaderboardScreen token="tok" gameId="coinflip" onBack={() => {}} />);
-    await waitFor(() => expect(screen.getByText('+9 credits')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('+9¢')).toBeInTheDocument());
     // ADR-007: a row can be negative because net_winnings sums to −rake across players.
-    expect(screen.getByText('-10 credits')).toBeInTheDocument();
+    expect(screen.getByText('-10¢')).toBeInTheDocument();
     // and that negative is explained as the platform fee, not a bug.
     expect(screen.getAllByText('net of platform fee').length).toBeGreaterThan(0);
   });
@@ -72,7 +72,7 @@ describe('LeaderboardScreen — render by ranking kind', () => {
       { rank: 1, playerId: 'alice', displayName: 'alice', score: 9, kind: 'net_winnings', netWinnings: 9 },
     ]);
     const { container } = render(<LeaderboardScreen token="tok" gameId="coinflip" onBack={() => {}} />);
-    await waitFor(() => expect(screen.getByText('+9 credits')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('+9¢')).toBeInTheDocument());
     expect(container.textContent).not.toMatch(/deposit|crypto|buy chips|usd|\$/i);
   });
 });
@@ -86,9 +86,9 @@ describe('formatStat', () => {
 
   it('formats net_winnings with an explicit sign', () => {
     const base = { rank: 1, playerId: 'a', displayName: 'a', kind: 'net_winnings' as const };
-    expect(formatStat({ ...base, score: 9, netWinnings: 9 })).toBe('+9 credits');
-    expect(formatStat({ ...base, score: -10, netWinnings: -10 })).toBe('-10 credits');
-    expect(formatStat({ ...base, score: 0, netWinnings: 0 })).toBe('0 credits');
+    expect(formatStat({ ...base, score: 9, netWinnings: 9 })).toBe('+9¢');
+    expect(formatStat({ ...base, score: -10, netWinnings: -10 })).toBe('-10¢');
+    expect(formatStat({ ...base, score: 0, netWinnings: 0 })).toBe('0¢');
   });
 
   it('formats elo as a rounded rating', () => {

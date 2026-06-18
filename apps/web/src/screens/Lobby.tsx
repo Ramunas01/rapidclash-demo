@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Loader2, RotateCcw, Shield, Swords } from 'lucide-react';
-import { formatClock } from '../format.js';
+import { formatClock, formatCredits } from '../format.js';
 
 interface Props {
   /** The signed-in player's own alias (#34); null only on a legacy session pre-dating the field. */
@@ -82,7 +82,7 @@ export function LobbyScreen({ username, stake, expiresAt, expired, onRepost, onL
 
         <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5">
           <span className="text-xs uppercase tracking-wide text-white/50">Stake</span>
-          <span className="text-sm font-bold text-white">{stake} credits</span>
+          <span className="text-sm font-bold text-white">{formatCredits(stake)}</span>
         </div>
 
         <div className="mt-6 flex items-center justify-center gap-2 text-white/40">
