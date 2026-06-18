@@ -1,7 +1,7 @@
 # Coinflip Hub — one-screen compact Coinflip
 
-**Status:** PM draft for owner + Advisor review. This is the **build authority** for the
-hub screen — we are building from this written spec + supplied asset images (no full
+**Status:** spec for the hub screen, revised after Advisor review (2026-06-19). This is the
+**build authority** — we are building from this written spec + supplied asset images (no full
 design mock), so anything ambiguous here will surface as rework. Flag corrections on the PR.
 
 ## Purpose
@@ -15,13 +15,13 @@ This is a **presentation-layer re-shape of Coinflip only.** It does **not** chan
 model, the protocol, the game module, or server authority. It reuses the existing REST + WS
 data exactly as the four screens do today — only the layout and navigation collapse.
 
-## Decisions locked (2026-06-19)
+## Decisions locked
 
 - **Coinflip only.** RPS and Chess keep their existing multi-screen flow. Selecting **Coinflip**
   from the game list routes to the hub; other games are unchanged.
 - **Chrome is hub-local for now.** The sticky top ribbon + bottom toolbar live on the hub
-  screen, **not** promoted to a global app shell yet (that's a later step once the pattern
-  is proven). Build them so promotion is easy.
+  screen, **not** promoted to a global app shell yet (later step once proven). Build them so
+  promotion is easy.
 - **Build from spec + assets** (no full mock). Expect a round of owner eyeball corrections on
   spacing/hierarchy.
 - **Credits `¢`** notation ships first as its own foundation PR (`format.ts`); the hub consumes
@@ -31,6 +31,8 @@ data exactly as the four screens do today — only the layout and navigation col
 
 - **#1 humans vs humans, never the house.** "Join" still pairs the player with another human
   (or a clearly-labelled `🤖` demo client through the same API). No house, no bot baked in.
+  **Corollary (related games, §5):** the roster never surfaces house-edge games — see Product
+  integrity below.
 - **#2 server-authoritative + redaction.** The client sends *intent*, receives *state*. The
   coin result and the opponent's choice arrive **only at `match.end`** (`viewFor` hides them);
   the in-place game area must not reveal either before then.
@@ -40,77 +42,110 @@ data exactly as the four screens do today — only the layout and navigation col
 ## Layout
 
 Three bands. The **top ribbon** and **bottom toolbar** are **stationary** (sticky); the
-**body** scrolls between them.
+**body** scrolls between them. Scroll order revised per Advisor Q3 (enabler before enabled —
+bet precedes Join):
 
 ```
 ┌────────────────────────────────────────────┐
 │ [RapidClash logo]            [👛 1,250¢ ]   │  ← sticky top ribbon
 ├────────────────────────────────────────────┤
 │                                            ▲ │
-│   ① Coinflip game area (coin + H/T)        │ │
-│   ② Join button (green)                    │ │
-│   ③ BET AMOUNT selector                    │ │
-│   ④ Open challenges ("players waiting")    │ │  scrollable body
-│   ⑤ Related games                          │ │
-│   ⑥ "Bring the rival" banner               │ │
-│   ⑦ RECENT CLASHES (leaderboard)           │ │
-│   ⑧ Footer banner                          │ ▼ │
+│   1  Coinflip game area (coin + H/T)        │ │
+│   ┌─ "stake & play" block ───────────────┐  │ │
+│   │ 2  BET AMOUNT selector               │  │ │  scrollable body
+│   │ 3  Join button (green)               │  │ │
+│   └──────────────────────────────────────┘  │ │
+│   4  Open challenges ("players waiting")    │ │
+│   5  Related games (PvP only)              │ │
+│   6  "Bring the rival" banner              │ │
+│   7  RECENT CLASHES (leaderboard)          │ │
+│   8  Footer banner                         │ ▼ │
 ├────────────────────────────────────────────┤
-│  [menu] [games] [account] [rewards] [chat] │  ← sticky bottom toolbar
+│ [menu] [games] [account] [rewards*] [chat*]│  ← sticky bottom toolbar (* = coming soon)
 └────────────────────────────────────────────┘
 ```
 
 ## Sticky top ribbon
 
-- **Logo** (left) — `apps/web/src/assets/brand/` (owner supplies). Links to the game list (or
-  the hub home; see toolbar `menu` below).
-- **Wallet button** (right) — current balance via `api.wallet(token)`, shown with
-  `formatCredits` (e.g. `1,250¢`). Tapping opens the wallet/account view. Updates live after
-  every `match.end` settlement.
+- **Logo** (left) — `apps/web/src/assets/brand/` (owner supplies). Links to the game list.
+- **Wallet chip** (right) — live balance via `api.wallet(token)`, shown with `formatCredits`
+  (e.g. `1,250¢`). Tapping opens the wallet/account view (`Wallet.tsx`, same target as the
+  `account` toolbar icon). Updates live after every `match.end` settlement. This chip is where
+  the new `¢` balance is most visible — make it real, not decorative.
 - Stationary across body scroll.
 
 ## Body sections (scroll order, top → bottom)
 
 | # | Section | What it shows / does | Data source (real) | Reuses |
 |---|---------|----------------------|--------------------|--------|
-| ① | **Coinflip game area** | Coin image + heads/tails choice. **Inactive/greyed until a match is live.** When `match.start` fires, it activates; on `your_turn` the H/T choices enable; player taps a side → `ws.makeMove(side)`. Opponent's choice + flip stay hidden until `match.end`, then the **result resolves in place** (win/lose/draw + the `¢` settlement delta, confetti on win). Returns to idle for the next round. | `match.start` / `match.state` / `match.your_turn` / `match.end`; `CoinflipView` (`{players, choices, result?, forcedOutcome?}`) | `CoinflipPlay.tsx`, `Result.tsx` |
-| ② | **Join button** (green) | The player's own "post and play" action. **Inactive until a bet amount is selected** (③). Pressing it posts the player's stake as an open challenge — `ws.joinQueue('coinflip', stake)` — and the player waits in place (challenge rests on the feed for others). | `queue.join` → `queue.waiting` | `StakeEntry.tsx` + `Lobby.tsx` |
-| ③ | **BET AMOUNT selector** | Six presets: `1¢ 5¢ 10¢ 25¢ 50¢ 100¢` (within Coinflip's 1–100 stake range). Selecting one sets the active stake and enables ②. Art at `apps/web/src/assets/coinflip/` (the piece that used `$` → render `¢`). | local selection (stake) | `StakeEntry.tsx` |
-| ④ | **Open challenges** ("players waiting") | List of other players' resting Coinflip challenges: owner name, stake (`¢`), countdown, and a **join** button each → `ws.takeChallenge(matchId)`, which starts a match in place (activates ①). This is the headline lobby — bias the UI toward making these obvious. | `ws.subscribeChallenges('coinflip')` → `challenges.list` / `challenges.update`; `OpenChallenge` | `OpenChallengesList.tsx` |
-| ⑤ | **Related games** | A ribbon of tiles linking to other games (tap → that game). Data-driven from `/games`; reuse the tile art. | `api.games(token)` | `GameList.tsx` tiles |
-| ⑥ | **"Bring the rival" banner** | Static banner image (momentarily; later may carry an invite/share action). | static asset → `apps/web/src/assets/banners/` | — |
-| ⑦ | **RECENT CLASHES** | The Coinflip leaderboard contents, embedded. (Label is **"RECENT CLASHES"**, not "crashes" — see Copy.) | `api` `GET /leaderboard/coinflip`; `net_winnings` entries (can be negative, rendered `¢`) | `Leaderboard.tsx` |
-| ⑧ | **Footer banner** | Static picture for now; later replaced by text + links. | static asset → `apps/web/src/assets/banners/` | — |
+| 1 | **Coinflip game area** (hero) | Coin image + heads/tails choice; the visual anchor at the top, **greyed/inactive in Idle**. When a match starts it activates; on `your_turn` the H/T choices enable; player taps a side → `ws.makeMove(side)`. Opponent's choice + flip stay hidden until `match.end`. The **result is presented as a brief self-dismissing overlay** (see Result, below), not buried in place. | `match.start` / `match.state` / `match.your_turn` / `match.end`; `CoinflipView` (`{players, choices, result?, forcedOutcome?}`) | `CoinflipPlay.tsx`, `Result.tsx` |
+| 2 | **BET AMOUNT selector** | Six presets: `1¢ 5¢ 10¢ 25¢ 50¢ 100¢` (within Coinflip's 1–100 stake range). Selecting one **arms** that stake and enables the Join button (3). Sits directly above Join as one "stake & play" block. Art at `apps/web/src/assets/coinflip/` (the piece that used `$` → render `¢`). | local selection (stake) | `StakeEntry.tsx` |
+| 3 | **Join button** (green) | The "post and play" action. **Inactive until a bet (2) is selected.** Pressing it posts the armed stake as an open challenge — `ws.joinQueue('coinflip', stake)` — and the player enters **Waiting** in place. | `queue.join` → `queue.waiting` | `StakeEntry.tsx` + `Lobby.tsx` |
+| 4 | **Open challenges** ("players waiting") | Other players' resting Coinflip challenges: owner name, **stake in `¢`**, countdown, and a **join** button per row. Kept prominent right under the stake block — joining a resting bet is the fastest path to a live match (and the bot crowd seeds it). Tapping **takes the owner's stake**, not the player's armed amount (see Precedence). | `ws.subscribeChallenges('coinflip')` → `challenges.list` / `challenges.update`; `OpenChallenge` | `OpenChallengesList.tsx` |
+| 5 | **Related games** | A ribbon of tiles linking to other games. Data-driven from `/games` (registered PvP games only — safe). **Any roadmap/"coming soon" tiles must be PvP games only** (see Product integrity). | `api.games(token)` | `GameList.tsx` tiles |
+| 6 | **"Bring the rival" banner** | Static banner image for now. *(Later: this should become a real "challenge a friend / send a match link" invite — the most honest cold-start primitive we have. Static is fine until then.)* | static asset → `apps/web/src/assets/banners/` | — |
+| 7 | **RECENT CLASHES** | The Coinflip leaderboard contents, embedded. (Label is **"RECENT CLASHES"**, not "crashes".) | `api` `GET /leaderboard/coinflip`; `net_winnings` entries (can be negative, rendered `¢`) | `Leaderboard.tsx` |
+| 8 | **Footer banner** | Static picture for now; later replaced by text + links. | static asset → `apps/web/src/assets/banners/` | — |
 
 ## Sticky bottom toolbar
 
 Five icons (owner supplies art at `apps/web/src/assets/icons/nav/`, or standard `lucide-react`
-glyphs where they match). Stationary across body scroll.
+glyphs where they match). Stationary across body scroll. **Three of the five point at screens
+that already exist — wire those live; only `rewards`/`chat` are reserved.**
 
-| Icon | Target | Notes |
+| Icon | Target | State |
 |------|--------|-------|
-| **menu** | hub/home | ⚠ Decision: what is "main menu"? Proposed: the game list (no separate home screen exists). |
-| **games** | game list | `setScreen('game-list')`. |
-| **account** | wallet/profile | the existing `Wallet.tsx` (balance + ledger). |
-| **rewards** | — | ⚠ No backing screen exists. Proposed for the demo: a visible-but-inert tile or a "coming soon" placeholder. |
-| **chat** | — | ⚠ Out of scope (no chat). Proposed: visible-but-inert / "coming soon" placeholder. |
+| **menu** | `game-list` | **Live** (`setScreen('game-list')`). |
+| **games** | `game-list` | **Live**. |
+| **account** | `Wallet.tsx` | **Live** — balance + ledger in `¢`; the most worthwhile one to make real. Same target as the top wallet chip. |
+| **rewards** | — (no screen) | **Reserved** — render as a visibly **inactive "coming soon"** (dimmed + tag), **not** a live-looking button that silently no-ops. |
+| **chat** | — (no screen) | **Reserved** — same inactive "coming soon" treatment. |
 
 ## Interaction / state model
 
-The hub is a small state machine over the existing WS events (no route navigation):
+A small state machine over the existing WS events (no route navigation):
 
-1. **Idle** — body interactive; game area ① greyed. Player either selects a **bet** (③) which
-   enables **Join** (②), or taps **join** on a resting challenge (④).
-2. **Waiting** — after pressing Join (②): the player's challenge rests; `queue.waiting` drives a
-   countdown; they can cancel/re-post. (Joining someone else's challenge (④) skips straight to
-   step 3.)
-3. **In match** — `match.start` activates the game area ①; `your_turn` enables H/T; the player
+1. **Idle** — body interactive; game area (1) greyed. Player either selects a **bet** (2) which
+   enables **Join** (3), or taps **join** on a resting challenge (4).
+2. **Waiting** — after pressing Join (3): the player's own challenge rests with escrow held;
+   `queue.waiting` drives a countdown; they can **cancel/re-post**. **One commitment at a time:**
+   while Waiting, the join actions on other challenges (4) are **disabled** — the player must
+   cancel their own resting bet before joining someone else's, so they can never double-commit
+   into two matches. (Joining a challenge from Idle (4) skips straight to step 3.)
+3. **In match** — `match.start` activates the game area (1); `your_turn` enables H/T; the player
    chooses → `ws.makeMove`. Opponent choice + flip remain hidden.
-4. **Result** — `match.end`: reveal coin + outcome in place, animate win/lose/draw, show the
-   `¢` settlement delta, update the wallet ribbon. Then return to **Idle**.
+4. **Result** — `match.end`: a **brief, self-dismissing overlay** (within the hub, no navigation)
+   reveals the coin + outcome, animates win/lose/draw with confetti on a win, and shows the `¢`
+   settlement delta; the wallet chip updates. The overlay guarantees the payoff lands **wherever
+   the player has scrolled** (a match can resolve while they're down at open-challenges or recent
+   clashes — in-place resolution would fire off-screen and be missed). It then dismisses back to
+   **Idle**. *(Acceptable lighter alternative if we ever drop the overlay: auto-scroll back to the
+   game area on `match.end` and resolve in place — solves the same scroll problem, less cleanly.)*
 
 Reconnect/resume (`match.resume`) and the server-authoritative move/challenge timeouts behave
 exactly as today — the hub is a re-layout, not new match logic.
+
+### Bet-vs-join precedence
+
+If a player has armed a bet (2) and instead taps a resting challenge (4), **taking the challenge
+wins** — but it matches the **owner's** stake, not the player's armed amount:
+
+- The armed amount is **superseded** by the challenge's stake.
+- The row must show that stake so the tap is informed consent — e.g. **`200¢ · JOIN`**.
+- **Balance-check before claiming:** if the player can't cover the owner's stake, refuse clearly
+  (don't silently fail). No extra confirm dialog is needed as long as the stake is on the row.
+
+## Product integrity — no house-only games in the roster
+
+An extension of invariant #1. The related-games ribbon (5) is data-driven from `/games`, which is
+safe (only registered PvP games come back). But the **tile-art pack from the mock includes
+house-edge multiplier games — Limbo, Crash, Keno, Hilo — which have no human opponent and cannot
+exist on a "never the house" platform.** Neither the related-games ribbon nor the game-list roster
+may ever feature them. Roadmap/"coming soon" tiles must be **PvP games only** (Chess, and the
+duel-redefined Baccarat/Blackjack). Do not let these drift back in via the asset pack.
+
+*(The Advisor may also record this as a one-line extension of invariant #1 in `CHARTER.md` —
+owner decision pending.)*
 
 ## Assets the owner provides
 
@@ -136,15 +171,20 @@ if one ever exists, goes in the gitignored `design-ref/`.)
 
 - Any server, protocol, schema, or `coinflip` game-module change.
 - Promoting the chrome to a global app shell (later).
-- Real `rewards` / `chat` features (placeholders only).
+- Real `rewards` / `chat` features (reserved "coming soon" only).
+- A real "challenge a friend / match link" invite (§6 stays a static banner for now; flagged as a
+  worthwhile near-term feature).
 - The other games' screens.
 
-## Open questions (for owner / Advisor)
+## Resolved decisions (Advisor review, 2026-06-19)
 
-1. **Toolbar targets** — confirm `menu` and `account` destinations; confirm `rewards`/`chat` are
-   inert placeholders for the demo.
-2. **Result presentation** — resolve in place within the game area (assumed here), or a brief
-   overlay over the hub? Either keeps confetti-on-win.
-3. **Scroll order** — the order above is inferred; confirm or reorder sections.
-4. **Bet vs. join precedence** — if a player has selected a bet (②-armed) and instead taps a
-   resting challenge (④), we take the challenge (④ wins). Confirm.
+- **Q1 toolbar:** `menu`/`games`/`account` wired live (screens exist); `rewards`/`chat` reserved
+  as visibly-inactive "coming soon".
+- **Q2 result:** brief self-dismissing overlay (not pure in-place), so the payoff lands wherever
+  the player is scrolled.
+- **Q3 scroll order:** reordered so the enabler precedes the enabled — game area → **bet → Join**
+  (one "stake & play" block) → open challenges → related → rival banner → recent clashes → footer.
+- **Q4 precedence:** taking a challenge supersedes an armed bet and uses the **owner's** stake;
+  show the stake on the row; balance-check before claiming.
+- **+ One commitment at a time:** join disabled while Waiting on your own resting bet.
+- **+ No house-only games** ever in the roster/related-games (Limbo/Crash/Keno/Hilo excluded).
