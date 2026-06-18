@@ -2,3 +2,6 @@ packages:
   - 'packages/*'
   - 'packages/games/*'
   - 'apps/*'
+  # Demo-only tooling (ADR-010). Workspace member for dependency resolution; NOT in
+  # the root tsc -b build, the test globs, or the production Docker image.
+  - 'tools/*'

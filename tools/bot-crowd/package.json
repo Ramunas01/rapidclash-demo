@@ -1,0 +1,21 @@
+{
+  "name": "@rapidclash/bot-crowd",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Demo-only bot crowd (ADR-010): clearly-labelled 🤖 clients that populate the open-challenges feed so a human can JOIN a real, settling match. NOT shipped to Cloud Run.",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@rapidclash/shared": "workspace:*",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/ws": "^8.5.10",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4"
+  }
+}
