@@ -137,15 +137,15 @@ wins** — but it matches the **owner's** stake, not the player's armed amount:
 
 ## Product integrity — no house-only games in the roster
 
-An extension of invariant #1. The related-games ribbon (5) is data-driven from `/games`, which is
+The **PvP-only corollary to invariant #1** (`CHARTER.md`). The related-games ribbon (5) is data-driven from `/games`, which is
 safe (only registered PvP games come back). But the **tile-art pack from the mock includes
 house-edge multiplier games — Limbo, Crash, Keno, Hilo — which have no human opponent and cannot
 exist on a "never the house" platform.** Neither the related-games ribbon nor the game-list roster
 may ever feature them. Roadmap/"coming soon" tiles must be **PvP games only** (Chess, and the
 duel-redefined Baccarat/Blackjack). Do not let these drift back in via the asset pack.
 
-*(The Advisor may also record this as a one-line extension of invariant #1 in `CHARTER.md` —
-owner decision pending.)*
+*(Now recorded as the PvP-only corollary to invariant #1 in `CHARTER.md` — so it governs every
+future game decision, not just this hub.)*
 
 ## Assets the owner provides
 
