@@ -42,7 +42,7 @@ Blackjack satisfies the existing `GameModule` contract — no core change — wi
 
 ## Fee, ranking, stakes — to confirm with the owner
 
-- **Rake rate — RESOLVED (owner 2026-06-19): 2%, platform-wide.** A single canonical rate in the fee config (`WALLET_LEDGER.md`); Blackjack uses it like every other game (never a Blackjack constant). ⚠️ **The code currently defaults to 5%** (`matchmaking.ts` `FEE_RATE` `0.05`) — a separate small change aligns the default to `0.02` (+ updates the affected settlement tests and docs). This changes settlement for **all** games, not just Blackjack.
+- **Rake — RESOLVED (stakeholders 2026-06-19): per-game rate, declared in `GameMeta`.** Rake is **a % of the pot** (sum of both stakes) at a rate **declared per game** (not a single platform-wide constant, and never a Blackjack hard-code): **Blackjack 2.5%**, like RPS and Coinflip; **Chess 10%**. The core reads the match's game `meta.rakeRate` and applies it generically (invariant #5); Blackjack just declares `0.025`. ⚠️ Delivered by a **separate per-game-rake change** (the code currently uses one `FEE_RATE` default of `0.05`); Blackjack inherits that mechanism.
 - **Ranking:** unspecified. Blackjack is chance-dominant with light skill; `net_winnings` (like the other chance games) is the natural fit. Owner to confirm vs `win_rate`.
 - **Stake range:** follows the game's `BetRules` meta; default to the same range as the other games unless the owner sets otherwise.
 
