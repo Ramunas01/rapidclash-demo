@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { GameState, Move, PlayerId, Rng } from '@rapidclash/shared';
 import { IllegalMove } from '@rapidclash/shared';
 import { minesModule as mines } from './mines.js';
-import { BOARD_SIZE, SAFE_COUNT, minesFor } from './board.js';
+import { BOARD_SIZE, MINE_COUNT, SAFE_COUNT, minesFor } from './board.js';
 
 const A = 'player-A';
 const B = 'player-B';
@@ -79,12 +79,12 @@ describe('minesModule.meta', () => {
 // ── board determinism + identical-for-both ───────────────────────────────────
 
 describe('minesModule — board determinism & identical layout for both players', () => {
-  it('derives a fixed 16-mine layout from (seed, round), re-derivable byte-for-byte', () => {
+  it('derives a fixed MINE_COUNT-mine layout from (seed, round), re-derivable byte-for-byte', () => {
     const m1 = [...minesFor(SEED, 0)].sort((a, b) => a - b);
     const m2 = [...minesFor(SEED, 0)].sort((a, b) => a - b);
-    expect(m1).toHaveLength(16);
+    expect(m1).toHaveLength(MINE_COUNT);
     expect(m1).toEqual(m2);
-    expect(safeSquares(0)).toHaveLength(SAFE_COUNT); // 48 safe
+    expect(safeSquares(0)).toHaveLength(SAFE_COUNT); // all safe squares
     // A different round → a different layout (so a replay isn't the same board).
     expect([...minesFor(SEED, 1)].sort((a, b) => a - b)).not.toEqual(m1);
   });
@@ -311,7 +311,7 @@ describe('minesModule.viewFor — redaction & the count-reveal-on-lock chase', (
     const v = as(mines.viewFor(s, A));
     expect(v.boards[B].score).toBe(5); // opponent's LIVE count visible to the locked viewer
     expect(v.boards[B].uncovered).toBeUndefined(); // opponent board still hidden
-    expect(v.boards[A].mines).toHaveLength(16); // a locked player sees the mine layout
+    expect(v.boards[A].mines).toHaveLength(MINE_COUNT); // a locked player sees the mine layout
     expect(v.boards[A].bustedOn).toBe(aMine(0));
   });
 
@@ -320,7 +320,7 @@ describe('minesModule.viewFor — redaction & the count-reveal-on-lock chase', (
     const v = as(mines.viewFor(s, B));
     expect(v.boards[A].uncovered).toEqual([0, 1, 2]); // opponent fully revealed
     expect(v.seed).toBe(SEED);
-    expect(v.mines).toHaveLength(16);
+    expect(v.mines).toHaveLength(MINE_COUNT);
   });
 });
 

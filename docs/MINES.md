@@ -10,7 +10,7 @@ The confirmed two-player Mines. Mines is normally a house game (solo: reveal til
 
 ## Gameplay (v1)
 
-**Board.** An 8×8 grid (64 squares) with 16 randomly placed mines (both configurable later). The two players play **two separate instances of the *same* board** — an identical mine layout for each — so the contest is a pure, equal-chance race with no layout-luck asymmetry.
+**Board.** An 8×8 grid (64 squares) with 7 randomly placed mines (set by MINE_COUNT in board.ts; configurable). The two players play **two separate instances of the *same* board** — an identical mine layout for each — so the contest is a pure, equal-chance race with no layout-luck asymmetry.
 
 **Stake & pot.** Both players press play; each stake locks into a shared pot, awarded to the winner. Rake is taken once, on the decisive result.
 
@@ -18,8 +18,8 @@ The confirmed two-player Mines. Mines is normally a house game (solo: reveal til
 - A player uncovers one covered square at a time.
 - Each safe square uncovered adds to that player's count and resets their timer.
 - Uncovering a mine → **bust**: that player's board locks and is revealed in shaded colour. No further moves.
-- There is **no cash-out** — a player keeps uncovering until they bust or until they clear all 48 safe squares.
-- **Clearing all 48 safe squares** also locks the board, at the maximum score, *without* a forced bust (a perfect run is not punished).
+- There is **no cash-out** — a player keeps uncovering until they bust or until they clear all 57 safe squares.
+- **Clearing all 57 safe squares** also locks the board, at the maximum score, *without* a forced bust (a perfect run is not punished).
 
 **Move timer.** 5 seconds per move (configurable later), shown as a corner countdown. On expiry, the server **auto-reveals a random covered square** for that player (the game is never frozen waiting on an absent player — trust the RNG, not a held breath). An auto-revealed square can itself be a mine, exactly like a manual pick.
 
@@ -43,7 +43,7 @@ The wait is bounded and cannot be stalled: the 5-second auto-reveal forces the s
 
 Satisfies the existing `GameModule` contract — **with one shared caveat:** the concurrent **per-player timers** need the same *generic* per-player-timer core capability identified for Blackjack (the core today has only a single per-match deadline, not per-player clocks). That is a game-agnostic core addition, not a Mines-specific branch. Otherwise no core change:
 
-- **`init(players, rng)`** — generate **one** board (16 mines on 64 squares) from the seed; give **both** players that identical layout, each with their own uncovered-set and lock-state; start both 5s timers. (Provably-fair commit-reveal optional — see below.)
+- **`init(players, rng)`** — generate **one** board (7 mines on 64 squares) from the seed; give **both** players that identical layout, each with their own uncovered-set and lock-state; start both 5s timers. (Provably-fair commit-reveal optional — see below.)
 - **Concurrent play, not turn-based.** Both act simultaneously on their own instance. `legalMoves(player)` = that player's still-covered squares while unlocked, else `[]`. `applyMove` uncovers a square for one player independently; the server runs the two per-player timers and applies a random covered square on timeout.
 - **`isTerminal`** — true as soon as the outcome is **decided**, not only when both boards are exhausted: once one player is locked with score S, terminal when the other reaches S+1 (they win) or locks at ≤ S. If neither is locked, not terminal (no fixed target yet). The server re-evaluates this after **every** move, so `match.end` may fire mid-play for the player who just crossed the line. Under the replay draw-policy, false after a *drawn* round so the match re-deals within the same escrow.
 - **`outcome`** — higher safe-count wins. A tie is a draw; under the replay policy that loops a new round rather than returning a contract-level `draw`.
