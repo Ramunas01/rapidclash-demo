@@ -176,9 +176,10 @@ describe('App — match.start routes by the server-authoritative gameId (open-ch
     expect(screen.queryByTestId('chess-board')).toBeNull();
   });
 
-  it('routes to the Coinflip board when gameId is "coinflip"', async () => {
+  it('routes a Coinflip match.start to the in-place hub board (not the standalone screen)', async () => {
     await deliverMatchStart('coinflip', { players: ['pid', 'bob-id'], choices: {} });
-    expect(screen.getByText('Coinflip')).toBeInTheDocument();
+    // Coinflip drives the one-screen hub: a match.start activates the in-place game board.
+    expect(screen.getByTestId('hub-board')).toBeInTheDocument();
     expect(screen.queryByTestId('chess-board')).toBeNull();
   });
 });
