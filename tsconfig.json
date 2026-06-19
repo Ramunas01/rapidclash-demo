@@ -7,6 +7,7 @@
     { "path": "./packages/games/coinflip" },
     { "path": "./packages/games/chess" },
     { "path": "./packages/games/blackjack" },
+    { "path": "./packages/games/mines" },
     { "path": "./apps/server" },
     { "path": "./apps/web" }
   ]
