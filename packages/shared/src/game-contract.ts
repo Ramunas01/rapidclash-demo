@@ -42,6 +42,12 @@ export interface GameMeta {
    *  decisive result. The core applies this generically at settlement; draw/void take
    *  no rake. Declared per game so the core never branches on the game id (invariant #5). */
   rakeRate: number;
+  /** Optional per-player move timeout, in ms. When set (and the module implements
+   *  `timeoutMove`), the core runs an INDEPENDENT timer for each player while that player
+   *  has legal moves; on expiry it injects `timeoutMove(...)` for them through the normal
+   *  applyMove path and resets their timer. When unset (the default for RPS/Coinflip/Chess),
+   *  the match uses the single per-match deadline + forfeit-the-laggard behaviour. */
+  moveTimeoutMs?: number;
 }
 
 export interface MoveContext {
@@ -102,4 +108,13 @@ export interface GameModule {
    *  this to get a terminal state; typically the remaining player wins,
    *  or void if it was pre-first-move. */
   forfeit(state: GameState, quitter: PlayerId): GameState;
+
+  /** OPT-IN per-player move timer (paired with `meta.moveTimeoutMs`). The move to
+   *  auto-inject when `playerId`'s timer expires while they still have legal moves.
+   *  MUST return a move currently in `legalMoves(state, playerId)` and respect
+   *  redaction/determinism — use the injected seeded `rng`, never ambient randomness.
+   *  e.g. Blackjack → 'stand'; Mines → a random covered square. The core applies the
+   *  returned move through the normal applyMove path, so isTerminal/viewFor/settlement
+   *  all flow as usual. Modules that don't set `meta.moveTimeoutMs` omit this. */
+  timeoutMove?(state: GameState, playerId: PlayerId, rng: Rng): Move;
 }

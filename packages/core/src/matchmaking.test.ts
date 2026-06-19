@@ -1,6 +1,6 @@
 import { describe, beforeEach, it, expect } from 'vitest';
 import Database from 'better-sqlite3';
-import type { GameModule, GameState, PlayerId, Outcome, ApplyResult } from '@rapidclash/shared';
+import type { GameModule, GameState, PlayerId, Outcome, ApplyResult, Rng } from '@rapidclash/shared';
 import { IllegalMove } from '@rapidclash/shared';
 import { createLedger, createMatchmaking, GRANT_AMOUNT, PLATFORM_ACCOUNT } from './index.js';
 
@@ -537,5 +537,190 @@ describe('sweepStaleMatches', () => {
     const { matchmaking, advance, now } = setupWithClock(100);
     advance(TIMEOUT - 1);
     expect(matchmaking.sweepStaleMatches(now())).toEqual([]);
+  });
+});
+
+// ─── Per-player move timers (opt-in capability) ──────────────────────────────
+// Two tiny fake modules exercise both auto-action shapes without registering a real game.
+
+describe('per-player move timers', () => {
+  // Captures the rng the core passes to timeoutMove, to assert it's the seeded match rng.
+  let capturedRng: Rng | null = null;
+
+  interface StandState {
+    players: [PlayerId, PlayerId];
+    hits: Record<PlayerId, number>;
+    stood: Record<PlayerId, boolean>;
+    forcedOutcome?: Outcome;
+  }
+
+  // Concurrent "stand on timeout" game (Blackjack-shape): both players act independently;
+  // each can hit (stay) or stand (done); on timeout the core injects 'stand'.
+  const standModule: GameModule = {
+    meta: {
+      id: 'standgame', displayName: 'Stand Game', minPlayers: 2, maxPlayers: 2,
+      ranking: { kind: 'win_rate' }, bet: { minStake: 10, maxStake: 500, symmetricStake: true },
+      averageDurationSec: 5, rakeRate: 0.025, moveTimeoutMs: 1000,
+    },
+    init: (players) => ({
+      players: [players[0], players[1]],
+      hits: { [players[0]]: 0, [players[1]]: 0 },
+      stood: { [players[0]]: false, [players[1]]: false },
+    } as StandState),
+    legalMoves: (state, p) => ((state as StandState).stood[p] ? [] : ['hit', 'stand']),
+    applyMove: (state, move, ctx): ApplyResult => {
+      const s = state as StandState;
+      const ns: StandState = { ...s, hits: { ...s.hits }, stood: { ...s.stood } };
+      if ((move as string) === 'hit') ns.hits[ctx.playerId]++;
+      else ns.stood[ctx.playerId] = true;
+      return { state: ns, events: [{ type: 'acted', payload: { playerId: ctx.playerId, move } }] };
+    },
+    isTerminal: (state) => {
+      const s = state as StandState;
+      return s.forcedOutcome !== undefined || s.players.every((p) => s.stood[p]);
+    },
+    outcome: (state): Outcome => {
+      const s = state as StandState;
+      if (s.forcedOutcome) return s.forcedOutcome;
+      const [a, b] = s.players;
+      if (s.hits[a] === s.hits[b]) return { type: 'draw' };
+      return { type: 'win', winner: s.hits[a] > s.hits[b] ? a : b };
+    },
+    viewFor: (state) => state,
+    forfeit: (state, quitter) => {
+      const s = state as StandState;
+      const opp = s.players.find((p) => p !== quitter)!;
+      return { ...s, forcedOutcome: { type: 'win', winner: opp } } as GameState;
+    },
+    timeoutMove: () => 'stand',
+  };
+
+  interface MinesState {
+    players: [PlayerId, PlayerId];
+    covered: Record<PlayerId, number[]>;
+  }
+
+  // "Reveal a random covered square on timeout" game (Mines-shape).
+  const minesModule: GameModule = {
+    meta: {
+      id: 'minesgame', displayName: 'Mines Game', minPlayers: 2, maxPlayers: 2,
+      ranking: { kind: 'net_winnings' }, bet: { minStake: 10, maxStake: 500, symmetricStake: true },
+      averageDurationSec: 5, rakeRate: 0.025, moveTimeoutMs: 1000,
+    },
+    init: (players) => ({
+      players: [players[0], players[1]],
+      covered: { [players[0]]: [0, 1, 2], [players[1]]: [0, 1, 2] },
+    } as MinesState),
+    legalMoves: (state, p) => (state as MinesState).covered[p].map(String),
+    applyMove: (state, move, ctx): ApplyResult => {
+      const s = state as MinesState;
+      const idx = Number(move as string);
+      return {
+        state: { ...s, covered: { ...s.covered, [ctx.playerId]: s.covered[ctx.playerId].filter((x) => x !== idx) } },
+        events: [],
+      };
+    },
+    isTerminal: (state) => (state as MinesState).players.some((p) => (state as MinesState).covered[p].length === 0),
+    outcome: (state): Outcome => {
+      const s = state as MinesState;
+      const [a] = s.players;
+      return { type: 'win', winner: s.covered[a].length === 0 ? a : s.players[1] };
+    },
+    viewFor: (state) => state,
+    forfeit: (state, quitter) => {
+      const s = state as MinesState;
+      const opp = s.players.find((p) => p !== quitter)!;
+      return { ...s, covered: { ...s.covered, [opp]: [] } } as GameState;
+    },
+    timeoutMove: (state, p, rng) => {
+      capturedRng = rng;
+      const covered = (state as MinesState).covered[p];
+      return String(covered[rng.int(0, covered.length - 1)]);
+    },
+  };
+
+  function setupTimer(mod: GameModule, stake = 50) {
+    let clock = 1_000_000;
+    const db = new Database(':memory:');
+    const ledger = createLedger(db);
+    const mm = createMatchmaking(ledger, [mod], undefined, { now: () => clock });
+    ledger.grant('alice');
+    ledger.grant('bob');
+    mm.joinQueue('alice', mod.meta.id, stake);
+    const r = mm.joinQueue('bob', mod.meta.id, stake);
+    if (r.status !== 'matched') throw new Error('expected matched');
+    return { ledger, mm, matchId: r.matchId, advance: (ms: number) => { clock += ms; }, now: () => clock };
+  }
+
+  beforeEach(() => { capturedRng = null; });
+
+  it('fires each expired player timer → injects the declared move (stand); terminal auto-move settles', () => {
+    const { mm, matchId, advance, now } = setupTimer(standModule, 50);
+    advance(1001); // both players had legal moves from the start → both timers expire
+    const res = mm.sweepTimedOutMoves(now());
+
+    // alice auto-stands first (non-terminal — bob still has moves), then bob (terminal).
+    expect(res.map((r) => r.playerId)).toEqual(['alice', 'bob']);
+    expect(res[0].terminal).toBe(false);
+    expect(res[1].terminal).toBe(true);
+    expect(res[1].outcome).toEqual({ type: 'draw' }); // 0 hits each
+    expect(mm.getActiveMatch(matchId)).toBeUndefined(); // settled + removed
+  });
+
+  it('a real move resets that player timer; only the still-expired player is auto-moved', () => {
+    const { mm, matchId, advance, now } = setupTimer(standModule, 50);
+    advance(800);
+    mm.applyMove(matchId, 'alice', 'hit', now()); // alice deadline → now+1000
+    advance(400); // past bob's original deadline, before alice's reset one
+    const res = mm.sweepTimedOutMoves(now());
+
+    expect(res.map((r) => r.playerId)).toEqual(['bob']);
+    const s = mm.getActiveMatch(matchId)!.state as StandState;
+    expect(s.stood['bob']).toBe(true);
+    expect(s.stood['alice']).toBe(false); // alice's timer was reset by her real move
+  });
+
+  it('a decisive auto-stand settles with the winner + per-game rake', () => {
+    const { mm, matchId, ledger, advance, now } = setupTimer(standModule, 100);
+    advance(100);
+    mm.applyMove(matchId, 'alice', 'hit', now()); // alice: 1 hit
+    mm.applyMove(matchId, 'alice', 'stand', now()); // alice done; only bob has a timer now
+    advance(2000);
+    const res = mm.sweepTimedOutMoves(now());
+
+    expect(res).toHaveLength(1);
+    expect(res[0]).toMatchObject({ playerId: 'bob', terminal: true });
+    expect(res[0].outcome).toEqual({ type: 'win', winner: 'alice' });
+    expect(res[0].settlement!['alice'].delta).toBe(95); // 100 − round(200*0.025)=5
+    expect(res[0].settlement!['bob'].delta).toBe(-100);
+    expect(ledger.getBalance(PLATFORM_ACCOUNT)).toBe(5);
+  });
+
+  it('injects a random LEGAL covered square via the seeded match rng (Mines-shape)', () => {
+    const { mm, matchId, advance, now } = setupTimer(minesModule, 50);
+    const before = [...(mm.getActiveMatch(matchId)!.state as MinesState).covered['alice']];
+    advance(1001);
+    const res = mm.sweepTimedOutMoves(now());
+
+    expect(res.map((r) => r.playerId)).toEqual(['alice', 'bob']); // both auto-reveal one square
+    const m = mm.getActiveMatch(matchId)!; // 2 squares left each → not terminal
+    const after = (m.state as MinesState).covered['alice'];
+    expect(after).toHaveLength(2);
+    const revealed = before.find((x) => !after.includes(x));
+    expect(before).toContain(revealed); // the auto-move was a legal (previously covered) square
+    expect(capturedRng).toBe(m.rng); // deterministic seeded source, not ambient randomness
+  });
+
+  it('sweepStaleMatches does NOT forfeit an opt-in game (left to the timer sweep)', () => {
+    const { mm, matchId, advance, now } = setupTimer(standModule, 50);
+    advance(200_000); // far past any deadline
+    expect(mm.sweepStaleMatches(now())).toEqual([]); // skipped, not forfeited
+    expect(mm.getActiveMatch(matchId)).toBeDefined(); // still active
+  });
+
+  it('non-opt-in games are untouched by sweepTimedOutMoves (turn-based forfeit unchanged)', () => {
+    const { matchmaking, matchId } = setupRpsMatch(50); // rpsLikeModule has no moveTimeoutMs
+    expect(matchmaking.sweepTimedOutMoves(Date.now())).toEqual([]);
+    expect(matchmaking.getActiveMatch(matchId)).toBeDefined();
   });
 });

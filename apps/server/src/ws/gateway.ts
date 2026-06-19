@@ -163,6 +163,48 @@ export function registerWsGateway(
         }
       }
     }
+
+    // Per-player move-timer sweep: for opt-in games, the core injects each expired player's
+    // declared auto-move (Blackjack auto-stand, Mines auto-reveal) through the normal
+    // applyMove path. Broadcast each like a real move — redacted match.state + events, then
+    // match.end if it ended (already settled) or match.your_turn to whoever still has moves.
+    const timedOut = matchmaking.sweepTimedOutMoves(Date.now());
+    for (const t of timedOut) {
+      const mod = moduleByGame.get(t.gameId);
+      for (const pid of t.players) {
+        const s = connections.get(pid);
+        if (s?.readyState !== 1) continue;
+        const viewState = mod ? mod.viewFor(t.state, pid) : t.state;
+        send<MatchStatePayload>(s, 'match.state', { state: viewState, events: t.events }, t.matchId);
+      }
+      if (t.terminal) {
+        for (const pid of t.players) {
+          playerMatch.delete(pid);
+          const pending = pendingForfeits.get(pid);
+          if (pending !== undefined) {
+            clearTimeout(pending);
+            pendingForfeits.delete(pid);
+          }
+          const s = connections.get(pid);
+          if (s?.readyState === 1) {
+            send<MatchEndPayload>(
+              s,
+              'match.end',
+              { outcome: t.outcome!, settlement: t.settlement![pid] },
+              t.matchId,
+            );
+          }
+        }
+      } else if (mod) {
+        for (const pid of t.players) {
+          const lm = mod.legalMoves(t.state, pid);
+          const s = connections.get(pid);
+          if (lm.length > 0 && s?.readyState === 1) {
+            send<MatchYourTurnPayload>(s, 'match.your_turn', { legalMoves: lm }, t.matchId);
+          }
+        }
+      }
+    }
   }, SWEEP_INTERVAL_MS);
   // Don't keep the event loop alive on the sweeper alone; clear it on shutdown (tests).
   sweepTimer.unref?.();
