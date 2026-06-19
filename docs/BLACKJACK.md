@@ -42,12 +42,12 @@ Blackjack satisfies the existing `GameModule` contract — no core change — wi
 
 ## Fee, ranking, stakes — to confirm with the owner
 
-- **Rake rate is a single platform-wide config, not a Blackjack constant.** The spec's example implies 2.5% of pot (`100¢` stake each → `200¢` pot → winner `195¢`), but the design mock elsewhere says a flat 2%. These disagree, and they also differ in base ("% of pot" vs "% on volume"). Pick **one** canonical rate in the fee config (`WALLET_LEDGER.md`); Blackjack uses it like every other game. Do not hard-code 2.5% into the module.
+- **Rake rate — RESOLVED (owner 2026-06-19): 2%, platform-wide.** A single canonical rate in the fee config (`WALLET_LEDGER.md`); Blackjack uses it like every other game (never a Blackjack constant). ⚠️ **The code currently defaults to 5%** (`matchmaking.ts` `FEE_RATE` `0.05`) — a separate small change aligns the default to `0.02` (+ updates the affected settlement tests and docs). This changes settlement for **all** games, not just Blackjack.
 - **Ranking:** unspecified. Blackjack is chance-dominant with light skill; `net_winnings` (like the other chance games) is the natural fit. Owner to confirm vs `win_rate`.
 - **Stake range:** follows the game's `BetRules` meta; default to the same range as the other games unless the owner sets otherwise.
 
-## Edges to nail down
+## Edges — RESOLVED (owner 2026-06-19)
 
-- **Provably-fair scope (the big one).** Commit-reveal is *more* than the seeded-RNG the contract requires today, and it implies client-side verification UI (show the pre-deal hash, the post-deal seed, a "verify" affordance). Decide for the demo: implement real commit-reveal on Blackjack as a genuine "provably fair, by design" differentiator (the honest, non-blockchain version of the mock's "verifiable on-chain" claim), or ship the simpler seeded-RNG first and present commit-reveal as design intent. If adopted, decide whether it generalizes to Coinflip/RPS for a consistent trust story.
-- **Unbounded draws.** "Replay until someone wins" is theoretically unbounded. Define a safety cap (e.g. after N replays, void and refund both) so a match can't loop forever.
-- **Both players disconnect.** If both drop and the auto-stand resolve is a draw, don't trigger an endless replay with no one present — void/refund after the disconnect-driven draw.
+- **Provably-fair scope → seeded-RNG first.** v1 ships on the contract's existing deterministic seeded RNG (replayable/verifiable internally). Real commit-reveal (pre-deal hash, post-deal seed reveal, client "verify" UI) is **roadmap/design intent**, not built for v1 — present it as the "provably fair by design" direction, the honest non-blockchain answer to the mock's on-chain claim. Generalizing a commit-reveal trust story to Coinflip/RPS is deferred with it. **Programmer note:** treat the spec's commit-reveal language as the target design, but implement the seeded-RNG shuffle now (decks derived deterministically from the round seed).
+- **Unbounded draws → cap at 10 replays.** After **10** consecutive drawn rounds, **void and refund both** (no rake); a match can never loop forever.
+- **Both players disconnect → void.** If both drop and the auto-stand resolve is a draw, **void/refund** rather than replaying with no one present.
