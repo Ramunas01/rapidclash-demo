@@ -4,6 +4,9 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { CoinflipHubScreen } from '../screens/CoinflipHub.js';
 import type { CoinflipView } from '../App.js';
 
+// canvas-confetti needs a real <canvas> (absent in jsdom) — mock it (matches Result/CoinflipPlay tests).
+vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
+
 type Props = Parameters<typeof CoinflipHubScreen>[0];
 
 function baseProps(over: Partial<Props> = {}): Props {
