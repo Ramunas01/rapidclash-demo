@@ -23,12 +23,17 @@ export interface BotConfig {
 }
 
 /**
- * Roster: 7 bots, all 🤖-prefixed.
+ * Roster: 9 bots, all 🤖-prefixed — one human-facing rester per live game
+ * (coinflip, rps, chess, blackjack, mines), plus the rps@3 sparring pair.
  *
  * Lanes are kept at DISTINCT (gameId, stake) for the human-facing resters so the
  * FIFO matchmaker never pairs two of them with each other — each stays a stable,
- * joinable open challenge. The rps@3 pair is the deliberate "light motion" lane:
- * Sparks rests and Bolt (taker, also rps@3) repeatedly claims it.
+ * joinable open challenge. The bot policy is game-agnostic (it replies with a random
+ * move from the server's `legalMoves`), so Blackjack (hit/stand) and Mines (reveal a
+ * square) need no special handling — and their per-player timers just mean a slow bot
+ * would auto-act, but the ~700ms move delay keeps them well inside the 5–10s windows.
+ * The rps@3 pair is the deliberate "light motion" lane: Sparks rests and Bolt (taker,
+ * also rps@3) repeatedly claims it.
  */
 export const ROSTER: BotConfig[] = [
   { name: '🤖C-3PO', gameId: 'coinflip', stake: 5, policy: 'rester' },
@@ -36,6 +41,8 @@ export const ROSTER: BotConfig[] = [
   { name: '🤖BB-8', gameId: 'rps', stake: 5, policy: 'rester' },
   { name: '🤖K-2SO', gameId: 'rps', stake: 10, policy: 'rester' },
   { name: '🤖Chewie', gameId: 'chess', stake: 5, policy: 'rester' },
+  { name: '🤖IG-88', gameId: 'blackjack', stake: 5, policy: 'rester' },
+  { name: '🤖L3-37', gameId: 'mines', stake: 5, policy: 'rester' },
   { name: '🤖Sparks', gameId: 'rps', stake: 3, policy: 'rester' }, // sparring lane
   { name: '🤖Bolt', gameId: 'rps', stake: 3, policy: 'taker' }, // claims Sparks for motion
 ];
