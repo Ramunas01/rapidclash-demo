@@ -12,7 +12,7 @@ import type {
   OpenChallenge,
   QueueWaitingPayload,
 } from '@rapidclash/shared';
-import { config, type BotConfig } from './config.js';
+import { config, BOT_PREFIX, type BotConfig } from './config.js';
 import { HttpError, type Api } from './http.js';
 import { BotWsClient } from './ws-client.js';
 
@@ -131,7 +131,7 @@ export class Bot {
     setTimeout(() => void this.rest(), config.repostDelayMs);
   }
 
-  // ── Taker: claim a peer bot's challenge in its own lane, for light motion ───
+  // ── Taker: claim a HUMAN's open challenge (never another bot's) ─────────────
 
   private onChallengesList(p: ChallengesListPayload): void {
     if (p.gameId !== this.cfg.gameId) return;
@@ -147,12 +147,13 @@ export class Bot {
     this.tryTake();
   }
 
-  /** Take a peer challenge scoped to THIS bot's exact (gameId, stake) lane only, so it
-   *  never claims the distinct-stake challenges left open for the human. */
+  /** Claim a HUMAN-posted open challenge in this bot's game (any stake) — never another
+   *  bot's (an owner whose name starts with BOT_PREFIX). This is the ONLY way a taker
+   *  starts a match, so bots never battle bots; only a human who posts gets an opponent. */
   private tryTake(): void {
     if (this.cfg.policy !== 'taker' || this.state !== 'idle') return;
     const target = [...this.openChallenges.values()].find(
-      (c) => c.stake === this.cfg.stake && c.ownerName !== this.cfg.name,
+      (c) => !c.ownerName.startsWith(BOT_PREFIX),
     );
     if (!target) return;
     this.state = 'taking';
