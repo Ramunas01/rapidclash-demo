@@ -16,9 +16,9 @@
 /** 8×8 grid. */
 export const BOARD_SIZE = 64;
 /** Mines randomly placed among the 64 squares. */
-export const MINE_COUNT = 16;
+export const MINE_COUNT = 7;
 /** Safe squares a player must uncover for a perfect (max-score) clear. */
-export const SAFE_COUNT = BOARD_SIZE - MINE_COUNT; // 48
+export const SAFE_COUNT = BOARD_SIZE - MINE_COUNT; // 57
 /** Per-player move timeout (ms) — see minesModule.moveTimeoutMs. */
 export const MOVE_TIMEOUT_MS = 5000;
 
