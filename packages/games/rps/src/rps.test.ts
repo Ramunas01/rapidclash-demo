@@ -27,7 +27,12 @@ describe('rpsModule.meta', () => {
       ranking: { kind: 'win_rate' },
       bet: { minStake: 1, maxStake: 100, symmetricStake: true },
       averageDurationSec: 10,
+      rakeRate: 0.025,
     });
+  });
+
+  it('declares a 2.5% rake rate', () => {
+    expect(rpsModule.meta.rakeRate).toBe(0.025);
   });
 });
 

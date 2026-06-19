@@ -82,7 +82,7 @@ describe('GET /matches/:id', () => {
   it('completed: returns the terminal outcome and the viewer settlement', async () => {
     services.matchmaking.applyMove(matchId, p1.id, 'rock', Date.now());
     services.matchmaking.applyMove(matchId, p2.id, 'scissors', Date.now());
-    services.matchmaking.settleMatch(matchId, 0.05);
+    services.matchmaking.settleMatch(matchId); // rake sourced from rps module meta (2.5%)
 
     const res = await app.inject({
       method: 'GET',
@@ -93,7 +93,7 @@ describe('GET /matches/:id', () => {
     const body = res.json<MatchDetailBody>();
     expect(body.status).toBe('completed');
     expect(body.outcome).toEqual({ type: 'win', winner: p1.id });
-    // rock beats scissors → p1 wins. pot 20, rake round(20*0.05)=1, winner net +9.
+    // rock beats scissors → p1 wins. pot 20, rake round(20*0.025)=1, winner net +9.
     expect(body.settlement?.delta).toBe(STAKE - 1);
     // At terminal both choices are revealed.
     expect(body.state.choices[p1.id]).toBe('rock');

@@ -50,6 +50,7 @@ export const rpsModule: GameModule = {
     ranking: { kind: 'win_rate' },
     bet: { minStake: 1, maxStake: 100, symmetricStake: true },
     averageDurationSec: 10,
+    rakeRate: 0.025, // 2.5% of the pot from the winner on a decisive result
   },
 
   init(players: PlayerId[], _rng: Rng): GameState {

@@ -41,6 +41,7 @@ export const coinflipModule: GameModule = {
     ranking: { kind: 'net_winnings' },
     bet: { minStake: 1, maxStake: 100, symmetricStake: true },
     averageDurationSec: 5,
+    rakeRate: 0.025, // 2.5% of the pot from the winner on a decisive result
   },
 
   init(players: PlayerId[], rng: Rng): GameState {

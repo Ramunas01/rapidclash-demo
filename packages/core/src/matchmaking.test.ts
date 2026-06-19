@@ -15,6 +15,7 @@ const mockModule: GameModule = {
     ranking: { kind: 'win_rate' },
     bet: { minStake: 10, maxStake: 500, symmetricStake: true },
     averageDurationSec: 5,
+    rakeRate: 0.025,
   },
   init: (players: PlayerId[]) => ({ players }),
   legalMoves: () => [],
@@ -56,6 +57,8 @@ const rpsLikeModule: GameModule = {
     ranking: { kind: 'win_rate' },
     bet: { minStake: 10, maxStake: 500, symmetricStake: true },
     averageDurationSec: 5,
+    // S6 settlement tests assert a 10% rake — keep this in sync with their expected math.
+    rakeRate: 0.1,
   },
   init: (players: PlayerId[]) => ({
     players: [players[0], players[1]],
@@ -291,7 +294,8 @@ describe('S6 — settleMatch (win)', () => {
   it('winner receives pot minus rake; PLATFORM receives rake; ledger sums to zero', () => {
     const stake = 100;
     const { ledger, matchmaking, matchId } = setupRpsMatch(stake);
-    const feeRate = 0.1;
+    // settleMatch reads the rake rate from the module meta (rpsLikeModule declares 0.1).
+    const feeRate = rpsLikeModule.meta.rakeRate;
     const pot = stake * 2; // 200
     const rake = Math.round(pot * feeRate); // 20
 
@@ -299,12 +303,12 @@ describe('S6 — settleMatch (win)', () => {
     matchmaking.applyMove(matchId, 'alice', 'rock', Date.now());
     matchmaking.applyMove(matchId, 'bob', 'scissors', Date.now());
 
-    const settled = matchmaking.settleMatch(matchId, feeRate);
+    const settled = matchmaking.settleMatch(matchId);
 
     expect(settled.outcome).toEqual({ type: 'win', winner: 'alice' });
 
     // alice: started with GRANT_AMOUNT, escrowed 100, won pot-rake
-    expect(settled.settlement['alice'].delta).toBe(stake - rake); // +90
+    expect(settled.settlement['alice'].delta).toBe(stake - rake); // +80 (100 − 20)
     expect(settled.settlement['bob'].delta).toBe(-stake); // -100
 
     expect(ledger.getBalance('alice')).toBe(GRANT_AMOUNT + stake - rake);
@@ -326,7 +330,7 @@ describe('S6 — settleMatch (draw)', () => {
     matchmaking.applyMove(matchId, 'alice', 'rock', Date.now());
     matchmaking.applyMove(matchId, 'bob', 'rock', Date.now());
 
-    const settled = matchmaking.settleMatch(matchId, 0.1);
+    const settled = matchmaking.settleMatch(matchId);
 
     expect(settled.outcome).toEqual({ type: 'draw' });
     expect(settled.settlement['alice'].delta).toBe(0);
@@ -349,10 +353,10 @@ describe('S6 — settleMatch idempotency', () => {
     matchmaking.applyMove(matchId, 'alice', 'rock', Date.now());
     matchmaking.applyMove(matchId, 'bob', 'scissors', Date.now());
 
-    const first = matchmaking.settleMatch(matchId, 0.1);
+    const first = matchmaking.settleMatch(matchId);
     const aliceEntriesBefore = ledger.getEntries('alice').length;
 
-    const second = matchmaking.settleMatch(matchId, 0.1);
+    const second = matchmaking.settleMatch(matchId);
     const aliceEntriesAfter = ledger.getEntries('alice').length;
 
     expect(second.outcome).toEqual(first.outcome);
@@ -372,7 +376,7 @@ describe('S8 — getCompletedMatch', () => {
 
     matchmaking.applyMove(matchId, 'alice', 'rock', Date.now());
     matchmaking.applyMove(matchId, 'bob', 'scissors', Date.now());
-    matchmaking.settleMatch(matchId, 0.05);
+    matchmaking.settleMatch(matchId);
 
     const completed = matchmaking.getCompletedMatch(matchId);
     expect(completed).toBeDefined();
@@ -384,7 +388,7 @@ describe('S8 — getCompletedMatch', () => {
 
     matchmaking.applyMove(matchId, 'alice', 'rock', Date.now());
     matchmaking.applyMove(matchId, 'bob', 'scissors', Date.now());
-    matchmaking.settleMatch(matchId, 0.05);
+    matchmaking.settleMatch(matchId);
 
     const entriesBefore = ledger.getEntries('alice').length;
 
@@ -404,7 +408,8 @@ describe('forfeitMatch', () => {
   it('forfeit when opponent has already moved → opponent wins; pot settled correctly', () => {
     const stake = 100;
     const { ledger, matchmaking, matchId } = setupRpsMatch(stake);
-    const feeRate = 0.05;
+    // The rake comes from the module meta (rpsLikeModule declares 0.1), not a passed rate.
+    const feeRate = rpsLikeModule.meta.rakeRate;
     const pot = stake * 2;
     const rake = Math.round(pot * feeRate);
 
@@ -490,7 +495,8 @@ describe('sweepStaleMatches', () => {
   it('one player moved, the other times out → non-responder forfeits, mover settled, no orphaned escrow', () => {
     const stake = 100;
     const { ledger, matchmaking, matchId, advance, now } = setupWithClock(stake);
-    const rake = Math.round(stake * 2 * 0.05);
+    // Rake is sourced from the module meta (rpsLikeModule = 0.1), applied generically by the core.
+    const rake = Math.round(stake * 2 * rpsLikeModule.meta.rakeRate);
 
     // bob moves; alice never responds and blows the deadline.
     matchmaking.applyMove(matchId, 'bob', 'rock', now());

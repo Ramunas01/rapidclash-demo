@@ -15,7 +15,8 @@ import type { Envelope, MatchStartPayload } from '@rapidclash/shared';
 // charter invariants (#2 server-authoritative redaction, #3 no double-pay).
 
 const STAKE = 10;
-const FEE_RATE = 0.05; // server default when FEE_RATE env is unset
+// Rake is declared per game in the module meta (rps = 2.5%) and applied generically by the core.
+const FEE_RATE = rpsModule.meta.rakeRate;
 
 /** Buffers every envelope a socket receives and lets a test await the next of a type. */
 class SocketRecorder {
