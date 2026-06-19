@@ -15,6 +15,11 @@ export default {
       },
       colors: {
         brand: 'var(--brand-purple)',
+        // v2 brand-accent extension tokens (Hub Transition) — hubs use bg-success / bg-play
+        // / bg-surface, never raw hex. Backed by --rc-* vars in index.css.
+        success: 'hsl(var(--rc-success))',
+        play: 'hsl(var(--rc-play))',
+        surface: 'hsl(var(--rc-surface))',
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         card: {
