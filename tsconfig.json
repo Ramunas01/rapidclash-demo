@@ -6,6 +6,7 @@
     { "path": "./packages/games/rps" },
     { "path": "./packages/games/coinflip" },
     { "path": "./packages/games/chess" },
+    { "path": "./packages/games/blackjack" },
     { "path": "./apps/server" },
     { "path": "./apps/web" }
   ]
