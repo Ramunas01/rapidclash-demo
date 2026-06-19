@@ -73,7 +73,12 @@ describe('coinflipModule.meta', () => {
       ranking: { kind: 'net_winnings' },
       bet: { minStake: 1, maxStake: 100, symmetricStake: true },
       averageDurationSec: 5,
+      rakeRate: 0.025,
     });
+  });
+
+  it('declares a 2.5% rake rate', () => {
+    expect(coinflipModule.meta.rakeRate).toBe(0.025);
   });
 });
 

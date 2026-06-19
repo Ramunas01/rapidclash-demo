@@ -10,6 +10,7 @@ const RPS: GameMeta = {
   minPlayers: 2,
   maxPlayers: 2,
   ranking: { kind: 'win_rate' },
+  rakeRate: 0.025,
   bet: { minStake: 1, maxStake: 100, symmetricStake: true },
   averageDurationSec: 10,
 };
@@ -19,6 +20,7 @@ const COINFLIP: GameMeta = {
   minPlayers: 2,
   maxPlayers: 2,
   ranking: { kind: 'net_winnings' },
+  rakeRate: 0.025,
   bet: { minStake: 1, maxStake: 100, symmetricStake: true },
   averageDurationSec: 5,
 };

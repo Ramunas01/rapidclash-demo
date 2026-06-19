@@ -13,6 +13,7 @@ const mockModule: GameModule = {
     ranking: { kind: 'win_rate' },
     bet: { minStake: 10, maxStake: 500, symmetricStake: true },
     averageDurationSec: 5,
+    rakeRate: 0.025,
   },
   init: (players: PlayerId[]) => ({ players }),
   legalMoves: () => [],

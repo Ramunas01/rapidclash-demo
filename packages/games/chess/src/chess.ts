@@ -92,6 +92,7 @@ export const chessModule: GameModule = {
     ranking: { kind: 'elo', k: 32 },
     bet: { minStake: 1, maxStake: 100, symmetricStake: true },
     averageDurationSec: 300,
+    rakeRate: 0.1, // 10% of the pot from the winner on a decisive result (skill game)
   },
 
   init(players: PlayerId[], _rng: Rng): GameState {
