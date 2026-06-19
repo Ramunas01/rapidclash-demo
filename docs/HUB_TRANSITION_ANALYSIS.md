@@ -34,15 +34,21 @@ The first-pass table in `HUB_TRANSITION.md` holds, refined below. **Every data p
 
 ## 4. Decision (a) — canonical design system for v2
 
+> **RESOLVED (owner, 2026-06-20): adopt the export's tokens; retire the Base44-derived ones.**
+
 **Recommendation: adopt the export's token set (`theme.css`) as v2's design system; retire the Base44-derived tokens.** It's the chosen target look (dark, purple `#8140e2`), and running two systems guarantees drift. **The lift must convert the export's inline hex → theme tokens** (the export ships hex inline, not tokenized). Foundation PR: port `theme.css` into `apps/web` (Tailwind theme + CSS vars), keep the existing shadcn primitives, build green with no screen changes — then hubs consume tokens, never raw hex.
 
 ## 5. Decision (b) — reconcile the export's Coinflip with `COINFLIP_HUB.md` (#81)
+
+> **RESOLVED (owner, 2026-06-20): keep our PvP both-choose mechanic; lift only the export's visuals. The export's house solo-flip is rejected.**
 
 **They conflict on *mechanic*, and our spec wins.** The export's Coinflip is a **house game**: pick a side → **PLAY → instant solo flip → win/lose vs the system**. Our Coinflip (CHARTER, `COINFLIP_HUB.md`, already built in #85/#86) is **PvP both-choose**: post/join a challenge → a second human (or 🤖 bot) joins → both pick a side → a seeded flip decides → `pot − rake`. The export's mechanic would **break invariant #1** (it's the house) and must **not** be lifted.
 
 **Recommendation:** `COINFLIP_HUB.md` stays the **functional authority**; the export contributes only the **visual treatment** (the coin, the palette, the bet-amount selector styling, the layout polish). They don't fork because the export's house mechanic is rejected and the export's generic "Open Games ticker" is replaced by our real open-challenges JOIN list. The already-built `CoinflipHub` is restyled to the export's look — it is not rebuilt.
 
 ## 6. Decision (c) — house-only games
+
+> **RESOLVED (owner, 2026-06-20): coming-soon tiles only (no playable route) for Limbo/Crash/Keno/Hilo/Roulette/Dice.**
 
 The export's grid/ticker presents **Limbo, Crash, Keno, Hilo, Roulette, Dice** as playable-looking tiles (with `$` stakes and a JOIN path). These are **house-edge games with no human opponent** — forbidden by invariant #1's PvP-only corollary; they **cannot be playable**.
 
