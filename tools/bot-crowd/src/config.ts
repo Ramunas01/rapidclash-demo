@@ -9,42 +9,55 @@ export type BotPolicy =
   //   a human can press JOIN on; on match.end / challenge.expired, re-post. This is
   //   the primary, honest cold-start aid.
   | 'rester'
-  // 'taker': subscribe to the open-challenges feed and claim a peer bot's challenge
-  //   at its OWN (gameId, stake) lane, for light background motion. Scoped to its
-  //   exact stake so it never eats the human-facing challenges in other lanes.
+  // 'taker': subscribe to its game's open-challenges feed and claim a challenge posted
+  //   by a HUMAN (an owner whose name is NOT 🤖-prefixed) — so a human who POSTS instead
+  //   of joining still gets a quick opponent. It NEVER takes another bot's challenge, so
+  //   there is no bot-vs-bot noise: the lobby only changes from timeouts and real humans.
   | 'taker';
 
+/** Bot display names start with this — used to tell a bot's challenge from a human's. */
+export const BOT_PREFIX = '🤖';
+
 export interface BotConfig {
-  /** Display name — MUST be 🤖-prefixed (the honesty of ADR-010 depends on the label). */
+  /** Display name — MUST be BOT_PREFIX-prefixed (the honesty of ADR-010 depends on the label). */
   name: string;
   gameId: string;
+  /** For a rester: the stake it posts. For a taker: unused (it matches the human's stake). */
   stake: number;
   policy: BotPolicy;
 }
 
 /**
- * Roster: 9 bots, all 🤖-prefixed — one human-facing rester per live game
- * (coinflip, rps, chess, blackjack, mines), plus the rps@3 sparring pair.
+ * Roster: 15 bots, all 🤖-prefixed — per live game (coinflip, rps, chess, blackjack, mines):
+ *   • 2 RESTERS at DISTINCT stakes (5 and 10) so the FIFO matchmaker never pairs them with
+ *     each other — each stays a stable, joinable open challenge for a human; and
+ *   • 1 TAKER that claims only HUMAN-posted challenges (never a bot's), giving a human who
+ *     posts their own bet a quick opponent.
  *
- * Lanes are kept at DISTINCT (gameId, stake) for the human-facing resters so the
- * FIFO matchmaker never pairs two of them with each other — each stays a stable,
- * joinable open challenge. The bot policy is game-agnostic (it replies with a random
- * move from the server's `legalMoves`), so Blackjack (hit/stand) and Mines (reveal a
- * square) need no special handling — and their per-player timers just mean a slow bot
- * would auto-act, but the ~700ms move delay keeps them well inside the 5–10s windows.
- * The rps@3 pair is the deliberate "light motion" lane: Sparks rests and Bolt (taker,
- * also rps@3) repeatedly claims it.
+ * There is deliberately NO bot-vs-bot play, so the lobby changes only from re-post timeouts
+ * and real human activity. The bot policy is game-agnostic (replies with a random move from
+ * the server's `legalMoves`), so Blackjack (hit/stand) and Mines (reveal a square) need no
+ * special handling — their per-player timers would auto-act a slow bot, but the ~700ms move
+ * delay keeps the bots well inside the 5–10s windows.
  */
 export const ROSTER: BotConfig[] = [
+  // 2 resters per game (distinct stakes) —
   { name: '🤖C-3PO', gameId: 'coinflip', stake: 5, policy: 'rester' },
   { name: '🤖R2-D2', gameId: 'coinflip', stake: 10, policy: 'rester' },
   { name: '🤖BB-8', gameId: 'rps', stake: 5, policy: 'rester' },
   { name: '🤖K-2SO', gameId: 'rps', stake: 10, policy: 'rester' },
   { name: '🤖Chewie', gameId: 'chess', stake: 5, policy: 'rester' },
+  { name: '🤖R5-D4', gameId: 'chess', stake: 10, policy: 'rester' },
   { name: '🤖IG-88', gameId: 'blackjack', stake: 5, policy: 'rester' },
+  { name: '🤖4-LOM', gameId: 'blackjack', stake: 10, policy: 'rester' },
   { name: '🤖L3-37', gameId: 'mines', stake: 5, policy: 'rester' },
-  { name: '🤖Sparks', gameId: 'rps', stake: 3, policy: 'rester' }, // sparring lane
-  { name: '🤖Bolt', gameId: 'rps', stake: 3, policy: 'taker' }, // claims Sparks for motion
+  { name: '🤖EV-9D9', gameId: 'mines', stake: 10, policy: 'rester' },
+  // 1 taker per game — claims only HUMAN-posted challenges (never a bot's) —
+  { name: '🤖HK-47', gameId: 'coinflip', stake: 5, policy: 'taker' },
+  { name: '🤖2-1B', gameId: 'rps', stake: 5, policy: 'taker' },
+  { name: '🤖FX-7', gameId: 'chess', stake: 5, policy: 'taker' },
+  { name: '🤖AP-5', gameId: 'blackjack', stake: 5, policy: 'taker' },
+  { name: '🤖BD-1', gameId: 'mines', stake: 5, policy: 'taker' },
 ];
 
 function num(envName: string, fallback: number): number {
