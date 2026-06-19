@@ -65,9 +65,16 @@ function loadAuth() {
 export function App() {
   const { token: savedToken, playerId: savedPlayerId, username: savedUsername } = loadAuth();
   // A match persisted across a reload restores straight to the play view; match.state
-  // (active) keeps us there, match.end (terminal) redirects to the result screen.
+  // (active) keeps us there, match.end (terminal) redirects to the result screen. A stored
+  // coinflip match resumes onto the hub (in-place flow), not the standalone play screen.
   const [screen, setScreen] = useState<Screen>(
-    savedToken ? (hasStoredMatch() ? 'play' : 'wallet') : 'auth',
+    savedToken
+      ? hasStoredMatch()
+        ? readStoredGameId() === 'coinflip'
+          ? 'coinflip-hub'
+          : 'play'
+        : 'wallet'
+      : 'auth',
   );
   const [token, setToken] = useState<string | null>(savedToken);
   const [playerId, setPlayerId] = useState<string | null>(savedPlayerId);
@@ -123,6 +130,9 @@ export function App() {
   useEffect(() => {
     const ws = wsRef.current;
     if (!ws) return;
+    // While the Coinflip hub is active it drives the whole flow IN PLACE: suppress the
+    // screen navigations below and let the hub derive its sub-state from the same App state.
+    const onHub = screen === 'coinflip-hub';
     ws.setHandlers({
       onMatchStart(payload, matchId) {
         setCurrentMatchId(matchId);
@@ -135,7 +145,8 @@ export function App() {
         setActiveGameId(payload.gameId);
         writeStoredGameId(payload.gameId);
         setLegalMoves([]);
-        setScreen('play');
+        // Coinflip lands on the hub (in-place game area); other games use the play screen.
+        setScreen(payload.gameId === 'coinflip' ? 'coinflip-hub' : 'play');
       },
       onMatchState(payload, matchId) {
         const state = payload.state as GameView;
@@ -147,7 +158,8 @@ export function App() {
           const opp = state.players.find((p) => p !== playerId);
           if (opp) setOpponentId(opp);
         }
-        setScreen((s) => (s === 'play' ? s : 'play'));
+        // Coinflip resumes onto the hub (in-place); other games use the play screen.
+        setScreen((s) => (s === 'coinflip-hub' || activeGameId === 'coinflip' ? 'coinflip-hub' : 'play'));
       },
       onMatchYourTurn(payload, _matchId) {
         setLegalMoves(payload.legalMoves);
@@ -160,7 +172,9 @@ export function App() {
         // Match over — clear the persisted active game in lockstep with the matchId.
         writeStoredGameId(null);
         setLegalMoves([]);
-        setScreen('result');
+        // On the hub the result shows as an in-place overlay (no navigation); the hub sees
+        // currentMatchId clear + lastOutcome set and presents it. Others go to the result screen.
+        if (!onHub) setScreen('result');
       },
       onQueueWaiting(payload) {
         // OC7: surface the owner's server-authoritative expiry for the lobby countdown.
@@ -187,7 +201,7 @@ export function App() {
           // server-side per-socket, so a new socket needs re-subscribing). Mid-match
           // resume is handled by the socket's own onopen → match.resume.
           setActionNotice(null);
-          if (screen === 'stake-entry' && pendingGameId) {
+          if ((screen === 'stake-entry' || screen === 'coinflip-hub') && pendingGameId) {
             wsRef.current?.subscribeChallenges(pendingGameId);
           }
         }
@@ -249,6 +263,13 @@ export function App() {
     setScreen(meta.id === 'coinflip' ? 'coinflip-hub' : 'stake-entry');
   }, []);
 
+  // The hub resumes/enters as the coinflip context even without going through handleSelectGame
+  // (e.g. a mid-match reload), so the shared join/subscribe handlers (which key off
+  // pendingGameId) target coinflip.
+  useEffect(() => {
+    if (screen === 'coinflip-hub' && pendingGameId !== 'coinflip') setPendingGameId('coinflip');
+  }, [screen, pendingGameId]);
+
   const handleJoinQueue = useCallback((stake: number) => {
     if (!pendingGameId || !wsRef.current) return;
     setPendingStake(stake);
@@ -262,14 +283,17 @@ export function App() {
     setWaitingExpiresAt(null);
     setLobbyExpired(false);
     setActionNotice(null);
-    setScreen('lobby');
-  }, [pendingGameId]);
+    // On the hub the "Waiting" state renders in place; the standalone flow uses the lobby screen.
+    if (screen !== 'coinflip-hub') setScreen('lobby');
+  }, [pendingGameId, screen]);
 
   const handleLeaveQueue = useCallback(() => {
     if (!pendingGameId || !wsRef.current) return;
     wsRef.current.leaveQueue(pendingGameId); // best-effort; leaving the UI is a local nav
-    setScreen('wallet');
-  }, [pendingGameId]);
+    setWaitingExpiresAt(null);
+    // On the hub, cancelling returns to Idle in place; the standalone lobby exits to the wallet.
+    if (screen !== 'coinflip-hub') setScreen('wallet');
+  }, [pendingGameId, screen]);
 
   // ── Open challenges (stake screen) ──────────────────────────────────────────
   const handleSubscribeChallenges = useCallback(() => {
@@ -320,6 +344,14 @@ export function App() {
     if (!wsRef.current.forfeit(currentMatchId)) setActionNotice(RECONNECT_NOTICE);
   }, [currentMatchId]);
 
+  // Hub result overlay dismissed → wipe the match remnants so it returns to a clean Idle.
+  const handleHubResultDismiss = useCallback(() => {
+    setLastOutcome(null);
+    setLastSettlement(null);
+    setGameState(null);
+    setOpponentId(null);
+  }, []);
+
   function renderScreen() {
     switch (screen) {
       case 'auth':
@@ -329,7 +361,34 @@ export function App() {
       case 'game-list':
         return <GameListScreen token={token!} onSelect={handleSelectGame} onBack={goToWallet} />;
       case 'coinflip-hub':
-        return <CoinflipHubScreen token={token!} initialBalance={balance} onOpenWallet={() => goToWallet()} onOpenGameList={goToGameList} />;
+        return <CoinflipHubScreen
+          token={token!}
+          playerId={playerId}
+          username={username}
+          opponentId={opponentId}
+          balance={balance}
+          currentMatchId={currentMatchId}
+          gameState={gameState as CoinflipView | null}
+          legalMoves={legalMoves as string[]}
+          waitingExpiresAt={waitingExpiresAt}
+          lobbyExpired={lobbyExpired}
+          lastOutcome={lastOutcome}
+          lastSettlement={lastSettlement}
+          challenges={challenges}
+          challengeNotice={challengeNotice}
+          onPlay={handleJoinQueue}
+          onCancel={handleLeaveQueue}
+          onRepost={handleRepost}
+          onTakeChallenge={handleTakeChallenge}
+          onMakeMove={handleMakeMove}
+          onForfeit={handleForfeit}
+          onSubscribe={handleSubscribeChallenges}
+          onUnsubscribe={handleUnsubscribeChallenges}
+          onSelectGame={handleSelectGame}
+          onOpenWallet={() => goToWallet()}
+          onOpenGameList={goToGameList}
+          onResultDismiss={handleHubResultDismiss}
+        />;
       case 'stake-entry':
         return <StakeEntryScreen
           meta={pendingGameMeta!}
