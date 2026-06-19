@@ -10,6 +10,7 @@ import { LobbyScreen } from './screens/Lobby.js';
 import { PlayScreen } from './screens/Play.js';
 import { CoinflipPlayScreen } from './screens/CoinflipPlay.js';
 import { ChessPlayScreen } from './screens/ChessPlay.js';
+import { MinesPlayScreen } from './screens/MinesPlay.js';
 import { ResultScreen } from './screens/Result.js';
 import { LeaderboardScreen } from './screens/Leaderboard.js';
 import { CoinflipHubScreen } from './screens/CoinflipHub.js';
@@ -50,9 +51,31 @@ export interface ChessView {
   forcedOutcome?: { type: string; winner?: string };
 }
 
+/** One player's board within a redacted Mines view (see packages/games/mines). The own
+ *  board carries `uncovered` (+ `mines` once locked); the opponent's carries only `locked`
+ *  and, once either player locks, `score` — never their square layout. */
+export interface MinesBoardView {
+  uncovered?: number[];
+  locked: boolean;
+  bustedOn?: number;
+  mines?: number[];
+  score?: number;
+}
+
+export interface MinesView {
+  players: [string, string];
+  round: number;
+  draws: number;
+  boards: Record<string, MinesBoardView>;
+  winner?: string;
+  forcedOutcome?: { type: string; winner?: string };
+  /** Full mine layout — present only at terminal (full reveal). */
+  mines?: number[];
+}
+
 /** A per-game redacted view as it arrives from the server. The active game (and so
  *  which screen renders it) is tracked separately in `activeGameId`. */
-export type GameView = RpsView | CoinflipView | ChessView;
+export type GameView = RpsView | CoinflipView | ChessView | MinesView;
 
 function loadAuth() {
   return {
@@ -406,6 +429,8 @@ export function App() {
       case 'play':
         if (activeGameId === 'chess')
           return <ChessPlayScreen playerId={playerId!} username={username} opponentId={opponentId!} gameState={gameState as ChessView | null} legalMoves={legalMoves as ChessMove[]} onMove={handleMakeMove} onForfeit={handleForfeit} />;
+        if (activeGameId === 'mines')
+          return <MinesPlayScreen playerId={playerId!} username={username} opponentId={opponentId!} gameState={gameState as MinesView | null} legalMoves={legalMoves as number[]} onMove={handleMakeMove} onForfeit={handleForfeit} />;
         return activeGameId === 'coinflip'
           ? <CoinflipPlayScreen playerId={playerId!} username={username} opponentId={opponentId!} gameState={gameState as CoinflipView | null} legalMoves={legalMoves as string[]} onMove={handleMakeMove} onForfeit={handleForfeit} />
           : <PlayScreen playerId={playerId!} username={username} opponentId={opponentId!} gameState={gameState as RpsView | null} legalMoves={legalMoves as string[]} onMove={handleMakeMove} onForfeit={handleForfeit} />;

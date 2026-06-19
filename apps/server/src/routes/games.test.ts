@@ -58,4 +58,18 @@ describe('GET /games — registered platform games (go-live)', () => {
     expect(chess!.displayName).toBe('Chess');
     expect(chess!.ranking.kind).toBe('elo');
   });
+
+  it('includes mines as a playable GameMeta (net_winnings, 2.5% rake, 5s per-player timer)', async () => {
+    const res = await app.inject({ method: 'GET', url: '/games' });
+    expect(res.statusCode).toBe(200);
+    const games = res.json<
+      Array<{ id: string; displayName: string; ranking: { kind: string }; rakeRate: number; moveTimeoutMs?: number }>
+    >();
+    const mines = games.find((g) => g.id === 'mines');
+    expect(mines).toBeDefined();
+    expect(mines!.displayName).toBe('Mines');
+    expect(mines!.ranking.kind).toBe('net_winnings');
+    expect(mines!.rakeRate).toBe(0.025);
+    expect(mines!.moveTimeoutMs).toBe(5000);
+  });
 });

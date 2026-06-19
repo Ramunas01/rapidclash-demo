@@ -47,6 +47,9 @@ importers:
       '@rapidclash/game-coinflip':
         specifier: workspace:*
         version: link:../../packages/games/coinflip
+      '@rapidclash/game-mines':
+        specifier: workspace:*
+        version: link:../../packages/games/mines
       '@rapidclash/game-rps':
         specifier: workspace:*
         version: link:../../packages/games/rps

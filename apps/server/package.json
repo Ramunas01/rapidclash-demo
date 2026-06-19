@@ -14,6 +14,7 @@
     "@rapidclash/core": "workspace:*",
     "@rapidclash/game-chess": "workspace:*",
     "@rapidclash/game-coinflip": "workspace:*",
+    "@rapidclash/game-mines": "workspace:*",
     "@rapidclash/game-rps": "workspace:*",
     "@rapidclash/shared": "workspace:*",
     "better-sqlite3": "^11.9.1",
