@@ -48,11 +48,13 @@ The first-pass table in `HUB_TRANSITION.md` holds, refined below. **Every data p
 
 ## 6. Decision (c) — house-only games
 
-> **RESOLVED (owner, 2026-06-20): coming-soon tiles only (no playable route) for Limbo/Crash/Keno/Hilo/Roulette/Dice.**
+> **RESOLVED (owner, 2026-06-20, overriding the Advisor's "drop"): keep Limbo/Crash/Keno/Hilo/Roulette/Dice as coming-soon tiles (no playable route).** The owner commits to **redefining each as a two-player / PvP variation** (or replacing it with a similar 2-player game), so coming-soon is an honest promise — not a false one.
 
-The export's grid/ticker presents **Limbo, Crash, Keno, Hilo, Roulette, Dice** as playable-looking tiles (with `$` stakes and a JOIN path). These are **house-edge games with no human opponent** — forbidden by invariant #1's PvP-only corollary; they **cannot be playable**.
+The export's grid/ticker presents **Limbo, Crash, Keno, Hilo, Roulette, Dice** as playable-looking tiles (with `$` stakes and a JOIN path). They **cannot be playable as house games** (invariant #1). The **Advisor recommended dropping** the pure house games (coming-soon = a false promise) and reserving coming-soon for Chess/Baccarat; the **owner overrides** — all of them will be PvP-redefined, so they stay as dimmed **"coming soon"** tiles with no PLAY route, alongside Baccarat. Live roster stays **RPS, Coinflip, Chess, Blackjack, Mines**.
 
-**Recommendation: coming-soon-only (no PLAY path), or dropped.** Our roster is **RPS, Coinflip, Chess, Blackjack, Mines** (live PvP) + **Baccarat** (the deferred PvP-redefinition → coming-soon is fine). Render Limbo/Crash/Keno/Hilo/Roulette/Dice — if shown at all — as dimmed "coming soon" tiles with **no** playable route. (Confirm: drop them entirely, or keep as coming-soon for roadmap breadth? And confirm **Dice** — it's house-edge unless we ever PvP-redefine it.)
+Two consequences to honor:
+1. **CHARTER reconciliation (flag for the Advisor).** The PvP-only corollary in `CHARTER.md` (#84) currently names **Limbo/Crash/Keno/Hilo as "never offered"** (no PvP form). The owner's commitment reclassifies them as **deferred PvP-redefinitions** (like Baccarat). The Advisor should update the corollary so the docs don't contradict the coming-soon tiles.
+2. **Clean art only.** A coming-soon tile must use art free of multiplier/crypto framing. The export's **Limbo** tile (baked-in "900x/800x/700x") was **rejected** in the Foundation PR (#99) — so Limbo needs a **clean tile** before it is shown.
 
 ## 7. Honesty checklist — strip on the way in (invariant #1/#4)
 
@@ -66,11 +68,12 @@ The export is a real-money-crypto-gambling mock. The lift must remove:
 
 ## 8. Flags — data the core does NOT expose (owner decisions, not improvised data)
 
-- **Cross-game "Open Games" ticker.** `subscribeChallenges` is **per-game**; a single all-games ticker = the client subscribing to each game's feed and merging (feasible, no core change) — or scope the ticker per-hub. *Decision: aggregate client-side, or per-game only?*
-- **Category tabs / search / sort** (ALL/ORIGINALS/CLASSICS/EVENTS). `GameMeta` has **no category** field. These would be client-side grouping or cosmetic. *Decision: simplify/drop, or add a category to `GameMeta`?*
-- **Player stats** (games played / W-L). No endpoint (we deliberately simplified Profile to wallet + ledger + leaderboard). Keep simplified unless the owner wants a stats endpoint.
-- **"Bring a Rival" invite link** (private direct challenge by link) — **not a core feature.** Static banner / coming-soon until built; flagged before as the most honest cold-start primitive.
-- **Promo hero carousel / banners** — static content (no data); keep play-money copy only.
+All RESOLVED (Advisor 2026-06-20, owner concurs — "speed over perfection; drop redundancies"):
+- **Cross-game "Open Games" ticker → aggregate client-side on the Home hub.** The client subscribes to each game's feed (`subscribeChallenges` per game) and merges them into one ticker — **no core change**. The **per-game** feed stays in each Game hub. **Build note:** the real ticker starts **empty** → the **bot crowd seeds resting challenges across all ticker games** so it looks alive honestly. *(Already delivered: PR #97 puts 2 resters per game across all 5 live games.)*
+- **Category tabs / search / sort → DROP.** `GameMeta` has no category field; these are cosmetic. Not worth a `GameMeta` change for the demo.
+- **Player stats → Profile stays simplified** (wallet + ledger + leaderboard). No stats endpoint.
+- **"Bring a Rival" invite link → static banner**, play-money copy only (the private-direct-challenge feature isn't built).
+- **Promo hero carousel → static, play-money copy only.** The honesty scrub (§7) **extends to the hero slide copy** — the export's slides carry "$50k prize pool / provably fair / on-chain / daily cashback / no house edge"; reframe or replace with play-money lines.
 
 ## Next (after owner sign-off)
 
