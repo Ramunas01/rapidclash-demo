@@ -67,7 +67,7 @@ describe('handValue — ace handling & totals', () => {
 // ── meta ────────────────────────────────────────────────────────────────────
 
 describe('blackjackModule.meta', () => {
-  it('declares the spec meta incl. rakeRate 0.025 and net_winnings ranking', () => {
+  it('declares the spec meta incl. rakeRate 0.025, net_winnings ranking, and a 10s move timer', () => {
     expect(bj.meta).toMatchObject({
       id: 'blackjack',
       displayName: 'Blackjack',
@@ -76,7 +76,25 @@ describe('blackjackModule.meta', () => {
       ranking: { kind: 'net_winnings' },
       bet: { minStake: 1, maxStake: 100, symmetricStake: true },
       rakeRate: 0.025,
+      moveTimeoutMs: 10000,
     });
+  });
+});
+
+// ── timeoutMove (opt-in per-player timer → auto-stand) ──────────────────────
+
+describe('blackjackModule.timeoutMove', () => {
+  it('auto-stands the player, and the injected move is legal for an active player', () => {
+    const s = state([card('10'), card('8')], [card('5'), card('5')]); // A active, =18
+    const move = bj.timeoutMove!(s, A, rngWith(0));
+    expect(move).toBe('stand');
+    expect(bj.legalMoves(s, A)).toContain(move); // contract: must be a current legal move
+  });
+  it('applying the timeout move locks the hand at its current total (= a Stand)', () => {
+    const s = state([card('10'), card('8')], [card('5'), card('5')]);
+    const after = as(bj.applyMove(s, bj.timeoutMove!(s, A, rngWith(0)), ctx(A)).state);
+    expect(after.hands[A].done).toBe(true);
+    expect(handValue(after.hands[A].cards)).toBe(18);
   });
 });
 

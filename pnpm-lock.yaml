@@ -41,6 +41,9 @@ importers:
       '@rapidclash/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@rapidclash/game-blackjack':
+        specifier: workspace:*
+        version: link:../../packages/games/blackjack
       '@rapidclash/game-chess':
         specifier: workspace:*
         version: link:../../packages/games/chess
