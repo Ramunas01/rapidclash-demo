@@ -21,7 +21,7 @@ export function HubToolbar({ onGames, onAccount }: Props) {
   return (
     <nav
       aria-label="Primary"
-      className="z-20 flex shrink-0 items-stretch justify-around border-t border-white/5 bg-[#0b0e18]/95 px-2 py-1.5 backdrop-blur"
+      className="z-20 flex shrink-0 items-stretch justify-around border-t border-border bg-background/95 px-2 py-1.5 backdrop-blur"
     >
       <ToolbarButton icon={navMenu} label="Menu" onClick={onGames} />
       <ToolbarButton icon={navGames} label="Games" onClick={onGames} />
@@ -52,7 +52,7 @@ function ToolbarButton({
         className="relative flex flex-1 flex-col items-center justify-center gap-0.5 rounded-lg py-1 opacity-40"
       >
         <img src={icon} alt="" aria-hidden="true" className="h-7 w-auto" />
-        <span className="text-[8px] font-semibold uppercase tracking-wide text-white/60">Soon</span>
+        <span className="text-[8px] font-semibold uppercase tracking-wide text-muted-foreground">Soon</span>
       </div>
     );
   }
@@ -64,7 +64,7 @@ function ToolbarButton({
       data-testid={`hub-nav-${label.toLowerCase()}`}
       className={cn(
         'flex flex-1 flex-col items-center justify-center rounded-lg py-1 transition-colors',
-        'hover:bg-white/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand',
+        'hover:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-brand',
       )}
     >
       <img src={icon} alt="" aria-hidden="true" className="h-7 w-auto" />
