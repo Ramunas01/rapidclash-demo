@@ -152,6 +152,9 @@ const meta: GameMeta = {
   averageDurationSec: 60,
   // Blackjack rake: 2.5% of the pot, taken once on the decisive result (never per replay).
   rakeRate: 0.025,
+  // Per-player 10s move timer (opt-in core capability): on expiry the core injects
+  // `timeoutMove` (→ 'stand') for that player through the normal applyMove path.
+  moveTimeoutMs: 10000,
 };
 
 export const blackjackModule: GameModule = {
@@ -254,6 +257,13 @@ export const blackjackModule: GameModule = {
       draws: s.draws,
       hands: redactedHands,
     } as BlackjackState;
+  },
+
+  timeoutMove(_state: GameState, _playerId: PlayerId, _rng: Rng): Action {
+    // Per spec: a player who lets their 10s timer expire auto-stands on their current
+    // total (deterministic — rng unused). The core applies this via the normal applyMove
+    // path, so the round resolves/replays exactly as if the player had pressed Stand.
+    return 'stand';
   },
 
   forfeit(state: GameState, _quitter: PlayerId): GameState {

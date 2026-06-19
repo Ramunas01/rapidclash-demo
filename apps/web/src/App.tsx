@@ -10,6 +10,7 @@ import { LobbyScreen } from './screens/Lobby.js';
 import { PlayScreen } from './screens/Play.js';
 import { CoinflipPlayScreen } from './screens/CoinflipPlay.js';
 import { ChessPlayScreen } from './screens/ChessPlay.js';
+import { BlackjackPlayScreen } from './screens/BlackjackPlay.js';
 import { ResultScreen } from './screens/Result.js';
 import { LeaderboardScreen } from './screens/Leaderboard.js';
 import { CoinflipHubScreen } from './screens/CoinflipHub.js';
@@ -50,9 +51,30 @@ export interface ChessView {
   forcedOutcome?: { type: string; winner?: string };
 }
 
+export interface BlackjackCard {
+  rank: string;
+  suit: string;
+}
+export interface BlackjackHand {
+  cards: BlackjackCard[];
+  done: boolean;
+}
+export interface BlackjackView {
+  players: [string, string];
+  round: number;
+  draws: number;
+  /** Redacted by viewFor: own hand is full; the opponent shows exactly ONE card in play.
+   *  At terminal both hands are revealed (but the app navigates to the result screen then). */
+  hands: Record<string, BlackjackHand>;
+  /** Present only at terminal (revealed for verifiability). */
+  seed?: number;
+  winner?: string;
+  forcedOutcome?: { type: string; winner?: string };
+}
+
 /** A per-game redacted view as it arrives from the server. The active game (and so
  *  which screen renders it) is tracked separately in `activeGameId`. */
-export type GameView = RpsView | CoinflipView | ChessView;
+export type GameView = RpsView | CoinflipView | ChessView | BlackjackView;
 
 function loadAuth() {
   return {
@@ -406,6 +428,8 @@ export function App() {
       case 'play':
         if (activeGameId === 'chess')
           return <ChessPlayScreen playerId={playerId!} username={username} opponentId={opponentId!} gameState={gameState as ChessView | null} legalMoves={legalMoves as ChessMove[]} onMove={handleMakeMove} onForfeit={handleForfeit} />;
+        if (activeGameId === 'blackjack')
+          return <BlackjackPlayScreen playerId={playerId!} username={username} opponentId={opponentId!} gameState={gameState as BlackjackView | null} legalMoves={legalMoves as string[]} onMove={handleMakeMove} onForfeit={handleForfeit} />;
         return activeGameId === 'coinflip'
           ? <CoinflipPlayScreen playerId={playerId!} username={username} opponentId={opponentId!} gameState={gameState as CoinflipView | null} legalMoves={legalMoves as string[]} onMove={handleMakeMove} onForfeit={handleForfeit} />
           : <PlayScreen playerId={playerId!} username={username} opponentId={opponentId!} gameState={gameState as RpsView | null} legalMoves={legalMoves as string[]} onMove={handleMakeMove} onForfeit={handleForfeit} />;
