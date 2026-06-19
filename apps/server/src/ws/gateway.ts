@@ -61,7 +61,6 @@ export function registerWsGateway(
   gameModules: GameModule[],
 ): void {
   const moduleByGame = new Map<string, GameModule>(gameModules.map((m) => [m.meta.id, m]));
-  const feeRate = parseFloat(process.env.FEE_RATE ?? '0.05');
 
   /** Push an incremental feed update to every socket subscribed to this game (OC8). */
   function pushChallengesUpdate(gameId: string, update: ChallengesUpdatePayload): void {
@@ -438,7 +437,7 @@ export function registerWsGateway(
 
               if (mod.isTerminal(result.state)) {
                 // Settle and send match.end to both players.
-                const settled = matchmaking.settleMatch(matchId, feeRate);
+                const settled = matchmaking.settleMatch(matchId);
                 for (const pid of match.players) {
                   playerMatch.delete(pid);
                   const s = connections.get(pid);

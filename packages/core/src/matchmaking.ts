@@ -151,8 +151,10 @@ export interface Matchmaking {
   getActiveMatch(matchId: string): MatchRecord | undefined;
   /** Apply a player's move. Throws IllegalMove if the move is not in legalMoves. */
   applyMove(matchId: string, playerId: PlayerId, move: Move, now: number): ApplyResult;
-  /** Settle a terminal match. Idempotent: second call returns stored result without touching the ledger. */
-  settleMatch(matchId: string, feeRate: number): SettledMatch;
+  /** Settle a terminal match. The rake rate is read from the match's game module meta
+   *  (`rakeRate`), so the core never branches on the game id. Idempotent: a second call
+   *  returns the stored result without touching the ledger. */
+  settleMatch(matchId: string): SettledMatch;
   /** Apply forfeit for the quitter and immediately settle. Idempotent. */
   forfeitMatch(matchId: string, quitterId: PlayerId): SettledMatch;
   getCompletedMatch(matchId: string): CompletedMatch | undefined;
@@ -391,7 +393,6 @@ export function createMatchmaking(
 
   function sweepStaleMatches(now: number = nowFn()): ResolvedStaleMatch[] {
     const resolved: ResolvedStaleMatch[] = [];
-    const feeRate = process.env.FEE_RATE ? parseFloat(process.env.FEE_RATE) : 0.05;
     // Snapshot first: settleMatch/forfeitMatch delete from `matches`, so we must not
     // iterate the live map while mutating it.
     for (const match of [...matches.values()]) {
@@ -407,7 +408,7 @@ export function createMatchmaking(
       const settled =
         pending.length > 0
           ? forfeitMatch(match.matchId, pending[0])
-          : settleMatch(match.matchId, feeRate); // already terminal but unsettled — just settle
+          : settleMatch(match.matchId); // already terminal but unsettled — just settle
       resolved.push({
         matchId: match.matchId,
         players: match.players,
@@ -446,7 +447,7 @@ export function createMatchmaking(
     return result;
   }
 
-  function settleMatch(matchId: string, feeRate: number): SettledMatch {
+  function settleMatch(matchId: string): SettledMatch {
     // Idempotent: if already completed, return stored result without touching the ledger.
     const existing = completed.get(matchId);
     if (existing) return { outcome: existing.outcome, settlement: existing.settlement };
@@ -455,6 +456,9 @@ export function createMatchmaking(
     if (!match) throw new Error(`Match not found: ${matchId}`);
 
     const mod = moduleByGame.get(match.gameId)!;
+    // Rake is declared per game in the module meta — the core applies it generically and
+    // never tests which game this is (invariant #5).
+    const feeRate = mod.meta.rakeRate;
     const outcome = mod.outcome(match.state);
 
     const pot = match.stake * 2;
@@ -500,8 +504,8 @@ export function createMatchmaking(
     const terminalState = mod.forfeit(match.state, quitterId);
     match.state = terminalState;
 
-    const feeRate = process.env.FEE_RATE ? parseFloat(process.env.FEE_RATE) : 0.05;
-    return settleMatch(matchId, feeRate);
+    // settleMatch reads the rake rate from the game module meta.
+    return settleMatch(matchId);
   }
 
   function getCompletedMatch(matchId: string): CompletedMatch | undefined {

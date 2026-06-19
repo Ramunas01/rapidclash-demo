@@ -38,6 +38,10 @@ export interface GameMeta {
   ranking: RankingType;
   bet: BetRules;
   averageDurationSec: number; // UX/matchmaking hint
+  /** Rake as a fraction of the pot (e.g. 0.025 = 2.5%) taken from the winner on a
+   *  decisive result. The core applies this generically at settlement; draw/void take
+   *  no rake. Declared per game so the core never branches on the game id (invariant #5). */
+  rakeRate: number;
 }
 
 export interface MoveContext {

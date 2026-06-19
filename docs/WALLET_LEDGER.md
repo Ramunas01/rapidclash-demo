@@ -40,10 +40,10 @@ The pot is the sum of the two `BET_ESCROW` debits. At settlement it is fully acc
 2. **Hold** — both stakes now sit in the pot, out of both wallets, for the match duration.
 3. **Settle** — exactly one of:
    - **Win:** `SETTLE_WIN` to the winner for `pot − rake`; `RAKE` to PLATFORM for `rake`.
-   - **Draw:** `SETTLE_REFUND` of each player's own stake back in full. **No rake on a draw** (confirmed policy). The fee rate is the single config value; the draw rule lives next to it.
+   - **Draw:** `SETTLE_REFUND` of each player's own stake back in full. **No rake on a draw** (confirmed policy).
    - **Void:** `SETTLE_REFUND` of each stake in full, no rake.
 
-`rake = round(pot * feeRate)`. The fee rate lives in one config value. Rounding policy (favour the player or the platform on the half-unit) is decided once and documented next to that config.
+`rake = round(pot * rakeRate)`, taken from the winner on a **decisive result only** (draw/void take none). The **rake rate is per game**, declared in the game module's `GameMeta.rakeRate` and applied generically by the core at settlement — the core never branches on the game id (invariant #5). Current rates: **RPS 2.5%, Coinflip 2.5%, Chess 10%** (Blackjack 2.5% ships with its module). Rounding is `Math.round` (half-units round to the platform). A module never sees or touches a wallet; it only declares the rate.
 
 ## Idempotency & reconnect safety
 

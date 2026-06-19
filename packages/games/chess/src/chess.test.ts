@@ -50,7 +50,12 @@ describe('chessModule.meta', () => {
       ranking: { kind: 'elo', k: 32 },
       bet: { minStake: 1, maxStake: 100, symmetricStake: true },
       averageDurationSec: 300,
+      rakeRate: 0.1,
     });
+  });
+
+  it('declares a 10% rake rate', () => {
+    expect(chessModule.meta.rakeRate).toBe(0.1);
   });
 });
 
