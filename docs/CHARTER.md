@@ -41,7 +41,7 @@ Empty lobbies are the obvious risk at low player counts. We solve it **outside t
 | Coinflip | Yes | Pure chance. Both players secretly pick a side; on a mismatch the server flips a seeded coin (same side = draw). Ranks by net winnings, not skill. |
 | Chess | Yes | Skill game, ELO/Glicko ranking. Use an existing move-validation library; do not hand-roll legality. |
 | Baccarat | **No (house-banked by default)** | Needs a redefined head-to-head ruleset — see below. |
-| Blackjack | **No (house-banked by default)** | Needs a redefined head-to-head ruleset — see below. |
+| Blackjack | **No house-banked; redefined as a PvP duel** | Confirmed head-to-head ruleset — see `BLACKJACK.md`. |
 
 ### Confirmed spec: Coinflip (Slice 2)
 
@@ -56,12 +56,11 @@ Reworked to a **both-players-choose** mechanic (this supersedes the original one
 
 ### Open spec: re-defining the house-banked games
 
-Blackjack and Baccarat are player-versus-dealer by definition. Under "no house" they have no native two-player form. We pick a head-to-head reinterpretation **before** implementing either. Provisional proposals, to be confirmed:
+Baccarat is player-versus-dealer by definition. Under "no house" it has no native two-player form, so it needs a head-to-head reinterpretation **before** implementing. (Blackjack's redefinition is now **confirmed** — see `BLACKJACK.md`.) Provisional proposal, to be confirmed:
 
-- **Blackjack duel** — both players draw against the same shoe; closest to 21 without busting wins the pot. No dealer.
 - **Baccarat duel** — players alternate taking the Banker role each round, or each backs a hand and the standard draw rules decide; the loser's stake transfers. Banker advantage must be neutralised by role rotation.
 
-These two are deferred until after the slice. Recording the conflict now prevents the programmer discovering it mid-build.
+Baccarat is deferred until after the slice. Recording the conflict now prevents the programmer discovering it mid-build.
 
 ## In scope for the demo
 
@@ -69,7 +68,7 @@ Registration & sessions; play-money wallet with ledger; stake placement & escrow
 
 ## Out of scope (for now)
 
-Real payments; KYC/identity verification; anti-fraud/collusion detection; spectating; chat; tournaments; native mobile apps; the redefined Blackjack/Baccarat rulesets (deferred, not abandoned).
+Real payments; KYC/identity verification; anti-fraud/collusion detection; spectating; chat; tournaments; native mobile apps; the redefined Baccarat ruleset (deferred, not abandoned; Blackjack is now confirmed — see `BLACKJACK.md`).
 
 ## Glossary
 
