@@ -140,13 +140,8 @@ function resolveRound(s: BlackjackState): GameEvent[] {
 
 /**
  * Meta. `rakeRate` is declared per-game (invariant #5: the core reads it generically).
- *
- * TEMPORARY TYPING: `GameMeta` does not yet carry `rakeRate` on this branch — that field
- * is added by the separate per-game-rake change (Task A). Until it merges, we widen the
- * local type so this compiles without touching the shared contract. Once Task A lands,
- * drop the intersection and type this as plain `GameMeta`.
  */
-const meta: GameMeta & { rakeRate: number } = {
+const meta: GameMeta = {
   id: 'blackjack',
   displayName: 'Blackjack',
   minPlayers: 2,
