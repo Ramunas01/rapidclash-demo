@@ -61,9 +61,18 @@ export interface MatchRecord {
   state: GameState;
   stake: number;
   seed: number;
+  /** The match's seeded RNG, retained from formation (already consumed by module.init).
+   *  Continues the deterministic sequence for any later draws — e.g. per-player
+   *  `timeoutMove` auto-actions — so the whole match stays reproducible from `seed`. */
+  rng: Rng;
   /** Server-authoritative move deadline (#31). Set at match start, refreshed on every
-   *  applyMove. Past this, sweepStaleMatches resolves the match independent of socket state. */
+   *  applyMove. Past this, sweepStaleMatches resolves the match independent of socket state.
+   *  Used by games WITHOUT per-player timers (the default forfeit-the-laggard model). */
   deadlineAt: number;
+  /** Per-player move deadlines, present only for games that opt into per-player timers
+   *  (`meta.moveTimeoutMs` + `timeoutMove`). A player's entry exists iff they currently
+   *  have legal moves; on expiry the core injects their `timeoutMove`. */
+  playerDeadlines?: Record<PlayerId, number>;
 }
 
 export interface PlayerSettlement {
@@ -98,6 +107,25 @@ export interface ResolvedStaleMatch {
   players: [PlayerId, PlayerId];
   outcome: Outcome;
   settlement: Record<PlayerId, PlayerSettlement>;
+}
+
+/** One auto-move the core injected because a player's per-player move timer expired
+ *  (opt-in games only). The move was applied through the normal applyMove path, so the
+ *  gateway broadcasts it like any other move: relay `state` (after viewFor) + `events`,
+ *  then `match.end` if `terminal` (already settled), else `match.your_turn`. Socket-free. */
+export interface TimedOutMove {
+  matchId: string;
+  gameId: string;
+  players: [PlayerId, PlayerId];
+  /** The player whose timer expired and whose move was auto-injected. */
+  playerId: PlayerId;
+  /** The injected (raw) state after the auto-move — apply viewFor before sending. */
+  state: GameState;
+  events: ApplyResult['events'];
+  terminal: boolean;
+  /** Present only when `terminal` — the settled result. */
+  outcome?: Outcome;
+  settlement?: Record<PlayerId, PlayerSettlement>;
 }
 
 /** A capped, ordered slice of the open-challenge feed for one game. */
@@ -148,6 +176,12 @@ export interface Matchmaking {
    *  refunded, no rake), else forfeit the non-responder. Settles each so escrow is never orphaned;
    *  returns the resolved matches so the gateway can push match.end. Socket-free, like sweepExpired. */
   sweepStaleMatches(now?: number): ResolvedStaleMatch[];
+  /** For games that opt into per-player move timers (`meta.moveTimeoutMs` + `timeoutMove`):
+   *  inject the declared auto-move for every player whose timer has expired, via the normal
+   *  applyMove path, settling any that become terminal. Returns each injected move so the
+   *  gateway can broadcast it. Games without per-player timers are untouched (they go through
+   *  sweepStaleMatches instead). Socket-free, like the other sweepers. */
+  sweepTimedOutMoves(now?: number): TimedOutMove[];
   getActiveMatch(matchId: string): MatchRecord | undefined;
   /** Apply a player's move. Throws IllegalMove if the move is not in legalMoves. */
   applyMove(matchId: string, playerId: PlayerId, move: Move, now: number): ApplyResult;
@@ -222,6 +256,32 @@ export function createMatchmaking(
     return `${gameId}:${stake}`;
   }
 
+  /** A module opts into per-player move timers by declaring a timeout + the auto-move. */
+  function usesPlayerTimers(mod: GameModule): boolean {
+    return mod.meta.moveTimeoutMs != null && typeof mod.timeoutMove === 'function';
+  }
+
+  /**
+   * Recompute a match's per-player deadlines (opt-in games only). A player's timer is
+   * active iff they currently have legal moves: the player who just acted (`justActed`)
+   * resets to `now + moveTimeoutMs`; a player who newly has moves starts a timer; a player
+   * with no legal moves has theirs cleared; a still-waiting player keeps their running clock.
+   */
+  function refreshPlayerTimers(match: MatchRecord, mod: GameModule, now: number, justActed?: PlayerId): void {
+    const timeout = mod.meta.moveTimeoutMs!;
+    const deadlines = match.playerDeadlines ?? {};
+    for (const p of match.players) {
+      const hasMoves = mod.legalMoves(match.state, p).length > 0;
+      if (!hasMoves) {
+        delete deadlines[p];
+      } else if (p === justActed || deadlines[p] === undefined) {
+        deadlines[p] = now + timeout;
+      }
+      // else: a waiting player's clock keeps running (unchanged).
+    }
+    match.playerDeadlines = deadlines;
+  }
+
   function joinQueue(playerId: PlayerId, gameId: string, stake: number): JoinQueueResult {
     const mod = moduleByGame.get(gameId);
     if (!mod) throw new Error(`Unknown gameId: ${gameId}`);
@@ -266,9 +326,11 @@ export function createMatchmaking(
         state: initialState,
         stake,
         seed,
+        rng,
         deadlineAt: nowFn() + turnTimeoutMs,
       };
       matches.set(matchId, record);
+      if (usesPlayerTimers(mod)) refreshPlayerTimers(record, mod, nowFn());
 
       return { status: 'matched', matchId, opponentId: waiter.playerId, initialState };
     }
@@ -343,9 +405,11 @@ export function createMatchmaking(
       state: initialState,
       stake: entry.stake,
       seed,
+      rng,
       deadlineAt: nowFn() + turnTimeoutMs,
     };
     matches.set(matchId, record);
+    if (usesPlayerTimers(mod)) refreshPlayerTimers(record, mod, nowFn());
 
     return { status: 'matched', matchId, opponentId: ownerId, initialState };
   }
@@ -396,8 +460,11 @@ export function createMatchmaking(
     // Snapshot first: settleMatch/forfeitMatch delete from `matches`, so we must not
     // iterate the live map while mutating it.
     for (const match of [...matches.values()]) {
-      if (now < match.deadlineAt) continue;
       const mod = moduleByGame.get(match.gameId)!;
+      // Opt-in per-player-timer games never forfeit-the-laggard here; their timers are
+      // resolved by sweepTimedOutMoves (auto-move injection), so skip them entirely.
+      if (usesPlayerTimers(mod)) continue;
+      if (now < match.deadlineAt) continue;
       // Non-responders = players who still owe a legal move. In our 2-player games this is
       // either the single laggard (the other side already moved → that laggard forfeits and
       // loses) or, before any decisive move, everyone still owes one (the module's forfeit
@@ -417,6 +484,63 @@ export function createMatchmaking(
       });
     }
     return resolved;
+  }
+
+  function sweepTimedOutMoves(now: number = nowFn()): TimedOutMove[] {
+    const out: TimedOutMove[] = [];
+    // Snapshot: settleMatch deletes from `matches` on a terminal auto-move.
+    for (const match of [...matches.values()]) {
+      const mod = moduleByGame.get(match.gameId)!;
+      if (!usesPlayerTimers(mod)) continue;
+
+      // Inject an auto-move for each expired player. State changes between injections, so
+      // re-evaluate every iteration. Bounded to avoid any runaway loop.
+      let guard = 0;
+      while (guard++ < 64) {
+        const deadlines = match.playerDeadlines ?? {};
+        const p = match.players.find(
+          (pl) =>
+            deadlines[pl] !== undefined &&
+            now >= deadlines[pl] &&
+            mod.legalMoves(match.state, pl).length > 0,
+        );
+        if (p === undefined) break;
+
+        let result: ApplyResult;
+        try {
+          // timeoutMove must return a currently-legal move; applyMove validates it and
+          // resets this player's timer. The seeded match rng keeps the auto-move deterministic.
+          const move = mod.timeoutMove!(match.state, p, match.rng);
+          result = applyMove(match.matchId, p, move, now);
+        } catch {
+          // A misbehaving module must not wedge the sweep: drop this player's timer and
+          // leave the match for the disconnect/forfeit backstop.
+          match.playerDeadlines = { ...deadlines };
+          delete match.playerDeadlines[p];
+          continue;
+        }
+
+        const terminal = mod.isTerminal(result.state);
+        const entry: TimedOutMove = {
+          matchId: match.matchId,
+          gameId: match.gameId,
+          players: match.players,
+          playerId: p,
+          state: result.state,
+          events: result.events,
+          terminal,
+        };
+        if (terminal) {
+          const settled = settleMatch(match.matchId);
+          entry.outcome = settled.outcome;
+          entry.settlement = settled.settlement;
+          out.push(entry);
+          break; // match is now removed from `matches`
+        }
+        out.push(entry);
+      }
+    }
+    return out;
   }
 
   function getActiveMatch(matchId: string): MatchRecord | undefined {
@@ -444,6 +568,9 @@ export function createMatchmaking(
     // A move was made → the match is progressing; push the deadline out so an active,
     // responsive match is never swept as stale (#31).
     match.deadlineAt = now + turnTimeoutMs;
+    // Opt-in per-player timers: reset the acting player's clock; refresh the others
+    // (a player may have just gained or lost legal moves).
+    if (usesPlayerTimers(mod)) refreshPlayerTimers(match, mod, now, playerId);
     return result;
   }
 
@@ -523,6 +650,7 @@ export function createMatchmaking(
     listOpenChallenges,
     sweepExpired,
     sweepStaleMatches,
+    sweepTimedOutMoves,
     getActiveMatch,
     applyMove,
     settleMatch,
