@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { SocketStream } from '@fastify/websocket';
 import type { Identity, Matchmaking, JoinMatched } from '@rapidclash/core';
-import { ChallengeError } from '@rapidclash/core';
+import { ChallengeError, usesPlayerTimers } from '@rapidclash/core';
 import { IllegalMove } from '@rapidclash/shared';
 import type {
   Envelope,
@@ -39,7 +39,7 @@ const challengeSubscribers = new Map<string, Set<WsSocket>>();
 // Pending forfeit timers: set on disconnect, cancelled on reconnect/resume.
 const pendingForfeits = new Map<string, ReturnType<typeof setTimeout>>();
 
-const FORFEIT_DELAY_MS = 60_000;
+const DEFAULT_FORFEIT_DELAY_MS = 60_000;
 const SWEEP_INTERVAL_MS = (() => {
   const n = parseInt(process.env.CHALLENGE_SWEEP_MS ?? '', 10);
   return Number.isFinite(n) ? n : 1_000;
@@ -61,6 +61,12 @@ export function registerWsGateway(
   gameModules: GameModule[],
 ): void {
   const moduleByGame = new Map<string, GameModule>(gameModules.map((m) => [m.meta.id, m]));
+
+  // Read at registration so tests (and ops) can tune it via env; defaults to 60s.
+  const forfeitDelayMs = (() => {
+    const n = parseInt(process.env.FORFEIT_DELAY_MS ?? '', 10);
+    return Number.isFinite(n) ? n : DEFAULT_FORFEIT_DELAY_MS;
+  })();
 
   /** Push an incremental feed update to every socket subscribed to this game (OC8). */
   function pushChallengesUpdate(gameId: string, update: ChallengesUpdatePayload): void {
@@ -253,33 +259,44 @@ export function registerWsGateway(
         connections.delete(playerId);
 
         const matchId = playerMatch.get(playerId);
-        if (matchId && matchmaking.getActiveMatch(matchId)) {
-          // Start forfeit timer — if the player doesn't reconnect within 60 s, they forfeit.
-          const handle = setTimeout(() => {
-            pendingForfeits.delete(playerId);
-            const match = matchmaking.getActiveMatch(matchId);
-            if (!match) return; // already settled by the other path
+        if (!matchId) return;
+        const closedMatch = matchmaking.getActiveMatch(matchId);
+        if (!closedMatch) return;
 
-            try {
-              const settled = matchmaking.forfeitMatch(matchId, playerId);
-              for (const pid of match.players) {
-                playerMatch.delete(pid);
-                const s = connections.get(pid);
-                if (s?.readyState === 1) {
-                  send<MatchEndPayload>(
-                    s,
-                    'match.end',
-                    { outcome: settled.outcome, settlement: settled.settlement[pid] },
-                    matchId,
-                  );
-                }
+        // Opt-in per-player-timer games (Mines, Blackjack) must NOT close-forfeit: an absent
+        // player is auto-acted to a lock by the #91 move-timer sweep (sweepTimedOutMoves),
+        // which can take longer than the forfeit delay on a slow board (Mines: many 5s
+        // reveals). Starting the timer would wrongly end the match mid-game. The absent
+        // player's clock keeps firing server-side, so the game still progresses to a result.
+        // Generic predicate (meta.moveTimeoutMs) — no gameId branch.
+        const closedMod = moduleByGame.get(closedMatch.gameId);
+        if (closedMod && usesPlayerTimers(closedMod)) return;
+
+        // Start forfeit timer — if the player doesn't reconnect in time, they forfeit.
+        const handle = setTimeout(() => {
+          pendingForfeits.delete(playerId);
+          const match = matchmaking.getActiveMatch(matchId);
+          if (!match) return; // already settled by the other path
+
+          try {
+            const settled = matchmaking.forfeitMatch(matchId, playerId);
+            for (const pid of match.players) {
+              playerMatch.delete(pid);
+              const s = connections.get(pid);
+              if (s?.readyState === 1) {
+                send<MatchEndPayload>(
+                  s,
+                  'match.end',
+                  { outcome: settled.outcome, settlement: settled.settlement[pid] },
+                  matchId,
+                );
               }
-            } catch {
-              // Match already settled — nothing to do.
             }
-          }, FORFEIT_DELAY_MS);
-          pendingForfeits.set(playerId, handle);
-        }
+          } catch {
+            // Match already settled — nothing to do.
+          }
+        }, forfeitDelayMs);
+        pendingForfeits.set(playerId, handle);
       });
 
       socket.on('message', (raw: Buffer) => {

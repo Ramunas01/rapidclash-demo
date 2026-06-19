@@ -24,6 +24,16 @@ function createRng(seed: number): Rng {
   };
 }
 
+/**
+ * A module opts into per-player move timers by declaring a timeout + the auto-move (#91).
+ * Exported so the WS gateway can apply the SAME predicate (e.g. to skip the socket-close
+ * forfeit for these games — their absent players are auto-acted to a lock instead) without
+ * branching on a gameId.
+ */
+export function usesPlayerTimers(mod: GameModule): boolean {
+  return mod.meta.moveTimeoutMs != null && typeof mod.timeoutMove === 'function';
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface QueueEntry {
@@ -254,11 +264,6 @@ export function createMatchmaking(
 
   function queueKey(gameId: string, stake: number): string {
     return `${gameId}:${stake}`;
-  }
-
-  /** A module opts into per-player move timers by declaring a timeout + the auto-move. */
-  function usesPlayerTimers(mod: GameModule): boolean {
-    return mod.meta.moveTimeoutMs != null && typeof mod.timeoutMove === 'function';
   }
 
   /**
