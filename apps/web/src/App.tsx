@@ -17,19 +17,21 @@ import { LeaderboardScreen } from './screens/Leaderboard.js';
 import { CoinflipHubScreen } from './screens/CoinflipHub.js';
 import { RpsHubScreen } from './screens/RpsHub.js';
 import { BlackjackHubScreen } from './screens/BlackjackHub.js';
+import { MinesHubScreen } from './screens/MinesHub.js';
 import { HomeHubScreen } from './screens/HomeHub.js';
 import { ProfileHubScreen } from './screens/ProfileHub.js';
 
-type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub';
+type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub';
 
 const RECONNECT_NOTICE = 'Connection lost — reconnecting. Try again in a moment.';
 
 /** Games that play through the shared one-screen Game hub (vs the multi-screen flow).
  *  Each maps to a `<gameId>-hub` screen. Adding a game here wires it to the hub. */
-const HUB_GAMES = new Set(['coinflip', 'rps', 'blackjack']);
+const HUB_GAMES = new Set(['coinflip', 'rps', 'blackjack', 'mines']);
 const hubScreenFor = (gameId: string | null | undefined): Screen | null =>
   gameId && HUB_GAMES.has(gameId) ? (`${gameId}-hub` as Screen) : null;
-const isGameHubScreen = (s: Screen): boolean => s === 'coinflip-hub' || s === 'rps-hub' || s === 'blackjack-hub';
+const isGameHubScreen = (s: Screen): boolean =>
+  s === 'coinflip-hub' || s === 'rps-hub' || s === 'blackjack-hub' || s === 'mines-hub';
 
 export interface RpsView {
   players: [string, string];
@@ -474,9 +476,16 @@ export function App() {
         return <GameListScreen token={token!} onSelect={handleSelectGame} onBack={goToWallet} />;
       case 'coinflip-hub':
       case 'rps-hub':
-      case 'blackjack-hub': {
+      case 'blackjack-hub':
+      case 'mines-hub': {
         const HubScreen =
-          screen === 'rps-hub' ? RpsHubScreen : screen === 'blackjack-hub' ? BlackjackHubScreen : CoinflipHubScreen;
+          screen === 'rps-hub'
+            ? RpsHubScreen
+            : screen === 'blackjack-hub'
+              ? BlackjackHubScreen
+              : screen === 'mines-hub'
+                ? MinesHubScreen
+                : CoinflipHubScreen;
         return <HubScreen
           token={token!}
           playerId={playerId}
