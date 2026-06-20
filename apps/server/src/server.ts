@@ -20,6 +20,7 @@ import { makeAuthMiddleware } from './middleware/auth.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerGamesRoutes } from './routes/games.js';
+import { registerOpenChallengesRoutes } from './routes/open-challenges.js';
 import { registerLeaderboardRoutes } from './routes/leaderboard.js';
 import { registerWalletRoutes } from './routes/wallet.js';
 import { registerMatchesRoutes } from './routes/matches.js';
@@ -37,7 +38,7 @@ export interface AppOptions {
 
 // Anything under these prefixes is the API (or the WS upgrade) — an unknown path here must
 // 404 as JSON, never fall back to the SPA shell. Everything else GET → index.html.
-const API_PREFIXES = ['/auth', '/wallet', '/games', '/leaderboard', '/matches', '/admin', '/ws'];
+const API_PREFIXES = ['/auth', '/wallet', '/games', '/open-challenges', '/leaderboard', '/matches', '/admin', '/ws'];
 
 /** Where the built PWA lives. WEB_DIST overrides; otherwise resolve relative to this
  *  compiled file (apps/server/dist → apps/web/dist) so it works from the repo layout. */
@@ -97,6 +98,7 @@ export function buildApp(
   registerAuthRoutes(app, identity);
   registerAdminRoutes(app, auth, ledger);
   registerGamesRoutes(app, matchmaking);
+  registerOpenChallengesRoutes(app, matchmaking);
   registerLeaderboardRoutes(app, matchHistory);
   registerWalletRoutes(app, auth, ledger);
   registerMatchesRoutes(app, auth, matchmaking, gameModules);

@@ -90,6 +90,13 @@ export interface OpenChallenge {
   timeControlId: string;
 }
 
+/** One resting bet in the PUBLIC cross-game snapshot (GET /open-challenges) — an OpenChallenge
+ *  plus the gameId it belongs to, so the logged-out Home ticker can render and JOIN it without a
+ *  per-game subscription. Read-only; exposes nothing beyond what authed users see in the WS feed. */
+export interface PublicOpenChallenge extends OpenChallenge {
+  gameId: string;
+}
+
 /** Server → Client: full snapshot, sent on subscribe. `more` = count beyond the cap. */
 export interface ChallengesListPayload {
   gameId: string;

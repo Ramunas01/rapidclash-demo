@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Clock, Coins, Swords, Zap } from 'lucide-react';
-import type { GameMeta, OpenChallenge, LeaderboardEntry } from '@rapidclash/shared';
+import type { GameMeta, OpenChallenge, PublicOpenChallenge, LeaderboardEntry } from '@rapidclash/shared';
 import { api } from '../api.js';
 import { formatCredits, formatClock, CREDIT_SYMBOL } from '../format.js';
 import { formatStat } from './Leaderboard.js';
@@ -55,6 +55,9 @@ interface Props {
   onTrackChallenges(gameIds: string[]): void;
   onUntrackChallenges(): void;
   onTakeChallenge(matchId: string): void;
+  /** Logged-out JOIN: the public ticker passes the row's game + stake so the auth wall can capture
+   *  a full {action:'join'} intent (matchId may be gone by auth → fall back to that hub, stake armed). */
+  onTakePublicChallenge?(c: { matchId: string; gameId: string; stake: number }): void;
   /** Playable tile tap → that game's flow (coinflip→hub, others→stake-entry). */
   onSelectGame(meta: GameMeta): void;
   onOpenWallet(): void;
@@ -74,7 +77,7 @@ interface Props {
  */
 export function HomeHubScreen({
   token, balance, challengesByGame, onTrackChallenges, onUntrackChallenges,
-  onTakeChallenge, onSelectGame, onOpenWallet, onHome, loggedIn = true,
+  onTakeChallenge, onTakePublicChallenge, onSelectGame, onOpenWallet, onHome, loggedIn = true,
 }: Props) {
   const [games, setGames] = useState<GameMeta[]>([]);
   const [liveBalance, setLiveBalance] = useState(balance);
@@ -136,7 +139,9 @@ export function HomeHubScreen({
           </section>
 
           {/* 3 — Open Games ticker — cross-game, real feed only (never fabricated rows).
-              Logged out → a sign-in teaser instead (the feed rides the authed WS). */}
+              Signed in → the live WS aggregate; logged out → a polled public snapshot of the
+              same resting challenges (GET /open-challenges) so a visitor sees real movement.
+              JOIN still needs auth — the wall fires on the tap and resumes the take. */}
           {loggedIn ? (
             <OpenGamesTicker
               challengesByGame={challengesByGame}
@@ -145,7 +150,11 @@ export function HomeHubScreen({
               onTake={onTakeChallenge}
             />
           ) : (
-            <OpenGamesTeaser onSignIn={onOpenWallet} />
+            <PublicOpenGamesTicker
+              nameByGame={nameByGame}
+              onJoin={(c) => onTakePublicChallenge?.(c)}
+              onSignIn={onOpenWallet}
+            />
           )}
 
           {/* 4 — Leaderboard-lite (reuses Leaderboard's formatStat). */}
@@ -244,6 +253,57 @@ function TileArt({ art, name, grayscale }: { art?: string; name: string; graysca
 }
 
 const URGENT_MS = 10_000;
+/** How often the logged-out ticker re-polls the public snapshot so the feed visibly moves. */
+const PUBLIC_POLL_MS = 4_000;
+
+/** One feed row — shared by the signed-in (WS) and logged-out (public poll) tickers so they
+ *  render identically. `onJoin` decides what a JOIN tap does (take vs the auth wall). */
+function TickerRow({ gameId, c, now, nameByGame, onJoin }: {
+  gameId: string;
+  c: OpenChallenge;
+  now: number;
+  nameByGame: Map<string, string>;
+  onJoin(): void;
+}) {
+  const remaining = c.expiresAt - now;
+  const urgent = remaining <= URGENT_MS;
+  const art = TILE_ART[gameId];
+  const gameName = nameByGame.get(gameId) ?? titleCase(gameId);
+  return (
+    <div
+      data-testid={`home-row-${c.matchId}`}
+      className="flex items-center gap-3 rounded-xl bg-surface p-2.5"
+    >
+      <div className="h-12 w-9 shrink-0 overflow-hidden rounded-md bg-background">
+        {art && <img src={art} alt="" aria-hidden="true" className="h-full w-full object-cover" />}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold text-foreground" data-testid={`home-row-game-${c.matchId}`}>
+          {gameName}
+        </p>
+        <p className="mt-0.5 truncate text-[11px] text-muted-foreground">@{c.ownerName}</p>
+      </div>
+      <div className="flex shrink-0 flex-col items-end gap-1">
+        <span className="flex items-center gap-1 text-sm font-bold text-brand">
+          <Coins className="h-3.5 w-3.5" />
+          <span data-testid={`home-stake-${c.matchId}`}>{formatCredits(c.stake)}</span>
+        </span>
+        <span className={cn('flex items-center gap-1 text-[10px] tabular-nums', urgent ? 'text-destructive' : 'text-muted-foreground')}>
+          <Clock className="h-3 w-3" />{formatClock(remaining)}
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={onJoin}
+        data-testid={`home-join-${c.matchId}`}
+        aria-label={`Join ${c.ownerName}'s ${c.stake} credit ${gameName} game`}
+        className="shrink-0 rounded-full bg-play px-4 py-2 text-xs font-extrabold uppercase tracking-wide text-background transition-colors hover:brightness-105"
+      >
+        Join
+      </button>
+    </div>
+  );
+}
 
 /** §3 — cross-game Open Games ticker. Flattens every game's REAL feed into one list. */
 function OpenGamesTicker({
@@ -300,68 +360,90 @@ function OpenGamesTicker({
         <p className="py-2 text-center text-xs text-muted-foreground">No open games right now — pick a tile to post one.</p>
       ) : (
         <div className="space-y-2">
-          {rows.map(({ gameId, c }) => {
-            const remaining = c.expiresAt - now;
-            const urgent = remaining <= URGENT_MS;
-            const art = TILE_ART[gameId];
-            return (
-              <div
-                key={c.matchId}
-                data-testid={`home-row-${c.matchId}`}
-                className="flex items-center gap-3 rounded-xl bg-surface p-2.5"
-              >
-                <div className="h-12 w-9 shrink-0 overflow-hidden rounded-md bg-background">
-                  {art && <img src={art} alt="" aria-hidden="true" className="h-full w-full object-cover" />}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-foreground" data-testid={`home-row-game-${c.matchId}`}>
-                    {nameByGame.get(gameId) ?? titleCase(gameId)}
-                  </p>
-                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground">@{c.ownerName}</p>
-                </div>
-                <div className="flex shrink-0 flex-col items-end gap-1">
-                  <span className="flex items-center gap-1 text-sm font-bold text-brand">
-                    <Coins className="h-3.5 w-3.5" />
-                    <span data-testid={`home-stake-${c.matchId}`}>{formatCredits(c.stake)}</span>
-                  </span>
-                  <span className={cn('flex items-center gap-1 text-[10px] tabular-nums', urgent ? 'text-destructive' : 'text-muted-foreground')}>
-                    <Clock className="h-3 w-3" />{formatClock(remaining)}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleJoin(c)}
-                  data-testid={`home-join-${c.matchId}`}
-                  aria-label={`Join ${c.ownerName}'s ${c.stake} credit ${nameByGame.get(gameId) ?? gameId} game`}
-                  className="shrink-0 rounded-full bg-play px-4 py-2 text-xs font-extrabold uppercase tracking-wide text-background transition-colors hover:brightness-105"
-                >
-                  Join
-                </button>
-              </div>
-            );
-          })}
+          {rows.map(({ gameId, c }) => (
+            <TickerRow
+              key={c.matchId}
+              gameId={gameId}
+              c={c}
+              now={now}
+              nameByGame={nameByGame}
+              onJoin={() => handleJoin(c)}
+            />
+          ))}
         </div>
       )}
     </section>
   );
 }
 
-/** §3 (logged out) — honest teaser: no fabricated activity; the real feed appears once authed. */
-function OpenGamesTeaser({ onSignIn }: { onSignIn(): void }) {
+/** §3 (logged out) — the SAME open-games feed, fed by the public snapshot (GET /open-challenges)
+ *  instead of the authed WS. Re-polls so a visitor sees real movement (the bot crowd posting /
+ *  clearing). Real data only — never fabricated. A JOIN tap (row or the footer button) hits the
+ *  auth wall, which captures the intent and resumes the take after sign-in (no anonymous play). */
+function PublicOpenGamesTicker({
+  nameByGame, onJoin, onSignIn,
+}: {
+  nameByGame: Map<string, string>;
+  onJoin(c: { matchId: string; gameId: string; stake: number }): void;
+  onSignIn(): void;
+}) {
+  const [rows, setRows] = useState<PublicOpenChallenge[]>([]);
+  const [now, setNow] = useState(() => Date.now());
+
+  // Poll the public snapshot so the feed visibly moves; no auth, no WS.
+  useEffect(() => {
+    let alive = true;
+    const load = () => api.openChallenges()
+      .then((r) => { if (alive && Array.isArray(r)) setRows(r); })
+      .catch(() => {});
+    load();
+    const id = setInterval(load, PUBLIC_POLL_MS);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+  // Tick the countdown clock independently of the poll.
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const sorted = useMemo(() => [...rows].sort((a, b) => a.openedAt - b.openedAt), [rows]);
+
   return (
-    <section data-testid="home-ticker-teaser" aria-label="Open games" className="rounded-2xl border border-border bg-card p-4 text-center">
-      <div className="mb-2 flex items-center justify-center gap-2">
+    <section data-testid="home-ticker" aria-label="Open games" className="rounded-2xl border border-border bg-card p-4">
+      <div className="mb-3 flex items-center gap-2">
         <Swords className="h-4 w-4 text-brand" />
         <h2 className="text-sm font-bold uppercase tracking-wide text-foreground">Open games</h2>
+        {sorted.length > 0 && (
+          <span className="ml-auto flex items-center gap-1 text-[11px] font-bold uppercase text-success">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" /> {sorted.length} live
+          </span>
+        )}
       </div>
-      <p className="text-xs text-muted-foreground">Sign in to see live games and join a match.</p>
+
+      {sorted.length === 0 ? (
+        <p className="py-2 text-center text-xs text-muted-foreground">No open games right now — check back in a moment.</p>
+      ) : (
+        <div className="space-y-2">
+          {sorted.map((c) => (
+            <TickerRow
+              key={c.matchId}
+              gameId={c.gameId}
+              c={c}
+              now={now}
+              nameByGame={nameByGame}
+              onJoin={() => onJoin({ matchId: c.matchId, gameId: c.gameId, stake: c.stake })}
+            />
+          ))}
+        </div>
+      )}
+
       <button
         type="button"
         onClick={onSignIn}
         data-testid="home-ticker-signin"
-        className="mt-3 rounded-full bg-brand px-5 py-2 text-xs font-bold text-white transition-colors hover:brightness-105"
+        className="mt-3 w-full rounded-full bg-brand px-5 py-2 text-xs font-bold text-white transition-colors hover:brightness-105"
       >
-        Sign in
+        Sign in to play
       </button>
     </section>
   );

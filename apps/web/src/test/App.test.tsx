@@ -211,9 +211,15 @@ describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
       return s;
     });
     vi.stubGlobal('WebSocket', Object.assign(ctor, { OPEN: 1, CONNECTING: 0, CLOSING: 2, CLOSED: 3 }));
+    // A resting public challenge for the logged-out ticker (GET /open-challenges).
+    const PUB_ROW = {
+      matchId: 'pub-1', gameId: 'coinflip', ownerName: 'zed', stake: 10,
+      openedAt: 100, expiresAt: Date.now() + 30_000, timeControlId: 'none',
+    };
     // NO token → logged out.
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
       const u = String(url);
+      if (u.includes('/open-challenges')) return { ok: true, json: async () => [PUB_ROW] } as Response;
       if (u.includes('/games')) return { ok: true, json: async () => [COINFLIP] } as Response;
       if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
       if (u.includes('/auth/register')) {
@@ -225,13 +231,42 @@ describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
   });
   afterEach(() => { localStorage.clear(); sessionStorage.clear(); vi.unstubAllGlobals(); });
 
-  it('a logged-out visitor lands on Home with a Sign-in chip + ticker teaser, and no WS is opened', async () => {
+  it('a logged-out visitor lands on Home with a Sign-in chip + the live public ticker, and no WS is opened', async () => {
     render(<App />);
     await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
     expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument(); // public grid browses
     expect(screen.getByTestId('hub-signin-chip')).toBeInTheDocument();
-    expect(screen.getByTestId('home-ticker-teaser')).toBeInTheDocument();
+    // The public open-challenges snapshot renders (real movement, no WS).
+    await waitFor(() => expect(screen.getByTestId('home-row-pub-1')).toBeInTheDocument());
+    expect(screen.queryByTestId('home-ticker-teaser')).toBeNull();
     expect(sockets.length).toBe(0); // the WS (auth) is not opened until sign-in
+  });
+
+  it('JOIN a public challenge while logged-out → auth modal → on register the take resumes over the freshly-connected WS', async () => {
+    render(<App />);
+    await waitFor(() => screen.getByTestId('home-hub'));
+
+    // The logged-out ticker shows the resting public challenge; tap JOIN.
+    await waitFor(() => screen.getByTestId('home-join-pub-1'));
+    fireEvent.click(screen.getByTestId('home-join-pub-1'));
+
+    // The auth wall fires — JOIN is gated even though browsing the feed is open.
+    expect(await screen.findByTestId('auth-modal')).toBeInTheDocument();
+
+    // Register → token stored + WS connects.
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'neo' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'pw' } });
+    fireEvent.click(screen.getByTestId('auth-submit'));
+    await waitFor(() => expect(sockets.length).toBe(1));
+
+    // Open the socket → the captured JOIN intent replays as a challenge.take (the resume).
+    act(() => { sockets[0].readyState = 1; sockets[0].onopen?.(); });
+    const takes = sockets[0].send.mock.calls
+      .map((c) => JSON.parse(String(c[0])))
+      .filter((m: { type: string }) => m.type === 'challenge.take');
+    expect(takes).toHaveLength(1);
+    expect(takes[0].payload).toMatchObject({ matchId: 'pub-1' });
+    expect(screen.queryByTestId('auth-modal')).toBeNull(); // modal dismissed on success
   });
 
   it('PLAY while logged-out → auth modal → on register the post resumes over the freshly-connected WS', async () => {
