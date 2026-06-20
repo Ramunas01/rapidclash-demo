@@ -560,7 +560,7 @@ function HubRelatedGames({ token, onSelectGame }: { token: string; onSelectGame(
       {others.length === 0 ? (
         <p className="py-1 text-xs text-muted-foreground">More PvP games coming soon.</p>
       ) : (
-        <div className="flex gap-3 overflow-x-auto pb-1">
+        <div className="flex gap-3 overflow-x-auto pb-1 no-scrollbar">
           {others.map((g) => {
             const art = TILE_ART[g.id];
             return (

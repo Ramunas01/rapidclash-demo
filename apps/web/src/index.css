@@ -112,3 +112,15 @@
 :root {
   --brand-purple: #8140e2;
 }
+
+@layer utilities {
+  /* Hide the scrollbar while keeping the element scrollable (e.g. the related-games rail:
+   * tiles still scroll horizontally, but no scrollbar chrome is shown). */
+  .no-scrollbar {
+    -ms-overflow-style: none; /* IE/Edge */
+    scrollbar-width: none; /* Firefox */
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none; /* Chrome/Safari */
+  }
+}
