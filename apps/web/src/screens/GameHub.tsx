@@ -58,7 +58,9 @@ export interface GameHubScreenProps {
   lastSettlement: SettlementSummary | null;
   challenges: OpenChallenge[];
   challengeNotice: string | null;
-  onPlay(stake: number): void;
+  /** Post a challenge at `stake`. `timeControlId` is supplied for games that declare a
+   *  time control (chess); omitted for the rest (the App maps it to 'none'). */
+  onPlay(stake: number, timeControlId?: string): void;
   onCancel(): void;
   onRepost(): void;
   onTakeChallenge(matchId: string): void;
@@ -159,12 +161,33 @@ export function GameHub(props: GameHubProps) {
     onResultDismiss();
   }
 
-  // ── Bet selection ──────────────────────────────────────────────────────────
+  // ── Bet + time-control selection ────────────────────────────────────────────
   const [armedStake, setArmedStake] = useState<number | null>(null);
+
+  // Data-driven time control: if THIS game declares meta.timeControl (chess), show a picker.
+  // Generic — no game-id branch; any game declaring it gets the picker + dual clocks for free.
+  const [timeControl, setTimeControl] = useState<GameMeta['timeControl']>(undefined);
+  const [selectedControl, setSelectedControl] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    let alive = true;
+    api.games(token).then((g) => {
+      if (!alive || !Array.isArray(g)) return;
+      const tc = g.find((m) => m.id === gameId)?.timeControl;
+      setTimeControl(tc);
+      setSelectedControl(tc?.defaultId);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [token, gameId]);
+
+  /** Map a timeControlId to its human label for feed rows ('none' / unknown → no chip). */
+  const controlLabel = (id: string): string | null =>
+    timeControl?.options.find((o) => o.id === id)?.label ?? null;
 
   function handlePlay() {
     if (armedStake == null) return;
-    onPlay(armedStake);
+    // Untimed games call onPlay with one arg (unchanged); clocked games add the picked control.
+    if (timeControl) onPlay(armedStake, selectedControl);
+    else onPlay(armedStake);
   }
   function handleCancel() {
     setWaiting(false);
@@ -224,6 +247,32 @@ export function GameHub(props: GameHubProps) {
                         </button>
                       ))}
                     </div>
+
+                    {/* Time-control picker — shown only for games that declare one (chess). */}
+                    {timeControl && (
+                      <div data-testid="hub-section-timecontrol" className="mt-4">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Time control</span>
+                        <div className="mt-2 grid grid-cols-3 gap-2">
+                          {timeControl.options.map((o) => (
+                            <button
+                              key={o.id}
+                              type="button"
+                              data-testid={`hub-tc-${o.id}`}
+                              aria-pressed={selectedControl === o.id}
+                              onClick={() => setSelectedControl(o.id)}
+                              className={cn(
+                                'rounded-lg px-2 py-2 text-center text-[11px] font-bold leading-tight transition-colors',
+                                selectedControl === o.id
+                                  ? 'bg-brand text-white'
+                                  : 'bg-background text-muted-foreground hover:text-foreground',
+                              )}
+                            >
+                              {o.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* 3 — PLAY button (export green); posts your armed stake as an open challenge. */}
@@ -256,6 +305,7 @@ export function GameHub(props: GameHubProps) {
             balance={liveBalance}
             joinDisabled={phase !== 'idle'}
             onTake={onTakeChallenge}
+            controlLabel={controlLabel}
           />
 
           {/* 5 — Related games (PvP-only, data-driven from /games). */}
@@ -335,13 +385,15 @@ function WaitingBlock({
 
 /** §4 — resting challenges with per-row JOIN (takes the OWNER's stake). */
 function HubOpenChallenges({
-  entries, notice, balance, joinDisabled, onTake,
+  entries, notice, balance, joinDisabled, onTake, controlLabel,
 }: {
   entries: OpenChallenge[];
   notice: string | null;
   balance: number;
   joinDisabled: boolean;
   onTake(matchId: string): void;
+  /** Resolve a row's timeControlId → label (chess); returns null for 'none'/untimed games. */
+  controlLabel(id: string): string | null;
 }) {
   const now = useNow(true);
   const [localNotice, setLocalNotice] = useState<string | null>(null);
@@ -375,6 +427,7 @@ function HubOpenChallenges({
         <div className="space-y-2">
           {entries.map((e) => {
             const remaining = e.expiresAt - now;
+            const tcLabel = controlLabel(e.timeControlId);
             return (
               <div
                 key={e.matchId}
@@ -386,6 +439,9 @@ function HubOpenChallenges({
                   <p className="mt-0.5 flex items-center gap-1 text-brand">
                     <Coins className="h-3.5 w-3.5" />
                     <span className="text-sm font-bold" data-testid={`hub-stake-${e.matchId}`}>{formatCredits(e.stake)}</span>
+                    {tcLabel && (
+                      <span className="text-[11px] font-medium text-muted-foreground" data-testid={`hub-control-${e.matchId}`}>· {tcLabel}</span>
+                    )}
                     <span className="text-[11px] text-muted-foreground tabular-nums">· {formatClock(remaining)}</span>
                   </p>
                 </div>

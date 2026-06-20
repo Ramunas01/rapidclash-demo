@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { GameMeta, Move, Outcome, SettlementSummary, OpenChallenge } from '@rapidclash/shared';
+import type { GameMeta, Move, Outcome, SettlementSummary, OpenChallenge, PlayerClocks } from '@rapidclash/shared';
 import { WsClient, hasStoredMatch, readStoredGameId, writeStoredGameId, type WsStatus } from './ws.js';
 import { applyChallengesUpdate } from './screens/OpenChallengesList.js';
 import { AuthScreen } from './screens/Auth.js';
@@ -18,20 +18,21 @@ import { CoinflipHubScreen } from './screens/CoinflipHub.js';
 import { RpsHubScreen } from './screens/RpsHub.js';
 import { BlackjackHubScreen } from './screens/BlackjackHub.js';
 import { MinesHubScreen } from './screens/MinesHub.js';
+import { ChessHubScreen } from './screens/ChessHub.js';
 import { HomeHubScreen } from './screens/HomeHub.js';
 import { ProfileHubScreen } from './screens/ProfileHub.js';
 
-type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub';
+type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub';
 
 const RECONNECT_NOTICE = 'Connection lost — reconnecting. Try again in a moment.';
 
 /** Games that play through the shared one-screen Game hub (vs the multi-screen flow).
  *  Each maps to a `<gameId>-hub` screen. Adding a game here wires it to the hub. */
-const HUB_GAMES = new Set(['coinflip', 'rps', 'blackjack', 'mines']);
+const HUB_GAMES = new Set(['coinflip', 'rps', 'blackjack', 'mines', 'chess']);
 const hubScreenFor = (gameId: string | null | undefined): Screen | null =>
   gameId && HUB_GAMES.has(gameId) ? (`${gameId}-hub` as Screen) : null;
 const isGameHubScreen = (s: Screen): boolean =>
-  s === 'coinflip-hub' || s === 'rps-hub' || s === 'blackjack-hub' || s === 'mines-hub';
+  s === 'coinflip-hub' || s === 'rps-hub' || s === 'blackjack-hub' || s === 'mines-hub' || s === 'chess-hub';
 
 export interface RpsView {
   players: [string, string];
@@ -62,6 +63,8 @@ export interface ChessView {
   players: [string, string];
   /** Whole position as a FEN string (chess is perfect-info — nothing redacted). */
   fen: string;
+  /** Cumulative per-player clocks (perfect-info → both exposed). Display-only; server-authoritative. */
+  clock?: PlayerClocks;
   forcedOutcome?: { type: string; winner?: string };
 }
 
@@ -151,6 +154,8 @@ export function App() {
   const [lastSettlement, setLastSettlement] = useState<SettlementSummary | null>(null);
   const [pendingGameId, setPendingGameId] = useState<string | null>(null);
   const [pendingStake, setPendingStake] = useState(0);
+  // The time control picked for the current join (chess); reused on a re-post. undefined → 'none'.
+  const [pendingTimeControl, setPendingTimeControl] = useState<string | undefined>(undefined);
   const [pendingGameMeta, setPendingGameMeta] = useState<GameMeta | null>(null);
   // Open-challenges feed (stake screen) + owner lobby countdown/expiry state.
   const [challenges, setChallenges] = useState<OpenChallenge[]>([]);
@@ -363,12 +368,14 @@ export function App() {
     if (pendingGameId !== g) setPendingGameId(g);
   }, [screen, pendingGameId]);
 
-  const handleJoinQueue = useCallback((stake: number) => {
+  const handleJoinQueue = useCallback((stake: number, timeControlId?: string) => {
     if (!pendingGameId || !wsRef.current) return;
     setPendingStake(stake);
+    // Remember the picked time control so a re-post after expiry reuses the same one.
+    setPendingTimeControl(timeControlId);
     // No silent drop (#30): if the socket is down, stay put and tell the user — don't
     // strand them on the lobby "waiting" screen never actually queued.
-    if (!wsRef.current.joinQueue(pendingGameId, stake)) {
+    if (!wsRef.current.joinQueue(pendingGameId, stake, timeControlId)) {
       setActionNotice(RECONNECT_NOTICE);
       return;
     }
@@ -412,13 +419,13 @@ export function App() {
   // ── Owner lobby re-post (OC7) ───────────────────────────────────────────────
   const handleRepost = useCallback(() => {
     if (!pendingGameId || !wsRef.current) return;
-    if (!wsRef.current.joinQueue(pendingGameId, pendingStake)) {
+    if (!wsRef.current.joinQueue(pendingGameId, pendingStake, pendingTimeControl)) {
       setActionNotice(RECONNECT_NOTICE);
       return;
     }
     setLobbyExpired(false);
     setActionNotice(null);
-  }, [pendingGameId, pendingStake]);
+  }, [pendingGameId, pendingStake, pendingTimeControl]);
 
   const handleMakeMove = useCallback((move: Move) => {
     if (!currentMatchId || !wsRef.current) return;
@@ -477,7 +484,8 @@ export function App() {
       case 'coinflip-hub':
       case 'rps-hub':
       case 'blackjack-hub':
-      case 'mines-hub': {
+      case 'mines-hub':
+      case 'chess-hub': {
         const HubScreen =
           screen === 'rps-hub'
             ? RpsHubScreen
@@ -485,7 +493,9 @@ export function App() {
               ? BlackjackHubScreen
               : screen === 'mines-hub'
                 ? MinesHubScreen
-                : CoinflipHubScreen;
+                : screen === 'chess-hub'
+                  ? ChessHubScreen
+                  : CoinflipHubScreen;
         return <HubScreen
           token={token!}
           playerId={playerId}
