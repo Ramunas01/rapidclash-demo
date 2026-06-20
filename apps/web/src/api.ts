@@ -1,4 +1,4 @@
-import type { AuthRegisterBody, AuthLoginBody, AuthResponse, WalletResponse, GameMeta, LeaderboardEntry } from '@rapidclash/shared';
+import type { AuthRegisterBody, AuthLoginBody, AuthResponse, WalletResponse, GameMeta, LeaderboardEntry, PublicOpenChallenge } from '@rapidclash/shared';
 
 const BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -27,6 +27,9 @@ export const api = {
     req<WalletResponse>('GET', '/wallet', undefined, token),
   games: (token: string) =>
     req<GameMeta[]>('GET', '/games', undefined, token),
+  /** Public cross-game snapshot of resting open challenges — no token (the logged-out ticker). */
+  openChallenges: () =>
+    req<PublicOpenChallenge[]>('GET', '/open-challenges'),
   leaderboard: (gameId: string, token: string) =>
     req<LeaderboardEntry[]>('GET', `/leaderboard/${gameId}`, undefined, token),
 };

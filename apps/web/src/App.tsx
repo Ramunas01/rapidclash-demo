@@ -525,6 +525,16 @@ export function App() {
     if (!wsRef.current.takeChallenge(matchId)) setActionNotice(RECONNECT_NOTICE);
   }, [token, openAuth, lookupChallenge]);
 
+  // A JOIN from the logged-out public ticker: the row already carries game + stake, so capture a
+  // full 'join' intent directly (no WS feed to look it up in). On sign-in #111's resume takes it;
+  // if it's gone by then, the CHALLENGE_TAKEN fallback drops into that hub with the stake armed.
+  const handleTakePublicChallenge = useCallback(
+    (c: { matchId: string; gameId: string; stake: number }) => {
+      openAuth({ action: 'join', matchId: c.matchId, gameId: c.gameId, stake: c.stake }, 'Sign in to join');
+    },
+    [openAuth],
+  );
+
   // ── Owner lobby re-post (OC7) ───────────────────────────────────────────────
   const handleRepost = useCallback(() => {
     if (!pendingGameId || !wsRef.current) return;
@@ -579,6 +589,7 @@ export function App() {
           onTrackChallenges={handleTrackChallenges}
           onUntrackChallenges={handleUntrackChallenges}
           onTakeChallenge={handleTakeChallenge}
+          onTakePublicChallenge={handleTakePublicChallenge}
           onSelectGame={handleSelectGame}
           onOpenWallet={onAccountTap}
           onHome={goToHome}

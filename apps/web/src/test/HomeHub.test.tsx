@@ -116,41 +116,79 @@ describe('HomeHubScreen', () => {
 });
 
 describe('HomeHubScreen (logged out)', () => {
-  beforeEach(() => {
+  // A public open-challenge as returned by GET /open-challenges (carries gameId).
+  const pub = (matchId: string, gameId: string, ownerName: string, stake: number) => ({
+    matchId, gameId, ownerName, stake, openedAt: 100, expiresAt: Date.now() + 30_000, timeControlId: 'none',
+  });
+  // Default mock: public endpoints succeed; the open-challenges snapshot is empty unless overridden.
+  function stubFetch(openChallenges: unknown[] = []) {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);
+      if (u.includes('/open-challenges')) return { ok: true, json: async () => openChallenges } as Response;
       if (u.includes('/games')) return { ok: true, json: async () => GAMES } as Response;
       if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
       return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
     }));
-  });
-  afterEach(() => vi.unstubAllGlobals());
+  }
+  beforeEach(() => stubFetch());
+  afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
-  it('browses the grid via public /games; the wallet chip is "Sign in"; the ticker is a teaser', async () => {
+  it('browses the grid via public /games; the wallet chip is "Sign in"; the ticker is the live public feed', async () => {
     render(<HomeHubScreen {...baseProps({ loggedIn: false, token: '' })} />);
     // The game grid still renders (public endpoint) so a visitor can browse.
     await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
     // No fake balance — the chip is a "Sign in" affordance.
     expect(screen.getByTestId('hub-signin-chip')).toBeInTheDocument();
     expect(screen.queryByTestId('hub-wallet-chip')).toBeNull();
-    // No fabricated activity — the ticker is the sign-in teaser, not the live feed.
-    expect(screen.getByTestId('home-ticker-teaser')).toBeInTheDocument();
-    expect(screen.queryByTestId('home-ticker')).toBeNull();
+    // The ticker is the REAL public feed (no WS subscription) — not a teaser stub.
+    expect(screen.getByTestId('home-ticker')).toBeInTheDocument();
+    expect(screen.queryByTestId('home-ticker-teaser')).toBeNull();
   });
 
-  it('does not fetch the wallet or subscribe to feeds while logged out', async () => {
+  it('renders real public challenges; JOIN captures the row\'s game + stake (for the auth wall)', async () => {
+    stubFetch([pub('p1', 'coinflip', 'zed', 15), pub('p2', 'mines', 'max', 40)]);
+    const onTakePublicChallenge = vi.fn();
+    render(<HomeHubScreen {...baseProps({ loggedIn: false, token: '', onTakePublicChallenge })} />);
+
+    // Real rows from GET /open-challenges (never fabricated).
+    await waitFor(() => expect(screen.getByTestId('home-row-p1')).toBeInTheDocument());
+    expect(screen.getByTestId('home-stake-p1').textContent).toBe('15¢');
+    expect(screen.getByTestId('home-row-p2')).toBeInTheDocument();
+
+    // A JOIN tap passes the row's matchId + gameId + stake so the auth wall can resume the take.
+    fireEvent.click(screen.getByTestId('home-join-p1'));
+    expect(onTakePublicChallenge).toHaveBeenCalledWith({ matchId: 'p1', gameId: 'coinflip', stake: 15 });
+  });
+
+  it('re-polls GET /open-challenges so the feed visibly moves', async () => {
+    vi.useFakeTimers();
+    stubFetch([pub('p1', 'coinflip', 'zed', 15)]);
+    render(<HomeHubScreen {...baseProps({ loggedIn: false, token: '' })} />);
+
+    const calls = () => (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls
+      .map((c) => String(c[0])).filter((u) => u.includes('/open-challenges')).length;
+
+    await vi.advanceTimersByTimeAsync(0); // flush the mount fetch
+    const afterMount = calls();
+    expect(afterMount).toBeGreaterThanOrEqual(1);
+    await vi.advanceTimersByTimeAsync(4_100); // one poll interval later
+    expect(calls()).toBeGreaterThan(afterMount);
+  });
+
+  it('does not fetch the wallet or subscribe to WS feeds while logged out', async () => {
     const onTrackChallenges = vi.fn();
     render(<HomeHubScreen {...baseProps({ loggedIn: false, token: '', onTrackChallenges })} />);
     await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
-    expect(onTrackChallenges).not.toHaveBeenCalled();
+    expect(onTrackChallenges).not.toHaveBeenCalled(); // the WS feed is auth-only
     const urls = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.map((c) => String(c[0]));
     expect(urls.some((u) => u.includes('/wallet'))).toBe(false); // wallet is auth-only
+    expect(urls.some((u) => u.includes('/open-challenges'))).toBe(true); // the public read IS used
   });
 
   it('the sign-in affordances (chip + ticker) invoke the sign-in handler', async () => {
     const onOpenWallet = vi.fn();
     render(<HomeHubScreen {...baseProps({ loggedIn: false, token: '', onOpenWallet })} />);
-    await waitFor(() => expect(screen.getByTestId('home-ticker-teaser')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId('home-ticker-signin')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('home-ticker-signin'));
     fireEvent.click(screen.getByTestId('hub-signin-chip'));
     expect(onOpenWallet).toHaveBeenCalledTimes(2);
