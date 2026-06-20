@@ -11,14 +11,26 @@ import { cn } from '@/lib/utils';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
 import rivalBanner from '../assets/banners/banner-Bring-the-rival.png';
+import rpsArt from '../assets/games/rps.webp';
+import chessArt from '../assets/games/chess.webp';
+import blackjackArt from '../assets/games/blackjack.webp';
+import minesArt from '../assets/games/mines.webp';
 
 /** Coinflip's six presets, within the 1–100 stake range (rendered in ¢, never $). */
 const BET_PRESETS = [1, 5, 10, 25, 50, 100];
 
+/** Coin-face material gradients lifted from the export — these are the gold(heads)/
+ *  silver(tails) coin surfaces, not palette tokens; the hidden coin uses the brand purple. */
+const COIN_GOLD = 'linear-gradient(135deg, #c89b3c 0%, #f0c85a 50%, #a07020 100%)';
+const COIN_SILVER = 'linear-gradient(135deg, #9aa0ad 0%, #c8ced8 50%, #7a8090 100%)';
+
 const SIDES = [
-  { id: 'heads', label: 'Heads', dot: 'bg-amber-400', face: 'from-amber-300 via-amber-500 to-amber-700' },
-  { id: 'tails', label: 'Tails', dot: 'bg-indigo-400', face: 'from-indigo-400 via-indigo-500 to-indigo-700' },
+  { id: 'heads', label: 'Heads', face: COIN_GOLD },
+  { id: 'tails', label: 'Tails', face: COIN_SILVER },
 ] as const;
+
+/** Per-game tile art for the related-games rail (only registered PvP games appear). */
+const TILE_ART: Record<string, string> = { rps: rpsArt, chess: chessArt, blackjack: blackjackArt, mines: minesArt };
 
 function sideLabel(side: string | undefined): string {
   return SIDES.find((s) => s.id === side)?.label ?? '?';
@@ -71,6 +83,44 @@ function useNow(active: boolean): number {
 }
 
 /**
+ * The coin — the export's large gradient coin (gold heads / silver tails + glow), lifted
+ * into our state slots: dimmed in Idle, spinning + neutral (redacted `?`) In-match, and
+ * revealed to the real face only at Result. It never shows the flip pre-terminal.
+ */
+function Coin({ face, spinning, dim }: { face?: string | null; spinning?: boolean; dim?: boolean }) {
+  const isHeads = face === 'heads';
+  const isTails = face === 'tails';
+  const surface = isHeads ? COIN_GOLD : isTails ? COIN_SILVER : undefined;
+  const glow = isHeads
+    ? '0 0 55px rgba(200,155,60,0.45)'
+    : isTails
+      ? '0 0 55px rgba(154,160,173,0.4)'
+      : '0 0 50px hsl(var(--primary) / 0.4)';
+  return (
+    <div className={cn('relative h-32 w-32', dim && 'opacity-50')} style={{ perspective: '800px' }}>
+      <motion.div
+        animate={spinning ? { rotateY: 360 } : { rotateY: 0 }}
+        transition={spinning ? { repeat: Infinity, duration: 1, ease: 'linear' } : { duration: 0.4 }}
+        aria-hidden
+        className={cn(
+          'flex h-32 w-32 items-center justify-center rounded-full',
+          !surface && 'bg-gradient-to-br from-brand via-purple-600 to-indigo-800',
+        )}
+        style={{ ...(surface ? { background: surface } : {}), boxShadow: glow }}
+      >
+        <div className="flex h-[78%] w-[78%] items-center justify-center rounded-full border-[3px] border-white/20">
+          {surface ? (
+            <span className="text-sm font-extrabold uppercase tracking-wider text-white/85">{face}</span>
+          ) : (
+            <span className="text-5xl font-black text-white/40">?</span>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+/**
  * Coinflip Hub — Part 2: the live one-screen flow.
  *
  * A small state machine over App's existing WS state (no route navigation): Idle → Waiting →
@@ -79,6 +129,10 @@ function useNow(active: boolean): number {
  * already holds. Redaction is preserved: the opponent's choice and the coin flip appear only
  * at match.end (the result overlay) — the in-match game area never reveals them. See
  * docs/COINFLIP_HUB.md.
+ *
+ * v2: restyled to the Figma export's Coinflip frame (coin, side selector, bet grid, green
+ * PLAY) using the design-system tokens (#99). The mechanic, WS flow, state machine and
+ * redaction are unchanged — this is a restyle.
  */
 export function CoinflipHubScreen(props: Props) {
   const {
@@ -154,13 +208,13 @@ export function CoinflipHubScreen(props: Props) {
   }, []);
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-[#0b0e18] text-white">
+    <div className="flex h-[100dvh] flex-col bg-background text-foreground">
       <HubRibbon balance={liveBalance} onLogo={onOpenGameList} onWallet={onOpenWallet} />
 
       <main className="flex-1 overflow-y-auto" data-testid="hub-body">
         <div className="mx-auto flex max-w-md flex-col gap-4 px-4 py-4">
           {/* 1 — Coinflip game area. Greyed in Idle/Waiting; live board In-match. */}
-          <section data-testid="hub-section-game" aria-label="Coinflip" className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <section data-testid="hub-section-game" aria-label="Coinflip" className="rounded-2xl border border-border bg-card p-4">
             {phase === 'in-match' ? (
               <HubBoard
                 playerId={playerId}
@@ -177,18 +231,22 @@ export function CoinflipHubScreen(props: Props) {
 
           {/* "stake & play" block: Idle → bet + PLAY; Waiting → countdown + cancel/re-post. */}
           {(phase === 'idle' || phase === 'waiting') && (
-            <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="flex flex-col gap-3">
               {phase === 'waiting' ? (
-                <WaitingBlock expiresAt={waitingExpiresAt} expired={lobbyExpired} onCancel={handleCancel} onRepost={onRepost} />
+                <div className="rounded-2xl border border-border bg-card p-4">
+                  <WaitingBlock expiresAt={waitingExpiresAt} expired={lobbyExpired} onCancel={handleCancel} onRepost={onRepost} />
+                </div>
               ) : (
                 <>
-                  {/* 2 — BET AMOUNT selector. */}
-                  <div data-testid="hub-section-bet">
-                    <div className="mb-2 flex items-center justify-between">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-white/50">Bet amount</span>
-                      <span className="text-[11px] text-white/40">max {formatCredits(100)}</span>
+                  {/* 2 — BET AMOUNT selector (export: surface card, purple-selected grid). */}
+                  <div data-testid="hub-section-bet" className="rounded-2xl bg-surface p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Bet amount</span>
+                      <span className="text-sm font-extrabold tabular-nums text-foreground">
+                        {armedStake == null ? `max ${formatCredits(100)}` : formatCredits(armedStake)}
+                      </span>
                     </div>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-6 gap-2">
                       {BET_PRESETS.map((v) => (
                         <button
                           key={v}
@@ -196,10 +254,10 @@ export function CoinflipHubScreen(props: Props) {
                           data-testid={`hub-bet-${v}`}
                           onClick={() => setArmedStake(v)}
                           className={cn(
-                            'rounded-lg border py-2 text-center text-sm font-medium transition-colors',
+                            'rounded-lg py-2.5 text-center text-[13px] font-bold tabular-nums transition-colors',
                             armedStake === v
-                              ? 'border-brand bg-brand/20 text-white'
-                              : 'border-white/10 bg-white/5 text-white/70 hover:border-brand/40',
+                              ? 'bg-brand text-white'
+                              : 'bg-background text-muted-foreground hover:text-foreground',
                           )}
                         >
                           {formatCredits(v)}
@@ -208,22 +266,22 @@ export function CoinflipHubScreen(props: Props) {
                     </div>
                   </div>
 
-                  {/* 3 — PLAY button (green); posts your armed stake as an open challenge. */}
+                  {/* 3 — PLAY button (export green); posts your armed stake as an open challenge. */}
                   <button
                     type="button"
                     disabled={armedStake == null}
                     onClick={handlePlay}
                     data-testid="hub-play"
                     className={cn(
-                      'w-full rounded-xl py-3.5 text-base font-bold transition-colors',
+                      'w-full rounded-2xl py-4 text-base font-black uppercase tracking-wider transition-colors',
                       armedStake == null
-                        ? 'cursor-not-allowed bg-green-500/30 text-white/50'
-                        : 'bg-green-500 text-[#08220f] hover:bg-green-400',
+                        ? 'cursor-not-allowed bg-play/30 text-white/50'
+                        : 'bg-play text-background hover:brightness-105',
                     )}
                   >
-                    PLAY
+                    Play
                   </button>
-                  <p className="text-center text-[11px] text-white/30">
+                  <p className="text-center text-[11px] text-muted-foreground">
                     {armedStake == null ? 'Select a bet to enable' : `Posts a ${formatCredits(armedStake)} challenge for another player to join`}
                   </p>
                 </>
@@ -252,9 +310,9 @@ export function CoinflipHubScreen(props: Props) {
           <HubRecentClashes token={token} refreshKey={currentMatchId ?? 'idle'} />
 
           {/* 8 — Footer (sanitized text; the supplied bottom banner art is contaminated). */}
-          <footer data-testid="hub-section-footer" className="border-t border-white/5 pt-4 pb-2 text-center">
-            <p className="text-xs font-medium text-white/50">Players vs Players — never the house.</p>
-            <p className="mt-1 text-[11px] text-white/30">Play-money demo · credits only, no real-world value.</p>
+          <footer data-testid="hub-section-footer" className="border-t border-border pt-4 pb-2 text-center">
+            <p className="text-xs font-semibold text-foreground/70">Players vs Players — never the house.</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">Play-money demo · credits only, no real-world value.</p>
           </footer>
         </div>
       </main>
@@ -277,18 +335,17 @@ export function CoinflipHubScreen(props: Props) {
 /** Greyed hero shown in Idle/Waiting — the visual anchor before a match activates it. */
 function IdleGameArea({ phase }: { phase: Phase }) {
   return (
-    <div className="flex flex-col items-center gap-4 py-4 opacity-50">
-      <div className="flex h-28 w-28 items-center justify-center rounded-full border border-white/10 bg-gradient-to-br from-yellow-300/30 to-yellow-600/20">
-        <Coins className="h-12 w-12 text-yellow-300/70" aria-hidden="true" />
-      </div>
-      <div className="grid w-full grid-cols-2 gap-3">
+    <div className="flex flex-col items-center gap-4 py-3">
+      <Coin dim />
+      <div className="grid w-full grid-cols-2 gap-3 opacity-50">
         {SIDES.map((s) => (
-          <div key={s.id} className="rounded-xl border border-white/10 bg-white/5 py-4 text-center text-sm font-bold tracking-wide">
-            {s.label.toUpperCase()}
+          <div key={s.id} className="flex items-center justify-center gap-2 rounded-xl bg-surface py-4 text-sm font-bold uppercase tracking-wide text-muted-foreground">
+            <span className="h-6 w-6 rounded-full" style={{ background: s.face }} aria-hidden="true" />
+            {s.label}
           </div>
         ))}
       </div>
-      <p className="text-xs text-white/40">
+      <p className="text-xs text-muted-foreground">
         {phase === 'waiting' ? 'Waiting for an opponent…' : 'Choose a bet and press PLAY, or JOIN an open challenge'}
       </p>
     </div>
@@ -313,20 +370,13 @@ function HubBoard({
   const canMove = legalMoves.length > 0;
   const myChoice = playerId ? gameState?.choices?.[playerId] : undefined;
   return (
-    <div className="flex flex-col items-center gap-3" data-testid="hub-board">
-      <div className="relative h-28 w-28" style={{ perspective: '800px' }}>
-        <motion.div
-          animate={{ rotateY: 360 }}
-          transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
-          aria-hidden
-          className="flex h-28 w-28 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 via-purple-600 to-indigo-800 text-5xl font-black text-white/40 shadow-[0_8px_28px_rgba(0,0,0,0.4)]"
-        >
-          ?
-        </motion.div>
-      </div>
+    <div className="flex flex-col items-center gap-4" data-testid="hub-board">
+      {/* Coin spins, face hidden (redaction) until the result overlay. */}
+      <Coin spinning />
 
+      {/* Heads / Tails — the export's side selector, kept as our in-match both-choose pick. */}
       <div className="grid w-full grid-cols-2 gap-3" role="group" aria-label="Coin side">
-        {SIDES.map(({ id, label, dot }) => {
+        {SIDES.map(({ id, label, face }) => {
           const picked = myChoice === id;
           return (
             <button
@@ -337,33 +387,33 @@ function HubBoard({
               aria-label={label}
               data-testid={`hub-move-${id}`}
               className={cn(
-                'flex items-center justify-center gap-2 rounded-xl border-2 bg-white/[0.03] py-4 text-sm font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-40',
-                picked ? 'border-brand/60' : 'border-white/[0.08]',
+                'flex flex-col items-center justify-center gap-2 rounded-xl bg-surface py-4 text-[13px] font-extrabold uppercase tracking-wide outline-2 transition-all disabled:cursor-not-allowed disabled:opacity-40',
+                picked ? 'text-success outline outline-success' : 'text-muted-foreground outline-transparent',
               )}
             >
+              <span className="h-6 w-6 rounded-full" style={{ background: face }} aria-hidden="true" />
               {label}
-              <span className={cn('h-2 w-2 rounded-full', dot)} />
             </button>
           );
         })}
       </div>
 
       <div className="flex w-full items-stretch justify-center gap-3 text-center">
-        <div className="flex-1 rounded-xl border border-white/10 bg-white/[0.03] py-2">
-          <p className="text-[10px] uppercase tracking-wide text-white/40">Your pick</p>
-          <p className="text-sm font-semibold text-white" data-testid="hub-my-pick">{myChoice ? sideLabel(myChoice) : '—'}</p>
+        <div className="flex-1 rounded-xl bg-surface py-2">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Your pick</p>
+          <p className="text-sm font-semibold text-foreground" data-testid="hub-my-pick">{myChoice ? sideLabel(myChoice) : '—'}</p>
         </div>
-        <div className="flex-1 rounded-xl border border-white/10 bg-white/[0.03] py-2">
-          <p className="text-[10px] uppercase tracking-wide text-white/40">Opponent</p>
+        <div className="flex-1 rounded-xl bg-surface py-2">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Opponent</p>
           {/* Redaction: never reveal the opponent's choice before match.end. */}
-          <p className="text-sm font-semibold text-white" data-testid="hub-opponent-pick">🤫</p>
+          <p className="text-sm font-semibold text-foreground" data-testid="hub-opponent-pick">🤫</p>
         </div>
       </div>
 
       {myChoice && (
-        <p className="text-center text-sm text-white/50" data-testid="hub-locked">Locked in — waiting for opponent…</p>
+        <p className="text-center text-sm text-muted-foreground" data-testid="hub-locked">Locked in — waiting for opponent…</p>
       )}
-      <button type="button" onClick={onForfeit} className="pt-1 text-sm font-medium text-white/40 transition-colors hover:text-white/70">
+      <button type="button" onClick={onForfeit} className="pt-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
         Forfeit
       </button>
       {/* opponentId referenced so a future reveal can use it; kept off-screen pre-terminal. */}
@@ -387,24 +437,24 @@ function WaitingBlock({
     <div className="flex flex-col items-center gap-3 py-2" data-testid="hub-waiting">
       {expired ? (
         <>
-          <p className="text-sm font-semibold text-white/80">Challenge expired</p>
-          <p className="text-xs text-white/50">Your stake was refunded automatically.</p>
+          <p className="text-sm font-semibold text-foreground/80">Challenge expired</p>
+          <p className="text-xs text-muted-foreground">Your stake was refunded automatically.</p>
           <div className="flex w-full gap-2">
             <button type="button" onClick={onRepost} data-testid="hub-repost" className="flex-1 rounded-xl bg-brand py-2.5 text-sm font-semibold text-white">
               Re-post
             </button>
-            <button type="button" onClick={onCancel} className="flex-1 rounded-xl border border-white/10 bg-white/5 py-2.5 text-sm font-semibold text-white/80">
+            <button type="button" onClick={onCancel} className="flex-1 rounded-xl bg-surface py-2.5 text-sm font-semibold text-foreground/80">
               Back
             </button>
           </div>
         </>
       ) : (
         <>
-          <span className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-white/50">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-400" /> Waiting for an opponent
+          <span className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" /> Waiting for an opponent
           </span>
-          <p className="text-2xl font-bold tabular-nums text-white" data-testid="hub-waiting-countdown">{formatClock(remaining)}</p>
-          <button type="button" onClick={onCancel} data-testid="hub-cancel" className="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 text-sm font-semibold text-white/80 transition-colors hover:bg-white/10">
+          <p className="text-2xl font-bold tabular-nums text-foreground" data-testid="hub-waiting-countdown">{formatClock(remaining)}</p>
+          <button type="button" onClick={onCancel} data-testid="hub-cancel" className="w-full rounded-xl bg-surface py-2.5 text-sm font-semibold text-foreground/80 transition-colors hover:brightness-110">
             Cancel
           </button>
         </>
@@ -437,15 +487,20 @@ function HubOpenChallenges({
   }
 
   return (
-    <section data-testid="hub-section-challenges" aria-label="Open challenges" className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-      <h2 className="mb-3 text-sm font-semibold text-white/80">Open challenges</h2>
+    <section data-testid="hub-section-challenges" aria-label="Open challenges" className="rounded-2xl border border-border bg-card p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <h2 className="text-sm font-bold uppercase tracking-wide text-foreground">Open games</h2>
+        <span className="ml-1 flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-success">
+          <span className="h-1.5 w-1.5 rounded-full bg-success" /> Live
+        </span>
+      </div>
       {(notice || localNotice) && (
-        <div role="alert" data-testid="hub-challenge-notice" className="mb-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs font-medium text-red-300">
+        <div role="alert" data-testid="hub-challenge-notice" className="mb-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive">
           {localNotice ?? notice}
         </div>
       )}
       {entries.length === 0 ? (
-        <p className="py-2 text-center text-xs text-white/40">No one waiting yet — press PLAY to post the first challenge.</p>
+        <p className="py-2 text-center text-xs text-muted-foreground">No one waiting yet — press PLAY to post the first challenge.</p>
       ) : (
         <div className="space-y-2">
           {entries.map((e) => {
@@ -454,14 +509,14 @@ function HubOpenChallenges({
               <div
                 key={e.matchId}
                 data-testid={`hub-challenge-${e.matchId}`}
-                className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/[0.03] p-3"
+                className="flex items-center gap-3 rounded-xl bg-surface p-3"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-white">{e.ownerName}</p>
+                  <p className="truncate text-sm font-semibold text-foreground">{e.ownerName}</p>
                   <p className="mt-0.5 flex items-center gap-1 text-brand">
                     <Coins className="h-3.5 w-3.5" />
                     <span className="text-sm font-bold" data-testid={`hub-stake-${e.matchId}`}>{formatCredits(e.stake)}</span>
-                    <span className="text-[11px] text-white/40 tabular-nums">· {formatClock(remaining)}</span>
+                    <span className="text-[11px] text-muted-foreground tabular-nums">· {formatClock(remaining)}</span>
                   </p>
                 </div>
                 <button
@@ -471,11 +526,11 @@ function HubOpenChallenges({
                   data-testid={`hub-join-${e.matchId}`}
                   aria-label={`Join ${e.ownerName}'s ${e.stake} credit challenge`}
                   className={cn(
-                    'rounded-lg px-4 py-2 text-sm font-bold transition-colors',
-                    joinDisabled ? 'cursor-not-allowed bg-white/5 text-white/30' : 'bg-green-500 text-[#08220f] hover:bg-green-400',
+                    'rounded-full px-5 py-2 text-sm font-extrabold uppercase tracking-wide transition-colors',
+                    joinDisabled ? 'cursor-not-allowed bg-white/5 text-white/30' : 'bg-play text-background hover:brightness-105',
                   )}
                 >
-                  JOIN
+                  Join
                 </button>
               </div>
             );
@@ -483,7 +538,7 @@ function HubOpenChallenges({
         </div>
       )}
       {joinDisabled && entries.length > 0 && (
-        <p className="mt-2 text-center text-[11px] text-white/30">One match at a time — finish or cancel your current bet to join another.</p>
+        <p className="mt-2 text-center text-[11px] text-muted-foreground">One match at a time — finish or cancel your current bet to join another.</p>
       )}
     </section>
   );
@@ -500,29 +555,34 @@ function HubRelatedGames({ token, onSelectGame }: { token: string; onSelectGame(
 
   const others = games.filter((g) => g.id !== 'coinflip');
   return (
-    <section data-testid="hub-section-related" aria-label="Related games" className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-      <h2 className="mb-3 text-sm font-semibold text-white/80">Related games</h2>
+    <section data-testid="hub-section-related" aria-label="Related games" className="rounded-2xl border border-border bg-card p-4">
+      <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-foreground">Related games</h2>
       {others.length === 0 ? (
-        <p className="py-1 text-xs text-white/40">More PvP games coming soon.</p>
+        <p className="py-1 text-xs text-muted-foreground">More PvP games coming soon.</p>
       ) : (
-        <div className="grid grid-cols-2 gap-2">
-          {others.map((g) => (
-            <button
-              key={g.id}
-              type="button"
-              onClick={() => onSelectGame(g)}
-              data-testid={`hub-related-${g.id}`}
-              className="flex items-center gap-2 rounded-xl border border-white/10 bg-gradient-to-br from-purple-600/30 to-indigo-900/30 p-3 text-left transition-colors hover:border-brand/40"
-            >
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-base font-bold">
-                {g.displayName.charAt(0)}
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-white">{g.displayName}</p>
-                <p className="text-[11px] text-white/40">{formatCredits(g.bet.minStake)}–{formatCredits(g.bet.maxStake)}</p>
-              </div>
-            </button>
-          ))}
+        <div className="flex gap-3 overflow-x-auto pb-1 no-scrollbar">
+          {others.map((g) => {
+            const art = TILE_ART[g.id];
+            return (
+              <button
+                key={g.id}
+                type="button"
+                onClick={() => onSelectGame(g)}
+                data-testid={`hub-related-${g.id}`}
+                aria-label={g.displayName}
+                className="group relative aspect-[2/3] w-24 shrink-0 overflow-hidden rounded-xl bg-surface ring-1 ring-border transition-transform hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+              >
+                {art ? (
+                  <img src={art} alt={g.displayName} className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-gradient-to-br from-brand/30 to-indigo-900/40">
+                    <span className="text-2xl font-black text-foreground/80">{g.displayName.charAt(0)}</span>
+                    <span className="px-1 text-center text-[10px] font-bold uppercase tracking-wide text-foreground">{g.displayName}</span>
+                  </div>
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
     </section>
@@ -540,17 +600,17 @@ function HubRecentClashes({ token, refreshKey }: { token: string; refreshKey: st
   }, [token, refreshKey]);
 
   return (
-    <section data-testid="hub-section-clashes" aria-label="Recent clashes" className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-      <h2 className="mb-3 text-sm font-semibold text-white/80">Recent clashes</h2>
+    <section data-testid="hub-section-clashes" aria-label="Recent clashes" className="rounded-2xl border border-border bg-card p-4">
+      <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-foreground">Recent clashes</h2>
       {entries.length === 0 ? (
-        <p className="py-1 text-xs text-white/40">No matches yet — play to claim the top spot.</p>
+        <p className="py-1 text-xs text-muted-foreground">No matches yet — play to claim the top spot.</p>
       ) : (
         <div className="space-y-1.5">
           {entries.slice(0, 5).map((e) => (
-            <div key={e.playerId} data-testid={`hub-clash-${e.playerId}`} className="flex items-center gap-3 rounded-lg bg-white/[0.02] px-3 py-2">
-              <span className="w-5 text-center text-sm font-bold text-white/40">{e.rank}</span>
-              <span className="min-w-0 flex-1 truncate text-sm font-medium text-white">{e.displayName}</span>
-              <span className="text-sm font-bold tabular-nums text-white/80">{formatStat(e)}</span>
+            <div key={e.playerId} data-testid={`hub-clash-${e.playerId}`} className="flex items-center gap-3 rounded-lg bg-surface px-3 py-2">
+              <span className="w-5 text-center text-sm font-bold text-muted-foreground">{e.rank}</span>
+              <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{e.displayName}</span>
+              <span className="text-sm font-bold tabular-nums text-foreground/80">{formatStat(e)}</span>
             </div>
           ))}
         </div>
@@ -580,12 +640,11 @@ function ResultOverlay({
     : outcome.type === 'void' ? 'Match voided'
     : kind === 'win' ? 'You Won! 🏆' : 'You Lost 😔';
   const style = {
-    win: 'border-green-500/40 bg-green-500/10 text-green-400',
-    lose: 'border-red-500/40 bg-red-500/10 text-red-400',
-    neutral: 'border-white/15 bg-white/[0.04] text-white/70',
+    win: 'border-success/40 bg-success/10 text-success',
+    lose: 'border-destructive/40 bg-destructive/10 text-destructive',
+    neutral: 'border-border bg-surface text-muted-foreground',
   }[kind];
   const delta = settlement.delta;
-  const face = SIDES.find((s) => s.id === coinResult);
 
   useEffect(() => {
     if (kind === 'win') confetti({ particleCount: 110, spread: 75, origin: { y: 0.55 }, disableForReducedMotion: true });
@@ -606,25 +665,25 @@ function ResultOverlay({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
         onClick={(ev) => ev.stopPropagation()}
-        className="w-full max-w-xs rounded-2xl border border-white/10 bg-[#0b0e18] p-6 text-center"
+        className="w-full max-w-xs rounded-2xl border border-border bg-card p-6 text-center"
       >
-        <button type="button" onClick={onDismiss} aria-label="Dismiss" className="ml-auto flex h-7 w-7 items-center justify-center rounded-full text-white/40 hover:text-white">
+        <button type="button" onClick={onDismiss} aria-label="Dismiss" className="ml-auto flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:text-foreground">
           <X className="h-4 w-4" />
         </button>
-        {face && (
-          <div className={cn('mx-auto mb-3 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br text-3xl font-black text-white/80', face.face)} data-testid="hub-result-coin">
-            {face.id === 'heads' ? 'H' : 'T'}
+        {coinResult && (
+          <div className="mb-3 flex justify-center" data-testid="hub-result-coin">
+            <Coin face={coinResult} />
           </div>
         )}
         <div className={cn('mb-3 rounded-xl border px-4 py-3 text-xl font-black', style)} data-testid="hub-result-text">
           <Trophy className={cn('mx-auto mb-1 h-6 w-6', kind !== 'win' && 'opacity-40')} />
           {text}
         </div>
-        <p className="text-xs font-medium uppercase tracking-wide text-white/40">Wallet change</p>
-        <div className={cn('text-2xl font-bold tabular-nums', delta > 0 ? 'text-green-400' : delta < 0 ? 'text-red-400' : 'text-white/80')} data-testid="hub-result-delta">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Wallet change</p>
+        <div className={cn('text-2xl font-bold tabular-nums', delta > 0 ? 'text-success' : delta < 0 ? 'text-destructive' : 'text-foreground/80')} data-testid="hub-result-delta">
           {delta > 0 ? '+' : ''}{formatCredits(delta)}
         </div>
-        <p className="mt-2 text-xs text-white/50">New balance: <strong className="text-white">{formatCredits(settlement.newBalance)}</strong></p>
+        <p className="mt-2 text-xs text-muted-foreground">New balance: <strong className="text-foreground">{formatCredits(settlement.newBalance)}</strong></p>
       </motion.div>
     </div>
   );

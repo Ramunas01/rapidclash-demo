@@ -18,9 +18,9 @@ interface Props {
  */
 export function HubRibbon({ balance, onLogo, onWallet }: Props) {
   return (
-    <header className="z-20 flex shrink-0 items-center justify-between border-b border-white/5 bg-[#0b0e18]/95 px-4 py-3 backdrop-blur">
+    <header className="z-20 flex shrink-0 items-center justify-between mx-auto w-full max-w-md border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
       <button type="button" onClick={onLogo} aria-label="RapidClash — game list" className="flex items-center">
-        <img src={logoUrl} alt="RapidClash" className="h-7 w-auto" />
+        <img src={logoUrl} alt="RapidClash" className="h-12 w-auto" />
       </button>
 
       <button
@@ -28,10 +28,10 @@ export function HubRibbon({ balance, onLogo, onWallet }: Props) {
         onClick={onWallet}
         aria-label="Open wallet"
         data-testid="hub-wallet-chip"
-        className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 py-1 pl-3 pr-1 transition-colors hover:border-purple-500/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+        className="flex items-center gap-2 rounded-full border border-border bg-surface py-1 pl-3 pr-1 transition-colors hover:border-brand/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
       >
-        <span className="h-1.5 w-1.5 rounded-full bg-green-400" aria-hidden="true" />
-        <span className="text-sm font-bold tabular-nums text-white" data-testid="hub-balance">
+        <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />
+        <span className="text-sm font-bold tabular-nums text-foreground" data-testid="hub-balance">
           {balance === null ? '—' : formatCredits(balance)}
         </span>
         <span className="flex items-center gap-1 rounded-full bg-brand px-3 py-1.5 text-xs font-semibold text-white">
