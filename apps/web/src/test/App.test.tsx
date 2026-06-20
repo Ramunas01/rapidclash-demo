@@ -172,9 +172,11 @@ describe('App — match.start routes by the server-authoritative gameId (open-ch
     expect(sessionStorage.getItem('rc_currentGameId')).toBe('chess');
   });
 
-  it('routes to the RPS board when gameId is "rps"', async () => {
+  it('routes an RPS match.start to the in-place RPS hub board (not the standalone screen)', async () => {
     await deliverMatchStart('rps', { players: ['pid', 'bob-id'], choices: {} });
-    expect(screen.getByText('Rock Paper Scissors')).toBeInTheDocument();
+    // RPS now drives the shared one-screen Game hub: its panel shows the rock/paper/scissors board.
+    expect(screen.getByTestId('hub-board')).toBeInTheDocument();
+    expect(screen.getByTestId('hub-move-rock')).toBeInTheDocument();
     expect(screen.queryByTestId('chess-board')).toBeNull();
   });
 
