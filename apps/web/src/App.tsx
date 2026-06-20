@@ -15,12 +15,20 @@ import { MinesPlayScreen } from './screens/MinesPlay.js';
 import { ResultScreen } from './screens/Result.js';
 import { LeaderboardScreen } from './screens/Leaderboard.js';
 import { CoinflipHubScreen } from './screens/CoinflipHub.js';
+import { RpsHubScreen } from './screens/RpsHub.js';
 import { HomeHubScreen } from './screens/HomeHub.js';
 import { ProfileHubScreen } from './screens/ProfileHub.js';
 
-type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub';
+type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub';
 
 const RECONNECT_NOTICE = 'Connection lost — reconnecting. Try again in a moment.';
+
+/** Games that play through the shared one-screen Game hub (vs the multi-screen flow).
+ *  Each maps to a `<gameId>-hub` screen. Adding a game here wires it to the hub. */
+const HUB_GAMES = new Set(['coinflip', 'rps']);
+const hubScreenFor = (gameId: string | null | undefined): Screen | null =>
+  gameId && HUB_GAMES.has(gameId) ? (`${gameId}-hub` as Screen) : null;
+const isGameHubScreen = (s: Screen): boolean => s === 'coinflip-hub' || s === 'rps-hub';
 
 export interface RpsView {
   players: [string, string];
@@ -117,9 +125,7 @@ export function App() {
   const [screen, setScreen] = useState<Screen>(
     savedToken
       ? hasStoredMatch()
-        ? readStoredGameId() === 'coinflip'
-          ? 'coinflip-hub'
-          : 'play'
+        ? (hubScreenFor(readStoredGameId()) ?? 'play')
         : 'home'
       : 'auth',
   );
@@ -182,9 +188,9 @@ export function App() {
   useEffect(() => {
     const ws = wsRef.current;
     if (!ws) return;
-    // While the Coinflip hub is active it drives the whole flow IN PLACE: suppress the
-    // screen navigations below and let the hub derive its sub-state from the same App state.
-    const onHub = screen === 'coinflip-hub';
+    // While a Game hub is active it drives the whole flow IN PLACE: suppress the screen
+    // navigations below and let the hub derive its sub-state from the same App state.
+    const onHub = isGameHubScreen(screen);
     ws.setHandlers({
       onMatchStart(payload, matchId) {
         setCurrentMatchId(matchId);
@@ -197,8 +203,8 @@ export function App() {
         setActiveGameId(payload.gameId);
         writeStoredGameId(payload.gameId);
         setLegalMoves([]);
-        // Coinflip lands on the hub (in-place game area); other games use the play screen.
-        setScreen(payload.gameId === 'coinflip' ? 'coinflip-hub' : 'play');
+        // Hub games (Coinflip, RPS) land on their one-screen hub; others use the play screen.
+        setScreen(hubScreenFor(payload.gameId) ?? 'play');
       },
       onMatchState(payload, matchId) {
         const state = payload.state as GameView;
@@ -210,8 +216,8 @@ export function App() {
           const opp = state.players.find((p) => p !== playerId);
           if (opp) setOpponentId(opp);
         }
-        // Coinflip resumes onto the hub (in-place); other games use the play screen.
-        setScreen((s) => (s === 'coinflip-hub' || activeGameId === 'coinflip' ? 'coinflip-hub' : 'play'));
+        // Hub games resume onto their hub (in-place); other games use the play screen.
+        setScreen((s) => (isGameHubScreen(s) ? s : (hubScreenFor(activeGameId) ?? 'play')));
       },
       onMatchYourTurn(payload, _matchId) {
         setLegalMoves(payload.legalMoves);
@@ -264,7 +270,7 @@ export function App() {
           // server-side per-socket, so a new socket needs re-subscribing). Mid-match
           // resume is handled by the socket's own onopen → match.resume.
           setActionNotice(null);
-          if ((screen === 'stake-entry' || screen === 'coinflip-hub') && pendingGameId) {
+          if ((screen === 'stake-entry' || isGameHubScreen(screen)) && pendingGameId) {
             wsRef.current?.subscribeChallenges(pendingGameId);
           }
           // Home hub's per-socket cross-game subscriptions are lost on a new socket — re-arm them.
@@ -341,15 +347,17 @@ export function App() {
     setPendingGameId(meta.id);
     setPendingGameMeta(meta);
     setPendingStake(meta.bet.minStake);
-    // Coinflip gets the one-screen hub; RPS/Chess keep the multi-screen flow (COINFLIP_HUB.md).
-    setScreen(meta.id === 'coinflip' ? 'coinflip-hub' : 'stake-entry');
+    // Coinflip + RPS get the one-screen Game hub; other games keep the multi-screen flow.
+    setScreen(hubScreenFor(meta.id) ?? 'stake-entry');
   }, []);
 
-  // The hub resumes/enters as the coinflip context even without going through handleSelectGame
-  // (e.g. a mid-match reload), so the shared join/subscribe handlers (which key off
-  // pendingGameId) target coinflip.
+  // A Game hub resumes/enters its context even without going through handleSelectGame (e.g. a
+  // mid-match reload or a take-challenge), so the shared join/subscribe handlers (which key off
+  // pendingGameId) target the hub's game.
   useEffect(() => {
-    if (screen === 'coinflip-hub' && pendingGameId !== 'coinflip') setPendingGameId('coinflip');
+    if (!isGameHubScreen(screen)) return;
+    const g = screen.replace('-hub', '');
+    if (pendingGameId !== g) setPendingGameId(g);
   }, [screen, pendingGameId]);
 
   const handleJoinQueue = useCallback((stake: number) => {
@@ -365,16 +373,16 @@ export function App() {
     setWaitingExpiresAt(null);
     setLobbyExpired(false);
     setActionNotice(null);
-    // On the hub the "Waiting" state renders in place; the standalone flow uses the lobby screen.
-    if (screen !== 'coinflip-hub') setScreen('lobby');
+    // On a Game hub the "Waiting" state renders in place; the standalone flow uses the lobby screen.
+    if (!isGameHubScreen(screen)) setScreen('lobby');
   }, [pendingGameId, screen]);
 
   const handleLeaveQueue = useCallback(() => {
     if (!pendingGameId || !wsRef.current) return;
     wsRef.current.leaveQueue(pendingGameId); // best-effort; leaving the UI is a local nav
     setWaitingExpiresAt(null);
-    // On the hub, cancelling returns to Idle in place; the standalone lobby exits to the wallet.
-    if (screen !== 'coinflip-hub') setScreen('wallet');
+    // On a Game hub, cancelling returns to Idle in place; the standalone lobby exits to the wallet.
+    if (!isGameHubScreen(screen)) setScreen('wallet');
   }, [pendingGameId, screen]);
 
   // ── Open challenges (stake screen) ──────────────────────────────────────────
@@ -464,14 +472,16 @@ export function App() {
       case 'game-list':
         return <GameListScreen token={token!} onSelect={handleSelectGame} onBack={goToWallet} />;
       case 'coinflip-hub':
-        return <CoinflipHubScreen
+      case 'rps-hub': {
+        const HubScreen = screen === 'rps-hub' ? RpsHubScreen : CoinflipHubScreen;
+        return <HubScreen
           token={token!}
           playerId={playerId}
           username={username}
           opponentId={opponentId}
           balance={balance}
           currentMatchId={currentMatchId}
-          gameState={gameState as CoinflipView | null}
+          gameState={gameState}
           legalMoves={legalMoves as string[]}
           waitingExpiresAt={waitingExpiresAt}
           lobbyExpired={lobbyExpired}
@@ -492,6 +502,7 @@ export function App() {
           onOpenGameList={goToHome}
           onResultDismiss={handleHubResultDismiss}
         />;
+      }
       case 'stake-entry':
         return <StakeEntryScreen
           meta={pendingGameMeta!}
