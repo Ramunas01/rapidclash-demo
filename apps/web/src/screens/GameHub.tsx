@@ -73,6 +73,11 @@ export interface GameHubScreenProps {
   onOpenGameList(): void;
   /** Reset App's result state when the hub's result overlay dismisses (back to Idle). */
   onResultDismiss(): void;
+  /** Logged out → no wallet/feed (auth-required); browsing the board + picking a bet stay open.
+   *  The auth wall fires in the App at PLAY/JOIN. Default true. */
+  loggedIn?: boolean;
+  /** Pre-arm the bet selector (the join-fallback drops the user here ready to post). */
+  initialStake?: number;
 }
 
 interface GameHubProps extends GameHubScreenProps {
@@ -113,6 +118,7 @@ export function GameHub(props: GameHubProps) {
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challenges, challengeNotice,
     onPlay, onCancel, onRepost, onTakeChallenge, onMakeMove, onForfeit, onSubscribe,
     onUnsubscribe, onSelectGame, onOpenWallet, onOpenGameList, onResultDismiss,
+    loggedIn = true, initialStake,
   } = props;
 
   // ── Live wallet balance ─────────────────────────────────────────────────────
@@ -121,10 +127,11 @@ export function GameHub(props: GameHubProps) {
   const [liveBalance, setLiveBalance] = useState(balance);
   useEffect(() => { setLiveBalance(balance); }, [balance]);
   useEffect(() => {
+    if (!loggedIn) return; // wallet is auth-only; logged out shows the "Sign in" chip
     let alive = true;
     api.wallet(token).then((w) => { if (alive) setLiveBalance(w.balance); }).catch(() => {});
     return () => { alive = false; };
-  }, [token]);
+  }, [token, loggedIn]);
 
   // ── Sub-state machine ──────────────────────────────────────────────────────
   const [waiting, setWaiting] = useState(false);
@@ -162,7 +169,8 @@ export function GameHub(props: GameHubProps) {
   }
 
   // ── Bet + time-control selection ────────────────────────────────────────────
-  const [armedStake, setArmedStake] = useState<number | null>(null);
+  // initialStake pre-arms the selector (the join-fallback drops the user here ready to post).
+  const [armedStake, setArmedStake] = useState<number | null>(initialStake ?? null);
 
   // Data-driven time control: if THIS game declares meta.timeControl (chess), show a picker.
   // Generic — no game-id branch; any game declaring it gets the picker + dual clocks for free.
@@ -195,15 +203,17 @@ export function GameHub(props: GameHubProps) {
   }
 
   // ── Open-challenge feed (subscribe while the hub is mounted) ─────────────────
+  // The feed rides the authed WS — skip it when logged out (the list shows a sign-in teaser).
   useEffect(() => {
+    if (!loggedIn) return;
     onSubscribe();
     return () => onUnsubscribe();
     // eslint-disable-next-line -- subscribe/unsubscribe exactly once per hub visit
-  }, []);
+  }, [loggedIn]);
 
   return (
     <div className="flex h-[100dvh] flex-col bg-background text-foreground">
-      <HubRibbon balance={liveBalance} onLogo={onOpenGameList} onWallet={onOpenWallet} />
+      <HubRibbon balance={liveBalance} onLogo={onOpenGameList} onWallet={onOpenWallet} loggedIn={loggedIn} />
 
       <main className="flex-1 overflow-y-auto" data-testid="hub-body">
         <div className="mx-auto flex max-w-md flex-col gap-4 px-4 py-4">
@@ -298,15 +308,25 @@ export function GameHub(props: GameHubProps) {
             </div>
           )}
 
-          {/* 4 — Open challenges. */}
-          <HubOpenChallenges
-            entries={challenges}
-            notice={challengeNotice}
-            balance={liveBalance}
-            joinDisabled={phase !== 'idle'}
-            onTake={onTakeChallenge}
-            controlLabel={controlLabel}
-          />
+          {/* 4 — Open challenges (real feed). Logged out → a sign-in teaser (the feed is authed). */}
+          {loggedIn ? (
+            <HubOpenChallenges
+              entries={challenges}
+              notice={challengeNotice}
+              balance={liveBalance}
+              joinDisabled={phase !== 'idle'}
+              onTake={onTakeChallenge}
+              controlLabel={controlLabel}
+            />
+          ) : (
+            <section data-testid="hub-section-challenges-teaser" aria-label="Open challenges" className="rounded-2xl border border-border bg-card p-4 text-center">
+              <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-foreground">Open games</h2>
+              <p className="text-xs text-muted-foreground">Sign in to see live games and join a match.</p>
+              <button type="button" onClick={onOpenWallet} data-testid="hub-challenges-signin" className="mt-3 rounded-full bg-brand px-5 py-2 text-xs font-bold text-white transition-colors hover:brightness-105">
+                Sign in
+              </button>
+            </section>
+          )}
 
           {/* 5 — Related games (PvP-only, data-driven from /games). */}
           <HubRelatedGames token={token} currentGameId={gameId} onSelectGame={onSelectGame} />

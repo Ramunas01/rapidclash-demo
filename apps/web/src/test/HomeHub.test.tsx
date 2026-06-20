@@ -114,3 +114,45 @@ describe('HomeHubScreen', () => {
     expect(container.textContent ?? '').not.toMatch(/\$/);
   });
 });
+
+describe('HomeHubScreen (logged out)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/games')) return { ok: true, json: async () => GAMES } as Response;
+      if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
+      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+    }));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('browses the grid via public /games; the wallet chip is "Sign in"; the ticker is a teaser', async () => {
+    render(<HomeHubScreen {...baseProps({ loggedIn: false, token: '' })} />);
+    // The game grid still renders (public endpoint) so a visitor can browse.
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    // No fake balance — the chip is a "Sign in" affordance.
+    expect(screen.getByTestId('hub-signin-chip')).toBeInTheDocument();
+    expect(screen.queryByTestId('hub-wallet-chip')).toBeNull();
+    // No fabricated activity — the ticker is the sign-in teaser, not the live feed.
+    expect(screen.getByTestId('home-ticker-teaser')).toBeInTheDocument();
+    expect(screen.queryByTestId('home-ticker')).toBeNull();
+  });
+
+  it('does not fetch the wallet or subscribe to feeds while logged out', async () => {
+    const onTrackChallenges = vi.fn();
+    render(<HomeHubScreen {...baseProps({ loggedIn: false, token: '', onTrackChallenges })} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    expect(onTrackChallenges).not.toHaveBeenCalled();
+    const urls = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.map((c) => String(c[0]));
+    expect(urls.some((u) => u.includes('/wallet'))).toBe(false); // wallet is auth-only
+  });
+
+  it('the sign-in affordances (chip + ticker) invoke the sign-in handler', async () => {
+    const onOpenWallet = vi.fn();
+    render(<HomeHubScreen {...baseProps({ loggedIn: false, token: '', onOpenWallet })} />);
+    await waitFor(() => expect(screen.getByTestId('home-ticker-teaser')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('home-ticker-signin'));
+    fireEvent.click(screen.getByTestId('hub-signin-chip'));
+    expect(onOpenWallet).toHaveBeenCalledTimes(2);
+  });
+});

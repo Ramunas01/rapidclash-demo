@@ -87,3 +87,35 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     expect(container.textContent ?? '').not.toMatch(/\$/);
   });
 });
+
+describe('GameHub (logged out — via RpsHub)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/games') || u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
+      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+    }));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('browsing stays open: the bet selector works + PLAY arms, but the chip is "Sign in" and the feed is a teaser', () => {
+    const onPlay = vi.fn();
+    const onSubscribe = vi.fn();
+    render(<RpsHubScreen {...baseProps({ loggedIn: false, token: '', onPlay, onSubscribe })} />);
+    // Sign-in chip, not a fake balance; the open-challenges feed is a teaser (no live rows).
+    expect(screen.getByTestId('hub-signin-chip')).toBeInTheDocument();
+    expect(screen.queryByTestId('hub-wallet-chip')).toBeNull();
+    expect(screen.getByTestId('hub-section-challenges-teaser')).toBeInTheDocument();
+    expect(screen.queryByTestId('hub-section-challenges')).toBeNull();
+    expect(onSubscribe).not.toHaveBeenCalled(); // no WS feed while logged out
+    // Browsing + arming a bet is allowed; the auth wall fires in the App at PLAY.
+    fireEvent.click(screen.getByTestId('hub-bet-10'));
+    fireEvent.click(screen.getByTestId('hub-play'));
+    expect(onPlay).toHaveBeenCalledWith(10);
+  });
+
+  it('initialStake pre-arms the bet (the join-fallback lands here ready to post)', () => {
+    render(<RpsHubScreen {...baseProps({ initialStake: 25 })} />);
+    expect(screen.getByTestId('hub-play')).toBeEnabled(); // pre-armed → PLAY ready immediately
+  });
+});

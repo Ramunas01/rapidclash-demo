@@ -21,8 +21,15 @@ import { MinesHubScreen } from './screens/MinesHub.js';
 import { ChessHubScreen } from './screens/ChessHub.js';
 import { HomeHubScreen } from './screens/HomeHub.js';
 import { ProfileHubScreen } from './screens/ProfileHub.js';
+import { AuthModal } from './components/AuthModal.js';
 
 type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub';
+
+/** A commit-to-play action captured when a logged-out visitor hits the auth wall, replayed
+ *  automatically once they register/sign in (the resume that makes the wall feel seamless). */
+type AuthIntent =
+  | { action: 'play'; gameId: string; stake: number; timeControlId?: string }
+  | { action: 'join'; matchId: string; gameId: string; stake: number };
 
 const RECONNECT_NOTICE = 'Connection lost — reconnecting. Try again in a moment.';
 
@@ -128,12 +135,10 @@ export function App() {
   // A match persisted across a reload restores straight to the play view; match.state
   // (active) keeps us there, match.end (terminal) redirects to the result screen. A stored
   // coinflip match resumes onto the hub (in-place flow), not the standalone play screen.
+  // Everyone lands on the Home hub — a logged-out visitor browses there and only hits the
+  // auth wall at the commit-to-play action. (The full 'auth' screen stays for back-compat.)
   const [screen, setScreen] = useState<Screen>(
-    savedToken
-      ? hasStoredMatch()
-        ? (hubScreenFor(readStoredGameId()) ?? 'play')
-        : 'home'
-      : 'auth',
+    savedToken && hasStoredMatch() ? (hubScreenFor(readStoredGameId()) ?? 'play') : 'home',
   );
   const [token, setToken] = useState<string | null>(savedToken);
   const [playerId, setPlayerId] = useState<string | null>(savedPlayerId);
@@ -177,6 +182,17 @@ export function App() {
   const [, setWsEpoch] = useState(0);
   const wsRef = useRef<WsClient | null>(null);
 
+  // ── Auth wall (logged-out → commit-to-play) ─────────────────────────────────
+  const loggedIn = token !== null;
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authTitle, setAuthTitle] = useState('Sign in');
+  // The captured intent to replay once the WS connects after sign-in (resume); cleared on cancel.
+  const pendingResumeRef = useRef<AuthIntent | null>(null);
+  // Set while resuming a 'join' so a CHALLENGE_TAKEN (gone by the time auth finished) falls back
+  // to that Game hub with the stake pre-armed, instead of erroring.
+  const joinFallbackRef = useRef<{ gameId: string; stake: number } | null>(null);
+  const [prearmStake, setPrearmStake] = useState<number | undefined>(undefined);
+
   const handleLogin = useCallback((tok: string, pid: string, bal: number, name: string) => {
     localStorage.setItem('rc_token', tok);
     localStorage.setItem('rc_playerId', pid);
@@ -191,6 +207,59 @@ export function App() {
     ws.connect();
     setScreen('home');
   }, []);
+
+  /** Open the auth modal. `intent` (if any) is replayed once the WS connects after sign-in. */
+  const openAuth = useCallback((intent: AuthIntent | null, title: string) => {
+    pendingResumeRef.current = intent;
+    setAuthTitle(title);
+    setAuthOpen(true);
+  }, []);
+  const closeAuth = useCallback(() => {
+    setAuthOpen(false);
+    pendingResumeRef.current = null; // cancelled → drop the captured intent
+  }, []);
+
+  // Register/login from the modal: store the token + connect the WS (as handleLogin), keep the
+  // captured intent, and stay on the current hub. The actual replay fires on 'connected' (the
+  // WS must be open before joinQueue/takeChallenge) — see onStatus below.
+  const handleAuthSuccess = useCallback((tok: string, pid: string, bal: number, name: string) => {
+    localStorage.setItem('rc_token', tok);
+    localStorage.setItem('rc_playerId', pid);
+    localStorage.setItem('rc_username', name);
+    setToken(tok);
+    setPlayerId(pid);
+    setUsername(name);
+    setBalance(bal);
+    const ws = new WsClient(tok, {});
+    wsRef.current = ws;
+    setWsEpoch((n) => n + 1); // rebind handlers before onopen fires the resume
+    ws.connect();
+    setAuthOpen(false);
+
+    const intent = pendingResumeRef.current;
+    if (intent) {
+      // Land on the intent's hub so the resumed action resolves in place (Waiting / match).
+      setPendingGameId(intent.gameId);
+      setScreen(hubScreenFor(intent.gameId) ?? 'home');
+      if (intent.action === 'play') {
+        setPendingStake(intent.stake);
+        setPendingTimeControl(intent.timeControlId);
+      }
+    } else if (screen === 'auth') {
+      setScreen('home'); // legacy full-screen path
+    }
+  }, [screen]);
+
+  /** Find a challenge (its gameId + stake) by matchId across the home + single-game feeds. */
+  const lookupChallenge = useCallback((matchId: string): { gameId: string; stake: number } | null => {
+    for (const [gid, list] of Object.entries(homeChallenges)) {
+      const c = list.find((x) => x.matchId === matchId);
+      if (c) return { gameId: gid, stake: c.stake };
+    }
+    const c2 = challenges.find((x) => x.matchId === matchId);
+    if (c2 && pendingGameId) return { gameId: pendingGameId, stake: c2.stake };
+    return null;
+  }, [homeChallenges, challenges, pendingGameId]);
 
   // Wire WS handlers whenever screen/state changes
   useEffect(() => {
@@ -285,9 +354,34 @@ export function App() {
           if (screen === 'home') {
             for (const id of homeGamesRef.current) wsRef.current?.subscribeChallenges(id);
           }
+          // Resume a captured commit-to-play intent now the socket is open (post-sign-in).
+          const resume = pendingResumeRef.current;
+          if (resume && wsRef.current) {
+            pendingResumeRef.current = null;
+            if (resume.action === 'play') {
+              setWaitingExpiresAt(null);
+              setLobbyExpired(false);
+              wsRef.current.joinQueue(resume.gameId, resume.stake, resume.timeControlId);
+            } else {
+              // If the tapped challenge is gone by now, onError(CHALLENGE_TAKEN) falls back below.
+              joinFallbackRef.current = { gameId: resume.gameId, stake: resume.stake };
+              wsRef.current.takeChallenge(resume.matchId);
+            }
+          }
         }
       },
       onError(payload) {
+        // Resume-join fallback: the tapped challenge was gone by the time auth finished — don't
+        // error; drop into that Game hub with the stake pre-armed to post a fresh challenge.
+        if (payload.code === 'CHALLENGE_TAKEN' && joinFallbackRef.current) {
+          const fb = joinFallbackRef.current;
+          joinFallbackRef.current = null;
+          setPendingGameId(fb.gameId);
+          setPrearmStake(fb.stake);
+          setScreen(hubScreenFor(fb.gameId) ?? 'home');
+          setChallengeNotice('That challenge was just taken — post your own.');
+          return;
+        }
         // A failed take (CHALLENGE_TAKEN / SELF_TAKE / INSUFFICIENT_BALANCE) → brief notice;
         // the list's `removed` update drops the stale row on its own.
         if (['CHALLENGE_TAKEN', 'SELF_TAKE', 'INSUFFICIENT_BALANCE'].includes(payload.code)) {
@@ -325,7 +419,7 @@ export function App() {
     setToken(null);
     setPlayerId(null);
     setUsername(null);
-    setScreen('auth');
+    setScreen('home'); // logged-out Home (the single entry for everyone), not the full auth screen
   }, []);
 
   const goToHome = useCallback(() => setScreen('home'), []);
@@ -355,6 +449,7 @@ export function App() {
     setPendingGameId(meta.id);
     setPendingGameMeta(meta);
     setPendingStake(meta.bet.minStake);
+    setPrearmStake(undefined); // normal selection: no pre-armed bet (only the join-fallback sets it)
     // Coinflip + RPS get the one-screen Game hub; other games keep the multi-screen flow.
     setScreen(hubScreenFor(meta.id) ?? 'stake-entry');
   }, []);
@@ -369,7 +464,14 @@ export function App() {
   }, [screen, pendingGameId]);
 
   const handleJoinQueue = useCallback((stake: number, timeControlId?: string) => {
-    if (!pendingGameId || !wsRef.current) return;
+    if (!pendingGameId) return;
+    // Auth wall: a logged-out PLAY captures the intent and opens the sign-in modal; on success
+    // the WS connects and the challenge is posted automatically (resume).
+    if (!token) {
+      openAuth({ action: 'play', gameId: pendingGameId, stake, timeControlId }, 'Sign in to play');
+      return;
+    }
+    if (!wsRef.current) return;
     setPendingStake(stake);
     // Remember the picked time control so a re-post after expiry reuses the same one.
     setPendingTimeControl(timeControlId);
@@ -385,7 +487,7 @@ export function App() {
     setActionNotice(null);
     // On a Game hub the "Waiting" state renders in place; the standalone flow uses the lobby screen.
     if (!isGameHubScreen(screen)) setScreen('lobby');
-  }, [pendingGameId, screen]);
+  }, [pendingGameId, screen, token, openAuth]);
 
   const handleLeaveQueue = useCallback(() => {
     if (!pendingGameId || !wsRef.current) return;
@@ -410,11 +512,18 @@ export function App() {
   }, [pendingGameId]);
 
   const handleTakeChallenge = useCallback((matchId: string) => {
+    // Auth wall: a logged-out JOIN captures the intent (with the challenge's game + stake so a
+    // gone-by-auth challenge can fall back to posting one) and opens the sign-in modal.
+    if (!token) {
+      const found = lookupChallenge(matchId);
+      openAuth(found ? { action: 'join', matchId, gameId: found.gameId, stake: found.stake } : null, 'Sign in to join');
+      return;
+    }
     if (!wsRef.current) return;
     setChallengeNotice(null);
     // On success the server pushes match.start → we land in the match; on failure → onError.
     if (!wsRef.current.takeChallenge(matchId)) setActionNotice(RECONNECT_NOTICE);
-  }, []);
+  }, [token, openAuth, lookupChallenge]);
 
   // ── Owner lobby re-post (OC7) ───────────────────────────────────────────────
   const handleRepost = useCallback(() => {
@@ -452,21 +561,28 @@ export function App() {
     setOpponentId(null);
   }, []);
 
+  // Wallet chip / Account tab: the profile when signed in, the sign-in modal when logged out.
+  const onAccountTap = useCallback(() => {
+    if (loggedIn) goToProfile();
+    else openAuth(null, 'Sign in');
+  }, [loggedIn, goToProfile, openAuth]);
+
   function renderScreen() {
     switch (screen) {
       case 'auth':
         return <AuthScreen onLogin={handleLogin} />;
       case 'home':
         return <HomeHubScreen
-          token={token!}
+          token={token ?? ''}
           balance={balance}
           challengesByGame={homeChallenges}
           onTrackChallenges={handleTrackChallenges}
           onUntrackChallenges={handleUntrackChallenges}
           onTakeChallenge={handleTakeChallenge}
           onSelectGame={handleSelectGame}
-          onOpenWallet={goToProfile}
+          onOpenWallet={onAccountTap}
           onHome={goToHome}
+          loggedIn={loggedIn}
         />;
       case 'profile':
         return <ProfileHubScreen
@@ -497,7 +613,7 @@ export function App() {
                   ? ChessHubScreen
                   : CoinflipHubScreen;
         return <HubScreen
-          token={token!}
+          token={token ?? ''}
           playerId={playerId}
           username={username}
           opponentId={opponentId}
@@ -520,9 +636,11 @@ export function App() {
           onSubscribe={handleSubscribeChallenges}
           onUnsubscribe={handleUnsubscribeChallenges}
           onSelectGame={handleSelectGame}
-          onOpenWallet={goToProfile}
+          onOpenWallet={onAccountTap}
           onOpenGameList={goToHome}
           onResultDismiss={handleHubResultDismiss}
+          loggedIn={loggedIn}
+          initialStake={prearmStake}
         />;
       }
       case 'stake-entry':
@@ -568,6 +686,9 @@ export function App() {
         <div className="ws-banner ws-banner-error" role="alert" data-testid="action-notice">{actionNotice}</div>
       )}
       {renderScreen()}
+      {authOpen && (
+        <AuthModal title={authTitle} onSuccess={handleAuthSuccess} onClose={closeAuth} />
+      )}
     </>
   );
 }

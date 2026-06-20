@@ -60,6 +60,8 @@ interface Props {
   onOpenWallet(): void;
   /** Logo / Games nav — Home is the landing, so these return here. */
   onHome(): void;
+  /** Logged out → no wallet/feed (auth-required); browse stays open, chip is "Sign in". */
+  loggedIn?: boolean;
 }
 
 /**
@@ -72,27 +74,29 @@ interface Props {
  */
 export function HomeHubScreen({
   token, balance, challengesByGame, onTrackChallenges, onUntrackChallenges,
-  onTakeChallenge, onSelectGame, onOpenWallet, onHome,
+  onTakeChallenge, onSelectGame, onOpenWallet, onHome, loggedIn = true,
 }: Props) {
   const [games, setGames] = useState<GameMeta[]>([]);
   const [liveBalance, setLiveBalance] = useState(balance);
   useEffect(() => { setLiveBalance(balance); }, [balance]);
   useEffect(() => {
     let alive = true;
-    api.wallet(token).then((w) => { if (alive) setLiveBalance(w.balance); }).catch(() => {});
+    // /games is public; the wallet is auth-only — only fetch it when signed in.
+    if (loggedIn) api.wallet(token).then((w) => { if (alive) setLiveBalance(w.balance); }).catch(() => {});
     api.games(token).then((g) => { if (alive && Array.isArray(g)) setGames(g); }).catch(() => {});
     return () => { alive = false; };
-  }, [token]);
+  }, [token, loggedIn]);
 
   // Subscribe to every playable game's challenge feed for the cross-game ticker; the App
   // merges the per-game lists into challengesByGame. Re-runs only when the game set changes.
+  // The feed rides the WS (auth) — skip it when logged out (the ticker shows a sign-in teaser).
   const gameKey = games.map((g) => g.id).join(',');
   useEffect(() => {
-    if (games.length === 0) return;
+    if (!loggedIn || games.length === 0) return;
     onTrackChallenges(games.map((g) => g.id));
     return () => onUntrackChallenges();
     // eslint-disable-next-line -- track once per game-set change (callbacks are stable)
-  }, [gameKey]);
+  }, [gameKey, loggedIn]);
 
   const comingSoon = useMemo(() => {
     const playable = new Set(games.map((g) => g.id));
@@ -103,7 +107,7 @@ export function HomeHubScreen({
 
   return (
     <div className="flex h-[100dvh] flex-col bg-background text-foreground">
-      <HubRibbon balance={liveBalance} onLogo={onHome} onWallet={onOpenWallet} />
+      <HubRibbon balance={liveBalance} onLogo={onHome} onWallet={onOpenWallet} loggedIn={loggedIn} />
 
       <main className="flex-1 overflow-y-auto" data-testid="home-hub">
         <div className="mx-auto flex max-w-md flex-col gap-5 px-4 py-4">
@@ -131,13 +135,18 @@ export function HomeHubScreen({
             </div>
           </section>
 
-          {/* 3 — Open Games ticker — cross-game, real feed only (never fabricated rows). */}
-          <OpenGamesTicker
-            challengesByGame={challengesByGame}
-            nameByGame={nameByGame}
-            balance={liveBalance}
-            onTake={onTakeChallenge}
-          />
+          {/* 3 — Open Games ticker — cross-game, real feed only (never fabricated rows).
+              Logged out → a sign-in teaser instead (the feed rides the authed WS). */}
+          {loggedIn ? (
+            <OpenGamesTicker
+              challengesByGame={challengesByGame}
+              nameByGame={nameByGame}
+              balance={liveBalance}
+              onTake={onTakeChallenge}
+            />
+          ) : (
+            <OpenGamesTeaser onSignIn={onOpenWallet} />
+          )}
 
           {/* 4 — Leaderboard-lite (reuses Leaderboard's formatStat). */}
           <HomeLeaderboard token={token} gameId="coinflip" />
@@ -333,6 +342,27 @@ function OpenGamesTicker({
           })}
         </div>
       )}
+    </section>
+  );
+}
+
+/** §3 (logged out) — honest teaser: no fabricated activity; the real feed appears once authed. */
+function OpenGamesTeaser({ onSignIn }: { onSignIn(): void }) {
+  return (
+    <section data-testid="home-ticker-teaser" aria-label="Open games" className="rounded-2xl border border-border bg-card p-4 text-center">
+      <div className="mb-2 flex items-center justify-center gap-2">
+        <Swords className="h-4 w-4 text-brand" />
+        <h2 className="text-sm font-bold uppercase tracking-wide text-foreground">Open games</h2>
+      </div>
+      <p className="text-xs text-muted-foreground">Sign in to see live games and join a match.</p>
+      <button
+        type="button"
+        onClick={onSignIn}
+        data-testid="home-ticker-signin"
+        className="mt-3 rounded-full bg-brand px-5 py-2 text-xs font-bold text-white transition-colors hover:brightness-105"
+      >
+        Sign in
+      </button>
     </section>
   );
 }
