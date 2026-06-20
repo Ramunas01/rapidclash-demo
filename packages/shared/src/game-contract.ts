@@ -45,9 +45,35 @@ export interface GameMeta {
   /** Optional per-player move timeout, in ms. When set (and the module implements
    *  `timeoutMove`), the core runs an INDEPENDENT timer for each player while that player
    *  has legal moves; on expiry it injects `timeoutMove(...)` for them through the normal
-   *  applyMove path and resets their timer. When unset (the default for RPS/Coinflip/Chess),
-   *  the match uses the single per-match deadline + forfeit-the-laggard behaviour. */
+   *  applyMove path and resets their timer. When unset (the default for RPS/Coinflip),
+   *  the match uses the single per-match deadline + forfeit-the-laggard behaviour.
+   *  Mutually exclusive with `timeControl`. */
   moveTimeoutMs?: number;
+  /** Optional cumulative per-player game clock (chess). The SECOND mode of the per-player
+   *  timer subsystem: instead of resetting a fixed budget every move (`moveTimeoutMs`), each
+   *  player has a total budget that ticks only on their turn and persists across moves; at 0
+   *  they lose on time. Declared options make the picker data-driven. The core applies this
+   *  generically (no game-id branch). Mutually exclusive with `moveTimeoutMs`. */
+  timeControl?: {
+    options: { id: string; label: string; baseMs: number; incrementMs: number }[];
+    /** The option used when a match doesn't pick one (e.g. before matchmaking carries it). */
+    defaultId: string;
+  };
+}
+
+/** Per-player cumulative clock carried on a `timeControl` game's state. The core SEEDS it at
+ *  match start (it has the formation `now`); the module ADVANCES it on each move from
+ *  `ctx.now` (never a wall clock — determinism). `viewFor` exposes it (perfect-information
+ *  games have no redaction). The core reads it to schedule the active player's flag. */
+export interface PlayerClocks {
+  /** Remaining budget per player, in ms. */
+  remainingMs: Record<PlayerId, number>;
+  /** Whose clock is currently ticking (the side to move), or null at a terminal position. */
+  active: PlayerId | null;
+  /** The `now` at which the active player's turn began (when their clock started ticking). */
+  activeSince: number;
+  /** Which declared `timeControl` option is in effect (resolves base/increment). */
+  timeControlId: string;
 }
 
 export interface MoveContext {

@@ -4,6 +4,7 @@ import type {
   GameState,
   MoveContext,
   Outcome,
+  PlayerClocks,
   PlayerId,
   Rng,
 } from '@rapidclash/shared';
@@ -14,6 +15,17 @@ import { Chess } from 'chess.js';
  *  against it to tell "no move has been played yet" — the board can never
  *  legally return to the exact starting FEN, so equality is a sound test. */
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+/** Cumulative per-player clocks, declared so the picker is data-driven (CHESS_TIME_CONTROL.md).
+ *  Sudden-death for v1 (incrementMs 0); the field exists so Fischer is a later config change. */
+const CHESS_TIME_CONTROL: NonNullable<GameModule['meta']['timeControl']> = {
+  options: [
+    { id: 'rapid10', label: 'Default · 10 min', baseMs: 600_000, incrementMs: 0 },
+    { id: 'blitz5', label: 'Blitz · 5 min', baseMs: 300_000, incrementMs: 0 },
+    { id: 'bullet1', label: 'Bullet · 1 min', baseMs: 60_000, incrementMs: 0 },
+  ],
+  defaultId: 'rapid10',
+};
 
 /** A move in the JSON-serializable shape exchanged with the core/clients.
  *  `promotion` is the chess.js piece letter ('q' | 'r' | 'b' | 'n'). */
@@ -43,6 +55,10 @@ interface ChessState {
   fen: string;
   /** Moves played from the start, in SAN — the source of truth for replay. */
   history: string[];
+  /** Cumulative per-player clocks. The core SEEDS this at match start (it has the formation
+   *  `now`); `applyMove` ADVANCES it from `ctx.now`. Absent only on a state built outside the
+   *  core (e.g. a bare module unit test), where the clock simply doesn't tick. */
+  clock?: PlayerClocks;
   /** Present only when the match ended via forfeit, bypassing normal play. */
   forcedOutcome?: Outcome;
 }
@@ -93,6 +109,8 @@ export const chessModule: GameModule = {
     bet: { minStake: 1, maxStake: 100, symmetricStake: true },
     averageDurationSec: 300,
     rakeRate: 0.1, // 10% of the pot from the winner on a decisive result (skill game)
+    // Cumulative per-player clock (the core applies it generically; default 10 min).
+    timeControl: CHESS_TIME_CONTROL,
   },
 
   init(players: PlayerId[], _rng: Rng): GameState {
@@ -126,6 +144,11 @@ export const chessModule: GameModule = {
     if (typeof move !== 'string' && !isMoveObject(move)) {
       throw new IllegalMove(`"${JSON.stringify(move)}" is not a valid chess move`);
     }
+    // Reject a move from a player who has already flagged (defensive — the core normally
+    // resolves a flag via the loss-on-time path before any further move can arrive).
+    if (s.clock && s.clock.remainingMs[playerId] <= 0) {
+      throw new IllegalMove(`${playerId} has flagged on time`);
+    }
 
     // The FEN fully describes the current position, so a single move can be
     // validated and converted to SAN from it; the SAN is appended to `history`
@@ -144,6 +167,21 @@ export const chessModule: GameModule = {
       fen: chess.fen(),
       history: [...(s.history ?? []), san],
     };
+    // Advance the cumulative clock from ctx.now (never a wall clock — determinism): drain the
+    // mover's budget by the time they used this turn, add the increment (0 in v1), then hand
+    // the clock to the side now to move. Only when the match seeded a clock (core-driven).
+    if (s.clock) {
+      const opt = CHESS_TIME_CONTROL.options.find((o) => o.id === s.clock!.timeControlId);
+      const increment = opt?.incrementMs ?? 0;
+      const used = ctx.now - s.clock.activeSince;
+      const remaining = Math.max(0, s.clock.remainingMs[playerId] - used + increment);
+      newState.clock = {
+        ...s.clock,
+        remainingMs: { ...s.clock.remainingMs, [playerId]: remaining },
+        active: sideToMovePlayer(newState),
+        activeSince: ctx.now,
+      };
+    }
     return {
       state: newState,
       events: [{ type: 'move_made', payload: { playerId, move, fen: newState.fen } }],
