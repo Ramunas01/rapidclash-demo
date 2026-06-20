@@ -31,7 +31,7 @@ function baseProps(over: Partial<Props> = {}): Props {
 }
 
 const challenge = (matchId: string, ownerName: string, stake: number, openedAt: number): OpenChallenge => ({
-  matchId, ownerName, stake, openedAt, expiresAt: Date.now() + 30_000,
+  matchId, ownerName, stake, openedAt, expiresAt: Date.now() + 30_000, timeControlId: 'none',
 });
 
 describe('HomeHubScreen', () => {

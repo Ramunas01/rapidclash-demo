@@ -111,7 +111,7 @@ export class Bot {
   private async rest(): Promise<void> {
     if (this.state === 'in_match' || this.state === 'resting') return;
     await this.ensureFunds();
-    if (this.ws.joinQueue(this.cfg.gameId, this.cfg.stake)) {
+    if (this.ws.joinQueue(this.cfg.gameId, this.cfg.stake, this.cfg.timeControlId)) {
       this.state = 'resting';
     }
   }

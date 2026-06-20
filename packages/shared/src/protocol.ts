@@ -22,10 +22,18 @@ export interface Envelope<T = unknown> {
 
 // ─── Client → Server ─────────────────────────────────────────────────────────
 
+/** The time-control sentinel for games without a clock (RPS/Coinflip/Blackjack/Mines), so the
+ *  matchmaking key `${gameId}:${stake}:${timeControlId}` is uniform and needs no game-id branch. */
+export const UNTIMED_TIME_CONTROL = 'none';
+
 /** Enter matchmaking for a game at a stake; escrow is debited here. */
 export interface QueueJoinPayload {
   gameId: string;
   stake: number; // integer minor units; must not exceed the player's balance
+  /** Which declared time-control to pair on (chess). Omitted or 'none' → the game's default
+   *  (or 'none' for untimed games). The server resolves + validates it; pairing is on
+   *  (game, stake, time-control). */
+  timeControlId?: string;
 }
 
 /** Leave the lobby before being matched; escrow is refunded. */
@@ -77,6 +85,9 @@ export interface OpenChallenge {
   stake: number;
   openedAt: number; // server ms when the bet was placed
   expiresAt: number; // server ms when it auto-expires
+  /** The control this resting bet pairs on — always present ('none' for untimed games) so the
+   *  feed row can show e.g. "Chess · Blitz 5 min · 10¢". Taking it inherits this control. */
+  timeControlId: string;
 }
 
 /** Server → Client: full snapshot, sent on subscribe. `more` = count beyond the cap. */

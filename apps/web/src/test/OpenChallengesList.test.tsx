@@ -6,7 +6,7 @@ import type { OpenChallenge } from '@rapidclash/shared';
 
 function challenge(over: Partial<OpenChallenge> = {}): OpenChallenge {
   const now = Date.now();
-  return { matchId: 'm1', ownerName: 'alice', stake: 10, openedAt: now - 6000, expiresAt: now + 48000, ...over };
+  return { matchId: 'm1', ownerName: 'alice', stake: 10, openedAt: now - 6000, expiresAt: now + 48000, timeControlId: 'none', ...over };
 }
 
 describe('OpenChallengesList (OC2)', () => {
@@ -67,12 +67,12 @@ describe('OpenChallengesList (OC2)', () => {
 
 describe('applyChallengesUpdate', () => {
   const base: OpenChallenge[] = [
-    { matchId: 'a', ownerName: 'amy', stake: 10, openedAt: 1, expiresAt: 100 },
-    { matchId: 'b', ownerName: 'bob', stake: 20, openedAt: 2, expiresAt: 200 },
+    { matchId: 'a', ownerName: 'amy', stake: 10, openedAt: 1, expiresAt: 100, timeControlId: 'none' },
+    { matchId: 'b', ownerName: 'bob', stake: 20, openedAt: 2, expiresAt: 200, timeControlId: 'none' },
   ];
 
   it('appends an added challenge, keeping longest-waiting-first order', () => {
-    const added: OpenChallenge = { matchId: 'c', ownerName: 'cleo', stake: 30, openedAt: 0, expiresAt: 90 };
+    const added: OpenChallenge = { matchId: 'c', ownerName: 'cleo', stake: 30, openedAt: 0, expiresAt: 90, timeControlId: 'none' };
     const next = applyChallengesUpdate(base, { gameId: 'rps', added });
     expect(next.map((e) => e.matchId)).toEqual(['c', 'a', 'b']); // openedAt asc
   });

@@ -84,8 +84,9 @@ export function registerWsGateway(
     stake: number,
     openedAt: number,
     expiresAt: number,
+    timeControlId: string,
   ): OpenChallenge {
-    return { matchId, ownerName: identity.getUsername(ownerId) ?? ownerId, stake, openedAt, expiresAt };
+    return { matchId, ownerName: identity.getUsername(ownerId) ?? ownerId, stake, openedAt, expiresAt, timeControlId };
   }
 
   /**
@@ -311,8 +312,8 @@ export function registerWsGateway(
         try {
           switch (msg.type) {
             case 'queue.join': {
-              const { gameId, stake } = msg.payload as QueueJoinPayload;
-              const result = matchmaking.joinQueue(playerId, gameId, stake);
+              const { gameId, stake, timeControlId } = msg.payload as QueueJoinPayload;
+              const result = matchmaking.joinQueue(playerId, gameId, stake, timeControlId);
 
               if (result.status === 'waiting') {
                 queuedGameId = gameId;
@@ -323,10 +324,10 @@ export function registerWsGateway(
                   since: result.since,
                   expiresAt: result.expiresAt, // OC7
                 });
-                // A new resting bet appeared — announce it to the feed (OC8).
+                // A new resting bet appeared — announce it to the feed (OC8) with its resolved control.
                 pushChallengesUpdate(gameId, {
                   gameId,
-                  added: openChallengeOf(result.matchId, playerId, stake, result.since, result.expiresAt),
+                  added: openChallengeOf(result.matchId, playerId, stake, result.since, result.expiresAt, result.timeControlId),
                 });
               } else {
                 // Match formed via the FIFO path — the waiter's resting bet is consumed.
