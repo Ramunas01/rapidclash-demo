@@ -1,6 +1,6 @@
 import { describe, beforeEach, it, expect } from 'vitest';
 import Database from 'better-sqlite3';
-import type { GameModule, GameState, PlayerId, Outcome, ApplyResult, Rng } from '@rapidclash/shared';
+import type { GameModule, GameState, PlayerId, Outcome, ApplyResult, Rng, PlayerClocks } from '@rapidclash/shared';
 import { IllegalMove } from '@rapidclash/shared';
 import { createLedger, createMatchmaking, GRANT_AMOUNT, PLATFORM_ACCOUNT } from './index.js';
 
@@ -722,5 +722,150 @@ describe('per-player move timers', () => {
     const { matchmaking, matchId } = setupRpsMatch(50); // rpsLikeModule has no moveTimeoutMs
     expect(matchmaking.sweepTimedOutMoves(Date.now())).toEqual([]);
     expect(matchmaking.getActiveMatch(matchId)).toBeDefined();
+  });
+});
+
+// ─── Cumulative per-player clock (time control) — generic core mode ───────────
+// A tiny turn-based fake that declares timeControl. The CORE seeds the clock at match start;
+// the module ADVANCES it on each move (like chess). No dependency on the real chess module.
+
+describe('time control (cumulative per-player clock)', () => {
+  interface ClockState {
+    players: [PlayerId, PlayerId];
+    turn: PlayerId;
+    moves: number;
+    clock?: PlayerClocks;
+    forcedOutcome?: Outcome;
+  }
+  const other = (s: ClockState, p: PlayerId) => (p === s.players[0] ? s.players[1] : s.players[0]);
+
+  const clockModule: GameModule = {
+    meta: {
+      id: 'clockgame', displayName: 'Clock Game', minPlayers: 2, maxPlayers: 2,
+      ranking: { kind: 'elo', k: 32 }, bet: { minStake: 10, maxStake: 500, symmetricStake: true },
+      averageDurationSec: 60, rakeRate: 0.1,
+      timeControl: { options: [{ id: 'fast', label: 'Fast', baseMs: 10_000, incrementMs: 0 }], defaultId: 'fast' },
+    },
+    init: (players) => ({ players: [players[0], players[1]], turn: players[0], moves: 0 } as ClockState),
+    legalMoves: (state, p) => {
+      const s = state as ClockState;
+      return s.forcedOutcome === undefined && p === s.turn ? ['move'] : [];
+    },
+    applyMove: (state, _move, ctx): ApplyResult => {
+      const s = state as ClockState;
+      const newTurn = other(s, ctx.playerId);
+      const ns: ClockState = { ...s, turn: newTurn, moves: s.moves + 1 };
+      if (s.clock) {
+        const used = ctx.now - s.clock.activeSince;
+        ns.clock = {
+          ...s.clock,
+          remainingMs: { ...s.clock.remainingMs, [ctx.playerId]: Math.max(0, s.clock.remainingMs[ctx.playerId] - used) },
+          active: newTurn,
+          activeSince: ctx.now,
+        };
+      }
+      return { state: ns, events: [] };
+    },
+    isTerminal: (state) => (state as ClockState).forcedOutcome !== undefined,
+    outcome: (state) => (state as ClockState).forcedOutcome ?? { type: 'draw' },
+    viewFor: (state) => state,
+    forfeit: (state, quitter) => {
+      const s = state as ClockState;
+      const forced: Outcome = s.moves === 0 ? { type: 'void' } : { type: 'win', winner: other(s, quitter) };
+      return { ...s, forcedOutcome: forced };
+    },
+  };
+
+  function setupClock(stake = 100) {
+    let clock = 1_000_000;
+    const db = new Database(':memory:');
+    const ledger = createLedger(db);
+    const mm = createMatchmaking(ledger, [clockModule], undefined, { now: () => clock });
+    ledger.grant('alice');
+    ledger.grant('bob');
+    mm.joinQueue('alice', 'clockgame', stake);
+    const r = mm.joinQueue('bob', 'clockgame', stake);
+    if (r.status !== 'matched') throw new Error('expected matched');
+    return { ledger, mm, matchId: r.matchId, advance: (ms: number) => { clock += ms; }, now: () => clock };
+  }
+  const clockOf = (mm: ReturnType<typeof setupClock>['mm'], id: string) =>
+    (mm.getActiveMatch(id)!.state as ClockState).clock!;
+
+  it('seeds both budgets and makes the first mover active at match start', () => {
+    const { mm, matchId, now } = setupClock();
+    const c = clockOf(mm, matchId);
+    expect(c.remainingMs['alice']).toBe(10_000);
+    expect(c.remainingMs['bob']).toBe(10_000);
+    expect(c.active).toBe('alice'); // first player to join = first to move
+    expect(c.activeSince).toBe(now());
+  });
+
+  it("drains only the active player's budget on their turn, then switches the active clock", () => {
+    const { mm, matchId, advance, now } = setupClock();
+    advance(2000);
+    mm.applyMove(matchId, 'alice', 'move', now());
+    const c = clockOf(mm, matchId);
+    expect(c.remainingMs['alice']).toBe(8_000); // drained by 2000
+    expect(c.remainingMs['bob']).toBe(10_000); // untouched
+    expect(c.active).toBe('bob'); // clock switched to the opponent
+  });
+
+  it('a player who never moves flags at 0 → loses on time (settles as a normal loss, rake once)', () => {
+    const { ledger, mm, matchId, advance, now } = setupClock(100);
+    advance(1000);
+    mm.applyMove(matchId, 'alice', 'move', now()); // a move was played → not a pre-first-move void
+    // bob is now active with a 10s budget; bob never moves.
+    advance(10_001);
+    const resolved = mm.sweepTimedOutMoves(now());
+
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0]).toMatchObject({ playerId: 'bob', terminal: true });
+    expect(resolved[0].outcome).toEqual({ type: 'win', winner: 'alice' });
+    // Settles like any decisive loss: rake = round(200 * 0.1) = 20 → +80 / −100.
+    expect(resolved[0].settlement!['alice'].delta).toBe(80);
+    expect(resolved[0].settlement!['bob'].delta).toBe(-100);
+    expect(ledger.getBalance(PLATFORM_ACCOUNT)).toBe(20);
+    expect(mm.getActiveMatch(matchId)).toBeUndefined(); // settled + removed
+  });
+
+  it('does not flag the active player before their budget is spent', () => {
+    const { mm, matchId, advance, now } = setupClock();
+    advance(9_999); // alice still has 1ms
+    expect(mm.sweepTimedOutMoves(now())).toEqual([]);
+    expect(mm.getActiveMatch(matchId)).toBeDefined();
+  });
+
+  it('the 120s per-move deadline is OFF for a clocked game (budget governs)', () => {
+    const { mm, matchId, advance, now } = setupClock();
+    advance(130_000); // far past MATCH_TURN_TIMEOUT_MS (120s)
+    expect(mm.sweepStaleMatches(now())).toEqual([]); // clocked games are skipped here
+    expect(mm.getActiveMatch(matchId)).toBeDefined(); // not forfeited by the per-match deadline
+  });
+
+  it('the per-move forfeit deadline still applies to an untimed game (unchanged)', () => {
+    // rpsLikeModule declares neither timeControl nor moveTimeoutMs → still swept at the deadline.
+    const { matchmaking, matchId } = setupRpsMatch(50);
+    const TIMEOUT = 120_000;
+    const resolved = matchmaking.sweepStaleMatches(Date.now() + TIMEOUT + 1);
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0].matchId).toBe(matchId);
+  });
+
+  it('determinism: the same moves + nows reproduce the identical flag and outcome', () => {
+    function run() {
+      const { mm, matchId, advance, now } = setupClock(100);
+      advance(1500);
+      mm.applyMove(matchId, 'alice', 'move', now());
+      advance(10_001);
+      return mm.sweepTimedOutMoves(now());
+    }
+    const a = run();
+    const b = run();
+    expect(a[0].playerId).toBe(b[0].playerId);
+    expect(a[0].outcome).toEqual(b[0].outcome);
+    // The recorded flag event carries its `now` so a replay reproduces it.
+    expect((a[0].events[0] as { type: string }).type).toBe('flagged');
+    expect((a[0].events[0] as { payload: { now: number } }).payload.now)
+      .toBe((b[0].events[0] as { payload: { now: number } }).payload.now);
   });
 });

@@ -1,5 +1,5 @@
 import { randomUUID, randomBytes } from 'node:crypto';
-import type { GameModule, GameState, LedgerEntry, PlayerId, Rng, Move, ApplyResult, Outcome, OpenChallenge } from '@rapidclash/shared';
+import type { GameModule, GameState, LedgerEntry, PlayerId, Rng, Move, ApplyResult, Outcome, OpenChallenge, PlayerClocks } from '@rapidclash/shared';
 import { IllegalMove } from '@rapidclash/shared';
 import type { Ledger } from './ledger.js';
 import type { MatchHistory } from './match-history.js';
@@ -32,6 +32,42 @@ function createRng(seed: number): Rng {
  */
 export function usesPlayerTimers(mod: GameModule): boolean {
   return mod.meta.moveTimeoutMs != null && typeof mod.timeoutMove === 'function';
+}
+
+/** Cumulative per-player game clock (chess) — the SECOND mode of the per-player-timer
+ *  subsystem. A player's whole budget ticks only on their turn; at 0 they lose on time. */
+export function usesTimeControl(mod: GameModule): boolean {
+  return mod.meta.timeControl != null;
+}
+
+/** Either per-player-timer mode (per-move reset OR cumulative clock). Used internally for the
+ *  shared scheduling/sweep machinery and to take a clocked match OUT of the single per-match
+ *  deadline (forfeit-the-laggard). NOTE: the gateway's close-forfeit skip keys off
+ *  `usesPlayerTimers` only — a clocked game (chess) keeps the socket-close abandonment backstop
+ *  (Q6/Q7), since its absent player isn't auto-acted, only drained. */
+function hasPerPlayerClock(mod: GameModule): boolean {
+  return usesPlayerTimers(mod) || usesTimeControl(mod);
+}
+
+/** Seed a cumulative clock onto a freshly-init'd state (the core has the formation `now`;
+ *  the module's `init` does not). Generic — driven by the declared `timeControl`, no game-id
+ *  branch. Part 1 always uses the default option; matchmaking carries a chosen id in Part 2. */
+function seedTimeControl(
+  state: GameState,
+  mod: GameModule,
+  players: [PlayerId, PlayerId],
+  now: number,
+): void {
+  const tc = mod.meta.timeControl!;
+  const opt = tc.options.find((o) => o.id === tc.defaultId) ?? tc.options[0];
+  const active = players.find((p) => mod.legalMoves(state, p).length > 0) ?? null;
+  const clock: PlayerClocks = {
+    remainingMs: { [players[0]]: opt.baseMs, [players[1]]: opt.baseMs },
+    active,
+    activeSince: now,
+    timeControlId: opt.id,
+  };
+  (state as { clock?: PlayerClocks }).clock = clock;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -273,6 +309,20 @@ export function createMatchmaking(
    * with no legal moves has theirs cleared; a still-waiting player keeps their running clock.
    */
   function refreshPlayerTimers(match: MatchRecord, mod: GameModule, now: number, justActed?: PlayerId): void {
+    // Cumulative mode (chess): the wake is the active player's flag = activeSince + remaining.
+    // The clock lives on the state (seeded by the core, advanced by the module's applyMove);
+    // here we just read it to (re)schedule the single active deadline.
+    if (usesTimeControl(mod)) {
+      const clock = (match.state as { clock?: PlayerClocks }).clock;
+      const deadlines: Record<PlayerId, number> = {};
+      if (clock && clock.active != null && mod.legalMoves(match.state, clock.active).length > 0) {
+        deadlines[clock.active] = clock.activeSince + clock.remainingMs[clock.active];
+      }
+      match.playerDeadlines = deadlines;
+      return;
+    }
+
+    // Per-move mode (Blackjack/Mines): each player's timer resets to a fixed budget.
     const timeout = mod.meta.moveTimeoutMs!;
     const deadlines = match.playerDeadlines ?? {};
     for (const p of match.players) {
@@ -335,7 +385,8 @@ export function createMatchmaking(
         deadlineAt: nowFn() + turnTimeoutMs,
       };
       matches.set(matchId, record);
-      if (usesPlayerTimers(mod)) refreshPlayerTimers(record, mod, nowFn());
+      if (usesTimeControl(mod)) seedTimeControl(record.state, mod, record.players, nowFn());
+      if (hasPerPlayerClock(mod)) refreshPlayerTimers(record, mod, nowFn());
 
       return { status: 'matched', matchId, opponentId: waiter.playerId, initialState };
     }
@@ -414,7 +465,8 @@ export function createMatchmaking(
       deadlineAt: nowFn() + turnTimeoutMs,
     };
     matches.set(matchId, record);
-    if (usesPlayerTimers(mod)) refreshPlayerTimers(record, mod, nowFn());
+    if (usesTimeControl(mod)) seedTimeControl(record.state, mod, record.players, nowFn());
+    if (hasPerPlayerClock(mod)) refreshPlayerTimers(record, mod, nowFn());
 
     return { status: 'matched', matchId, opponentId: ownerId, initialState };
   }
@@ -466,9 +518,11 @@ export function createMatchmaking(
     // iterate the live map while mutating it.
     for (const match of [...matches.values()]) {
       const mod = moduleByGame.get(match.gameId)!;
-      // Opt-in per-player-timer games never forfeit-the-laggard here; their timers are
-      // resolved by sweepTimedOutMoves (auto-move injection), so skip them entirely.
-      if (usesPlayerTimers(mod)) continue;
+      // Any per-player-clock game (per-move timers OR a cumulative time control) is out of the
+      // single per-match deadline: per-move games resolve via sweepTimedOutMoves' auto-move,
+      // clocked games via the loss-on-time flag there. For a clocked game the per-move
+      // MATCH_TURN_TIMEOUT_MS is OFF — the budget is the only in-game limit (Q6).
+      if (hasPerPlayerClock(mod)) continue;
       if (now < match.deadlineAt) continue;
       // Non-responders = players who still owe a legal move. In our 2-player games this is
       // either the single laggard (the other side already moved → that laggard forfeits and
@@ -496,7 +550,38 @@ export function createMatchmaking(
     // Snapshot: settleMatch deletes from `matches` on a terminal auto-move.
     for (const match of [...matches.values()]) {
       const mod = moduleByGame.get(match.gameId)!;
-      if (!usesPlayerTimers(mod)) continue;
+      if (!hasPerPlayerClock(mod)) continue;
+
+      // Cumulative mode (chess): the active player flags when their budget hits 0 with no move.
+      // Resolve through the module's loss-on-time path (forfeit → opponent wins, or void if it
+      // was pre-first-move) and settle exactly like any decisive loss (rake once, idempotent).
+      if (usesTimeControl(mod)) {
+        const clock = (match.state as { clock?: PlayerClocks }).clock;
+        const deadlines = match.playerDeadlines ?? {};
+        const active = clock?.active ?? null;
+        if (
+          active != null &&
+          deadlines[active] !== undefined &&
+          now >= deadlines[active] &&
+          mod.legalMoves(match.state, active).length > 0
+        ) {
+          const settled = forfeitMatch(match.matchId, active); // sets terminal state + settles
+          const done = completed.get(match.matchId);
+          out.push({
+            matchId: match.matchId,
+            gameId: match.gameId,
+            players: match.players,
+            playerId: active,
+            state: done ? done.state : match.state,
+            // Record the flag with its `now` so the event (relayed + loggable) reproduces on replay.
+            events: [{ type: 'flagged', payload: { playerId: active, now } }],
+            terminal: true,
+            outcome: settled.outcome,
+            settlement: settled.settlement,
+          });
+        }
+        continue;
+      }
 
       // Inject an auto-move for each expired player. State changes between injections, so
       // re-evaluate every iteration. Bounded to avoid any runaway loop.
@@ -573,9 +658,9 @@ export function createMatchmaking(
     // A move was made → the match is progressing; push the deadline out so an active,
     // responsive match is never swept as stale (#31).
     match.deadlineAt = now + turnTimeoutMs;
-    // Opt-in per-player timers: reset the acting player's clock; refresh the others
-    // (a player may have just gained or lost legal moves).
-    if (usesPlayerTimers(mod)) refreshPlayerTimers(match, mod, now, playerId);
+    // Per-player timers (per-move OR cumulative): the module's applyMove already advanced a
+    // cumulative clock; here we (re)schedule the active deadline for either mode.
+    if (hasPerPlayerClock(mod)) refreshPlayerTimers(match, mod, now, playerId);
     return result;
   }
 

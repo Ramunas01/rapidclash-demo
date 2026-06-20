@@ -51,11 +51,27 @@ describe('chessModule.meta', () => {
       bet: { minStake: 1, maxStake: 100, symmetricStake: true },
       averageDurationSec: 300,
       rakeRate: 0.1,
+      timeControl: {
+        options: [
+          { id: 'rapid10', label: 'Default · 10 min', baseMs: 600_000, incrementMs: 0 },
+          { id: 'blitz5', label: 'Blitz · 5 min', baseMs: 300_000, incrementMs: 0 },
+          { id: 'bullet1', label: 'Bullet · 1 min', baseMs: 60_000, incrementMs: 0 },
+        ],
+        defaultId: 'rapid10',
+      },
     });
   });
 
   it('declares a 10% rake rate', () => {
     expect(chessModule.meta.rakeRate).toBe(0.1);
+  });
+
+  it('declares three cumulative time-control presets, default rapid10', () => {
+    const tc = chessModule.meta.timeControl!;
+    expect(tc.defaultId).toBe('rapid10');
+    expect(tc.options.map((o) => o.id)).toEqual(['rapid10', 'blitz5', 'bullet1']);
+    expect(tc.options.find((o) => o.id === 'rapid10')!.baseMs).toBe(600_000);
+    expect(tc.options.every((o) => o.incrementMs === 0)).toBe(true); // sudden-death v1
   });
 });
 
@@ -273,5 +289,53 @@ describe('chessModule — determinism', () => {
       { from: 'b1', to: 'c3' },
     ];
     expect(view(play(moves)).fen).toBe(view(play(moves)).fen);
+  });
+});
+
+// ─── Cumulative clock (the core seeds it; applyMove advances it) ──────────────
+describe('chessModule clock (time control)', () => {
+  type Clock = { remainingMs: Record<string, number>; active: string | null; activeSince: number; timeControlId: string };
+  function clockedStart(activeSince = 1000): unknown {
+    const s = chessModule.init([WHITE, BLACK], rng) as { clock?: Clock };
+    s.clock = { remainingMs: { [WHITE]: 600_000, [BLACK]: 600_000 }, active: WHITE, activeSince, timeControlId: 'rapid10' };
+    return s;
+  }
+  const clockOf = (state: unknown) => (state as { clock: Clock }).clock;
+
+  it("drains the active player's budget by the time they used and switches the active clock", () => {
+    const start = clockedStart(1000);
+    const { state } = chessModule.applyMove(start, { from: 'e2', to: 'e4' }, { playerId: WHITE, now: 3000 });
+    const c = clockOf(state);
+    expect(c.remainingMs[WHITE]).toBe(598_000); // 600000 − (3000 − 1000)
+    expect(c.active).toBe(BLACK); // clock handed to the side now to move
+    expect(c.activeSince).toBe(3000);
+  });
+
+  it("does not touch the opponent's budget on the active player's move", () => {
+    const start = clockedStart(1000);
+    const { state } = chessModule.applyMove(start, { from: 'e2', to: 'e4' }, { playerId: WHITE, now: 9000 });
+    expect(clockOf(state).remainingMs[BLACK]).toBe(600_000); // black's clock was paused
+  });
+
+  it('exposes both clocks via viewFor (perfect information — no redaction)', () => {
+    const start = clockedStart(1000);
+    for (const p of [WHITE, BLACK]) {
+      const v = chessModule.viewFor(start, p) as { clock: Clock };
+      expect(v.clock.remainingMs[WHITE]).toBe(600_000);
+      expect(v.clock.remainingMs[BLACK]).toBe(600_000);
+    }
+  });
+
+  it('reads only ctx.now — never a wall clock (deterministic drain)', () => {
+    const a = chessModule.applyMove(clockedStart(0), { from: 'e2', to: 'e4' }, { playerId: WHITE, now: 5000 }).state;
+    const b = chessModule.applyMove(clockedStart(0), { from: 'e2', to: 'e4' }, { playerId: WHITE, now: 5000 }).state;
+    expect(clockOf(a).remainingMs[WHITE]).toBe(clockOf(b).remainingMs[WHITE]); // identical inputs → identical drain
+    expect(clockOf(a).remainingMs[WHITE]).toBe(595_000);
+  });
+
+  it('rejects a move from a player who has already flagged', () => {
+    const s = clockedStart(1000) as { clock: Clock };
+    s.clock.remainingMs[WHITE] = 0;
+    expect(() => chessModule.applyMove(s, { from: 'e2', to: 'e4' }, { playerId: WHITE, now: 2000 })).toThrow(IllegalMove);
   });
 });
