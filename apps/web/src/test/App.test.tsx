@@ -51,8 +51,10 @@ describe('App — own alias persistence + logout (#34)', () => {
     expect(localStorage.getItem('rc_username')).toBeNull();
     expect(localStorage.getItem('rc_token')).toBeNull();
     expect(localStorage.getItem('rc_playerId')).toBeNull();
-    // …and we are back on the auth screen.
-    expect(screen.getByText('Create Account')).toBeInTheDocument();
+    // …and we land on the logged-out Home hub (the single entry), wallet chip now "Sign in".
+    await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
+    expect(screen.getByTestId('hub-signin-chip')).toBeInTheDocument();
+    expect(screen.queryByTestId('hub-wallet-chip')).toBeNull();
   });
 });
 
@@ -185,5 +187,80 @@ describe('App — match.start routes by the server-authoritative gameId (open-ch
     // Coinflip drives the one-screen hub: a match.start activates the in-place game board.
     expect(screen.getByTestId('hub-board')).toBeInTheDocument();
     expect(screen.queryByTestId('chess-board')).toBeNull();
+  });
+});
+
+describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
+  type MockSock = {
+    url: string; readyState: number;
+    onopen: (() => void) | null; onmessage: ((ev: { data: string }) => void) | null; onclose: (() => void) | null;
+    send: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn>;
+  };
+  let sockets: MockSock[];
+  const COINFLIP = {
+    id: 'coinflip', displayName: 'Coinflip', minPlayers: 2, maxPlayers: 2,
+    ranking: { kind: 'net_winnings' }, bet: { minStake: 1, maxStake: 100, symmetricStake: true },
+    averageDurationSec: 5, rakeRate: 0.025,
+  };
+
+  beforeEach(() => {
+    sockets = [];
+    const ctor = vi.fn((url: string) => {
+      const s: MockSock = { url, readyState: 0, onopen: null, onmessage: null, onclose: null, send: vi.fn(), close: vi.fn() };
+      sockets.push(s);
+      return s;
+    });
+    vi.stubGlobal('WebSocket', Object.assign(ctor, { OPEN: 1, CONNECTING: 0, CLOSING: 2, CLOSED: 3 }));
+    // NO token → logged out.
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes('/games')) return { ok: true, json: async () => [COINFLIP] } as Response;
+      if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
+      if (u.includes('/auth/register')) {
+        const body = init?.body ? JSON.parse(String(init.body)) : {};
+        return { ok: true, json: async () => ({ token: 'NEWT', playerId: 'NEWP', balance: 1000, username: body.username }) } as Response;
+      }
+      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+    }));
+  });
+  afterEach(() => { localStorage.clear(); sessionStorage.clear(); vi.unstubAllGlobals(); });
+
+  it('a logged-out visitor lands on Home with a Sign-in chip + ticker teaser, and no WS is opened', async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
+    expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument(); // public grid browses
+    expect(screen.getByTestId('hub-signin-chip')).toBeInTheDocument();
+    expect(screen.getByTestId('home-ticker-teaser')).toBeInTheDocument();
+    expect(sockets.length).toBe(0); // the WS (auth) is not opened until sign-in
+  });
+
+  it('PLAY while logged-out → auth modal → on register the post resumes over the freshly-connected WS', async () => {
+    render(<App />);
+    await waitFor(() => screen.getByTestId('home-tile-coinflip'));
+
+    // Browse into the Coinflip hub (no auth needed), pick a bet, hit PLAY.
+    fireEvent.click(screen.getByTestId('home-tile-coinflip'));
+    await waitFor(() => screen.getByTestId('hub-bet-10'));
+    fireEvent.click(screen.getByTestId('hub-bet-10'));
+    fireEvent.click(screen.getByTestId('hub-play'));
+
+    // The auth wall fires only here.
+    const modal = await screen.findByTestId('auth-modal');
+    expect(modal).toBeInTheDocument();
+
+    // Register → token stored + WS connects.
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'neo' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'pw' } });
+    fireEvent.click(screen.getByTestId('auth-submit'));
+    await waitFor(() => expect(sockets.length).toBe(1));
+
+    // Open the socket → the captured PLAY intent replays as a queue.join (the resume).
+    act(() => { sockets[0].readyState = 1; sockets[0].onopen?.(); });
+    const joins = sockets[0].send.mock.calls
+      .map((c) => JSON.parse(String(c[0])))
+      .filter((m: { type: string }) => m.type === 'queue.join');
+    expect(joins).toHaveLength(1);
+    expect(joins[0].payload).toMatchObject({ gameId: 'coinflip', stake: 10 });
+    expect(screen.queryByTestId('auth-modal')).toBeNull(); // modal dismissed on success
   });
 });
