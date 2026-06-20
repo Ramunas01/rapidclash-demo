@@ -15,8 +15,9 @@ import { MinesPlayScreen } from './screens/MinesPlay.js';
 import { ResultScreen } from './screens/Result.js';
 import { LeaderboardScreen } from './screens/Leaderboard.js';
 import { CoinflipHubScreen } from './screens/CoinflipHub.js';
+import { HomeHubScreen } from './screens/HomeHub.js';
 
-type Screen = 'auth' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub';
+type Screen = 'auth' | 'home' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub';
 
 const RECONNECT_NOTICE = 'Connection lost — reconnecting. Try again in a moment.';
 
@@ -118,7 +119,7 @@ export function App() {
         ? readStoredGameId() === 'coinflip'
           ? 'coinflip-hub'
           : 'play'
-        : 'wallet'
+        : 'home'
       : 'auth',
   );
   const [token, setToken] = useState<string | null>(savedToken);
@@ -144,6 +145,11 @@ export function App() {
   // Open-challenges feed (stake screen) + owner lobby countdown/expiry state.
   const [challenges, setChallenges] = useState<OpenChallenge[]>([]);
   const [challengesMore, setChallengesMore] = useState(0);
+  // Home hub's CROSS-GAME ticker: each game's feed kept separately, keyed by gameId, and
+  // merged client-side. homeGamesRef holds the currently-tracked games so a reconnect can
+  // re-subscribe them all.
+  const [homeChallenges, setHomeChallenges] = useState<Record<string, OpenChallenge[]>>({});
+  const homeGamesRef = useRef<string[]>([]);
   const [challengeNotice, setChallengeNotice] = useState<string | null>(null);
   const [waitingExpiresAt, setWaitingExpiresAt] = useState<number | null>(null);
   const [lobbyExpired, setLobbyExpired] = useState(false);
@@ -168,7 +174,7 @@ export function App() {
     const ws = new WsClient(tok, {});
     wsRef.current = ws;
     ws.connect();
-    setScreen('wallet');
+    setScreen('home');
   }, []);
 
   // Wire WS handlers whenever screen/state changes
@@ -227,12 +233,23 @@ export function App() {
         setLobbyExpired(false);
       },
       onChallengesList(payload) {
-        setChallenges(payload.entries);
-        setChallengesMore(payload.more);
+        // Home hub's cross-game ticker keeps every game's feed, keyed by gameId.
+        setHomeChallenges((prev) => ({ ...prev, [payload.gameId]: payload.entries }));
+        // The single-game feed (stake screen / coinflip hub) only tracks the active game.
+        if (payload.gameId === pendingGameId) {
+          setChallenges(payload.entries);
+          setChallengesMore(payload.more);
+        }
       },
       onChallengesUpdate(payload) {
         // Event-driven incremental add/remove — no polling (OC8).
-        setChallenges((prev) => applyChallengesUpdate(prev, payload));
+        setHomeChallenges((prev) => ({
+          ...prev,
+          [payload.gameId]: applyChallengesUpdate(prev[payload.gameId] ?? [], payload),
+        }));
+        if (payload.gameId === pendingGameId) {
+          setChallenges((prev) => applyChallengesUpdate(prev, payload));
+        }
       },
       onChallengeExpired() {
         // Owner's resting bet expired (escrow already refunded server-side) — offer re-post.
@@ -248,6 +265,10 @@ export function App() {
           setActionNotice(null);
           if ((screen === 'stake-entry' || screen === 'coinflip-hub') && pendingGameId) {
             wsRef.current?.subscribeChallenges(pendingGameId);
+          }
+          // Home hub's per-socket cross-game subscriptions are lost on a new socket — re-arm them.
+          if (screen === 'home') {
+            for (const id of homeGamesRef.current) wsRef.current?.subscribeChallenges(id);
           }
         }
       },
@@ -292,7 +313,21 @@ export function App() {
     setScreen('auth');
   }, []);
 
+  const goToHome = useCallback(() => setScreen('home'), []);
   const goToGameList = useCallback(() => setScreen('game-list'), []);
+
+  // ── Home hub cross-game ticker subscriptions (raw, NOT via the single-game handlers,
+  //    so they never reset the active game's feed). ─────────────────────────────────────
+  const handleTrackChallenges = useCallback((gameIds: string[]) => {
+    homeGamesRef.current = gameIds;
+    setHomeChallenges({});
+    for (const id of gameIds) wsRef.current?.subscribeChallenges(id);
+  }, []);
+  const handleUntrackChallenges = useCallback(() => {
+    for (const id of homeGamesRef.current) wsRef.current?.unsubscribeChallenges(id);
+    homeGamesRef.current = [];
+  }, []);
+
   const goToWallet = useCallback((newBalance?: number) => {
     if (newBalance !== undefined) setBalance(newBalance);
     setScreen('wallet');
@@ -401,8 +436,20 @@ export function App() {
     switch (screen) {
       case 'auth':
         return <AuthScreen onLogin={handleLogin} />;
+      case 'home':
+        return <HomeHubScreen
+          token={token!}
+          balance={balance}
+          challengesByGame={homeChallenges}
+          onTrackChallenges={handleTrackChallenges}
+          onUntrackChallenges={handleUntrackChallenges}
+          onTakeChallenge={handleTakeChallenge}
+          onSelectGame={handleSelectGame}
+          onOpenWallet={() => goToWallet()}
+          onHome={goToHome}
+        />;
       case 'wallet':
-        return <WalletScreen token={token!} username={username} balance={balance} onPlay={goToGameList} onLogout={handleLogout} />;
+        return <WalletScreen token={token!} username={username} balance={balance} onPlay={goToHome} onLogout={handleLogout} />;
       case 'game-list':
         return <GameListScreen token={token!} onSelect={handleSelectGame} onBack={goToWallet} />;
       case 'coinflip-hub':
@@ -431,7 +478,7 @@ export function App() {
           onUnsubscribe={handleUnsubscribeChallenges}
           onSelectGame={handleSelectGame}
           onOpenWallet={() => goToWallet()}
-          onOpenGameList={goToGameList}
+          onOpenGameList={goToHome}
           onResultDismiss={handleHubResultDismiss}
         />;
       case 'stake-entry':

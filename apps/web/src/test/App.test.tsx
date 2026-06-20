@@ -38,7 +38,9 @@ describe('App — own alias persistence + logout (#34)', () => {
   it('restores the alias from storage on reload and clears it on logout', async () => {
     render(<App />);
 
-    // The persisted alias is shown on the wallet without any login round-trip.
+    // A reload lands on the Home hub; the wallet (alias + Sign out) is reachable via the chip.
+    await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('hub-wallet-chip'));
     await waitFor(() => {
       expect(screen.getByTestId('signed-in-as').textContent).toBe('Signed in as alice');
     });
@@ -91,7 +93,7 @@ describe('App — connection banner (#30)', () => {
 
   it('shows a "Reconnecting…" banner when the socket drops, and hides it on reconnect', async () => {
     render(<App />);
-    await waitFor(() => expect(screen.getByTestId('signed-in-as')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
 
     const sock = sockets[0];
     act(() => { sock.readyState = 1; sock.onopen?.(); }); // connected
@@ -150,7 +152,7 @@ describe('App — match.start routes by the server-authoritative gameId (open-ch
   /** Render the logged-in app, open its socket, and deliver one match.start. */
   async function deliverMatchStart(gameId: string, state: unknown) {
     render(<App />);
-    await waitFor(() => expect(screen.getByTestId('signed-in-as')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
     const sock = sockets[0];
     act(() => { sock.readyState = 1; sock.onopen?.(); });
     const env = {
