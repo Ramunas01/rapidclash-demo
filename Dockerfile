@@ -20,12 +20,14 @@ WORKDIR /app
 # Whole monorepo (node_modules/dist excluded via .dockerignore).
 COPY . .
 
-# Install all deps (dev included — needed to build), then build both halves:
-#   - the PWA → apps/web/dist (vite + vite-plugin-pwa: sw.js, manifest, icons)
-#   - the server + workspace packages → dist (tsc -b)
+# Install all deps (dev included — needed to build), then build both halves IN ORDER:
+#   1. the server + workspace packages → dist (tsc -b). MUST come first: the web build
+#      imports `@rapidclash/shared`, whose package.json `exports` point at ./dist — so vite
+#      can't resolve it until tsc has emitted that dist.
+#   2. the PWA → apps/web/dist (vite + vite-plugin-pwa: sw.js, manifest, icons).
 RUN pnpm install --frozen-lockfile
-RUN pnpm --filter @rapidclash/web build
 RUN pnpm run build
+RUN pnpm --filter @rapidclash/web build
 
 # Self-contained, production-only deploy of the server: its dist + prod deps + the
 # workspace packages' dists, hard-copied (no symlinks into the pnpm store).
