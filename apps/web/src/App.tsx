@@ -16,8 +16,9 @@ import { ResultScreen } from './screens/Result.js';
 import { LeaderboardScreen } from './screens/Leaderboard.js';
 import { CoinflipHubScreen } from './screens/CoinflipHub.js';
 import { HomeHubScreen } from './screens/HomeHub.js';
+import { ProfileHubScreen } from './screens/ProfileHub.js';
 
-type Screen = 'auth' | 'home' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub';
+type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub';
 
 const RECONNECT_NOTICE = 'Connection lost — reconnecting. Try again in a moment.';
 
@@ -314,6 +315,7 @@ export function App() {
   }, []);
 
   const goToHome = useCallback(() => setScreen('home'), []);
+  const goToProfile = useCallback(() => setScreen('profile'), []);
   const goToGameList = useCallback(() => setScreen('game-list'), []);
 
   // ── Home hub cross-game ticker subscriptions (raw, NOT via the single-game handlers,
@@ -445,8 +447,17 @@ export function App() {
           onUntrackChallenges={handleUntrackChallenges}
           onTakeChallenge={handleTakeChallenge}
           onSelectGame={handleSelectGame}
-          onOpenWallet={() => goToWallet()}
+          onOpenWallet={goToProfile}
           onHome={goToHome}
+        />;
+      case 'profile':
+        return <ProfileHubScreen
+          token={token!}
+          username={username}
+          balance={balance}
+          onLogout={handleLogout}
+          onHome={goToHome}
+          onOpenProfile={goToProfile}
         />;
       case 'wallet':
         return <WalletScreen token={token!} username={username} balance={balance} onPlay={goToHome} onLogout={handleLogout} />;
@@ -477,7 +488,7 @@ export function App() {
           onSubscribe={handleSubscribeChallenges}
           onUnsubscribe={handleUnsubscribeChallenges}
           onSelectGame={handleSelectGame}
-          onOpenWallet={() => goToWallet()}
+          onOpenWallet={goToProfile}
           onOpenGameList={goToHome}
           onResultDismiss={handleHubResultDismiss}
         />;
