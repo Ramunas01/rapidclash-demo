@@ -25,6 +25,10 @@ export interface BotConfig {
   /** For a rester: the stake it posts. For a taker: unused (it matches the human's stake). */
   stake: number;
   policy: BotPolicy;
+  /** Pairing time-control for a clocked game (chess). Omitted → the game default; a chess rester
+   *  posts the Default (10-min) control so at least one live chess control is never empty
+   *  (CHESS_TIME_CONTROL.md fragmentation mitigation). Ignored for untimed games. */
+  timeControlId?: string;
 }
 
 /**
@@ -46,8 +50,8 @@ export const ROSTER: BotConfig[] = [
   { name: '🤖R2-D2', gameId: 'coinflip', stake: 10, policy: 'rester' },
   { name: '🤖BB-8', gameId: 'rps', stake: 5, policy: 'rester' },
   { name: '🤖K-2SO', gameId: 'rps', stake: 10, policy: 'rester' },
-  { name: '🤖Chewie', gameId: 'chess', stake: 5, policy: 'rester' },
-  { name: '🤖R5-D4', gameId: 'chess', stake: 10, policy: 'rester' },
+  { name: '🤖Chewie', gameId: 'chess', stake: 5, policy: 'rester', timeControlId: 'rapid10' },
+  { name: '🤖R5-D4', gameId: 'chess', stake: 10, policy: 'rester', timeControlId: 'rapid10' },
   { name: '🤖IG-88', gameId: 'blackjack', stake: 5, policy: 'rester' },
   { name: '🤖4-LOM', gameId: 'blackjack', stake: 10, policy: 'rester' },
   { name: '🤖L3-37', gameId: 'mines', stake: 5, policy: 'rester' },

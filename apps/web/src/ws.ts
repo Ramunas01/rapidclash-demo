@@ -1,4 +1,5 @@
 import type { Envelope, Move, QueueJoinPayload, QueueLeavePayload, MoveMakePayload, MatchResumePayload, MatchStartPayload, MatchStatePayload, MatchYourTurnPayload, MatchEndPayload, QueueWaitingPayload, ErrorPayload, ChallengeSubscribePayload, ChallengeTakePayload, ChallengesListPayload, ChallengesUpdatePayload, ChallengeExpiredPayload } from '@rapidclash/shared';
+import { UNTIMED_TIME_CONTROL } from '@rapidclash/shared';
 
 const WS_BASE = import.meta.env.VITE_WS_URL ?? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
 
@@ -205,8 +206,10 @@ export class WsClient {
     return false;
   }
 
-  joinQueue(gameId: string, stake: number): boolean {
-    return this.send('queue.join', { gameId, stake } as QueueJoinPayload);
+  /** `timeControlId` selects the chess pairing control; the server maps 'none' (the default for
+   *  callers without a picker yet) to the game's default control, or keeps 'none' for untimed games. */
+  joinQueue(gameId: string, stake: number, timeControlId: string = UNTIMED_TIME_CONTROL): boolean {
+    return this.send('queue.join', { gameId, stake, timeControlId } as QueueJoinPayload);
   }
 
   leaveQueue(gameId: string): boolean {

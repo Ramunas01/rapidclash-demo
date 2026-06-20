@@ -869,3 +869,102 @@ describe('time control (cumulative per-player clock)', () => {
       .toBe((b[0].events[0] as { payload: { now: number } }).payload.now);
   });
 });
+
+// ─── Time control — matchmaking pairing (Part 2: 3-part FIFO key) ─────────────
+describe('time control — pairing on (game, stake, control)', () => {
+  // A self-contained clocked module declaring TWO controls (fast/slow, default fast), paired with
+  // the untimed `rpsLikeModule` (module scope). The 3-part key keeps controls in separate pools.
+  const tcModule: GameModule = {
+    meta: {
+      id: 'tcgame', displayName: 'TC Game', minPlayers: 2, maxPlayers: 2,
+      ranking: { kind: 'elo', k: 32 }, bet: { minStake: 10, maxStake: 500, symmetricStake: true },
+      averageDurationSec: 60, rakeRate: 0.1,
+      timeControl: {
+        options: [
+          { id: 'fast', label: 'Fast', baseMs: 10_000, incrementMs: 0 },
+          { id: 'slow', label: 'Slow', baseMs: 20_000, incrementMs: 0 },
+        ],
+        defaultId: 'fast',
+      },
+    },
+    init: (players) => ({ players: [players[0], players[1]], turn: players[0] }),
+    legalMoves: (state, p) => ((state as { turn: PlayerId }).turn === p ? ['move'] : []),
+    applyMove: (state) => ({ state, events: [] }),
+    isTerminal: () => false,
+    outcome: () => ({ type: 'draw' }),
+    viewFor: (state) => state,
+    forfeit: (state) => state,
+  };
+  function mm() {
+    const ledger = createLedger(new Database(':memory:'));
+    const m = createMatchmaking(ledger, [tcModule, rpsLikeModule]);
+    for (const p of ['alice', 'bob', 'carol', 'dave']) ledger.grant(p);
+    return { ledger, m };
+  }
+  const clockOfMatch = (m: ReturnType<typeof mm>['m'], id: string) =>
+    (m.getActiveMatch(id)!.state as { clock: PlayerClocks }).clock;
+
+  it('pairs two players on the same stake AND control, seeding that control', () => {
+    const { m } = mm();
+    expect(m.joinQueue('alice', 'tcgame', 50, 'slow').status).toBe('waiting');
+    const r = m.joinQueue('bob', 'tcgame', 50, 'slow');
+    expect(r.status).toBe('matched');
+    if (r.status === 'matched') {
+      const c = clockOfMatch(m, r.matchId);
+      expect(c.timeControlId).toBe('slow');
+      expect(c.remainingMs['alice']).toBe(20_000); // slow base, not the default
+    }
+  });
+
+  it('does NOT pair the same stake when the control differs (separate pools)', () => {
+    const { m } = mm();
+    expect(m.joinQueue('alice', 'tcgame', 50, 'fast').status).toBe('waiting');
+    expect(m.joinQueue('bob', 'tcgame', 50, 'slow').status).toBe('waiting'); // different control → no match
+    // A matching-control join pairs with the right waiter.
+    const r = m.joinQueue('carol', 'tcgame', 50, 'fast');
+    expect(r.status).toBe('matched');
+    if (r.status === 'matched') expect(r.opponentId).toBe('alice');
+  });
+
+  it("defaults an omitted control to the game's default and returns the resolved id", () => {
+    const { m } = mm();
+    const w = m.joinQueue('alice', 'tcgame', 50); // no control given
+    expect(w.status).toBe('waiting');
+    if (w.status === 'waiting') expect(w.timeControlId).toBe('fast'); // defaultId
+    const r = m.joinQueue('bob', 'tcgame', 50, 'fast'); // explicit default pairs with the omitted one
+    expect(r.status).toBe('matched');
+  });
+
+  it('rejects an unknown control', () => {
+    const { m } = mm();
+    expect(() => m.joinQueue('alice', 'tcgame', 50, 'bogus')).toThrow(RangeError);
+  });
+
+  it("forces 'none' for an untimed game regardless of a passed control", () => {
+    const { m } = mm();
+    const w = m.joinQueue('alice', 'rpslike', 50, 'fast'); // control ignored for an untimed game
+    expect(w.status).toBe('waiting');
+    if (w.status === 'waiting') expect(w.timeControlId).toBe('none');
+    // Another untimed join (no control) shares the 'none' pool → matched.
+    expect(m.joinQueue('bob', 'rpslike', 50).status).toBe('matched');
+  });
+
+  it('the open-challenge feed carries the resting bet control', () => {
+    const { m } = mm();
+    const w = m.joinQueue('alice', 'tcgame', 50, 'slow');
+    if (w.status !== 'waiting') throw new Error('expected waiting');
+    // List from another viewer, past the min-rest window so the bet is eligible.
+    const { entries } = m.listOpenChallenges('tcgame', 'bob', Date.now() + 6_000);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ matchId: w.matchId, timeControlId: 'slow' });
+  });
+
+  it('taking a resting challenge inherits the owner control (intrinsic to the match)', () => {
+    const { m } = mm();
+    const w = m.joinQueue('alice', 'tcgame', 50, 'slow');
+    if (w.status !== 'waiting') throw new Error('expected waiting');
+    const r = m.takeChallenge('bob', w.matchId);
+    expect(clockOfMatch(m, r.matchId).timeControlId).toBe('slow');
+    expect(clockOfMatch(m, r.matchId).remainingMs['bob']).toBe(20_000);
+  });
+});

@@ -41,7 +41,7 @@ function baseProps(over: Partial<Props> = {}): Props {
   };
 }
 
-const CHALLENGE = { matchId: 'c1', ownerName: 'rival', stake: 50, openedAt: 0, expiresAt: Date.now() + 30_000 };
+const CHALLENGE = { matchId: 'c1', ownerName: 'rival', stake: 50, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'none' };
 
 describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
   beforeEach(() => {

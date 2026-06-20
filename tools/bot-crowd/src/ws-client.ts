@@ -117,8 +117,8 @@ export class BotWsClient {
     return true;
   }
 
-  joinQueue(gameId: string, stake: number): boolean {
-    return this.send('queue.join', { gameId, stake } as QueueJoinPayload);
+  joinQueue(gameId: string, stake: number, timeControlId?: string): boolean {
+    return this.send('queue.join', { gameId, stake, ...(timeControlId ? { timeControlId } : {}) } as QueueJoinPayload);
   }
 
   leaveQueue(gameId: string): boolean {

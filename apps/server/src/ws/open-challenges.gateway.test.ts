@@ -259,6 +259,50 @@ describe('OC8 — open-challenges feed over the WS gateway', () => {
     // Escrow refunded by the sweep — alice is whole again (1000 grant).
     expect(services.ledger.getBalance(aliceId)).toBe(1000);
   });
+
+  it('chess time control: a resting bet carries its control on the feed (default when omitted)', async () => {
+    const bob = await openSocket(port, bobToken);
+    sockets.push(bob);
+    bob.send('challenges.subscribe', { gameId: 'chess' });
+    await bob.waitFor('challenges.list');
+
+    // Alice posts a chess bet WITHOUT a control → the server resolves the chess default (rapid10).
+    const alice = await openSocket(port, aliceToken);
+    sockets.push(alice);
+    alice.send('queue.join', { gameId: 'chess', stake: 10 });
+    const upd = (await bob.waitFor('challenges.update')).payload as ChallengesUpdatePayload;
+    expect(upd.added!.timeControlId).toBe('rapid10');
+  });
+
+  it('chess time control: two clients on the same stake + control match into a clocked game', async () => {
+    const alice = await openSocket(port, aliceToken);
+    const carol = await openSocket(port, (await registerExtra(app, 'carol')).token);
+    sockets.push(alice, carol);
+
+    alice.send('queue.join', { gameId: 'chess', stake: 10, timeControlId: 'rapid10' });
+    await alice.waitFor('queue.waiting');
+    carol.send('queue.join', { gameId: 'chess', stake: 10, timeControlId: 'rapid10' });
+
+    const aStart = (await alice.waitFor('match.start')).payload as MatchStartPayload;
+    await carol.waitFor('match.start');
+    // The redacted chess state carries both clocks at the chosen control's budget (10 min).
+    const clock = (aStart.state as { clock: { timeControlId: string; remainingMs: Record<string, number> } }).clock;
+    expect(clock.timeControlId).toBe('rapid10');
+    expect(Object.values(clock.remainingMs)).toEqual([600_000, 600_000]);
+  });
+
+  it('chess time control: a different control does NOT pair (stays waiting)', async () => {
+    const alice = await openSocket(port, aliceToken);
+    const carol = await openSocket(port, (await registerExtra(app, 'carol')).token);
+    sockets.push(alice, carol);
+
+    alice.send('queue.join', { gameId: 'chess', stake: 10, timeControlId: 'rapid10' });
+    await alice.waitFor('queue.waiting');
+    carol.send('queue.join', { gameId: 'chess', stake: 10, timeControlId: 'blitz5' });
+    // Different control → separate pool → carol also rests (no match.start).
+    const carolWaiting = (await carol.waitFor('queue.waiting')).payload as QueueWaitingPayload;
+    expect(carolWaiting.matchId).toBeTruthy();
+  });
 });
 
 async function registerExtra(app: FastifyInstance, username: string) {

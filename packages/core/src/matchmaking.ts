@@ -1,6 +1,6 @@
 import { randomUUID, randomBytes } from 'node:crypto';
 import type { GameModule, GameState, LedgerEntry, PlayerId, Rng, Move, ApplyResult, Outcome, OpenChallenge, PlayerClocks } from '@rapidclash/shared';
-import { IllegalMove } from '@rapidclash/shared';
+import { IllegalMove, UNTIMED_TIME_CONTROL } from '@rapidclash/shared';
 import type { Ledger } from './ledger.js';
 import type { MatchHistory } from './match-history.js';
 import type { UsernameLookup } from './identity.js';
@@ -57,9 +57,12 @@ function seedTimeControl(
   mod: GameModule,
   players: [PlayerId, PlayerId],
   now: number,
+  timeControlId: string,
 ): void {
   const tc = mod.meta.timeControl!;
-  const opt = tc.options.find((o) => o.id === tc.defaultId) ?? tc.options[0];
+  const opt = tc.options.find((o) => o.id === timeControlId)
+    ?? tc.options.find((o) => o.id === tc.defaultId)
+    ?? tc.options[0];
   const active = players.find((p) => mod.legalMoves(state, p).length > 0) ?? null;
   const clock: PlayerClocks = {
     remainingMs: { [players[0]]: opt.baseMs, [players[1]]: opt.baseMs },
@@ -70,6 +73,22 @@ function seedTimeControl(
   (state as { clock?: PlayerClocks }).clock = clock;
 }
 
+/**
+ * Resolve the effective time-control id a join should pair on. Untimed games are forced to the
+ * 'none' sentinel (any requested value ignored). For a game with a declared `timeControl`:
+ * an omitted or 'none' request → the game's default; an explicit id is validated against the
+ * declared options (throws RangeError if unknown). Generic — no game-id branch.
+ */
+function resolveTimeControl(mod: GameModule, requested?: string): string {
+  if (!usesTimeControl(mod)) return UNTIMED_TIME_CONTROL;
+  const tc = mod.meta.timeControl!;
+  if (requested === undefined || requested === UNTIMED_TIME_CONTROL) return tc.defaultId;
+  if (!tc.options.some((o) => o.id === requested)) {
+    throw new RangeError(`Unknown time control "${requested}" for game "${mod.meta.id}"`);
+  }
+  return requested;
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface QueueEntry {
@@ -78,6 +97,8 @@ interface QueueEntry {
   matchId: string;
   gameId: string;
   stake: number;
+  /** The resolved control this entry pairs on ('none' for untimed games). Part of the FIFO key. */
+  timeControlId: string;
   since: number;
   /** since + TTL. Server-authoritative; uniform across bets so oldest-first ≡ soonest-to-expire (OC9). */
   expiresAt: number;
@@ -88,6 +109,8 @@ export interface JoinWaiting {
   matchId: string;
   since: number;
   expiresAt: number;
+  /** The resolved control this resting bet pairs on ('none' for untimed games). */
+  timeControlId: string;
 }
 
 export interface JoinMatched {
@@ -210,7 +233,10 @@ export interface MatchmakingOptions {
 }
 
 export interface Matchmaking {
-  joinQueue(playerId: PlayerId, gameId: string, stake: number): JoinQueueResult;
+  /** `timeControlId` selects the pairing control (chess). Omitted/'none' → the game's default
+   *  (or 'none' for untimed games); an explicit unknown id throws. Pairing is on
+   *  (game, stake, time-control). */
+  joinQueue(playerId: PlayerId, gameId: string, stake: number, timeControlId?: string): JoinQueueResult;
   leaveQueue(playerId: PlayerId, gameId: string, stake: number): LedgerEntry;
   /** Atomic specific-claim of a resting bet (OC3). Escrow on success only; throws ChallengeError on refusal. */
   takeChallenge(takerId: PlayerId, matchId: string): JoinMatched;
@@ -281,7 +307,7 @@ export function createMatchmaking(
 
   /** Remove a resting entry from every index in one synchronous step (the claim/sweep primitive). */
   function removeEntry(entry: QueueEntry): void {
-    const key = queueKey(entry.gameId, entry.stake);
+    const key = queueKey(entry.gameId, entry.stake, entry.timeControlId);
     const q = queues.get(key);
     if (q) {
       const idx = q.indexOf(entry);
@@ -298,8 +324,8 @@ export function createMatchmaking(
   // Completed matches (terminal, settled)
   const completed = new Map<string, CompletedMatch>();
 
-  function queueKey(gameId: string, stake: number): string {
-    return `${gameId}:${stake}`;
+  function queueKey(gameId: string, stake: number, timeControlId: string): string {
+    return `${gameId}:${stake}:${timeControlId}`;
   }
 
   /**
@@ -337,7 +363,7 @@ export function createMatchmaking(
     match.playerDeadlines = deadlines;
   }
 
-  function joinQueue(playerId: PlayerId, gameId: string, stake: number): JoinQueueResult {
+  function joinQueue(playerId: PlayerId, gameId: string, stake: number, timeControlId?: string): JoinQueueResult {
     const mod = moduleByGame.get(gameId);
     if (!mod) throw new Error(`Unknown gameId: ${gameId}`);
 
@@ -353,7 +379,9 @@ export function createMatchmaking(
       throw new Error(`Insufficient balance: have ${balance}, need ${stake}`);
     }
 
-    const key = queueKey(gameId, stake);
+    // Resolve + validate the pairing control, then pair on (game, stake, time-control).
+    const tcId = resolveTimeControl(mod, timeControlId);
+    const key = queueKey(gameId, stake, tcId);
     const queue = queues.get(key) ?? [];
 
     // Is there already a waiting player?
@@ -385,7 +413,8 @@ export function createMatchmaking(
         deadlineAt: nowFn() + turnTimeoutMs,
       };
       matches.set(matchId, record);
-      if (usesTimeControl(mod)) seedTimeControl(record.state, mod, record.players, nowFn());
+      // Both players queued under the same key → the same control (the waiter's intrinsic one).
+      if (usesTimeControl(mod)) seedTimeControl(record.state, mod, record.players, nowFn(), waiter.timeControlId);
       if (hasPerPlayerClock(mod)) refreshPlayerTimers(record, mod, nowFn());
 
       return { status: 'matched', matchId, opponentId: waiter.playerId, initialState };
@@ -397,12 +426,12 @@ export function createMatchmaking(
 
     const since = nowFn();
     const expiresAt = since + ttlMs;
-    const entry: QueueEntry = { playerId, matchId, gameId, stake, since, expiresAt };
+    const entry: QueueEntry = { playerId, matchId, gameId, stake, timeControlId: tcId, since, expiresAt };
     queues.set(key, [...(queues.get(key) ?? []), entry]);
     playerEntry.set(`${playerId}:${gameId}`, entry);
     entryByMatchId.set(matchId, entry);
 
-    return { status: 'waiting', matchId, since, expiresAt };
+    return { status: 'waiting', matchId, since, expiresAt, timeControlId: tcId };
   }
 
   function leaveQueue(playerId: PlayerId, gameId: string, stake: number): LedgerEntry {
@@ -465,7 +494,8 @@ export function createMatchmaking(
       deadlineAt: nowFn() + turnTimeoutMs,
     };
     matches.set(matchId, record);
-    if (usesTimeControl(mod)) seedTimeControl(record.state, mod, record.players, nowFn());
+    // The control is intrinsic to the resting challenge — taking it inherits the owner's.
+    if (usesTimeControl(mod)) seedTimeControl(record.state, mod, record.players, nowFn(), entry.timeControlId);
     if (hasPerPlayerClock(mod)) refreshPlayerTimers(record, mod, nowFn());
 
     return { status: 'matched', matchId, opponentId: ownerId, initialState };
@@ -494,6 +524,7 @@ export function createMatchmaking(
       stake: e.stake,
       openedAt: e.since,
       expiresAt: e.expiresAt,
+      timeControlId: e.timeControlId,
     }));
 
     return { entries, more: Math.max(0, eligible.length - listCap) };
