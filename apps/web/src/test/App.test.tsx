@@ -38,14 +38,14 @@ describe('App — own alias persistence + logout (#34)', () => {
   it('restores the alias from storage on reload and clears it on logout', async () => {
     render(<App />);
 
-    // A reload lands on the Home hub; the wallet (alias + Sign out) is reachable via the chip.
+    // A reload lands on the Home hub; the wallet chip opens the Profile hub (alias + Log out).
     await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('hub-wallet-chip'));
     await waitFor(() => {
-      expect(screen.getByTestId('signed-in-as').textContent).toBe('Signed in as alice');
+      expect(screen.getByTestId('profile-username').textContent).toBe('alice');
     });
 
-    fireEvent.click(screen.getByText('Sign out'));
+    fireEvent.click(screen.getByTestId('profile-logout'));
 
     // Logout drops the stored alias in lockstep with the token/playerId…
     expect(localStorage.getItem('rc_username')).toBeNull();
