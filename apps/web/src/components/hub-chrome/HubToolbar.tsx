@@ -21,7 +21,7 @@ export function HubToolbar({ onGames, onAccount }: Props) {
   return (
     <nav
       aria-label="Primary"
-      className="z-20 flex shrink-0 items-stretch justify-around border-t border-border bg-background/95 px-2 py-1.5 backdrop-blur"
+      className="z-20 flex shrink-0 items-stretch justify-around mx-auto w-full max-w-md border-t border-border bg-background/95 px-2 py-1.5 backdrop-blur"
     >
       <ToolbarButton icon={navMenu} label="Menu" onClick={onGames} />
       <ToolbarButton icon={navGames} label="Games" onClick={onGames} />

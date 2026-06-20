@@ -18,9 +18,9 @@ interface Props {
  */
 export function HubRibbon({ balance, onLogo, onWallet }: Props) {
   return (
-    <header className="z-20 flex shrink-0 items-center justify-between border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
+    <header className="z-20 flex shrink-0 items-center justify-between mx-auto w-full max-w-md border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
       <button type="button" onClick={onLogo} aria-label="RapidClash — game list" className="flex items-center">
-        <img src={logoUrl} alt="RapidClash" className="h-7 w-auto" />
+        <img src={logoUrl} alt="RapidClash" className="h-12 w-auto" />
       </button>
 
       <button
