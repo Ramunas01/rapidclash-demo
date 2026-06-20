@@ -16,19 +16,20 @@ import { ResultScreen } from './screens/Result.js';
 import { LeaderboardScreen } from './screens/Leaderboard.js';
 import { CoinflipHubScreen } from './screens/CoinflipHub.js';
 import { RpsHubScreen } from './screens/RpsHub.js';
+import { BlackjackHubScreen } from './screens/BlackjackHub.js';
 import { HomeHubScreen } from './screens/HomeHub.js';
 import { ProfileHubScreen } from './screens/ProfileHub.js';
 
-type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub';
+type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub';
 
 const RECONNECT_NOTICE = 'Connection lost — reconnecting. Try again in a moment.';
 
 /** Games that play through the shared one-screen Game hub (vs the multi-screen flow).
  *  Each maps to a `<gameId>-hub` screen. Adding a game here wires it to the hub. */
-const HUB_GAMES = new Set(['coinflip', 'rps']);
+const HUB_GAMES = new Set(['coinflip', 'rps', 'blackjack']);
 const hubScreenFor = (gameId: string | null | undefined): Screen | null =>
   gameId && HUB_GAMES.has(gameId) ? (`${gameId}-hub` as Screen) : null;
-const isGameHubScreen = (s: Screen): boolean => s === 'coinflip-hub' || s === 'rps-hub';
+const isGameHubScreen = (s: Screen): boolean => s === 'coinflip-hub' || s === 'rps-hub' || s === 'blackjack-hub';
 
 export interface RpsView {
   players: [string, string];
@@ -472,8 +473,10 @@ export function App() {
       case 'game-list':
         return <GameListScreen token={token!} onSelect={handleSelectGame} onBack={goToWallet} />;
       case 'coinflip-hub':
-      case 'rps-hub': {
-        const HubScreen = screen === 'rps-hub' ? RpsHubScreen : CoinflipHubScreen;
+      case 'rps-hub':
+      case 'blackjack-hub': {
+        const HubScreen =
+          screen === 'rps-hub' ? RpsHubScreen : screen === 'blackjack-hub' ? BlackjackHubScreen : CoinflipHubScreen;
         return <HubScreen
           token={token!}
           playerId={playerId}
