@@ -42,8 +42,9 @@ sanitizations are mandatory (re-skin principle + `CHARTER.md`), not optional pol
   Render integer credits with `formatCredits` (no `$`, no decimal cents).
 - **Related games (§5): drop the house-edge tiles.** The mock's tiles are **Blackjack, Limbo 500x,
   Crash** — **forbidden by the PvP-only corollary to invariant #1** (`CHARTER.md`). Do **not**
-  reproduce them. The ribbon is data-driven from `/games` (registered PvP games only); roadmap
-  tiles = Chess / duel-redefined Baccarat-Blackjack only.
+  reproduce them. The ribbon is data-driven from `/games` (registered PvP games only); roadmap /
+  coming-soon tiles may be **any PvP-redefined game** (shown coming-soon until it has a confirmed
+  two-player spec), **never a house-form route**.
 - **No gambling-trope framing.** Drop "provably fair", "500x"/multiplier copy, and any crypto /
   real-money cues. This is a play-money investor demo.
 - **Social links out of scope.** The mock's Discord / Telegram buttons + footer socials are not
@@ -165,9 +166,12 @@ wins** — but it matches the **owner's** stake, not the player's armed amount:
 The **PvP-only corollary to invariant #1** (`CHARTER.md`). The related-games ribbon (5) is data-driven from `/games`, which is
 safe (only registered PvP games come back). But the **tile-art pack from the mock includes
 house-edge multiplier games — Limbo, Crash, Keno, Hilo — which have no human opponent and cannot
-exist on a "never the house" platform.** Neither the related-games ribbon nor the game-list roster
-may ever feature them. Roadmap/"coming soon" tiles must be **PvP games only** (Chess, and the
-duel-redefined Baccarat/Blackjack). Do not let these drift back in via the asset pack.
+exist on a "never the house" platform in that form.** They may appear only as dimmed, non-playable
+**coming-soon** tiles — never as a playable **house-form route**, and never in the live
+related-games ribbon (which stays registered-PvP only). Roadmap/"coming soon" tiles may be **any
+PvP-redefined game** (coming-soon until it has a confirmed two-player spec — see
+`GAME_REDEFINITION.md`), **never a house-form route**. Do not let the multiplier framing (500x,
+etc.) drift back in via the asset pack.
 
 *(Now recorded as the PvP-only corollary to invariant #1 in `CHARTER.md` — so it governs every
 future game decision, not just this hub.)*

@@ -1,43 +1,83 @@
-# Screens
+# Screens — the hub vocabulary (v2)
 
-The canonical, named inventory of every screen — the shared vocabulary between designers and developers. A design change request names a screen here; an implementation PR targets the same name. Screen IDs match the `Screen` states in `apps/web/src/App.tsx`, so a name in Figma maps to exactly one place in code.
+The canonical, named inventory of every **hub**, its **regions**, and its **states** — the shared vocabulary between designers and developers. A design request names something here; an implementation PR targets the same name. IDs match the surfaces and state machine in `apps/web` (the `CoinflipHub` template + `hub-chrome`), so a name in Figma maps to exactly one place in code.
 
-> **v1 vs v2.** The multi-screen layout below is **v1** — the recoverable fallback draft (preserved at tag `ui-v1-multiscreen` / branch `ui/v1-multiscreen-archive`). The target is **v2**: compact functionality **hubs** that regroup these screens onto a few surfaces with in-place state transitions. See `HUB_TRANSITION.md`. v1 is never deleted, just superseded.
+> **v1 vs v2.** The old flat multi-screen layout is **v1** — the recoverable fallback draft at tag `ui-v1-multiscreen` / branch `ui/v1-multiscreen-archive`. **v2** (below) regroups those screens into compact **hubs** with in-place state transitions. See `HUB_TRANSITION.md` and `HUB_TRANSITION_ANALYSIS.md`. v1 is never deleted, just superseded.
+
+## Three levels of vocabulary
+
+- **Hub** — a top-level surface a player lives on (`home-hub`, `game-hub`, `profile-hub`). The thing a designer composes.
+- **Region** — a named area inside a hub (`home-hub/grid`, `game-hub/arena`). The thing a design request actually changes. Written `hub/region`.
+- **State** — an in-place phase of the `game-hub` lifecycle (`idle`, `waiting`, `in-match`, `result`). No route navigation between them. Written `region @ state` when a region looks different per state — e.g. `game-hub:coinflip/arena @ in-match`.
+
+`auth-gate` is the one exception — an **interstitial**, not a hub: a register/login step that intercepts the *commit-to-play* action when logged out, then resumes the intent (see Flow).
 
 ## Flow
 
 ```
-auth ──login──▶ wallet ──▶ game-list ──pick game──▶ stake-entry ──▶ lobby ──match found──▶ play / coinflip-play ──match end──▶ result ──▶ game-list
-                                                       │  (open-challenges feed lives here)
-                                                       └─ tap a challenge ──▶ (matched immediately)
-   leaderboard is reachable from nav (wallet / game-list).
+Entry (anyone, logged out)
+      │
+      ▼
+  home-hub ──tap a tile──▶ game-hub ──PLAY / JOIN──▶ [auth-gate if logged out] ──resume──▶ game-hub @ in-match ──▶ @ result
+      │                     (browse · pick stake)        (register / login)                                          │
+      └──nav: account──▶ profile-hub (auth-gated)                                                        result → idle (next round)
 ```
 
-## Inventory
+The wall falls at the **commit to play** (`PLAY`/`JOIN`), never at the door. Browsing tiles, opening a game hub, seeing the board/coin, and picking a stake are all open to a logged-out visitor. Logged-in players pass straight through `auth-gate`. See the deferred-auth decision in `HUB_TRANSITION.md`.
 
-| ID | Name | Purpose | Key data shown | Status |
-|----|------|---------|----------------|--------|
-| `auth` | Sign in / Register | Enter the platform | alias, (play-money) starting balance on register | Functional; design refinement open |
-| `wallet` | Wallet / Home | Landing after login; balance + recent activity | balance, recent ledger entries (play-money) | Functional; design refinement open |
-| `game-list` | Game List | Choose a game; show the platform's breadth | live games (RPS, Coinflip) + coming-soon tiles | Functional; **tiles are prime design real-estate** |
-| `stake-entry` | Stake Entry | Set a stake **and** see open challenges to join | stake input; open-challenges feed (owner, stake, countdown) | Functional; design refinement open |
-| `open-challenges` | Open Challenges (embedded in `stake-entry`) | The "find a live opponent now" list | per-challenge owner, stake, expiry countdown | Functional; design refinement open |
-| `lobby` | Lobby / Waiting | Wait for an opponent; show own bet's countdown | own stake, expiry countdown, "auto-refunds" copy | Functional; design refinement open |
-| `play` | Play — RPS | Rock-Paper-Scissors match | own choice, opponent revealed only at end | Functional; design refinement open |
-| `coinflip-play` | Play — Coinflip | Coinflip match (both players choose a side) | own side choice; flip/result only at end | Functional; design refinement open |
-| `result` | Result | Win / lose / draw + wallet delta | outcome, settlement amount, confetti on win | Functional; design refinement open |
-| `leaderboard` | Leaderboard | Rankings per game | per-game standings (`win_rate` or `net_winnings`) | Functional; design refinement open |
+## Hub inventory
 
-## Coming-soon tiles (design-only for the demo)
+### `home-hub` — the landing (default route for everyone)
 
-Shown on `game-list` as polished, non-playable tiles — they sell the roadmap to investors. Designers can produce all of these as art **now**, independent of engineering:
+| Region | Purpose | Data source (real) |
+|--------|---------|--------------------|
+| `home-hub/ribbon` | Logo + wallet chip (or **Sign in** when logged out — never a fake balance) | `api.wallet` when authed |
+| `home-hub/hero` | Promo carousel — static, play-money copy only | static assets |
+| `home-hub/grid` | Game tiles + group tabs (All/Originals/Classics/Events) + Find/Filter/Sort — **the prime design real-estate** | `api.games` → `GameMeta[]` (public) |
+| `home-hub/ticker` | "Open Games" live feed; tap JOIN → that game's hub | open-challenges feed (authed); teaser when logged out |
+| `home-hub/leaders` | Leaderboard-lite | `GET /leaderboard/:gameId` (public) |
+| `home-hub/footer` | Footer | static |
+| `home-hub/nav` | Bottom toolbar: menu, games, account → `profile-hub`; rewards*/chat* = inactive "coming soon" | — |
 
-`Chess`, `Baccarat`, `Blackjack`, `Dice`, `Mines`, `Poker`, `Roulette`.
+### `game-hub` — one template, one instance per game
 
-Two of these have engineering implications worth knowing:
-- **Chess** — standard rules, so design (board, pieces, move/capture animations) can proceed in full now; engineering builds the logic in parallel.
-- **Blackjack** — its head-to-head, no-house ruleset is **not yet decided** (open spec in `CHARTER.md`). Until that's settled, Blackjack is a coming-soon tile only — its play screen can't be designed in earnest because the mechanic determines the layout.
+Instances: `game-hub:coinflip`, `:rps`, `:blackjack`, `:mines`, `:chess`. Same regions, per-game arena.
+
+| Region | Purpose | Data source (real) |
+|--------|---------|--------------------|
+| `game-hub/arena` | The play surface (coin / cards / board / RPS); opponent info hidden until `match.end` | `match.start/state/your_turn/end`; per-game redacted view |
+| `game-hub/stake` | Bet-amount selector (arms the stake) | local selection |
+| `game-hub/play` | The green **PLAY** button (post a challenge) | `ws.joinQueue` |
+| `game-hub/challenges` | This game's open challenges; rows say **JOIN** | `ws.subscribeChallenges` → `OpenChallenge[]` |
+| `game-hub/related` | Related-games rail (**PvP games only**) | `api.games` |
+| `game-hub/result` | Brief self-dismissing result overlay (lands wherever scrolled) | `match.end` |
+
+**States** (in place, over WS events — no navigation): `idle` (browse, arena greyed) → `waiting` (own challenge resting; joining others disabled) → `in-match` (`match.start` activates the arena) → `result` (overlay, wallet updates) → back to `idle`. For internal-replay games (Blackjack/Mines draws), the replay loops in place; only the decisive result shows the overlay. See `COINFLIP_HUB.md` for the reference instance.
+
+### `profile-hub` — account (auth-gated)
+
+| Region | Purpose | Data source (real) |
+|--------|---------|--------------------|
+| `profile-hub/account` | Alias + logout | `AuthResponse` |
+| `profile-hub/wallet` | Balance + ledger (`¢`) | `api.wallet` → `WalletResponse` / `LedgerEntry[]` |
+| `profile-hub/leaders` | Leaderboard | `GET /leaderboard/:gameId` |
+
+### `auth-gate` — interstitial (not a hub)
+
+Register/login step over the current hub, triggered by `PLAY`/`JOIN`/account when logged out. Captures the intended action (`{gameId, stake}` or a challenge `matchId`), then on success **resumes** it — a new registrant gets the 1000-`¢` grant and lands ready to play. If the tapped challenge is gone by then, drop into that `game-hub` with the stake pre-armed (don't error).
+
+## `home-hub/grid` — taxonomy, controls, roster
+
+**Group tabs** switch what the grid shows:
+- **All** — every tile.
+- **Originals** — all PvP games (live + coming-soon) *except* chess; the platform's signature, all "redesigned for two players."
+- **Classics** — traditional games: Chess today, more later.
+- **Events** — a Coin Flip **tournament announcement** banner (1 Sept 2026), framed as an invitation; play-money, no prize/real-money copy.
+
+**Controls** (design fidelity > exact behavior, client-side over the tile list): **Find** (looking-glass → text field → substring filter), **Filter** (Card-games / Table-games / Logic-games), **Sort** (A–Z / Z–A / by popularity; popularity = a simple demo metric).
+
+**Roster.** Live PvP: **RPS, Coinflip, Chess, Blackjack, Mines**. **Coming soon — PvP redefinition pending** (dimmed, non-playable tiles): **Baccarat, Limbo, Crash, Keno, Hilo, Dice, Roulette**. Per the conversion thesis (`CHARTER.md` / `GAME_REDEFINITION.md`), the whole house canon is a redefinition target — each becomes playable only once it has a confirmed two-player spec; none is ever shown in house form. Playable tiles are data-driven from `/games`; coming-soon tiles are static art, subtly dimmed (no verbose text).
 
 ## How to request a change
 
-Designers: reference the screen **ID** above + a link to the Figma frame + a one-line note of what changes (and any new assets). The PM turns that into an issue against the named screen; Claude Code re-skins it; the owner reviews the result against the Figma frame. No "which screen do you mean" ambiguity.
+Designers: reference the **`hub/region`** (and `@ state` if it differs by state) + a Figma frame link + a one-line note of what changes and any new assets. The PM turns that into an issue against the named region; Claude Code restyles it; the owner reviews against the frame. No "which screen do you mean" ambiguity.
