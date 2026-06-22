@@ -113,6 +113,23 @@ describe('HomeHubScreen', () => {
     await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
     expect(container.textContent ?? '').not.toMatch(/\$/);
   });
+
+  it('footer: inert Discord/X/Telegram social row, 18+ kept, Affiliate out, no fake counts', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    const footer = await screen.findByTestId('home-footer');
+    // Social row restored (frame 1:1).
+    const discord = within(footer).getByTestId('home-social-discord');
+    expect(discord).toBeInTheDocument();
+    expect(within(footer).getByTestId('home-social-x')).toBeInTheDocument();
+    expect(within(footer).getByTestId('home-social-telegram')).toBeInTheDocument();
+    // Inert — not a real link/button, marked aria-disabled (no fabricated reach).
+    expect(discord.tagName).not.toBe('A');
+    expect(discord.tagName).not.toBe('BUTTON');
+    expect(discord).toHaveAttribute('aria-disabled', 'true');
+    expect(footer).not.toHaveTextContent(/affiliate/i); // owner: Affiliate stays OUT
+    expect(footer).toHaveTextContent(/18\+/); // responsibility section stays
+    expect(footer.textContent ?? '').not.toMatch(/\$/);
+  });
 });
 
 describe('HomeHubScreen (logged out)', () => {

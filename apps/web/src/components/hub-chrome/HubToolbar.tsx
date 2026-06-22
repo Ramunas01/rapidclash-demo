@@ -19,7 +19,7 @@ interface Props {
  */
 export function HubToolbar({ onGames, onAccount, active = 'games' }: Props) {
   return (
-    <nav aria-label="Primary" className="z-20 mx-auto w-full max-w-md shrink-0 bg-transparent px-3 pb-2 pt-1">
+    <nav aria-label="Primary" className="fixed bottom-0 left-1/2 z-20 w-full max-w-md -translate-x-1/2 bg-transparent px-3 pb-2 pt-1">
       <div className="flex items-center justify-between rounded-[26px] bg-surface px-1.5 py-2.5">
         <ToolbarItem label="Menu" active={active === 'menu'} onClick={onGames} icon={ICON_MENU} />
         <ToolbarItem label="Games" active={active === 'games'} onClick={onGames} icon={ICON_GAMES} />

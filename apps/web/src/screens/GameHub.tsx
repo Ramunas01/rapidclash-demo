@@ -10,6 +10,7 @@ import { formatStat } from './Leaderboard.js';
 import { cn } from '@/lib/utils';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
+import { HUB_SHELL, HUB_BODY } from '../components/hub-chrome/layout.js';
 import rivalBanner from '../assets/banners/banner-Bring-the-rival.png';
 import coinflipArt from '../assets/games/coinflip.webp';
 import rpsArt from '../assets/games/rps.webp';
@@ -212,11 +213,11 @@ export function GameHub(props: GameHubProps) {
   }, [loggedIn]);
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-background text-foreground">
+    <div className={HUB_SHELL}>
       <HubRibbon balance={liveBalance} onLogo={onOpenGameList} onWallet={onOpenWallet} loggedIn={loggedIn} />
 
-      <main className="flex-1 overflow-y-auto" data-testid="hub-body">
-        <div className="mx-auto flex max-w-md flex-col gap-4 px-4 py-4">
+      <main data-testid="hub-body">
+        <div className={cn('mx-auto flex max-w-md flex-col gap-4 px-4', HUB_BODY)}>
           {/* 1 — Game area (per-game slot). Greyed in Idle/Waiting; live board In-match. */}
           <section data-testid="hub-section-game" aria-label={gameName} className="rounded-2xl border border-border bg-card p-4">
             {renderGameArea({ phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, playerId, opponentId, username })}
@@ -600,7 +601,7 @@ function ResultOverlay({
 
   return (
     <div
-      className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 px-6 backdrop-blur-sm"
+      className="fixed inset-0 z-30 flex items-center justify-center bg-black/70 px-6 backdrop-blur-sm"
       role="dialog"
       aria-label="Match result"
       data-testid="hub-result-overlay"

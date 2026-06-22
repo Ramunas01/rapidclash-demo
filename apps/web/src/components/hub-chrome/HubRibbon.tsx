@@ -19,7 +19,7 @@ interface Props {
  */
 export function HubRibbon({ balance, onLogo, onWallet, loggedIn = true }: Props) {
   return (
-    <header className="z-20 mx-auto flex w-full max-w-md shrink-0 items-center justify-between bg-transparent px-4">
+    <header className="fixed left-1/2 top-0 z-20 flex w-full max-w-md -translate-x-1/2 items-center justify-between bg-transparent px-4">
       <button type="button" onClick={onLogo} aria-label="RapidClash — home" className="-ml-3 flex items-center">
         <img src={logoUrl} alt="RapidClash" className="h-24 w-auto object-contain" />
       </button>

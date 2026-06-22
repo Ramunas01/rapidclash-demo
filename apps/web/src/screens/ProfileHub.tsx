@@ -18,6 +18,7 @@ import { formatStat } from './Leaderboard.js';
 import { cn } from '@/lib/utils';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
+import { HUB_SHELL, HUB_BODY } from '../components/hub-chrome/layout.js';
 
 interface Props {
   token: string;
@@ -100,11 +101,11 @@ export function ProfileHubScreen({ token, username, balance, onLogout, onHome, o
   const gradient = useMemo(() => gradientFor(username), [username]);
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-background text-foreground">
+    <div className={HUB_SHELL}>
       <HubRibbon balance={liveBalance} onLogo={onHome} onWallet={onOpenProfile} />
 
-      <main className="flex-1 overflow-y-auto" data-testid="profile-hub">
-        <div className="mx-auto flex max-w-md flex-col gap-5 px-4 py-4">
+      <main data-testid="profile-hub">
+        <div className={cn('mx-auto flex max-w-md flex-col gap-5 px-4', HUB_BODY)}>
           {/* 1 — Profile header: avatar + alias + log out. */}
           <section data-testid="profile-header" className="flex items-center gap-3 rounded-2xl border border-border bg-card p-4">
             <div
