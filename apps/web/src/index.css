@@ -124,3 +124,21 @@
     display: none; /* Chrome/Safari */
   }
 }
+
+/* Open-games ticker auto-scroll (home-hub). Rows are duplicated so the -50% travel loops
+ * seamlessly; pauses on hover, and respects reduced-motion. */
+@keyframes rc-ticker-scroll {
+  from { transform: translateY(0); }
+  to { transform: translateY(-50%); }
+}
+.rc-ticker-anim {
+  animation: rc-ticker-scroll 22s linear infinite;
+}
+.rc-ticker-anim:hover {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rc-ticker-anim {
+    animation: none;
+  }
+}

@@ -173,7 +173,7 @@ export function ProfileHubScreen({ token, username, balance, onLogout, onHome, o
         </div>
       </main>
 
-      <HubToolbar onGames={onHome} onAccount={onOpenProfile} />
+      <HubToolbar onGames={onHome} onAccount={onOpenProfile} active="account" />
     </div>
   );
 }
