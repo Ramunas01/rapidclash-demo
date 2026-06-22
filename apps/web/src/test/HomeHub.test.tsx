@@ -113,6 +113,23 @@ describe('HomeHubScreen', () => {
     await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
     expect(container.textContent ?? '').not.toMatch(/\$/);
   });
+
+  it('footer: inert Discord/X/Telegram social row, 18+ kept, Affiliate out, no fake counts', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    const footer = await screen.findByTestId('home-footer');
+    // Social row restored (frame 1:1).
+    const discord = within(footer).getByTestId('home-social-discord');
+    expect(discord).toBeInTheDocument();
+    expect(within(footer).getByTestId('home-social-x')).toBeInTheDocument();
+    expect(within(footer).getByTestId('home-social-telegram')).toBeInTheDocument();
+    // Inert — not a real link/button, marked aria-disabled (no fabricated reach).
+    expect(discord.tagName).not.toBe('A');
+    expect(discord.tagName).not.toBe('BUTTON');
+    expect(discord).toHaveAttribute('aria-disabled', 'true');
+    expect(footer).not.toHaveTextContent(/affiliate/i); // owner: Affiliate stays OUT
+    expect(footer).toHaveTextContent(/18\+/); // responsibility section stays
+    expect(footer.textContent ?? '').not.toMatch(/\$/);
+  });
 });
 
 describe('HomeHubScreen (logged out)', () => {
@@ -192,5 +209,70 @@ describe('HomeHubScreen (logged out)', () => {
     fireEvent.click(screen.getByTestId('home-ticker-signin'));
     fireEvent.click(screen.getByTestId('hub-signin-chip'));
     expect(onOpenWallet).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('HomeHubScreen — grid taxonomy + controls (design frame)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/open-challenges')) return { ok: true, json: async () => [] } as Response;
+      if (u.includes('/games')) return { ok: true, json: async () => GAMES } as Response;
+      if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
+      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+    }));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('Originals excludes chess; Classics shows only chess', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('home-cat-originals'));
+    expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument();
+    expect(screen.getByTestId('home-tile-mines')).toBeInTheDocument();
+    expect(screen.queryByTestId('home-tile-chess')).toBeNull(); // chess is a Classic, not an Original
+
+    fireEvent.click(screen.getByTestId('home-cat-classics'));
+    expect(screen.getByTestId('home-tile-chess')).toBeInTheDocument();
+    expect(screen.queryByTestId('home-tile-coinflip')).toBeNull();
+    expect(screen.queryByTestId('home-tile-mines')).toBeNull();
+  });
+
+  it('Events shows the Coin Flip tournament announcement (1 Sept 2026) — no $ / prize copy', async () => {
+    const { container } = render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('home-cat-events'));
+    const events = screen.getByTestId('home-events');
+    expect(events.textContent).toMatch(/Coin Flip Showdown/i);
+    expect(events.textContent).toMatch(/1 September 2026/i);
+    // The grid of tiles is replaced by the announcement.
+    expect(screen.queryByTestId('home-tile-coinflip')).toBeNull();
+    // Play-money only — no real-money / prize-pool copy.
+    expect(container.textContent ?? '').not.toMatch(/\$/);
+    expect(events.textContent ?? '').not.toMatch(/prize pool/i);
+  });
+
+  it('Find filters tiles by substring', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('home-find-toggle'));
+    fireEvent.change(screen.getByTestId('home-find-input'), { target: { value: 'che' } });
+    expect(screen.getByTestId('home-tile-chess')).toBeInTheDocument();
+    expect(screen.queryByTestId('home-tile-coinflip')).toBeNull();
+    expect(screen.queryByTestId('home-tile-mines')).toBeNull();
+  });
+
+  it('Filter by game kind narrows the grid (Logic = chess + mines, not coinflip)', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('home-filter'));
+    fireEvent.click(screen.getByTestId('home-filter-opt-logic'));
+    expect(screen.getByTestId('home-tile-chess')).toBeInTheDocument();
+    expect(screen.getByTestId('home-tile-mines')).toBeInTheDocument();
+    expect(screen.queryByTestId('home-tile-coinflip')).toBeNull(); // coinflip is a Table game
   });
 });
