@@ -113,12 +113,33 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
     const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
     rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
-    await waitFor(() => expect(screen.getByTestId('hub-result-overlay')).toBeInTheDocument());
+    // Presentation pacing: the overlay holds a beat (RESULT_HOLD_MS) behind match.end so the
+    // terminal reveal animates first — wait past the hold (real timers).
+    await waitFor(() => expect(screen.getByTestId('hub-result-overlay')).toBeInTheDocument(), { timeout: 4000 });
     expect(screen.getByTestId('hub-result-text').textContent).toContain('You Won');
     expect(screen.getByTestId('hub-result-delta').textContent).toBe('+19¢');
     const reveal = within(screen.getByTestId('hub-result-blackjack'));
     expect(reveal.getByText('20')).toBeInTheDocument();
     expect(reveal.getByText('17')).toBeInTheDocument();
+  });
+
+  it('Pacing: match.end holds the board in-match for a beat before the result overlay', async () => {
+    const terminal = inPlayView({
+      hands: {
+        pid: { cards: [{ rank: 'K', suit: '♠' }, { rank: 'Q', suit: '♥' }], done: true },
+        bob: { cards: [{ rank: '9', suit: '♣' }, { rank: '8', suit: '♦' }], done: true },
+      },
+      winner: 'pid',
+    });
+    const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
+    rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
+    // Immediately after the server ends the match the overlay is NOT shown yet — the board is
+    // still mounted (reveal-hold) and the play panel still reads "Playing…".
+    expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
+    expect(screen.getByTestId('hub-board')).toBeInTheDocument();
+    expect(screen.getByTestId('hub-play').textContent).toMatch(/playing/i);
+    // …then the overlay arrives once the hold elapses.
+    await waitFor(() => expect(screen.getByTestId('hub-result-overlay')).toBeInTheDocument(), { timeout: 4000 });
   });
 
   it('Item 6: Hit/Stand live in the player\'s own slot pill (not on the table)', () => {
