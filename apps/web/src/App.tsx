@@ -347,11 +347,13 @@ export function App() {
           // server-side per-socket, so a new socket needs re-subscribing). Mid-match
           // resume is handled by the socket's own onopen → match.resume.
           setActionNotice(null);
-          if ((screen === 'stake-entry' || isGameHubScreen(screen)) && pendingGameId) {
+          // The legacy stake-entry screen subscribes only its one game.
+          if (screen === 'stake-entry' && pendingGameId) {
             wsRef.current?.subscribeChallenges(pendingGameId);
           }
-          // Home hub's per-socket cross-game subscriptions are lost on a new socket — re-arm them.
-          if (screen === 'home') {
+          // Home AND every Game hub now run the cross-game ticker (per-socket subscriptions are
+          // lost on a new socket) — re-arm the whole tracked set.
+          if (screen === 'home' || isGameHubScreen(screen)) {
             for (const id of homeGamesRef.current) wsRef.current?.subscribeChallenges(id);
           }
           // Resume a captured commit-to-play intent now the socket is open (post-sign-in).
@@ -636,16 +638,15 @@ export function App() {
           lobbyExpired={lobbyExpired}
           lastOutcome={lastOutcome}
           lastSettlement={lastSettlement}
-          challenges={challenges}
-          challengeNotice={challengeNotice}
+          challengesByGame={homeChallenges}
           onPlay={handleJoinQueue}
           onCancel={handleLeaveQueue}
           onRepost={handleRepost}
           onTakeChallenge={handleTakeChallenge}
           onMakeMove={handleMakeMove}
           onForfeit={handleForfeit}
-          onSubscribe={handleSubscribeChallenges}
-          onUnsubscribe={handleUnsubscribeChallenges}
+          onTrackChallenges={handleTrackChallenges}
+          onUntrackChallenges={handleUntrackChallenges}
           onSelectGame={handleSelectGame}
           onOpenWallet={onAccountTap}
           onOpenGameList={goToHome}

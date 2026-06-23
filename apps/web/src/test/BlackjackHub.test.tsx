@@ -13,9 +13,9 @@ function baseProps(over: Partial<Props> = {}): Props {
   return {
     token: 'tok', playerId: 'pid', username: 'me', opponentId: 'bob', balance: 1000,
     currentMatchId: null, gameState: null, legalMoves: [], waitingExpiresAt: null, lobbyExpired: false,
-    lastOutcome: null, lastSettlement: null, challenges: [], challengeNotice: null,
+    lastOutcome: null, lastSettlement: null, challengesByGame: {},
     onPlay: vi.fn(), onCancel: vi.fn(), onRepost: vi.fn(), onTakeChallenge: vi.fn(),
-    onMakeMove: vi.fn(), onForfeit: vi.fn(), onSubscribe: vi.fn(), onUnsubscribe: vi.fn(),
+    onMakeMove: vi.fn(), onForfeit: vi.fn(), onTrackChallenges: vi.fn(), onUntrackChallenges: vi.fn(),
     onSelectGame: vi.fn(), onOpenWallet: vi.fn(), onOpenGameList: vi.fn(), onResultDismiss: vi.fn(),
     ...over,
   };
@@ -52,6 +52,14 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
     fireEvent.click(screen.getByTestId('hub-bet-10'));
     fireEvent.click(screen.getByTestId('hub-play'));
     expect(onPlay).toHaveBeenCalledWith(10);
+  });
+
+  it('Idle board (item 2): the empty olive table shows the "Place your bet and play" prompt', () => {
+    render(<BlackjackHubScreen {...baseProps()} />);
+    const board = screen.getByTestId('hub-board');
+    expect(board.textContent).toMatch(/place your bet and play/i);
+    // No live cards on the empty table.
+    expect(within(board).queryByTestId('card')).toBeNull();
   });
 
   it('In-match: own hand in full, EXACTLY one opponent card + a face-down (redaction)', () => {

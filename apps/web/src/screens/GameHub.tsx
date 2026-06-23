@@ -1,31 +1,22 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import confetti from 'canvas-confetti';
-import { Coins, Trophy, X } from 'lucide-react';
-import type { GameMeta, OpenChallenge, Outcome, SettlementSummary, LeaderboardEntry } from '@rapidclash/shared';
+import { Trophy, X } from 'lucide-react';
+import type { GameMeta, OpenChallenge, Outcome, SettlementSummary } from '@rapidclash/shared';
 import type { GameView } from '../App.js';
 import { api } from '../api.js';
 import { formatCredits, formatClock } from '../format.js';
-import { formatStat } from './Leaderboard.js';
 import { cn } from '@/lib/utils';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
 import { HUB_SHELL, HUB_BODY } from '../components/hub-chrome/layout.js';
-import rivalBanner from '../assets/banners/banner-Bring-the-rival.png';
-import coinflipArt from '../assets/games/coinflip.webp';
-import rpsArt from '../assets/games/rps.webp';
-import chessArt from '../assets/games/chess.webp';
-import blackjackArt from '../assets/games/blackjack.webp';
-import minesArt from '../assets/games/mines.webp';
+import { TILE_ART, COMING_SOON, titleCase } from '../components/hub-shared/tiles.js';
+import { OpenGamesTicker } from '../components/hub-shared/OpenGames.js';
+import { BringARival } from '../components/hub-shared/BringARival.js';
+import { HubFooter } from '../components/hub-shared/HubFooter.js';
 
 /** Bet presets within the shared 1–100 demo range (every demo game's BetRules). Rendered ¢. */
 const BET_PRESETS = [1, 5, 10, 25, 50, 100];
-const MAX_STAKE = 100;
-
-/** Per-game tile art for the related-games rail (only registered PvP games appear). */
-const TILE_ART: Record<string, string> = {
-  coinflip: coinflipArt, rps: rpsArt, chess: chessArt, blackjack: blackjackArt, mines: minesArt,
-};
 
 export type Phase = 'idle' | 'waiting' | 'in-match' | 'result';
 
@@ -57,8 +48,9 @@ export interface GameHubScreenProps {
   lobbyExpired: boolean;
   lastOutcome: Outcome | null;
   lastSettlement: SettlementSummary | null;
-  challenges: OpenChallenge[];
-  challengeNotice: string | null;
+  /** Cross-game open challenges, keyed by gameId (App aggregates every game's feed) — the hub's
+   *  Open Games ticker shows them all, not just this game's (owner decision D2). */
+  challengesByGame: Record<string, OpenChallenge[]>;
   /** Post a challenge at `stake`. `timeControlId` is supplied for games that declare a
    *  time control (chess); omitted for the rest (the App maps it to 'none'). */
   onPlay(stake: number, timeControlId?: string): void;
@@ -67,8 +59,9 @@ export interface GameHubScreenProps {
   onTakeChallenge(matchId: string): void;
   onMakeMove(move: string): void;
   onForfeit(): void;
-  onSubscribe(): void;
-  onUnsubscribe(): void;
+  /** Subscribe/unsubscribe to EVERY game's feed (cross-game ticker). App wraps the WS calls. */
+  onTrackChallenges(gameIds: string[]): void;
+  onUntrackChallenges(): void;
   onSelectGame(meta: GameMeta): void;
   onOpenWallet(): void;
   onOpenGameList(): void;
@@ -103,28 +96,25 @@ function useNow(active: boolean): number {
 }
 
 /**
- * GameHub — the COINFLIP_HUB pattern generalized (HUB_TRANSITION_ANALYSIS): a reusable
- * one-screen Game hub parameterized by game. It owns the generic parts — the sticky chrome,
- * the in-place state machine (Idle → Waiting → In-match → Result over the WS events the App
- * already feeds it), and the generic sections (bet selector, PLAY, open-challenges, related
- * games, recent clashes, result overlay, footer). The game-specific in-match UI is supplied
- * as the `renderGameArea` slot; an optional `renderResultReveal` adds a game-specific reveal
- * to the result overlay. The mechanic, WS flow, state-machine semantics and server-authoritative
- * redaction are unchanged — this is a presentation refactor.
+ * GameHub — the COINFLIP_HUB pattern generalized (HUB_TRANSITION_ANALYSIS), revised to the
+ * Start_Building_Frame: opponent/own slot pills wrap the per-game arena, a unified play panel
+ * (PLAY + bet grid + time control + Play-a-Friend), the cross-game Open Games ticker, a
+ * related-games rail (all games, coming-soon included), the Bring-a-Rival card and the shared
+ * footer. Owns the generic chrome + the in-place state machine (Idle → Waiting → In-match →
+ * Result over the App's WS events). The mechanic, WS flow, and server-authoritative redaction
+ * are unchanged — presentation only.
  */
 export function GameHub(props: GameHubProps) {
   const {
     gameId, gameName, renderGameArea, renderResultReveal,
     token, playerId, username, opponentId, balance, currentMatchId, gameState, legalMoves,
-    waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challenges, challengeNotice,
-    onPlay, onCancel, onRepost, onTakeChallenge, onMakeMove, onForfeit, onSubscribe,
-    onUnsubscribe, onSelectGame, onOpenWallet, onOpenGameList, onResultDismiss,
+    waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
+    onPlay, onCancel, onRepost, onTakeChallenge, onMakeMove, onForfeit, onTrackChallenges,
+    onUntrackChallenges, onSelectGame, onOpenWallet, onOpenGameList, onResultDismiss,
     loggedIn = true, initialStake,
   } = props;
 
   // ── Live wallet balance ─────────────────────────────────────────────────────
-  // App owns the balance (updates it on match.end), but on a mid-match reload App's value
-  // starts cold, so refetch once on mount and otherwise mirror the prop (settlements).
   const [liveBalance, setLiveBalance] = useState(balance);
   useEffect(() => { setLiveBalance(balance); }, [balance]);
   useEffect(() => {
@@ -134,21 +124,39 @@ export function GameHub(props: GameHubProps) {
     return () => { alive = false; };
   }, [token, loggedIn]);
 
+  // ── Games roster (drives the time control, related rail, and feed labels) ─────
+  const [games, setGames] = useState<GameMeta[]>([]);
+  useEffect(() => {
+    let alive = true;
+    api.games(token).then((g) => { if (alive && Array.isArray(g)) setGames(g); }).catch(() => {});
+    return () => { alive = false; };
+  }, [token]);
+  const nameByGame = useMemo(() => new Map(games.map((g) => [g.id, g.displayName])), [games]);
+  const timeControl = games.find((g) => g.id === gameId)?.timeControl;
+  const [selectedControl, setSelectedControl] = useState<string | undefined>(undefined);
+  useEffect(() => { setSelectedControl(timeControl?.defaultId); }, [timeControl?.defaultId]);
+
+  // Cross-game ticker: subscribe to every game's feed while the hub is mounted (authed only).
+  const gameKey = games.map((g) => g.id).join(',');
+  useEffect(() => {
+    if (!loggedIn || games.length === 0) return;
+    onTrackChallenges(games.map((g) => g.id));
+    return () => onUntrackChallenges();
+    // eslint-disable-next-line -- track once per game-set change (callbacks are stable)
+  }, [gameKey, loggedIn]);
+
   // ── Sub-state machine ──────────────────────────────────────────────────────
   const [waiting, setWaiting] = useState(false);
   const [overlay, setOverlay] = useState<{ outcome: Outcome; settlement: SettlementSummary; revealState: GameView | null } | null>(null);
   const prevMatch = useRef(currentMatchId);
 
-  // Match start/end edges: derive in-match / result from currentMatchId transitions.
   useEffect(() => {
     const prev = prevMatch.current;
     prevMatch.current = currentMatchId;
     if (currentMatchId && !prev) {
-      // a match just started — supersede any waiting/overlay
       setOverlay(null);
       setWaiting(false);
     } else if (!currentMatchId && prev) {
-      // a match we were in just ended — show the result overlay (payoff lands wherever scrolled)
       if (lastOutcome && lastSettlement) {
         setOverlay({ outcome: lastOutcome, settlement: lastSettlement, revealState: gameState });
       }
@@ -156,7 +164,6 @@ export function GameHub(props: GameHubProps) {
     }
   }, [currentMatchId, lastOutcome, lastSettlement, gameState]);
 
-  // The server confirmed our resting bet (queue.waiting) → enter Waiting.
   useEffect(() => {
     if (waitingExpiresAt != null) setWaiting(true);
   }, [waitingExpiresAt]);
@@ -170,31 +177,10 @@ export function GameHub(props: GameHubProps) {
   }
 
   // ── Bet + time-control selection ────────────────────────────────────────────
-  // initialStake pre-arms the selector (the join-fallback drops the user here ready to post).
   const [armedStake, setArmedStake] = useState<number | null>(initialStake ?? null);
-
-  // Data-driven time control: if THIS game declares meta.timeControl (chess), show a picker.
-  // Generic — no game-id branch; any game declaring it gets the picker + dual clocks for free.
-  const [timeControl, setTimeControl] = useState<GameMeta['timeControl']>(undefined);
-  const [selectedControl, setSelectedControl] = useState<string | undefined>(undefined);
-  useEffect(() => {
-    let alive = true;
-    api.games(token).then((g) => {
-      if (!alive || !Array.isArray(g)) return;
-      const tc = g.find((m) => m.id === gameId)?.timeControl;
-      setTimeControl(tc);
-      setSelectedControl(tc?.defaultId);
-    }).catch(() => {});
-    return () => { alive = false; };
-  }, [token, gameId]);
-
-  /** Map a timeControlId to its human label for feed rows ('none' / unknown → no chip). */
-  const controlLabel = (id: string): string | null =>
-    timeControl?.options.find((o) => o.id === id)?.label ?? null;
 
   function handlePlay() {
     if (armedStake == null) return;
-    // Untimed games call onPlay with one arg (unchanged); clocked games add the picked control.
     if (timeControl) onPlay(armedStake, selectedControl);
     else onPlay(armedStake);
   }
@@ -203,152 +189,153 @@ export function GameHub(props: GameHubProps) {
     onCancel();
   }
 
-  // ── Open-challenge feed (subscribe while the hub is mounted) ─────────────────
-  // The feed rides the authed WS — skip it when logged out (the list shows a sign-in teaser).
-  useEffect(() => {
-    if (!loggedIn) return;
-    onSubscribe();
-    return () => onUnsubscribe();
-    // eslint-disable-next-line -- subscribe/unsubscribe exactly once per hub visit
-  }, [loggedIn]);
+  // The related rail spans the whole roster (live + coming-soon), minus this game (D2/item 5).
+  const related = useMemo(() => {
+    const live = new Set(games.map((g) => g.id));
+    const playable = games.map((g) => ({ id: g.id, name: g.displayName, playable: true, meta: g as GameMeta }));
+    const soon = COMING_SOON.filter((id) => !live.has(id)).map((id) => ({ id, name: titleCase(id), playable: false, meta: undefined }));
+    return [...playable, ...soon].filter((t) => t.id !== gameId);
+  }, [games, gameId]);
+
+  const opponentInMatch = phase === 'in-match' || phase === 'result';
 
   return (
     <div className={HUB_SHELL}>
-      <HubRibbon balance={liveBalance} onLogo={onOpenGameList} onWallet={onOpenWallet} loggedIn={loggedIn} />
+      <HubRibbon balance={loggedIn ? liveBalance : null} onLogo={onOpenGameList} onWallet={onOpenWallet} loggedIn={loggedIn} />
 
       <main data-testid="hub-body">
         <div className={cn('mx-auto flex max-w-md flex-col gap-4 px-4', HUB_BODY)}>
-          {/* 1 — Game area (per-game slot). Greyed in Idle/Waiting; live board In-match. */}
-          <section data-testid="hub-section-game" aria-label={gameName} className="rounded-2xl border border-border bg-card p-4">
-            {renderGameArea({ phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, playerId, opponentId, username })}
+          {/* 1 — Arena: opponent slot pill, the per-game board, the player's own slot pill. */}
+          <section data-testid="hub-section-game" aria-label={gameName} className="flex flex-col gap-3">
+            <SlotPill kind="opponent" label={opponentInMatch ? 'Opponent' : 'Waiting for opponent'} />
+            <div className="rounded-2xl border border-border bg-card p-4">
+              {renderGameArea({ phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, playerId, opponentId, username })}
+            </div>
+            <SlotPill kind="own" label={loggedIn ? (username || 'You') : 'Sign in'} />
           </section>
 
-          {/* "stake & play" block: Idle → bet + PLAY; Waiting → countdown + cancel/re-post. */}
+          {/* 3 — Unified play panel: PLAY + bet grid (+ time control) + Play a Friend.
+              Idle → the panel; Waiting → countdown + cancel/re-post. */}
           {(phase === 'idle' || phase === 'waiting') && (
-            <div className="flex flex-col gap-3">
-              {phase === 'waiting' ? (
-                <div className="rounded-2xl border border-border bg-card p-4">
-                  <WaitingBlock expiresAt={waitingExpiresAt} expired={lobbyExpired} onCancel={handleCancel} onRepost={onRepost} />
-                </div>
-              ) : (
-                <>
-                  {/* 2 — BET AMOUNT selector. */}
-                  <div data-testid="hub-section-bet" className="rounded-2xl bg-surface p-4">
-                    <div className="mb-3 flex items-center justify-between">
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Bet amount</span>
-                      <span className="text-sm font-extrabold tabular-nums text-foreground">
-                        {armedStake == null ? `max ${formatCredits(MAX_STAKE)}` : formatCredits(armedStake)}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-6 gap-2">
-                      {BET_PRESETS.map((v) => (
-                        <button
-                          key={v}
-                          type="button"
-                          data-testid={`hub-bet-${v}`}
-                          onClick={() => setArmedStake(v)}
-                          className={cn(
-                            'rounded-lg py-2.5 text-center text-[13px] font-bold tabular-nums transition-colors',
-                            armedStake === v
-                              ? 'bg-brand text-white'
-                              : 'bg-background text-muted-foreground hover:text-foreground',
-                          )}
-                        >
-                          {formatCredits(v)}
-                        </button>
-                      ))}
-                    </div>
+            phase === 'waiting' ? (
+              <div className="rounded-2xl border border-border bg-card p-4">
+                <WaitingBlock expiresAt={waitingExpiresAt} expired={lobbyExpired} onCancel={handleCancel} onRepost={onRepost} />
+              </div>
+            ) : (
+              <div data-testid="hub-section-play" className="flex flex-col gap-3.5 rounded-[18px] bg-surface p-4">
+                {/* PLAY — purple; posts your armed stake as an open challenge. */}
+                <button
+                  type="button"
+                  disabled={armedStake == null}
+                  onClick={handlePlay}
+                  data-testid="hub-play"
+                  className={cn(
+                    'w-full rounded-xl py-4 text-base font-black uppercase tracking-wider transition-colors',
+                    armedStake == null ? 'cursor-not-allowed bg-brand/40 text-white/60' : 'bg-brand text-white hover:brightness-110',
+                  )}
+                >
+                  Play
+                </button>
 
-                    {/* Time-control picker — shown only for games that declare one (chess). */}
-                    {timeControl && (
-                      <div data-testid="hub-section-timecontrol" className="mt-4">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Time control</span>
-                        <div className="mt-2 grid grid-cols-3 gap-2">
-                          {timeControl.options.map((o) => (
-                            <button
-                              key={o.id}
-                              type="button"
-                              data-testid={`hub-tc-${o.id}`}
-                              aria-pressed={selectedControl === o.id}
-                              onClick={() => setSelectedControl(o.id)}
-                              className={cn(
-                                'rounded-lg px-2 py-2 text-center text-[11px] font-bold leading-tight transition-colors',
-                                selectedControl === o.id
-                                  ? 'bg-brand text-white'
-                                  : 'bg-background text-muted-foreground hover:text-foreground',
-                              )}
-                            >
-                              {o.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                {/* Bet amount. */}
+                <div data-testid="hub-section-bet">
+                  <div className="mb-2.5 flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Bet amount</span>
+                    <span className="text-sm font-extrabold tabular-nums text-foreground">
+                      {armedStake == null ? '—' : formatCredits(armedStake)}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-6 gap-2">
+                    {BET_PRESETS.map((v) => (
+                      <button
+                        key={v}
+                        type="button"
+                        data-testid={`hub-bet-${v}`}
+                        onClick={() => setArmedStake(v)}
+                        className={cn(
+                          'rounded-lg py-2.5 text-center text-[13px] font-bold tabular-nums transition-colors',
+                          armedStake === v ? 'bg-brand text-white' : 'bg-background text-muted-foreground hover:text-foreground',
+                        )}
+                      >
+                        {formatCredits(v)}
+                      </button>
+                    ))}
                   </div>
 
-                  {/* 3 — PLAY button (export green); posts your armed stake as an open challenge. */}
-                  <button
-                    type="button"
-                    disabled={armedStake == null}
-                    onClick={handlePlay}
-                    data-testid="hub-play"
-                    className={cn(
-                      'w-full rounded-2xl py-4 text-base font-black uppercase tracking-wider transition-colors',
-                      armedStake == null
-                        ? 'cursor-not-allowed bg-play/30 text-white/50'
-                        : 'bg-play text-background hover:brightness-105',
-                    )}
-                  >
-                    Play
-                  </button>
-                  <p className="text-center text-[11px] text-muted-foreground">
-                    {armedStake == null ? 'Select a bet to enable' : `Posts a ${formatCredits(armedStake)} challenge for another player to join`}
-                  </p>
-                </>
-              )}
-            </div>
+                  {/* Time-control picker — shown only for games that declare one (chess). */}
+                  {timeControl && (
+                    <div data-testid="hub-section-timecontrol" className="mt-4">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Time control</span>
+                      <div className="mt-2 grid grid-cols-3 gap-2">
+                        {timeControl.options.map((o) => (
+                          <button
+                            key={o.id}
+                            type="button"
+                            data-testid={`hub-tc-${o.id}`}
+                            aria-pressed={selectedControl === o.id}
+                            onClick={() => setSelectedControl(o.id)}
+                            className={cn(
+                              'rounded-lg px-2 py-2 text-center text-[11px] font-bold leading-tight transition-colors',
+                              selectedControl === o.id ? 'bg-brand text-white' : 'bg-background text-muted-foreground hover:text-foreground',
+                            )}
+                          >
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Play a Friend — purple, inert/visual-only for now (owner decision D1). */}
+                <button
+                  type="button"
+                  aria-disabled="true"
+                  data-testid="hub-play-friend"
+                  className="w-full cursor-default rounded-xl bg-brand py-3.5 text-[15px] font-bold text-white"
+                >
+                  Play a Friend
+                </button>
+              </div>
+            )
           )}
 
-          {/* 4 — Open challenges (real feed). Logged out → a sign-in teaser (the feed is authed). */}
+          {/* 4 — Open Games (cross-game, all hubs). Authed → the live aggregate; logged out → a
+              sign-in teaser (the WS feed is auth-only). JOIN a non-matching game → routed by the
+              server's match.start gameId. */}
           {loggedIn ? (
-            <HubOpenChallenges
-              entries={challenges}
-              notice={challengeNotice}
+            <OpenGamesTicker
+              challengesByGame={challengesByGame}
+              nameByGame={nameByGame}
               balance={liveBalance}
-              joinDisabled={phase !== 'idle'}
               onTake={onTakeChallenge}
-              controlLabel={controlLabel}
+              joinDisabled={phase !== 'idle'}
+              emptyText="No open games right now — press PLAY to post the first."
             />
           ) : (
-            <section data-testid="hub-section-challenges-teaser" aria-label="Open challenges" className="rounded-2xl border border-border bg-card p-4 text-center">
-              <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-foreground">Open games</h2>
-              <p className="text-xs text-muted-foreground">Sign in to see live games and join a match.</p>
-              <button type="button" onClick={onOpenWallet} data-testid="hub-challenges-signin" className="mt-3 rounded-full bg-brand px-5 py-2 text-xs font-bold text-white transition-colors hover:brightness-105">
-                Sign in
-              </button>
+            <section data-testid="hub-section-challenges-teaser" aria-label="Open challenges" className="px-4">
+              <div className="rounded-2xl border border-border bg-card p-4 text-center">
+                <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-foreground">Open games</h2>
+                <p className="text-xs text-muted-foreground">Sign in to see live games and join a match.</p>
+                <button type="button" onClick={onOpenWallet} data-testid="hub-challenges-signin" className="mt-3 rounded-full bg-brand px-5 py-2 text-xs font-bold text-white transition-colors hover:brightness-105">
+                  Sign in
+                </button>
+              </div>
             </section>
           )}
 
-          {/* 5 — Related games (PvP-only, data-driven from /games). */}
-          <HubRelatedGames token={token} currentGameId={gameId} onSelectGame={onSelectGame} />
+          {/* 5 — Related games rail: ALL games (coming-soon included), this game excluded. */}
+          <RelatedRail related={related} onSelectGame={onSelectGame} />
 
-          {/* 6 — "Bring the rival" banner (static). */}
-          <section data-testid="hub-section-rival" aria-label="Bring a rival">
-            <img src={rivalBanner} alt="Bring a rival — challenge a friend" className="w-full rounded-2xl" />
-          </section>
+          {/* 6 — Bring a Rival (shared with Home). */}
+          <BringARival />
 
-          {/* 7 — RECENT CLASHES (this game's leaderboard). Refreshes when a match ends. */}
-          <HubRecentClashes token={token} gameId={gameId} refreshKey={currentMatchId ?? 'idle'} />
-
-          {/* 8 — Footer (sanitized text; the supplied bottom banner art is contaminated). */}
-          <footer data-testid="hub-section-footer" className="border-t border-border pt-4 pb-2 text-center">
-            <p className="text-xs font-semibold text-foreground/70">Players vs Players — never the house.</p>
-            <p className="mt-1 text-[11px] text-muted-foreground">Play-money demo · credits only, no real-world value.</p>
-          </footer>
+          {/* 8 — Footer (shared with Home: inert social row, seeded-RNG provably-fair, 18+). */}
+          <HubFooter />
         </div>
       </main>
 
-      <HubToolbar onGames={onOpenGameList} onAccount={onOpenWallet} />
+      <HubToolbar onGames={onOpenGameList} onAccount={onOpenWallet} active="games" />
 
       {overlay && (
         <ResultOverlay
@@ -359,6 +346,33 @@ export function GameHub(props: GameHubProps) {
           onDismiss={dismissResult}
         />
       )}
+    </div>
+  );
+}
+
+/** A person glyph for the slot pills (no alias is ever fabricated for the opponent). */
+function PersonGlyph({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+    </svg>
+  );
+}
+
+/** Item 1 — the opponent slot (neutral, never an alias) above the board, and the player's own
+ *  slot below it. Frame's SURFACE pills. */
+function SlotPill({ kind, label }: { kind: 'opponent' | 'own'; label: string }) {
+  const own = kind === 'own';
+  return (
+    <div
+      data-testid={`hub-slot-${kind}`}
+      className="flex items-center gap-2.5 rounded-full bg-surface px-3.5 py-2.5"
+    >
+      <span className={cn('grid h-8 w-8 shrink-0 place-items-center rounded-full', own ? 'bg-brand text-white' : 'bg-[#2a2a4a] text-muted-foreground')}>
+        <PersonGlyph className="h-[18px] w-[18px]" />
+      </span>
+      <span className={cn('truncate text-sm font-bold', own ? 'text-foreground' : 'text-muted-foreground')}>{label}</span>
     </div>
   );
 }
@@ -404,165 +418,58 @@ function WaitingBlock({
   );
 }
 
-/** §4 — resting challenges with per-row JOIN (takes the OWNER's stake). */
-function HubOpenChallenges({
-  entries, notice, balance, joinDisabled, onTake, controlLabel,
+/** Item 5 — related-games rail. No grey card; cards a touch larger than the home grid so the
+ *  third peeks (signalling horizontal scroll). All games, coming-soon dimmed + non-playable. */
+function RelatedRail({
+  related, onSelectGame,
 }: {
-  entries: OpenChallenge[];
-  notice: string | null;
-  balance: number;
-  joinDisabled: boolean;
-  onTake(matchId: string): void;
-  /** Resolve a row's timeControlId → label (chess); returns null for 'none'/untimed games. */
-  controlLabel(id: string): string | null;
+  related: { id: string; name: string; playable: boolean; meta?: GameMeta }[];
+  onSelectGame(meta: GameMeta): void;
 }) {
-  const now = useNow(true);
-  const [localNotice, setLocalNotice] = useState<string | null>(null);
-
-  function handleJoin(e: OpenChallenge) {
-    // Balance-check before claiming — refuse clearly rather than fail silently.
-    if (balance < e.stake) {
-      setLocalNotice(`Not enough credits to join — needs ${formatCredits(e.stake)}, you have ${formatCredits(balance)}.`);
-      return;
-    }
-    setLocalNotice(null);
-    onTake(e.matchId);
-  }
-
+  if (related.length === 0) return null;
   return (
-    <section data-testid="hub-section-challenges" aria-label="Open challenges" className="rounded-2xl border border-border bg-card p-4">
-      <div className="mb-3 flex items-center gap-2">
-        <h2 className="text-sm font-bold uppercase tracking-wide text-foreground">Open games</h2>
-        <span className="ml-1 flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-success">
-          <span className="h-1.5 w-1.5 rounded-full bg-success" /> Live
-        </span>
-      </div>
-      {(notice || localNotice) && (
-        <div role="alert" data-testid="hub-challenge-notice" className="mb-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive">
-          {localNotice ?? notice}
-        </div>
-      )}
-      {entries.length === 0 ? (
-        <p className="py-2 text-center text-xs text-muted-foreground">No one waiting yet — press PLAY to post the first challenge.</p>
-      ) : (
-        <div className="space-y-2">
-          {entries.map((e) => {
-            const remaining = e.expiresAt - now;
-            const tcLabel = controlLabel(e.timeControlId);
-            return (
-              <div
-                key={e.matchId}
-                data-testid={`hub-challenge-${e.matchId}`}
-                className="flex items-center gap-3 rounded-xl bg-surface p-3"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-foreground">{e.ownerName}</p>
-                  <p className="mt-0.5 flex items-center gap-1 text-brand">
-                    <Coins className="h-3.5 w-3.5" />
-                    <span className="text-sm font-bold" data-testid={`hub-stake-${e.matchId}`}>{formatCredits(e.stake)}</span>
-                    {tcLabel && (
-                      <span className="text-[11px] font-medium text-muted-foreground" data-testid={`hub-control-${e.matchId}`}>· {tcLabel}</span>
-                    )}
-                    <span className="text-[11px] text-muted-foreground tabular-nums">· {formatClock(remaining)}</span>
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleJoin(e)}
-                  disabled={joinDisabled}
-                  data-testid={`hub-join-${e.matchId}`}
-                  aria-label={`Join ${e.ownerName}'s ${e.stake} credit challenge`}
-                  className={cn(
-                    'rounded-full px-5 py-2 text-sm font-extrabold uppercase tracking-wide transition-colors',
-                    joinDisabled ? 'cursor-not-allowed bg-white/5 text-white/30' : 'bg-play text-background hover:brightness-105',
-                  )}
-                >
-                  Join
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
-      {joinDisabled && entries.length > 0 && (
-        <p className="mt-2 text-center text-[11px] text-muted-foreground">One match at a time — finish or cancel your current bet to join another.</p>
-      )}
-    </section>
-  );
-}
-
-/** §5 — related games, data-driven from /games (only registered PvP games come back). */
-function HubRelatedGames({ token, currentGameId, onSelectGame }: { token: string; currentGameId: string; onSelectGame(meta: GameMeta): void }) {
-  const [games, setGames] = useState<GameMeta[]>([]);
-  useEffect(() => {
-    let alive = true;
-    api.games(token).then((g) => { if (alive && Array.isArray(g)) setGames(g); }).catch(() => {});
-    return () => { alive = false; };
-  }, [token]);
-
-  const others = games.filter((g) => g.id !== currentGameId);
-  return (
-    <section data-testid="hub-section-related" aria-label="Related games" className="rounded-2xl border border-border bg-card p-4">
-      <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-foreground">Related games</h2>
-      {others.length === 0 ? (
-        <p className="py-1 text-xs text-muted-foreground">More PvP games coming soon.</p>
-      ) : (
-        <div className="flex gap-3 overflow-x-auto pb-1 no-scrollbar">
-          {others.map((g) => {
-            const art = TILE_ART[g.id];
-            return (
-              <button
-                key={g.id}
-                type="button"
-                onClick={() => onSelectGame(g)}
-                data-testid={`hub-related-${g.id}`}
-                aria-label={g.displayName}
-                className="group relative aspect-[2/3] w-24 shrink-0 overflow-hidden rounded-xl bg-surface ring-1 ring-border transition-transform hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-              >
-                {art ? (
-                  <img src={art} alt={g.displayName} className="h-full w-full object-cover" />
-                ) : (
-                  <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-gradient-to-br from-brand/30 to-indigo-900/40">
-                    <span className="text-2xl font-black text-foreground/80">{g.displayName.charAt(0)}</span>
-                    <span className="px-1 text-center text-[10px] font-bold uppercase tracking-wide text-foreground">{g.displayName}</span>
-                  </div>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </section>
-  );
-}
-
-/** §7 — this game's leaderboard, embedded. Reuses formatStat (kind-aware: win_rate / net_winnings / elo). */
-function HubRecentClashes({ token, gameId, refreshKey }: { token: string; gameId: string; refreshKey: string }) {
-  const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
-  useEffect(() => {
-    let alive = true;
-    api.leaderboard(gameId, token).then((e) => { if (alive && Array.isArray(e)) setEntries(e); }).catch(() => {});
-    return () => { alive = false; };
-    // refreshKey changes when a match starts/ends so the board reflects fresh settlements.
-  }, [token, gameId, refreshKey]);
-
-  return (
-    <section data-testid="hub-section-clashes" aria-label="Recent clashes" className="rounded-2xl border border-border bg-card p-4">
-      <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-foreground">Recent clashes</h2>
-      {entries.length === 0 ? (
-        <p className="py-1 text-xs text-muted-foreground">No matches yet — play to claim the top spot.</p>
-      ) : (
-        <div className="space-y-1.5">
-          {entries.slice(0, 5).map((e) => (
-            <div key={e.playerId} data-testid={`hub-clash-${e.playerId}`} className="flex items-center gap-3 rounded-lg bg-surface px-3 py-2">
-              <span className="w-5 text-center text-sm font-bold text-muted-foreground">{e.rank}</span>
-              <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{e.displayName}</span>
-              <span className="text-sm font-bold tabular-nums text-foreground/80">{formatStat(e)}</span>
+    <section data-testid="hub-section-related" aria-label="Related games">
+      <h2 className="mb-3 px-1 text-sm font-bold uppercase tracking-wide text-foreground">Related games</h2>
+      <div className="no-scrollbar -mx-4 flex gap-3 overflow-x-auto px-4 pb-1">
+        {related.map((t) =>
+          t.playable && t.meta ? (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => onSelectGame(t.meta!)}
+              data-testid={`hub-related-${t.id}`}
+              aria-label={t.name}
+              className="group relative aspect-[2/3] w-36 shrink-0 overflow-hidden rounded-xl border border-border transition-transform hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+            >
+              <RelatedArt id={t.id} name={t.name} />
+            </button>
+          ) : (
+            <div
+              key={t.id}
+              aria-disabled="true"
+              aria-label={`${t.name} — coming soon`}
+              data-testid={`hub-related-${t.id}`}
+              className="relative aspect-[2/3] w-36 shrink-0 overflow-hidden rounded-xl border border-border opacity-50"
+            >
+              <RelatedArt id={t.id} name={t.name} />
+              <span className="absolute right-1.5 top-1.5 rounded-full bg-black/55 px-1.5 py-0.5 text-[7px] font-bold uppercase tracking-wide text-white/80">Soon</span>
             </div>
-          ))}
-        </div>
-      )}
+          ),
+        )}
+      </div>
     </section>
+  );
+}
+
+function RelatedArt({ id, name }: { id: string; name: string }) {
+  const art = TILE_ART[id];
+  if (art) {
+    return <img src={art} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />;
+  }
+  return (
+    <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-brand/30 to-indigo-900/50">
+      <span className="px-1 text-center text-sm font-black uppercase tracking-wide text-white/85">{name}</span>
+    </div>
   );
 }
 
