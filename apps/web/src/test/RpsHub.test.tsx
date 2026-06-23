@@ -13,9 +13,9 @@ function baseProps(over: Partial<Props> = {}): Props {
   return {
     token: 'tok', playerId: 'pid', username: 'me', opponentId: 'bob', balance: 1000,
     currentMatchId: null, gameState: null, legalMoves: [], waitingExpiresAt: null, lobbyExpired: false,
-    lastOutcome: null, lastSettlement: null, challenges: [], challengeNotice: null,
+    lastOutcome: null, lastSettlement: null, challengesByGame: {},
     onPlay: vi.fn(), onCancel: vi.fn(), onRepost: vi.fn(), onTakeChallenge: vi.fn(),
-    onMakeMove: vi.fn(), onForfeit: vi.fn(), onSubscribe: vi.fn(), onUnsubscribe: vi.fn(),
+    onMakeMove: vi.fn(), onForfeit: vi.fn(), onTrackChallenges: vi.fn(), onUntrackChallenges: vi.fn(),
     onSelectGame: vi.fn(), onOpenWallet: vi.fn(), onOpenGameList: vi.fn(), onResultDismiss: vi.fn(),
     ...over,
   };
@@ -79,11 +79,11 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
 
   it('JOIN balance-check + chrome + no $ (shared GameHub behaviour holds for RPS)', () => {
     const onTakeChallenge = vi.fn();
-    const { container } = render(<RpsHubScreen {...baseProps({ balance: 5, challenges: [CHALLENGE], onTakeChallenge })} />);
-    expect(screen.getByTestId('hub-stake-c1').textContent).toBe('50¢');
-    fireEvent.click(screen.getByTestId('hub-join-c1'));
+    const { container } = render(<RpsHubScreen {...baseProps({ balance: 5, challengesByGame: { rps: [CHALLENGE] }, onTakeChallenge })} />);
+    expect(screen.getByTestId('home-stake-c1').textContent).toBe('50¢');
+    fireEvent.click(screen.getByTestId('home-join-c1'));
     expect(onTakeChallenge).not.toHaveBeenCalled();
-    expect(screen.getByTestId('hub-challenge-notice').textContent).toMatch(/not enough/i);
+    expect(screen.getByTestId('home-ticker-notice').textContent).toMatch(/not enough/i);
     expect(container.textContent ?? '').not.toMatch(/\$/);
   });
 });
@@ -100,14 +100,14 @@ describe('GameHub (logged out — via RpsHub)', () => {
 
   it('browsing stays open: the bet selector works + PLAY arms, but the chip is "Sign in" and the feed is a teaser', () => {
     const onPlay = vi.fn();
-    const onSubscribe = vi.fn();
-    render(<RpsHubScreen {...baseProps({ loggedIn: false, token: '', onPlay, onSubscribe })} />);
+    const onTrackChallenges = vi.fn();
+    render(<RpsHubScreen {...baseProps({ loggedIn: false, token: '', onPlay, onTrackChallenges })} />);
     // Sign-in chip, not a fake balance; the open-challenges feed is a teaser (no live rows).
     expect(screen.getByTestId('hub-signin-chip')).toBeInTheDocument();
     expect(screen.queryByTestId('hub-wallet-chip')).toBeNull();
     expect(screen.getByTestId('hub-section-challenges-teaser')).toBeInTheDocument();
-    expect(screen.queryByTestId('hub-section-challenges')).toBeNull();
-    expect(onSubscribe).not.toHaveBeenCalled(); // no WS feed while logged out
+    expect(screen.queryByTestId('home-ticker')).toBeNull(); // the live cross-game ticker is auth-only
+    expect(onTrackChallenges).not.toHaveBeenCalled(); // no WS feed while logged out
     // Browsing + arming a bet is allowed; the auth wall fires in the App at PLAY.
     fireEvent.click(screen.getByTestId('hub-bet-10'));
     fireEvent.click(screen.getByTestId('hub-play'));

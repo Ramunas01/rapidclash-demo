@@ -13,9 +13,9 @@ function baseProps(over: Partial<Props> = {}): Props {
   return {
     token: 'tok', playerId: 'alice', username: 'alice', opponentId: 'bob', balance: 1000,
     currentMatchId: null, gameState: null, legalMoves: [], waitingExpiresAt: null, lobbyExpired: false,
-    lastOutcome: null, lastSettlement: null, challenges: [], challengeNotice: null,
+    lastOutcome: null, lastSettlement: null, challengesByGame: {},
     onPlay: vi.fn(), onCancel: vi.fn(), onRepost: vi.fn(), onTakeChallenge: vi.fn(),
-    onMakeMove: vi.fn(), onForfeit: vi.fn(), onSubscribe: vi.fn(), onUnsubscribe: vi.fn(),
+    onMakeMove: vi.fn(), onForfeit: vi.fn(), onTrackChallenges: vi.fn(), onUntrackChallenges: vi.fn(),
     onSelectGame: vi.fn(), onOpenWallet: vi.fn(), onOpenGameList: vi.fn(), onResultDismiss: vi.fn(),
     ...over,
   };

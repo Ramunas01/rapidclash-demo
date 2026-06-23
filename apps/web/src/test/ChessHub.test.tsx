@@ -30,9 +30,9 @@ function baseProps(over: Partial<Props> = {}): Props {
   return {
     token: 'tok', playerId: 'alice', username: 'alice', opponentId: 'bob', balance: 1000,
     currentMatchId: null, gameState: null, legalMoves: [], waitingExpiresAt: null, lobbyExpired: false,
-    lastOutcome: null, lastSettlement: null, challenges: [], challengeNotice: null,
+    lastOutcome: null, lastSettlement: null, challengesByGame: {},
     onPlay: vi.fn(), onCancel: vi.fn(), onRepost: vi.fn(), onTakeChallenge: vi.fn(),
-    onMakeMove: vi.fn(), onForfeit: vi.fn(), onSubscribe: vi.fn(), onUnsubscribe: vi.fn(),
+    onMakeMove: vi.fn(), onForfeit: vi.fn(), onTrackChallenges: vi.fn(), onUntrackChallenges: vi.fn(),
     onSelectGame: vi.fn(), onOpenWallet: vi.fn(), onOpenGameList: vi.fn(), onResultDismiss: vi.fn(),
     ...over,
   };
@@ -115,13 +115,14 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
     expect(screen.getByTestId('turn-indicator').textContent).toBe("Opponent's move");
   });
 
-  it('Feed: a chess open-challenge row shows its time-control label', async () => {
+  it('Feed: a chess open-challenge shows in the cross-game Open Games ticker (game + ¢ stake)', async () => {
     const challenge = {
       matchId: 'c1', ownerName: 'rival', stake: 10, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'blitz5',
     };
-    render(<ChessHubScreen {...baseProps({ challenges: [challenge] })} />);
-    // The control label resolves once /games (meta.timeControl) loads.
-    await waitFor(() => expect(screen.getByTestId('hub-control-c1').textContent).toContain('Blitz · 5 min'));
-    expect(screen.getByTestId('hub-stake-c1').textContent).toBe('10¢');
+    render(<ChessHubScreen {...baseProps({ challengesByGame: { chess: [challenge] } })} />);
+    // The revised hub uses the Home page's cross-game ticker (no per-row time-control chip).
+    await waitFor(() => expect(screen.getByTestId('home-row-c1')).toBeInTheDocument());
+    expect(screen.getByTestId('home-stake-c1').textContent).toBe('10¢');
+    expect(screen.getByTestId('home-row-game-c1').textContent).toBe('Chess');
   });
 });

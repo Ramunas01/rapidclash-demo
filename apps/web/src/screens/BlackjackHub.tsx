@@ -51,17 +51,31 @@ function CardBack() {
   );
 }
 
-/** Greyed preview shown in Idle/Waiting — two face-down cards, dimmed. */
+/** A faint green table-diamond (frame's gem glyph) marking the dealer/player card zones. */
+function TableDiamond() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="#2bb673" opacity="0.35" aria-hidden="true">
+      <path d="M12 2 2 9l10 13L22 9 12 2Z" />
+    </svg>
+  );
+}
+
+/** Idle/Waiting board interior (item 2, frame 1:1): a dark olive-green table with a diamond
+ *  marker top-centre and bottom-centre (the dealer/player card zones) and the centred prompt.
+ *  Rules + redaction are untouched — this is the empty-table presentation only. */
 function BlackjackIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
   return (
-    <div className="flex flex-col items-center gap-4 py-3">
-      <div className="flex gap-2 opacity-40">
-        <CardBack />
-        <CardBack />
-      </div>
-      <p className="text-xs text-muted-foreground">
-        {phase === 'waiting' ? 'Waiting for an opponent…' : 'Choose a bet and press PLAY, or JOIN an open challenge'}
-      </p>
+    <div
+      data-testid="hub-board"
+      className="relative flex min-h-[208px] flex-col items-center justify-between overflow-hidden rounded-2xl p-[18px]"
+      style={{ background: '#0f1a10' }}
+    >
+      <div className="pointer-events-none absolute inset-0 rounded-2xl border-2 opacity-60" style={{ borderColor: '#1a3a1a' }} />
+      <div className="relative z-[1]"><TableDiamond /></div>
+      <span className="relative z-[1] text-xs font-semibold" style={{ color: '#2a4a2a' }}>
+        {phase === 'waiting' ? 'Waiting for an opponent…' : 'Place your bet and play'}
+      </span>
+      <div className="relative z-[1]"><TableDiamond /></div>
     </div>
   );
 }
