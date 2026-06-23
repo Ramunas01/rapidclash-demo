@@ -89,6 +89,13 @@ interface GameHubProps extends GameHubScreenProps {
   renderSlotControls?(args: GameAreaArgs): ReactNode;
   /** Optional game-specific reveal at the top of the result overlay (e.g. the Coinflip coin). */
   renderResultReveal?(args: { outcome: Outcome; gameState: GameView | null; playerId: string | null }): ReactNode;
+  /** Presentation-only reveal pacing (opt-in). When > 0, the hub keeps the board mounted in the
+   *  In-match phase for this long after the server ends the match, so the game area can animate
+   *  its final state transitions (e.g. Blackjack's opponent reveal) before the result overlay
+   *  takes over. Settlement already happened server-side — this only spaces out the on-screen
+   *  reveal a human beat; it never delays settlement or changes any state. Omitted → the overlay
+   *  shows immediately (unchanged for every other game). */
+  holdResultMs?: number;
 }
 
 /** A 1s ticking clock for countdowns (cosmetic; expiry is server-authoritative). */
@@ -113,7 +120,7 @@ function useNow(active: boolean): number {
  */
 export function GameHub(props: GameHubProps) {
   const {
-    gameId, gameName, renderGameArea, renderSlotControls, renderResultReveal,
+    gameId, gameName, renderGameArea, renderSlotControls, renderResultReveal, holdResultMs,
     token, playerId, username, opponentId, opponentName, balance, currentMatchId, gameState, legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
     onPlay, onCancel, onRepost, onTakeChallenge, onMakeMove, onForfeit, onTrackChallenges,
@@ -157,6 +164,18 @@ export function GameHub(props: GameHubProps) {
   const [overlay, setOverlay] = useState<{ outcome: Outcome; settlement: SettlementSummary; revealState: GameView | null } | null>(null);
   const prevMatch = useRef(currentMatchId);
 
+  // Reveal-hold (opt-in via holdResultMs): keep the board in-match for a beat after the server
+  // ends the match so the game area animates its terminal reveal, THEN show the result overlay.
+  const [resultPending, setResultPending] = useState(false);
+  const pendingResult = useRef<{ outcome: Outcome; settlement: SettlementSummary; revealState: GameView | null } | null>(null);
+  const resultTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (resultTimer.current) clearTimeout(resultTimer.current); }, []);
+  function clearPendingResult() {
+    if (resultTimer.current) { clearTimeout(resultTimer.current); resultTimer.current = null; }
+    pendingResult.current = null;
+    setResultPending(false);
+  }
+
   // "Searching…" dwell floor (DEMO_PRESENTATION): when we PLAY, hold the search beat for a
   // minimum even if a match is already resting, so pairing never snaps in with zero delay. A
   // presentation floor only — it never blocks/delays real pairing (the match is already live
@@ -172,6 +191,7 @@ export function GameHub(props: GameHubProps) {
     prevMatch.current = currentMatchId;
     if (currentMatchId && !prev) {
       setOverlay(null);
+      clearPendingResult();
       setWaiting(false);
       // Apply the search dwell floor only when this match formed from our own PLAY beat.
       const started = searchStartRef.current;
@@ -184,12 +204,26 @@ export function GameHub(props: GameHubProps) {
       }
     } else if (!currentMatchId && prev) {
       if (lastOutcome && lastSettlement) {
-        setOverlay({ outcome: lastOutcome, settlement: lastSettlement, revealState: gameState });
+        const result = { outcome: lastOutcome, settlement: lastSettlement, revealState: gameState };
+        if (holdResultMs && holdResultMs > 0) {
+          // Defer the overlay a presentation beat so the board can play out its terminal reveal.
+          pendingResult.current = result;
+          setResultPending(true);
+          if (resultTimer.current) clearTimeout(resultTimer.current);
+          resultTimer.current = setTimeout(() => {
+            resultTimer.current = null;
+            if (pendingResult.current) setOverlay(pendingResult.current);
+            pendingResult.current = null;
+            setResultPending(false);
+          }, holdResultMs);
+        } else {
+          setOverlay(result);
+        }
       }
       setWaiting(false);
       setHoldSearch(false);
     }
-  }, [currentMatchId, lastOutcome, lastSettlement, gameState]);
+  }, [currentMatchId, lastOutcome, lastSettlement, gameState, holdResultMs]);
 
   useEffect(() => {
     if (waitingExpiresAt != null) setWaiting(true);
@@ -197,9 +231,12 @@ export function GameHub(props: GameHubProps) {
 
   // While the dwell floor holds, a live match still reads as "waiting" (the opponent slot keeps
   // scanning) so the in-match board reveals a beat later instead of snapping in.
-  const phase: Phase = overlay ? 'result' : (currentMatchId && !holdSearch) ? 'in-match' : (currentMatchId || waiting) ? 'waiting' : 'idle';
+  // `resultPending` keeps the phase in-match (board mounted, "Playing…") through the reveal hold,
+  // even though the server has already cleared currentMatchId.
+  const phase: Phase = overlay ? 'result' : resultPending ? 'in-match' : (currentMatchId && !holdSearch) ? 'in-match' : (currentMatchId || waiting) ? 'waiting' : 'idle';
 
   function dismissResult() {
+    clearPendingResult();
     setOverlay(null);
     setWaiting(false);
     onResultDismiss();

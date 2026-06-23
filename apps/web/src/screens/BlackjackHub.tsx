@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import type { Outcome } from '@rapidclash/shared';
@@ -8,6 +8,20 @@ import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.j
 /** Per-player move budget (mirrors the module's meta.moveTimeoutMs). Display only —
  *  the server runs the authoritative timer and auto-stands on expiry. */
 const MOVE_TIMEOUT_SEC = 10;
+
+/** Horizontal distance a dealt card travels from its right-edge deck to its centred hand slot.
+ *  Sized from the deck position (board ≈ max-w-md minus padding, half-width ≈ 190px) so a draw
+ *  reads as a real slide across the felt rather than a card that just blinks into place. */
+const CARD_TRAVEL_PX = 200;
+
+/** Presentation pacing (item: human timing). The terminal frame is held this long behind the
+ *  pre-terminal one so the opponent's face-down "drawing" beat lingers before the reveal lands. */
+const TERMINAL_HOLD_MS = 1100;
+
+/** How long the hub keeps the board mounted (In-match) after the server ends the match, so the
+ *  terminal reveal animates and lingers before the result overlay. Must outlast TERMINAL_HOLD_MS
+ *  plus the reveal animation — settlement is already done server-side; this is reveal-only. */
+const RESULT_HOLD_MS = 2600;
 
 /** Blackjack value of a hand: faces = 10, aces 11 then downgraded to 1 to avoid a bust.
  *  Display-only — the server is authoritative for the outcome. */
@@ -41,15 +55,17 @@ function totalLabel(cards: BlackjackCard[]): string {
 
 const isRed = (suit: string) => suit === '♥' || suit === '♦';
 
-/** A face-up card. Slides in from the player's deck (right) and flips to its value on mount —
- *  so a Hit animates a draw, an opponent reveal animates at the terminal. */
+/** A face-up card. Travels the full distance from the player's right-edge deck to its centred hand
+ *  slot and flips to its value on arrival — so a Hit animates a real draw across the felt, and an
+ *  opponent reveal animates the same way at the terminal. Only newly-dealt indices mount (the
+ *  earlier cards keep their keys), so just the freshly-drawn card makes the trip. */
 function PlayingCard({ card, index }: { card: BlackjackCard; index: number }) {
   return (
     <motion.div
       data-testid="card"
-      initial={{ x: 44, opacity: 0, rotateY: 90 }}
-      animate={{ x: 0, opacity: 1, rotateY: 0 }}
-      transition={{ duration: 0.45, ease: 'easeOut', delay: index * 0.05 }}
+      initial={{ x: CARD_TRAVEL_PX, y: -12, opacity: 0, rotateY: 90 }}
+      animate={{ x: 0, y: 0, opacity: 1, rotateY: 0 }}
+      transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1], delay: index * 0.06 }}
       style={{ marginLeft: index === 0 ? 0 : -22 }}
       className={cn(
         'relative flex h-20 w-14 flex-col items-center justify-center rounded-lg border border-black/10 bg-white font-bold shadow-lg',
@@ -69,9 +85,11 @@ function CardBack({ index = 0, active = false }: { index?: number; active?: bool
     <motion.div
       data-testid="card-back"
       aria-label="Hidden card"
-      initial={{ x: 44, opacity: 0 }}
+      initial={{ x: CARD_TRAVEL_PX, opacity: 0 }}
       animate={active ? { x: 0, opacity: 1, y: [0, -4, 0] } : { x: 0, opacity: 1 }}
-      transition={active ? { x: { duration: 0.4 }, opacity: { duration: 0.4 }, y: { duration: 1.1, repeat: Infinity } } : { duration: 0.4 }}
+      transition={active
+        ? { x: { duration: 0.5, ease: [0.22, 1, 0.36, 1] }, opacity: { duration: 0.5 }, y: { duration: 1.1, repeat: Infinity, ease: 'easeInOut' } }
+        : { duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
       style={{ marginLeft: index === 0 ? 0 : -22 }}
       className="flex h-20 w-14 items-center justify-center rounded-lg border border-white/15 bg-gradient-to-br from-purple-600 to-indigo-900 text-2xl text-white/30 shadow-lg"
     >
@@ -135,6 +153,48 @@ function BlackjackIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
   );
 }
 
+/** Whether a view is the server's terminal frame (a decided winner / forced outcome). */
+const isTerminalView = (v: BlackjackView | null) => Boolean(v?.winner ?? v?.forcedOutcome);
+
+/**
+ * Presentation-only pacing layer. The server can flood the client with successive states
+ * back-to-back (your hit → the bot resolving → the terminal reveal), which otherwise renders
+ * "in an instant". This buffers the displayed frame so the TERMINAL reveal is held a beat behind
+ * the pre-terminal one — the opponent's face-down card lingers ("drawing…") before the hands are
+ * shown. Everything else (your own hits, turn flips, internal re-deals) passes straight through so
+ * the board stays responsive; the card-travel animation is the beat for those. Never reorders or
+ * drops a state, never reveals a value early (the held frame is the pre-terminal, redacted one).
+ */
+function usePacedView(incoming: BlackjackView | null, gapMs: number): BlackjackView | null {
+  const [shown, setShown] = useState<BlackjackView | null>(incoming);
+  const shownRef = useRef<BlackjackView | null>(incoming);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  useEffect(() => {
+    const current = shownRef.current;
+    if (incoming === current) return;
+    const apply = (v: BlackjackView | null) => { shownRef.current = v; setShown(v); };
+    // First frame, or a reset to idle → show at once (no pre-terminal frame to linger on).
+    if (current == null || incoming == null) {
+      if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+      apply(incoming);
+      return;
+    }
+    // Crossing into the terminal frame → hold the (redacted) pre-terminal one a beat first.
+    if (isTerminalView(incoming) && !isTerminalView(current)) {
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => { timer.current = null; apply(incoming); }, gapMs);
+      return;
+    }
+    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+    apply(incoming);
+  }, [incoming, gapMs]);
+
+  return shown;
+}
+
 /**
  * The live Blackjack table (item 3/8). Redaction: own hand in full, exactly ONE opponent card
  * shown (a face-down card stands in for the rest) until the terminal reveal. Cards are centred
@@ -143,7 +203,9 @@ function BlackjackIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
  * slot pill (rendered by the template), not on the table.
  */
 function BlackjackBoard({ playerId, opponentId, gameState, legalMoves }: GameAreaArgs) {
-  const view = gameState as BlackjackView | null;
+  // Pace the server's frames so the terminal reveal doesn't snap in instantly (presentation only —
+  // the live gameState/legalMoves still drive turn state; this only spaces the displayed cards).
+  const view = usePacedView(gameState as BlackjackView | null, TERMINAL_HOLD_MS);
   const isMyTurn = legalMoves.length > 0;
 
   // Visual per-player countdown: reset to 10s each time it becomes this player's turn
@@ -291,6 +353,7 @@ export function BlackjackHubScreen(props: GameHubScreenProps) {
       renderGameArea={BlackjackPanel}
       renderSlotControls={BlackjackSlotControls}
       renderResultReveal={BlackjackReveal}
+      holdResultMs={RESULT_HOLD_MS}
       {...props}
     />
   );
