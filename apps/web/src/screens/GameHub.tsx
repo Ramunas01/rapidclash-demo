@@ -204,35 +204,36 @@ export function GameHub(props: GameHubProps) {
       <HubRibbon balance={loggedIn ? liveBalance : null} onLogo={onOpenGameList} onWallet={onOpenWallet} loggedIn={loggedIn} />
 
       <main data-testid="hub-body">
-        <div className={cn('mx-auto flex max-w-md flex-col gap-4 px-4', HUB_BODY)}>
-          {/* 1 — Arena: opponent slot pill, the per-game board, the player's own slot pill. */}
-          <section data-testid="hub-section-game" aria-label={gameName} className="flex flex-col gap-3">
+        {/* No blanket px-4 — sections that need insetting add their own; the shared Open Games /
+            Bring-a-Rival / footer render full-bleed to the max-w-md edge (they pad internally). */}
+        <div className={cn('mx-auto flex w-full max-w-md flex-col gap-4', HUB_BODY)}>
+          {/* 1 — Arena: opponent slot pill, the per-game board, the player's own slot pill.
+              No grey card frame here — each panel owns its surface (Blackjack's green table
+              fills the section; the other arenas wrap themselves in a card). */}
+          <section data-testid="hub-section-game" aria-label={gameName} className="flex flex-col gap-3 px-4">
             <SlotPill kind="opponent" label={opponentInMatch ? 'Opponent' : 'Waiting for opponent'} />
-            <div className="rounded-2xl border border-border bg-card p-4">
-              {renderGameArea({ phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, playerId, opponentId, username })}
-            </div>
+            {renderGameArea({ phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, playerId, opponentId, username })}
             <SlotPill kind="own" label={loggedIn ? (username || 'You') : 'Sign in'} />
           </section>
 
           {/* 3 — Unified play panel: PLAY + bet grid (+ time control) + Play a Friend.
               Idle → the panel; Waiting → countdown + cancel/re-post. */}
           {(phase === 'idle' || phase === 'waiting') && (
-            phase === 'waiting' ? (
+            <div className="px-4">
+            {phase === 'waiting' ? (
               <div className="rounded-2xl border border-border bg-card p-4">
                 <WaitingBlock expiresAt={waitingExpiresAt} expired={lobbyExpired} onCancel={handleCancel} onRepost={onRepost} />
               </div>
             ) : (
               <div data-testid="hub-section-play" className="flex flex-col gap-3.5 rounded-[18px] bg-surface p-4">
                 {/* PLAY — purple; posts your armed stake as an open challenge. */}
+                {/* Always full purple; the bet still gates the ACTION (disabled won't post). */}
                 <button
                   type="button"
                   disabled={armedStake == null}
                   onClick={handlePlay}
                   data-testid="hub-play"
-                  className={cn(
-                    'w-full rounded-xl py-4 text-base font-black uppercase tracking-wider transition-colors',
-                    armedStake == null ? 'cursor-not-allowed bg-brand/40 text-white/60' : 'bg-brand text-white hover:brightness-110',
-                  )}
+                  className="w-full rounded-xl bg-brand py-4 text-base font-black uppercase tracking-wider text-white transition-colors hover:brightness-110"
                 >
                   Play
                 </button>
@@ -297,7 +298,8 @@ export function GameHub(props: GameHubProps) {
                   Play a Friend
                 </button>
               </div>
-            )
+            )}
+            </div>
           )}
 
           {/* 4 — Open Games (cross-game, all hubs). Authed → the live aggregate; logged out → a
@@ -429,8 +431,8 @@ function RelatedRail({
   if (related.length === 0) return null;
   return (
     <section data-testid="hub-section-related" aria-label="Related games">
-      <h2 className="mb-3 px-1 text-sm font-bold uppercase tracking-wide text-foreground">Related games</h2>
-      <div className="no-scrollbar -mx-4 flex gap-3 overflow-x-auto px-4 pb-1">
+      <h2 className="mb-3 px-4 text-sm font-bold uppercase tracking-wide text-foreground">Related games</h2>
+      <div className="no-scrollbar flex gap-3 overflow-x-auto px-4 pb-1">
         {related.map((t) =>
           t.playable && t.meta ? (
             <button

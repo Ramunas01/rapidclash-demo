@@ -137,7 +137,12 @@ function CoinflipBoard({ playerId, gameState, legalMoves, onMove, onForfeit }: G
 
 /** The Coinflip game-area slot: greyed idle hero, or the live board in-match. */
 function CoinflipPanel(args: GameAreaArgs) {
-  return args.phase === 'in-match' ? <CoinflipBoard {...args} /> : <CoinflipIdle phase={args.phase} />;
+  // The arena owns its surface now (GameHub no longer wraps it in a grey card).
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4">
+      {args.phase === 'in-match' ? <CoinflipBoard {...args} /> : <CoinflipIdle phase={args.phase} />}
+    </div>
+  );
 }
 
 /**

@@ -283,7 +283,12 @@ function ChessIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
 
 /** The Chess game-area slot: greyed idle preview, or the live board + clocks in-match. */
 function ChessPanel(args: GameAreaArgs) {
-  return args.phase === 'in-match' ? <ChessBoard {...args} /> : <ChessIdle phase={args.phase} />;
+  // The arena owns its surface now (GameHub no longer wraps it in a grey card).
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4">
+      {args.phase === 'in-match' ? <ChessBoard {...args} /> : <ChessIdle phase={args.phase} />}
+    </div>
+  );
 }
 
 /**

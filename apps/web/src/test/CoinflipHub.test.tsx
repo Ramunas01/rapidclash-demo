@@ -181,6 +181,15 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     expect(container.textContent ?? '').not.toMatch(/select a bet/i);
     expect(container.textContent ?? '').not.toMatch(/max /i);
   });
+
+  it('PLAY stays full purple even before a bet is armed (gate the action, not the colour)', () => {
+    render(<CoinflipHubScreen {...baseProps()} />);
+    const play = screen.getByTestId('hub-play');
+    expect(play).toBeDisabled(); // the bet still gates the action
+    expect(play.className).toContain('bg-brand');
+    expect(play.className).not.toContain('bg-brand/40'); // no dimmed variant
+    expect(play.className).not.toContain('cursor-not-allowed');
+  });
 });
 
 describe('CoinflipHubScreen — related rail (item 5: all games, coming-soon included)', () => {
