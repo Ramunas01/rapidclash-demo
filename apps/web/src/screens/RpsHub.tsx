@@ -93,7 +93,12 @@ function RpsBoard({ playerId, gameState, legalMoves, onMove, onForfeit, username
 
 /** The RPS game-area slot: greyed idle preview, or the live board in-match. */
 function RpsPanel(args: GameAreaArgs) {
-  return args.phase === 'in-match' ? <RpsBoard {...args} /> : <RpsIdle phase={args.phase} />;
+  // The arena owns its surface now (GameHub no longer wraps it in a grey card).
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4">
+      {args.phase === 'in-match' ? <RpsBoard {...args} /> : <RpsIdle phase={args.phase} />}
+    </div>
+  );
 }
 
 /** Result reveal: both choices, side by side (revealed by the server at terminal). */

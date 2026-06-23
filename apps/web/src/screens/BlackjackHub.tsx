@@ -51,31 +51,35 @@ function CardBack() {
   );
 }
 
-/** A faint green table-diamond (frame's gem glyph) marking the dealer/player card zones. */
-function TableDiamond() {
+/** The frame's idle "deck" marker (frame ~881–889): a back card offset behind a front card,
+ *  with a faint green diamond gem — placed in the dealer and player card zones. */
+function DeckMarker() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="#2bb673" opacity="0.35" aria-hidden="true">
-      <path d="M12 2 2 9l10 13L22 9 12 2Z" />
-    </svg>
+    <div className="relative" style={{ width: 44, height: 58 }} aria-hidden="true">
+      <div className="absolute rounded-md" style={{ top: -3, left: 3, width: 36, height: 50, background: '#1a2a1a', border: '1px solid #2a4a2a' }} />
+      <div className="absolute grid place-items-center rounded-md" style={{ top: 0, left: 0, width: 36, height: 50, background: '#152015', border: '1px solid #2a4a2a' }}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="#2bb673" opacity="0.35"><path d="M12 2 2 9l10 13L22 9 12 2Z" /></svg>
+      </div>
+    </div>
   );
 }
 
-/** Idle/Waiting board interior (item 2, frame 1:1): a dark olive-green table with a diamond
- *  marker top-centre and bottom-centre (the dealer/player card zones) and the centred prompt.
- *  Rules + redaction are untouched — this is the empty-table presentation only. */
+/** Idle/Waiting board interior (item 1, frame 1:1): the dark olive-green table IS the section
+ *  surface (no grey frame), with a stacked-deck marker in the dealer (top) and player (bottom)
+ *  zones and the centred prompt between. Rules + redaction untouched — empty-table presentation. */
 function BlackjackIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
   return (
     <div
       data-testid="hub-board"
-      className="relative flex min-h-[208px] flex-col items-center justify-between overflow-hidden rounded-2xl p-[18px]"
+      className="relative flex min-h-[220px] flex-col items-center justify-between overflow-hidden rounded-2xl p-[18px]"
       style={{ background: '#0f1a10' }}
     >
       <div className="pointer-events-none absolute inset-0 rounded-2xl border-2 opacity-60" style={{ borderColor: '#1a3a1a' }} />
-      <div className="relative z-[1]"><TableDiamond /></div>
+      <div className="relative z-[1]"><DeckMarker /></div>
       <span className="relative z-[1] text-xs font-semibold" style={{ color: '#2a4a2a' }}>
         {phase === 'waiting' ? 'Waiting for an opponent…' : 'Place your bet and play'}
       </span>
-      <div className="relative z-[1]"><TableDiamond /></div>
+      <div className="relative z-[1]"><DeckMarker /></div>
     </div>
   );
 }
@@ -194,7 +198,15 @@ function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, onMove, o
 
 /** The Blackjack game-area slot: greyed idle, or the live table in-match. */
 function BlackjackPanel(args: GameAreaArgs) {
-  return args.phase === 'in-match' ? <BlackjackBoard {...args} /> : <BlackjackIdle phase={args.phase} />;
+  // In-match → the live table on its own card surface; idle → the olive board fills the section
+  // (it IS the surface — no grey frame), matching the frame.
+  return args.phase === 'in-match' ? (
+    <div className="rounded-2xl border border-border bg-card p-4">
+      <BlackjackBoard {...args} />
+    </div>
+  ) : (
+    <BlackjackIdle phase={args.phase} />
+  );
 }
 
 /** Result reveal: the final totals, both hands now revealed by the server at terminal. */
