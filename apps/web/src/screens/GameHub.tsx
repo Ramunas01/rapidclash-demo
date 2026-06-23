@@ -39,6 +39,10 @@ export interface GameHubScreenProps {
   playerId: string | null;
   username: string | null;
   opponentId: string | null;
+  /** The real opponent's display name, known only when we JOINed their open challenge (the owner
+   *  name from the feed). Null on the PLAY/post path (the joiner's name never reaches the client)
+   *  → the slot falls back to a neutral "Opponent". Never a fabricated/cycled name (Charter #2). */
+  opponentName?: string | null;
   /** Live balance from the app (source of truth; updates on match.end settlement). */
   balance: number;
   currentMatchId: string | null;
@@ -80,6 +84,9 @@ interface GameHubProps extends GameHubScreenProps {
   gameName: string;
   /** The in-match (and greyed-idle) game area, provided per game. */
   renderGameArea(args: GameAreaArgs): ReactNode;
+  /** Optional per-game controls rendered inside the player's OWN slot pill during a match
+   *  (frame: Blackjack's Hit/Stand sit beside the player's name). Only shown in-match. */
+  renderSlotControls?(args: GameAreaArgs): ReactNode;
   /** Optional game-specific reveal at the top of the result overlay (e.g. the Coinflip coin). */
   renderResultReveal?(args: { outcome: Outcome; gameState: GameView | null; playerId: string | null }): ReactNode;
 }
@@ -106,8 +113,8 @@ function useNow(active: boolean): number {
  */
 export function GameHub(props: GameHubProps) {
   const {
-    gameId, gameName, renderGameArea, renderResultReveal,
-    token, playerId, username, opponentId, balance, currentMatchId, gameState, legalMoves,
+    gameId, gameName, renderGameArea, renderSlotControls, renderResultReveal,
+    token, playerId, username, opponentId, opponentName, balance, currentMatchId, gameState, legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
     onPlay, onCancel, onRepost, onTakeChallenge, onMakeMove, onForfeit, onTrackChallenges,
     onUntrackChallenges, onSelectGame, onOpenWallet, onOpenGameList, onResultDismiss,
@@ -150,17 +157,37 @@ export function GameHub(props: GameHubProps) {
   const [overlay, setOverlay] = useState<{ outcome: Outcome; settlement: SettlementSummary; revealState: GameView | null } | null>(null);
   const prevMatch = useRef(currentMatchId);
 
+  // "Searching…" dwell floor (DEMO_PRESENTATION): when we PLAY, hold the search beat for a
+  // minimum even if a match is already resting, so pairing never snaps in with zero delay. A
+  // presentation floor only — it never blocks/delays real pairing (the match is already live
+  // server-side; we just defer the in-match *visual* a beat). Untouched on the JOIN path.
+  const SEARCH_FLOOR_MS = 2400;
+  const searchStartRef = useRef<number | null>(null);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [holdSearch, setHoldSearch] = useState(false);
+  useEffect(() => () => { if (holdTimer.current) clearTimeout(holdTimer.current); }, []);
+
   useEffect(() => {
     const prev = prevMatch.current;
     prevMatch.current = currentMatchId;
     if (currentMatchId && !prev) {
       setOverlay(null);
       setWaiting(false);
+      // Apply the search dwell floor only when this match formed from our own PLAY beat.
+      const started = searchStartRef.current;
+      searchStartRef.current = null;
+      const elapsed = started != null ? Date.now() - started : Infinity;
+      if (elapsed < SEARCH_FLOOR_MS) {
+        setHoldSearch(true);
+        if (holdTimer.current) clearTimeout(holdTimer.current);
+        holdTimer.current = setTimeout(() => setHoldSearch(false), SEARCH_FLOOR_MS - elapsed);
+      }
     } else if (!currentMatchId && prev) {
       if (lastOutcome && lastSettlement) {
         setOverlay({ outcome: lastOutcome, settlement: lastSettlement, revealState: gameState });
       }
       setWaiting(false);
+      setHoldSearch(false);
     }
   }, [currentMatchId, lastOutcome, lastSettlement, gameState]);
 
@@ -168,7 +195,9 @@ export function GameHub(props: GameHubProps) {
     if (waitingExpiresAt != null) setWaiting(true);
   }, [waitingExpiresAt]);
 
-  const phase: Phase = overlay ? 'result' : currentMatchId ? 'in-match' : waiting ? 'waiting' : 'idle';
+  // While the dwell floor holds, a live match still reads as "waiting" (the opponent slot keeps
+  // scanning) so the in-match board reveals a beat later instead of snapping in.
+  const phase: Phase = overlay ? 'result' : (currentMatchId && !holdSearch) ? 'in-match' : (currentMatchId || waiting) ? 'waiting' : 'idle';
 
   function dismissResult() {
     setOverlay(null);
@@ -176,15 +205,25 @@ export function GameHub(props: GameHubProps) {
     onResultDismiss();
   }
 
+  // Decorative name-scan source for the "Searching…" beat: real online players from the live
+  // cross-game Open Games feed (any game). Never fabricated — an empty feed shows just "Searching…".
+  const scanNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const list of Object.values(challengesByGame)) for (const c of list) if (c.ownerName) names.add(c.ownerName);
+    return [...names];
+  }, [challengesByGame]);
+
   // ── Bet + time-control selection ────────────────────────────────────────────
   const [armedStake, setArmedStake] = useState<number | null>(initialStake ?? null);
 
   function handlePlay() {
     if (armedStake == null) return;
+    searchStartRef.current = Date.now(); // start the Searching dwell floor
     if (timeControl) onPlay(armedStake, selectedControl);
     else onPlay(armedStake);
   }
   function handleCancel() {
+    searchStartRef.current = null;
     setWaiting(false);
     onCancel();
   }
@@ -197,7 +236,8 @@ export function GameHub(props: GameHubProps) {
     return [...playable, ...soon].filter((t) => t.id !== gameId);
   }, [games, gameId]);
 
-  const opponentInMatch = phase === 'in-match' || phase === 'result';
+  // Built once and fed to both the game area and the per-game slot controls (Hit/Stand).
+  const areaArgs: GameAreaArgs = { phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, playerId, opponentId, username };
 
   return (
     <div className={HUB_SHELL}>
@@ -208,97 +248,42 @@ export function GameHub(props: GameHubProps) {
             Bring-a-Rival / footer render full-bleed to the max-w-md edge (they pad internally). */}
         <div className={cn('mx-auto flex w-full max-w-md flex-col gap-4', HUB_BODY)}>
           {/* 1 — Arena: opponent slot pill, the per-game board, the player's own slot pill.
-              No grey card frame here — each panel owns its surface (Blackjack's green table
+              No grey card frame here — each panel owns its surface (Blackjack's greyish table
               fills the section; the other arenas wrap themselves in a card). */}
           <section data-testid="hub-section-game" aria-label={gameName} className="flex flex-col gap-3 px-4">
-            <SlotPill kind="opponent" label={opponentInMatch ? 'Opponent' : 'Waiting for opponent'} />
-            {renderGameArea({ phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, playerId, opponentId, username })}
-            <SlotPill kind="own" label={loggedIn ? (username || 'You') : 'Sign in'} />
+            <OpponentSlot phase={phase} opponentName={opponentName} scanNames={scanNames} />
+            {renderGameArea(areaArgs)}
+            <OwnSlot
+              label={loggedIn ? (username || 'You') : 'Sign in'}
+              isOwn={loggedIn}
+              controls={phase === 'in-match' ? renderSlotControls?.(areaArgs) : null}
+            />
           </section>
 
-          {/* 3 — Unified play panel: PLAY + bet grid (+ time control) + Play a Friend.
-              Idle → the panel; Waiting → countdown + cancel/re-post. */}
-          {(phase === 'idle' || phase === 'waiting') && (
+          {/* 3 — Unified play panel. Idle → live PLAY; Waiting → countdown+cancel (or, while the
+              search dwell holds a found match, a brief "Opponent found"); In-match/Result → the
+              SAME panel, disabled with "Playing…" (item 7 — bet + Play-a-Friend stay visible). */}
+          {phase === 'waiting' ? (
             <div className="px-4">
-            {phase === 'waiting' ? (
               <div className="rounded-2xl border border-border bg-card p-4">
-                <WaitingBlock expiresAt={waitingExpiresAt} expired={lobbyExpired} onCancel={handleCancel} onRepost={onRepost} />
+                {currentMatchId ? (
+                  <FoundBlock />
+                ) : (
+                  <WaitingBlock expiresAt={waitingExpiresAt} expired={lobbyExpired} onCancel={handleCancel} onRepost={onRepost} />
+                )}
               </div>
-            ) : (
-              <div data-testid="hub-section-play" className="flex flex-col gap-3.5 rounded-[18px] bg-surface p-4">
-                {/* PLAY — purple; posts your armed stake as an open challenge. */}
-                {/* Always full purple; the bet still gates the ACTION (disabled won't post). */}
-                <button
-                  type="button"
-                  disabled={armedStake == null}
-                  onClick={handlePlay}
-                  data-testid="hub-play"
-                  className="w-full rounded-xl bg-brand py-4 text-base font-black uppercase tracking-wider text-white transition-colors hover:brightness-110"
-                >
-                  Play
-                </button>
-
-                {/* Bet amount. */}
-                <div data-testid="hub-section-bet">
-                  <div className="mb-2.5 flex items-center justify-between">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Bet amount</span>
-                    <span className="text-sm font-extrabold tabular-nums text-foreground">
-                      {armedStake == null ? '—' : formatCredits(armedStake)}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-6 gap-2">
-                    {BET_PRESETS.map((v) => (
-                      <button
-                        key={v}
-                        type="button"
-                        data-testid={`hub-bet-${v}`}
-                        onClick={() => setArmedStake(v)}
-                        className={cn(
-                          'rounded-lg py-2.5 text-center text-[13px] font-bold tabular-nums transition-colors',
-                          armedStake === v ? 'bg-brand text-white' : 'bg-background text-muted-foreground hover:text-foreground',
-                        )}
-                      >
-                        {formatCredits(v)}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Time-control picker — shown only for games that declare one (chess). */}
-                  {timeControl && (
-                    <div data-testid="hub-section-timecontrol" className="mt-4">
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Time control</span>
-                      <div className="mt-2 grid grid-cols-3 gap-2">
-                        {timeControl.options.map((o) => (
-                          <button
-                            key={o.id}
-                            type="button"
-                            data-testid={`hub-tc-${o.id}`}
-                            aria-pressed={selectedControl === o.id}
-                            onClick={() => setSelectedControl(o.id)}
-                            className={cn(
-                              'rounded-lg px-2 py-2 text-center text-[11px] font-bold leading-tight transition-colors',
-                              selectedControl === o.id ? 'bg-brand text-white' : 'bg-background text-muted-foreground hover:text-foreground',
-                            )}
-                          >
-                            {o.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Play a Friend — purple, inert/visual-only for now (owner decision D1). */}
-                <button
-                  type="button"
-                  aria-disabled="true"
-                  data-testid="hub-play-friend"
-                  className="w-full cursor-default rounded-xl bg-brand py-3.5 text-[15px] font-bold text-white"
-                >
-                  Play a Friend
-                </button>
-              </div>
-            )}
+            </div>
+          ) : (
+            <div className="px-4">
+              <PlayPanel
+                playing={phase === 'in-match' || phase === 'result'}
+                armedStake={armedStake}
+                onArm={setArmedStake}
+                onPlay={handlePlay}
+                timeControl={timeControl}
+                selectedControl={selectedControl}
+                onSelectControl={setSelectedControl}
+              />
             </div>
           )}
 
@@ -362,19 +347,164 @@ function PersonGlyph({ className }: { className?: string }) {
   );
 }
 
-/** Item 1 — the opponent slot (neutral, never an alias) above the board, and the player's own
- *  slot below it. Frame's SURFACE pills. */
-function SlotPill({ kind, label }: { kind: 'opponent' | 'own'; label: string }) {
-  const own = kind === 'own';
+/** A fast, decorative name scan over real online players (~3–4/sec). Returns null when there are
+ *  no online names — the slot then shows just "Searching…", never a fabricated alias. */
+function useNameScan(active: boolean, names: string[]): string | null {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    if (!active || names.length === 0) return;
+    const id = setInterval(() => setI((n) => n + 1), 280); // ~3.5 names/sec
+    return () => clearInterval(id);
+  }, [active, names.length]);
+  if (!active || names.length === 0) return null;
+  return names[i % names.length];
+}
+
+/** Item 1/2 — the opponent slot above the board. Idle → neutral "Opponent"; Waiting → the
+ *  "Searching…" beat with a decorative online-name scan; In-match/Result → the REAL opponent's
+ *  name in bright white (or a neutral "Opponent" when the joiner's name never reached the client).
+ *  Never an opponentId, never a fabricated/cycled name (Charter #2 + DEMO_PRESENTATION honesty). */
+function OpponentSlot({ phase, opponentName, scanNames }: { phase: Phase; opponentName?: string | null; scanNames: string[] }) {
+  const searching = phase === 'waiting';
+  const inMatch = phase === 'in-match' || phase === 'result';
+  const scan = useNameScan(searching, scanNames);
   return (
-    <div
-      data-testid={`hub-slot-${kind}`}
-      className="flex items-center gap-2.5 rounded-full bg-surface px-3.5 py-2.5"
-    >
-      <span className={cn('grid h-8 w-8 shrink-0 place-items-center rounded-full', own ? 'bg-brand text-white' : 'bg-[#2a2a4a] text-muted-foreground')}>
+    <div data-testid="hub-slot-opponent" className="flex items-center gap-2.5 rounded-full bg-surface px-3.5 py-2.5">
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#2a2a4a] text-muted-foreground">
         <PersonGlyph className="h-[18px] w-[18px]" />
       </span>
-      <span className={cn('truncate text-sm font-bold', own ? 'text-foreground' : 'text-muted-foreground')}>{label}</span>
+      {searching ? (
+        <span className="flex min-w-0 flex-1 items-center gap-2 text-sm font-bold">
+          <span className="animate-pulse text-muted-foreground">Searching…</span>
+          {scan && <span data-testid="hub-search-scan" className="min-w-0 truncate text-muted-foreground/50">{scan}</span>}
+        </span>
+      ) : (
+        <span className={cn('min-w-0 flex-1 truncate text-sm font-bold', inMatch ? 'text-foreground' : 'text-muted-foreground')}>
+          {inMatch ? (opponentName || 'Opponent') : 'Opponent'}
+        </span>
+      )}
+      {inMatch && <span className="shrink-0 text-xs font-black uppercase tracking-wide text-foreground/70">Playing…</span>}
+    </div>
+  );
+}
+
+/** Item 1/6 — the player's own slot below the board: their name, with optional in-match game
+ *  controls (Blackjack's Hit/Stand) rendered beside it. */
+function OwnSlot({ label, isOwn, controls }: { label: string; isOwn: boolean; controls?: ReactNode }) {
+  return (
+    <div data-testid="hub-slot-own" className="flex items-center gap-2.5 rounded-full bg-surface px-3.5 py-2.5">
+      <span className={cn('grid h-8 w-8 shrink-0 place-items-center rounded-full', isOwn ? 'bg-brand text-white' : 'bg-[#2a2a4a] text-muted-foreground')}>
+        <PersonGlyph className="h-[18px] w-[18px]" />
+      </span>
+      <span className={cn('min-w-0 flex-1 truncate text-sm font-bold', isOwn ? 'text-foreground' : 'text-muted-foreground')}>{label}</span>
+      {controls && <span className="flex shrink-0 items-center gap-2">{controls}</span>}
+    </div>
+  );
+}
+
+/** Brief "opponent found" beat shown while the search-dwell floor holds an already-formed match
+ *  (no cancel — the match is live server-side; this is presentation only). */
+function FoundBlock() {
+  return (
+    <div className="flex flex-col items-center gap-2 py-2" data-testid="hub-found">
+      <span className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-success">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" /> Opponent found
+      </span>
+      <p className="text-sm font-semibold text-foreground/80">Starting the match…</p>
+    </div>
+  );
+}
+
+/** The unified play panel (PLAY + bet grid + optional time control + Play-a-Friend). `playing`
+ *  freezes it during a match (item 7): PLAY reads "Playing…" and every control greys but stays. */
+function PlayPanel({
+  playing, armedStake, onArm, onPlay, timeControl, selectedControl, onSelectControl,
+}: {
+  playing: boolean;
+  armedStake: number | null;
+  onArm(v: number): void;
+  onPlay(): void;
+  timeControl?: GameMeta['timeControl'];
+  selectedControl?: string;
+  onSelectControl(id: string): void;
+}) {
+  return (
+    <div data-testid="hub-section-play" className="flex flex-col gap-3.5 rounded-[18px] bg-surface p-4">
+      {/* PLAY — always full purple; the bet gates the ACTION. In-match → "Playing…" + disabled. */}
+      <button
+        type="button"
+        disabled={playing || armedStake == null}
+        onClick={onPlay}
+        data-testid="hub-play"
+        className={cn(
+          'w-full rounded-xl bg-brand py-4 text-base font-black uppercase tracking-wider text-white transition-colors',
+          playing ? 'opacity-70' : 'hover:brightness-110',
+        )}
+      >
+        {playing ? 'Playing…' : 'Play'}
+      </button>
+
+      {/* Bet amount — stays visible during a match, greyed + inert. */}
+      <div data-testid="hub-section-bet" className={cn(playing && 'pointer-events-none opacity-50')}>
+        <div className="mb-2.5 flex items-center justify-between">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Bet amount</span>
+          <span className="text-sm font-extrabold tabular-nums text-foreground">
+            {armedStake == null ? '—' : formatCredits(armedStake)}
+          </span>
+        </div>
+        <div className="grid grid-cols-6 gap-2">
+          {BET_PRESETS.map((v) => (
+            <button
+              key={v}
+              type="button"
+              disabled={playing}
+              data-testid={`hub-bet-${v}`}
+              onClick={() => onArm(v)}
+              className={cn(
+                'rounded-lg py-2.5 text-center text-[13px] font-bold tabular-nums transition-colors',
+                armedStake === v ? 'bg-brand text-white' : 'bg-background text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {formatCredits(v)}
+            </button>
+          ))}
+        </div>
+
+        {/* Time-control picker — shown only for games that declare one (chess). */}
+        {timeControl && (
+          <div data-testid="hub-section-timecontrol" className="mt-4">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Time control</span>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              {timeControl.options.map((o) => (
+                <button
+                  key={o.id}
+                  type="button"
+                  disabled={playing}
+                  data-testid={`hub-tc-${o.id}`}
+                  aria-pressed={selectedControl === o.id}
+                  onClick={() => onSelectControl(o.id)}
+                  className={cn(
+                    'rounded-lg px-2 py-2 text-center text-[11px] font-bold leading-tight transition-colors',
+                    selectedControl === o.id ? 'bg-brand text-white' : 'bg-background text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Play a Friend — purple, inert/visual-only (owner D1); greys with the panel during a match. */}
+      <button
+        type="button"
+        aria-disabled="true"
+        data-testid="hub-play-friend"
+        className={cn('w-full cursor-default rounded-xl bg-brand py-3.5 text-[15px] font-bold text-white', playing && 'opacity-50')}
+      >
+        Play a Friend
+      </button>
     </div>
   );
 }

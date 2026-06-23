@@ -153,8 +153,8 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
   // ── Frame revision: shared template structure (items 1, 3) ──────────────────
   it('Arena slot pills: neutral opponent (no alias) above, own username below', () => {
     render(<CoinflipHubScreen {...baseProps({ username: 'neo' })} />);
-    // Idle → "Waiting for opponent" (never the opponent's alias).
-    expect(screen.getByTestId('hub-slot-opponent').textContent).toMatch(/waiting for opponent/i);
+    // Idle → a neutral "Opponent" placeholder (never the opponent's alias).
+    expect(screen.getByTestId('hub-slot-opponent').textContent).toMatch(/opponent/i);
     expect(screen.getByTestId('hub-slot-opponent').textContent).not.toMatch(/bob/); // opponentId is never shown
     expect(screen.getByTestId('hub-slot-own').textContent).toContain('neo');
   });
