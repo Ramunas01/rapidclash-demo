@@ -81,10 +81,10 @@ bet precedes Join):
 │   │ 2  BET AMOUNT selector               │  │ │  scrollable body
 │   │ 3  PLAY button (green)               │  │ │
 │   └──────────────────────────────────────┘  │ │
-│   4  Open challenges ("players waiting")    │ │
-│   5  Related games (PvP only)              │ │
+│   4  Open Games (cross-game ticker, #114)  │ │
+│   5  Related games (whole roster, #114)    │ │
 │   6  "Bring the rival" banner              │ │
-│   7  RECENT CLASHES (leaderboard)          │ │
+│   (Recent Clashes REMOVED — #114)          │ │
 │   8  Footer banner                         │ ▼ │
 ├────────────────────────────────────────────┤
 │ [menu] [games] [account] [rewards*] [chat*]│  ← sticky bottom toolbar (* = coming soon)
@@ -102,15 +102,22 @@ bet precedes Join):
 
 ## Body sections (scroll order, top → bottom)
 
+> **Superseded by the shared `GameHub` template (#114).** Three of the sections below were generalised when the game-hub frame revision lifted Coinflip's hub into the shared template that every game now inherits (`apps/web/src/screens/GameHub.tsx` + `components/hub-shared/`):
+> - **§4 Open challenges → cross-game "Open Games" ticker.** No longer Coinflip-only; it's the Home page's round-robin ticker showing resting challenges across *all* games, and tapping a non-Coinflip row routes to that game's hub. (Real feed only — no fabricated rows.)
+> - **§5 Related games → the whole roster, coming-soon included.** No longer "PvP-only / registered games only"; the rail now shows every game incl. dimmed, inert coming-soon tiles (consistent with the roster). The *playable* set is still exactly `/games`; a coming-soon tile is never a playable house-form route (Product integrity, below, still holds for *playability* — only the *display* widened).
+> - **§7 Recent Clashes → removed from the hub.** The leaderboard lives only in `profile-hub` now.
+>
+> §2+§3 are also merged into one rounded "play panel" with an inert **Play a Friend** button, and the "max ¢"/"select a bet" copy is dropped (enable-on-bet behaviour kept). The table below documents Coinflip's original intent; where it conflicts with the above, the template wins.
+
 | # | Section | What it shows / does | Data source (real) | Reuses |
 |---|---------|----------------------|--------------------|--------|
 | 1 | **Coinflip game area** (hero) | Coin image + heads/tails choice; the visual anchor at the top, **greyed/inactive in Idle**. When a match starts it activates; on `your_turn` the H/T choices enable; player taps a side → `ws.makeMove(side)`. Opponent's choice + flip stay hidden until `match.end`. The **result is presented as a brief self-dismissing overlay** (see Result, below), not buried in place. | `match.start` / `match.state` / `match.your_turn` / `match.end`; `CoinflipView` (`{players, choices, result?, forcedOutcome?}`) | `CoinflipPlay.tsx`, `Result.tsx` |
 | 2 | **BET AMOUNT selector** | Six presets: `1¢ 5¢ 10¢ 25¢ 50¢ 100¢` (within Coinflip's 1–100 stake range). Selecting one **arms** that stake and enables the Join button (3). Sits directly above Join as one "stake & play" block. Art at `apps/web/src/assets/coinflip/` (the piece that used `$` → render `¢`). | local selection (stake) | `StakeEntry.tsx` |
 | 3 | **PLAY button** (green) | Labelled **"PLAY"** (per mock). The "post and play" action. **Inactive until a bet (2) is selected.** Pressing it posts the armed stake as an open challenge — `ws.joinQueue('coinflip', stake)` — and the player enters **Waiting** in place. (Resting-challenge rows in §4 use **"JOIN"**.) | `queue.join` → `queue.waiting` | `StakeEntry.tsx` + `Lobby.tsx` |
-| 4 | **Open challenges** ("players waiting") | Other players' resting Coinflip challenges: owner name, **stake in `¢`**, countdown, and a **join** button per row. Kept prominent right under the stake block — joining a resting bet is the fastest path to a live match (and the bot crowd seeds it). Tapping **takes the owner's stake**, not the player's armed amount (see Precedence). | `ws.subscribeChallenges('coinflip')` → `challenges.list` / `challenges.update`; `OpenChallenge` | `OpenChallengesList.tsx` |
-| 5 | **Related games** | A ribbon of tiles linking to other games. Data-driven from `/games` (registered PvP games only — safe). **Any roadmap/"coming soon" tiles must be PvP games only** (see Product integrity). | `api.games(token)` | `GameList.tsx` tiles |
+| 4 | **Open Games** (cross-game ticker) | **Superseded by #114:** the Home page's round-robin ticker of resting challenges across **all** games (not Coinflip-only), under the play panel. Owner name, **stake in `¢`**, countdown, **JOIN** per row; a non-Coinflip row routes to that game's hub. Tapping **takes the owner's stake** (see Precedence). Real feed + bot-crowd seed; logged-out teaser. | cross-game `challenges` feed; `OpenChallenge` | `components/hub-shared/OpenGames.tsx` |
+| 5 | **Related games** | ~~A ribbon of registered-PvP tiles only.~~ **Superseded by #114:** the rail shows the **whole roster, coming-soon included** (dimmed/inert), grey card removed, larger cards (3rd peeks). The *playable* set is still `/games`; coming-soon tiles are never a playable house-form route. | `api.games(token)` + static coming-soon tiles | `components/hub-shared/` |
 | 6 | **"Bring the rival" banner** | Static banner image for now. *(Later: this should become a real "challenge a friend / send a match link" invite — the most honest cold-start primitive we have. Static is fine until then.)* | static asset → `apps/web/src/assets/banners/` | — |
-| 7 | **RECENT CLASHES** | The Coinflip leaderboard contents, embedded. (Label is **"RECENT CLASHES"**, not "crashes".) | `api` `GET /leaderboard/coinflip`; `net_winnings` entries (can be negative, rendered `¢`) | `Leaderboard.tsx` |
+| ~~7~~ | ~~**RECENT CLASHES**~~ | **Removed from the hub by #114** — the leaderboard now lives only in `profile-hub`. (The "RECENT CLASHES" label, not "crashes", is retained there.) | — | — |
 | 8 | **Footer banner** | Static picture for now; later replaced by text + links. | static asset → `apps/web/src/assets/banners/` | — |
 
 ## Sticky bottom toolbar
@@ -212,8 +219,9 @@ if one ever exists, goes in the gitignored `design-ref/`.)
 - **Q2 result:** brief self-dismissing overlay (not pure in-place), so the payoff lands wherever
   the player is scrolled.
 - **Q3 scroll order:** reordered so the enabler precedes the enabled — game area → **bet → Join**
-  (one "stake & play" block) → open challenges → related → rival banner → recent clashes → footer.
+  (one "stake & play" block) → open challenges → related → rival banner → ~~recent clashes →~~ footer.
+  (#114: recent clashes removed; "Open Games" is now the cross-game ticker.)
 - **Q4 precedence:** taking a challenge supersedes an armed bet and uses the **owner's** stake;
   show the stake on the row; balance-check before claiming.
 - **+ One commitment at a time:** join disabled while Waiting on your own resting bet.
-- **+ No house-only games** ever in the roster/related-games (Limbo/Crash/Keno/Hilo excluded).
+- **+ No house-only games** ever *playable* in the roster/related-games (Limbo/Crash/Keno/Hilo never a house-form route). **#114:** they may now *appear* in the related rail as dimmed, inert **coming-soon** tiles (display only — never playable), consistent with the roster.
