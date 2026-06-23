@@ -108,6 +108,11 @@ bet precedes Join):
 > - **§7 Recent Clashes → removed from the hub.** The leaderboard lives only in `profile-hub` now.
 >
 > §2+§3 are also merged into one rounded "play panel" with an inert **Play a Friend** button, and the "max ¢"/"select a bet" copy is dropped (enable-on-bet behaviour kept). The table below documents Coinflip's original intent; where it conflicts with the above, the template wins.
+>
+> **Further template patterns (blackjack-arena-polish, every hub inherits):**
+> - **Opponent slot states** (§1 pill above the board): *idle* → a neutral **"Opponent"** placeholder; *waiting* → the **"Searching…"** beat with a decorative online-name scan (`DEMO_PRESENTATION.md` — real online players only, never fabricated, just "Searching…" when the feed is empty), held by a small **dwell floor** so a match never snaps in at zero delay; *in-match/result* → the **real opponent's name in bright white** (known only on the JOIN path from the challenge owner; the PLAY/post path falls back to "Opponent" — the joiner's name never reaches the client). Never an `opponentId`, never a cycled name.
+> - **In-match play panel (item 7):** the play panel stays mounted during a match — PLAY reads **"Playing…"** (disabled) and BET AMOUNT + Play-a-Friend stay **visible but disabled** (not removed).
+> - **Per-game slot controls:** a hub may inject in-match controls into the player's **own** slot pill via `renderSlotControls` (Blackjack puts Hit/Stand there). On-table rules prompts are dropped (no "your turn"/rules blurb on the arena).
 
 | # | Section | What it shows / does | Data source (real) | Reuses |
 |---|---------|----------------------|--------------------|--------|

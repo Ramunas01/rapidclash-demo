@@ -148,6 +148,10 @@ export function App() {
   const [balance, setBalance] = useState(0);
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
   const [opponentId, setOpponentId] = useState<string | null>(null);
+  // The opponent's real display name, known ONLY when we JOINed their open challenge (its owner
+  // name). Null on the PLAY/post path — the joiner's name never reaches the client. Never derived
+  // from an id and never fabricated (the hub falls back to a neutral "Opponent").
+  const [opponentName, setOpponentName] = useState<string | null>(null);
   const [gameState, setGameState] = useState<GameView | null>(null);
   // The game whose match is currently active — drives which play screen renders.
   // Persisted alongside currentMatchId (#10) so a mid-match reload resumes the right one.
@@ -475,6 +479,8 @@ export function App() {
     }
     if (!wsRef.current) return;
     setPendingStake(stake);
+    // Posting our own challenge: the eventual joiner's name never reaches the client → no name.
+    setOpponentName(null);
     // Remember the picked time control so a re-post after expiry reuses the same one.
     setPendingTimeControl(timeControlId);
     // No silent drop (#30): if the socket is down, stay put and tell the user — don't
@@ -495,6 +501,7 @@ export function App() {
     if (!pendingGameId || !wsRef.current) return;
     wsRef.current.leaveQueue(pendingGameId); // best-effort; leaving the UI is a local nav
     setWaitingExpiresAt(null);
+    setOpponentName(null);
     // On a Game hub, cancelling returns to Idle in place; the standalone lobby exits to the wallet.
     if (!isGameHubScreen(screen)) setScreen('wallet');
   }, [pendingGameId, screen]);
@@ -523,9 +530,15 @@ export function App() {
     }
     if (!wsRef.current) return;
     setChallengeNotice(null);
+    // Capture the challenge owner's real name so the hub can show the genuine opponent on
+    // match.start (the only client-side path where the opponent's name is known).
+    const owner =
+      Object.values(homeChallenges).flat().find((c) => c.matchId === matchId)?.ownerName ??
+      challenges.find((c) => c.matchId === matchId)?.ownerName ?? null;
+    setOpponentName(owner);
     // On success the server pushes match.start → we land in the match; on failure → onError.
     if (!wsRef.current.takeChallenge(matchId)) setActionNotice(RECONNECT_NOTICE);
-  }, [token, openAuth, lookupChallenge]);
+  }, [token, openAuth, lookupChallenge, homeChallenges, challenges]);
 
   // A JOIN from the logged-out public ticker: the row already carries game + stake, so capture a
   // full 'join' intent directly (no WS feed to look it up in). On sign-in #111's resume takes it;
@@ -571,6 +584,7 @@ export function App() {
     setLastSettlement(null);
     setGameState(null);
     setOpponentId(null);
+    setOpponentName(null);
   }, []);
 
   // Wallet chip / Account tab: the profile when signed in, the sign-in modal when logged out.
@@ -630,6 +644,7 @@ export function App() {
           playerId={playerId}
           username={username}
           opponentId={opponentId}
+          opponentName={opponentName}
           balance={balance}
           currentMatchId={currentMatchId}
           gameState={gameState}

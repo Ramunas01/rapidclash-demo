@@ -54,11 +54,11 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
     expect(onPlay).toHaveBeenCalledWith(10);
   });
 
-  it('Idle board (item 2): the empty olive table shows the "Place your bet and play" prompt', () => {
+  it('Idle board (item 1): the empty greyish table shows the "Place your bet and play" prompt', () => {
     render(<BlackjackHubScreen {...baseProps()} />);
     const board = screen.getByTestId('hub-board');
     expect(board.textContent).toMatch(/place your bet and play/i);
-    // No live cards on the empty table.
+    // No live cards on the empty table (the right-edge decks are decorative, not `card`s).
     expect(within(board).queryByTestId('card')).toBeNull();
   });
 
@@ -119,6 +119,49 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
     const reveal = within(screen.getByTestId('hub-result-blackjack'));
     expect(reveal.getByText('20')).toBeInTheDocument();
     expect(reveal.getByText('17')).toBeInTheDocument();
+  });
+
+  it('Item 6: Hit/Stand live in the player\'s own slot pill (not on the table)', () => {
+    render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: ['hit', 'stand'] })} />);
+    const ownPill = screen.getByTestId('hub-slot-own');
+    expect(within(ownPill).getByTestId('hit-btn')).toBeInTheDocument();
+    expect(within(ownPill).getByTestId('stand-btn')).toBeInTheDocument();
+    // The table no longer carries an on-board Resign control or rules blurb.
+    expect(screen.queryByText(/resign/i)).toBeNull();
+    expect(screen.queryByText(/closest to 21/i)).toBeNull();
+    expect(screen.queryByText(/your turn/i)).toBeNull();
+  });
+
+  it('Item 7: in-match freezes the play panel — PLAY reads "Playing…" (disabled), bet stays', () => {
+    render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: ['hit', 'stand'] })} />);
+    const play = screen.getByTestId('hub-play');
+    expect(play.textContent).toMatch(/playing/i);
+    expect(play).toBeDisabled();
+    // Bet amount + Play-a-Friend stay visible but disabled (not removed).
+    expect(screen.getByTestId('hub-bet-10')).toBeDisabled();
+    expect(screen.getByTestId('hub-play-friend')).toBeInTheDocument();
+  });
+
+  it('Item 2: the "Searching…" beat never fabricates a name (empty online list)', () => {
+    // Waiting with no online players in the cross-game feed → just "Searching…", no scan name,
+    // and never the opponentId.
+    render(<BlackjackHubScreen {...baseProps({ waitingExpiresAt: Date.now() + 30_000, challengesByGame: {} })} />);
+    const opp = screen.getByTestId('hub-slot-opponent');
+    expect(opp.textContent).toMatch(/searching/i);
+    expect(screen.queryByTestId('hub-search-scan')).toBeNull();
+    expect(opp.textContent).not.toMatch(/bob/); // opponentId is never shown
+  });
+
+  it('Item 2: in-match shows a neutral "Opponent" when the joiner\'s name is unknown (never the id)', () => {
+    render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: [] })} />);
+    const opp = screen.getByTestId('hub-slot-opponent');
+    expect(opp.textContent).toContain('Opponent');
+    expect(opp.textContent).not.toMatch(/bob/);
+  });
+
+  it('Item 2: in-match shows the REAL opponent name (from a joined challenge) in the slot', () => {
+    render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: [], opponentName: 'Povcnent' })} />);
+    expect(screen.getByTestId('hub-slot-opponent').textContent).toContain('Povcnent');
   });
 
   it('is sanitized: no $ anywhere on the hub', () => {
