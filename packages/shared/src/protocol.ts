@@ -122,6 +122,10 @@ export interface ChallengeExpiredPayload {
 export interface MatchStartPayload {
   matchId: string;
   opponent: PlayerId;
+  /** The opponent's public display name (alias). Same alias already shown publicly in the
+   *  open-challenge feed — NOT hidden game state, so redaction (invariant #2) is intact. Lets
+   *  every game show the real opponent's name on both the PLAY and JOIN paths. */
+  opponentName: string;
   gameId: string; // authoritative game to route to (Charter invariant #2: server-authoritative)
   state: GameState; // viewFor result — opponent's hidden info already stripped
 }
@@ -130,6 +134,10 @@ export interface MatchStartPayload {
 export interface MatchStatePayload {
   state: GameState;
   events: GameEvent[];
+  /** The opponent's public display name — carried on the resume path (match.resume → match.state)
+   *  so the name survives a reconnect/reload. Omitted on per-move broadcasts (the client already
+   *  has it from match.start). Public alias only — never hidden game state. */
+  opponentName?: string;
 }
 
 /** It is your turn; here are the moves you may legally submit. */

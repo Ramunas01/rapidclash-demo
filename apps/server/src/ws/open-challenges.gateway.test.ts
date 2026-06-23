@@ -11,6 +11,7 @@ import type {
   ChallengesUpdatePayload,
   QueueWaitingPayload,
   MatchStartPayload,
+  MatchStatePayload,
 } from '@rapidclash/shared';
 
 // Drive the real WS gateway over real sockets to exercise the open-challenge feed.
@@ -209,6 +210,51 @@ describe('OC8 — open-challenges feed over the WS gateway', () => {
     const takeCarol = (await carol.waitFor('match.start')).payload as MatchStartPayload;
     expect(takeDave.gameId).toBe('chess');
     expect(takeCarol.gameId).toBe('chess');
+  });
+
+  it('match.start carries each player the OTHER opponent alias on BOTH the FIFO (PLAY) and take (JOIN) paths', async () => {
+    // FIFO / PLAY path: both queue, the auto-match fires match.start — each gets the other's alias.
+    const alice = await openSocket(port, aliceToken);
+    const bob = await openSocket(port, bobToken);
+    sockets.push(alice, bob);
+
+    alice.send('queue.join', { gameId: 'rps', stake: 10 });
+    await alice.waitFor('queue.waiting');
+    bob.send('queue.join', { gameId: 'rps', stake: 10 });
+    const fifoAlice = (await alice.waitFor('match.start')).payload as MatchStartPayload;
+    const fifoBob = (await bob.waitFor('match.start')).payload as MatchStartPayload;
+    expect(fifoAlice.opponentName).toBe('bob');
+    expect(fifoBob.opponentName).toBe('alice');
+
+    // challenge.take / JOIN path: a resting bet taken from the lobby — same, on both sides.
+    const carol = await openSocket(port, (await registerExtra(app, 'carol')).token);
+    const dave = await openSocket(port, (await registerExtra(app, 'dave')).token);
+    sockets.push(carol, dave);
+
+    carol.send('queue.join', { gameId: 'rps', stake: 10 });
+    const restingId = ((await carol.waitFor('queue.waiting')).payload as QueueWaitingPayload).matchId;
+    dave.send('challenge.take', { matchId: restingId });
+    const takeDave = (await dave.waitFor('match.start')).payload as MatchStartPayload;
+    const takeCarol = (await carol.waitFor('match.start')).payload as MatchStartPayload;
+    expect(takeDave.opponentName).toBe('carol');
+    expect(takeCarol.opponentName).toBe('dave');
+  });
+
+  it('match.resume re-sends the opponent alias so the real name survives a reconnect', async () => {
+    const alice = await openSocket(port, aliceToken);
+    const bob = await openSocket(port, bobToken);
+    sockets.push(alice, bob);
+
+    alice.send('queue.join', { gameId: 'rps', stake: 10 });
+    const matchId = ((await alice.waitFor('queue.waiting')).payload as QueueWaitingPayload).matchId;
+    bob.send('queue.join', { gameId: 'rps', stake: 10 });
+    await alice.waitFor('match.start');
+    await bob.waitFor('match.start');
+
+    // Simulate a reconnect: alice resumes and must be re-told bob's alias on the match.state.
+    alice.send('match.resume', { matchId });
+    const resumed = (await alice.waitFor('match.state')).payload as MatchStatePayload;
+    expect(resumed.opponentName).toBe('bob');
   });
 
   it('SELF_TAKE: an owner taking their own challenge is rejected', async () => {

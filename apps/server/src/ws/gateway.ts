@@ -98,10 +98,13 @@ export function registerWsGateway(
     playerMatch.set(curId, result.matchId);
     playerMatch.set(result.opponentId, result.matchId);
 
+    // Each player gets the OTHER's public alias (already shown in the open-challenge feed — not
+    // hidden game state). Falls back to the opaque id only if a name can't be resolved.
     const curState = mod ? mod.viewFor(result.initialState, curId) : result.initialState;
     send<MatchStartPayload>(curSocket, 'match.start', {
       matchId: result.matchId,
       opponent: result.opponentId,
+      opponentName: identity.getUsername(result.opponentId) ?? result.opponentId,
       gameId,
       state: curState,
     });
@@ -112,6 +115,7 @@ export function registerWsGateway(
       send<MatchStartPayload>(oppSocket, 'match.start', {
         matchId: result.matchId,
         opponent: curId,
+        opponentName: identity.getUsername(curId) ?? curId,
         gameId,
         state: oppState,
       });
@@ -425,7 +429,14 @@ export function registerWsGateway(
                 }
                 const mod = moduleByGame.get(activeMatch.gameId);
                 const state = mod ? mod.viewFor(activeMatch.state, playerId) : activeMatch.state;
-                send<MatchStatePayload>(socket, 'match.state', { state, events: [] }, matchId);
+                // Re-send the opponent's alias so the real name survives a reconnect/reload.
+                const oppId = activeMatch.players.find((p) => p !== playerId);
+                send<MatchStatePayload>(
+                  socket,
+                  'match.state',
+                  { state, events: [], opponentName: oppId ? (identity.getUsername(oppId) ?? oppId) : undefined },
+                  matchId,
+                );
 
                 if (mod) {
                   const lm = mod.legalMoves(activeMatch.state, playerId);
