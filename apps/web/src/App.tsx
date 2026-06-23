@@ -276,6 +276,9 @@ export function App() {
       onMatchStart(payload, matchId) {
         setCurrentMatchId(matchId);
         setOpponentId(payload.opponent);
+        // Server-authoritative opponent alias — the real name on BOTH the PLAY and JOIN paths
+        // (a public alias, not hidden state). Supersedes the JOIN-only ownerName capture below.
+        setOpponentName(payload.opponentName ?? null);
         setGameState(payload.state as GameView);
         // Route from the server-authoritative gameId (Charter invariant #2), not the
         // local pendingGameId — the take-challenge path never set pendingGameId, which
@@ -297,6 +300,9 @@ export function App() {
           const opp = state.players.find((p) => p !== playerId);
           if (opp) setOpponentId(opp);
         }
+        // On reconnect/reload, restore the opponent's real alias from the resume payload (the
+        // in-memory name is lost on reload; per-move broadcasts omit it and must not clear it).
+        if (payload.opponentName) setOpponentName(payload.opponentName);
         // Hub games resume onto their hub (in-place); other games use the play screen.
         setScreen((s) => (isGameHubScreen(s) ? s : (hubScreenFor(activeGameId) ?? 'play')));
       },
@@ -530,15 +536,11 @@ export function App() {
     }
     if (!wsRef.current) return;
     setChallengeNotice(null);
-    // Capture the challenge owner's real name so the hub can show the genuine opponent on
-    // match.start (the only client-side path where the opponent's name is known).
-    const owner =
-      Object.values(homeChallenges).flat().find((c) => c.matchId === matchId)?.ownerName ??
-      challenges.find((c) => c.matchId === matchId)?.ownerName ?? null;
-    setOpponentName(owner);
+    // The opponent's real name now arrives authoritatively on match.start (both paths), so no
+    // client-side ownerName capture is needed here.
     // On success the server pushes match.start → we land in the match; on failure → onError.
     if (!wsRef.current.takeChallenge(matchId)) setActionNotice(RECONNECT_NOTICE);
-  }, [token, openAuth, lookupChallenge, homeChallenges, challenges]);
+  }, [token, openAuth, lookupChallenge]);
 
   // A JOIN from the logged-out public ticker: the row already carries game + stake, so capture a
   // full 'join' intent directly (no WS feed to look it up in). On sign-in #111's resume takes it;
