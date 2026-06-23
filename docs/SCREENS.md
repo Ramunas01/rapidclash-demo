@@ -47,12 +47,16 @@ Instances: `game-hub:coinflip`, `:rps`, `:blackjack`, `:mines`, `:chess`. Same r
 |--------|---------|--------------------|
 | `game-hub/arena` | The play surface (coin / cards / board / RPS); opponent info hidden until `match.end` | `match.start/state/your_turn/end`; per-game redacted view |
 | `game-hub/stake` | Bet-amount selector (arms the stake) | local selection |
-| `game-hub/play` | The green **PLAY** button (post a challenge) | `ws.joinQueue` |
-| `game-hub/challenges` | This game's open challenges; rows say **JOIN** | `ws.subscribeChallenges` → `OpenChallenge[]` |
-| `game-hub/related` | Related-games rail (**PvP games only**) | `api.games` |
+| `game-hub/play` | The **PLAY** button (purple; post a challenge), in the unified play panel with the inert **Play a Friend** (#114/#115) | `ws.joinQueue` |
+| `game-hub/challenges` | **Cross-game "Open Games" ticker** (#114) — resting challenges across all games; rows say **JOIN** and route to that game's hub | cross-game `challenges` feed → `OpenChallenge[]` |
+| `game-hub/related` | Related-games rail (**whole roster incl. inert coming-soon tiles**, per #114; playable set still `/games`) | `api.games` + static coming-soon |
 | `game-hub/result` | Brief self-dismissing result overlay (lands wherever scrolled) | `match.end` |
 
-**States** (in place, over WS events — no navigation): `idle` (browse, arena greyed) → `waiting` (own challenge resting; joining others disabled) → `in-match` (`match.start` activates the arena) → `result` (overlay, wallet updates) → back to `idle`. For internal-replay games (Blackjack/Mines draws), the replay loops in place; only the decisive result shows the overlay. See `COINFLIP_HUB.md` for the reference instance.
+**States** (in place, over WS events — no navigation): `idle` (browse, arena greyed) → `waiting` (opponent search) → `in-match` (`match.start` activates the arena) → `result` (overlay, wallet updates) → back to `idle`. For internal-replay games (Blackjack/Mines draws), the replay loops in place; only the decisive result shows the overlay. See `COINFLIP_HUB.md` for the reference instance.
+
+**`waiting` shows the "Searching…" reassurance** (template pattern — every game hub; full spec in `DEMO_PRESENTATION.md`): the opponent slot reads *Searching…* with a brief decorative name-scan, **holds for a minimum dwell (~2–4 s) even when a real opponent is already waiting** so a match never snaps in with jarring zero delay, then shows the **real `match.start` opponent's name in bright white**. The scanned names are decorative; the opponent is always the real match — never a fabricated name.
+
+**Animation honours redaction** (template rule for hidden-info hubs): during `in-match`, an opponent's move animates with **face-down / hidden** representations; the opponent's concealed cards, choices, and true total reveal **only at the terminal `match.end`** (`viewFor`). An on-table opponent total shows the *visible-card* value until then — never the hidden total.
 
 ### `profile-hub` — account (auth-gated)
 
