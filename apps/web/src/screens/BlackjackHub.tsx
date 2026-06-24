@@ -351,7 +351,7 @@ export function BlackjackHubScreen(props: GameHubScreenProps) {
       gameId="blackjack"
       gameName="Blackjack"
       renderGameArea={BlackjackPanel}
-      renderSlotControls={BlackjackSlotControls}
+      renderSlotAside={(args, side) => (side === 'own' && args.phase === 'in-match' ? <BlackjackSlotControls {...args} /> : null)}
       renderResultReveal={BlackjackReveal}
       holdResultMs={RESULT_HOLD_MS}
       {...props}

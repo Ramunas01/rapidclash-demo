@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Chessboard } from 'react-chessboard';
 import type { Square } from 'react-chessboard/dist/chessboard/types';
 import { Chess } from 'chess.js';
@@ -7,9 +7,9 @@ import { formatClock } from '../format.js';
 import type { ChessView, ChessMove } from '../App.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
 
-/** Board palette tuned to the lavender/purple design system. */
-const LIGHT_SQUARE = '#d8cdf0';
-const DARK_SQUARE = '#6b4bb0';
+/** Board palette tuned to the lavender/purple design system (frame: white + light-purple). */
+const LIGHT_SQUARE = '#ffffff';
+const DARK_SQUARE = '#b0a3e6';
 const LOW_TIME_MS = 10_000; // warn under ~10s (spec: "Client (display only)")
 
 const PROMOTION_PIECES: { piece: 'q' | 'r' | 'b' | 'n'; label: string; glyph: string }[] = [
@@ -19,93 +19,92 @@ const PROMOTION_PIECES: { piece: 'q' | 'r' | 'b' | 'n'; label: string; glyph: st
   { piece: 'n', label: 'Knight', glyph: '♞' },
 ];
 
-/** Responsive board size — measured once and on resize. A fixed default keeps jsdom
- *  (offsetWidth 0) and SSR happy without react-chessboard's ResizeObserver path. */
+/** Full-bleed board width — the board spans the whole hub column (wider than the inset pills),
+ *  capped at the max-w-md frame. A fixed default keeps jsdom (offsetWidth 0) / SSR happy. */
 function useBoardWidth(): number {
-  const [w, setW] = useState(() => (typeof window !== 'undefined' ? Math.min(window.innerWidth - 48, 420) : 360));
+  const measure = () => (typeof window !== 'undefined' ? Math.min(window.innerWidth, 448) : 360);
+  const [w, setW] = useState(measure);
   useEffect(() => {
-    const onResize = () => setW(Math.min(window.innerWidth - 48, 420));
+    const onResize = () => setW(measure());
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
   return w;
 }
 
-/**
- * Dual-clock display (display-only; the server is authoritative, invariant #2). Renders both
- * players' budgets from the view's PlayerClocks; the active player's clock ticks down locally
- * between server updates (re-synced whenever the server clock advances). Decides nothing.
- */
-function ChessClocks({ clock, playerId, opponentId }: { clock: ChessView['clock']; playerId: string; opponentId: string }) {
-  const [, setNow] = useState(() => Date.now());
-  const active = clock?.active ?? null;
-  const activeRemaining = active && clock ? clock.remainingMs[active] ?? 0 : 0;
-  // Re-sync the local countdown whenever the server clock advances (active side or its budget).
-  const sync = useRef({ at: Date.now(), remaining: activeRemaining, active });
-  useEffect(() => {
-    sync.current = { at: Date.now(), remaining: activeRemaining, active };
-  }, [active, activeRemaining]);
-  // Tick only while someone's clock is running.
-  useEffect(() => {
-    if (!active) return;
-    const id = setInterval(() => setNow(Date.now()), 250);
-    return () => clearInterval(id);
-  }, [active]);
-
-  if (!clock) return null;
-  const liveMs = (pid: string): number => {
-    const banked = clock.remainingMs[pid] ?? 0;
-    if (pid !== active) return banked; // paused → banked value
-    return Math.max(0, sync.current.remaining - (Date.now() - sync.current.at));
-  };
-
-  const Row = ({ pid, label, testid }: { pid: string; label: string; testid: string }) => {
-    const ms = liveMs(pid);
-    const isActive = pid === active;
-    const low = ms < LOW_TIME_MS;
-    return (
-      <div
-        data-testid={testid}
-        data-active={isActive}
-        data-low-time={low}
-        className={cn(
-          'flex items-center justify-between rounded-lg px-3 py-1.5',
-          isActive ? 'bg-brand/15 ring-1 ring-brand/40' : 'bg-surface',
-        )}
-      >
-        <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
-        <span
-          className={cn(
-            'flex items-center gap-1 text-sm font-bold tabular-nums',
-            low ? 'text-destructive' : isActive ? 'text-foreground' : 'text-muted-foreground',
-            low && isActive && 'animate-pulse',
-          )}
-        >
-          {isActive && <span className={cn('h-1.5 w-1.5 rounded-full', low ? 'bg-destructive' : 'bg-success')} />}
-          {formatClock(ms)}
-        </span>
-      </div>
-    );
-  };
-
+/** Presentational clock chip rendered in a slot pill (display-only; the server is authoritative,
+ *  invariant #2). The active side highlights; under ~10s it warns. */
+function ClockPill({ ms, active, low, testid }: { ms: number; active: boolean; low: boolean; testid: string }) {
   return (
-    <div className="grid grid-cols-2 gap-2" data-testid="chess-clocks">
-      <Row pid={opponentId} label="Opponent" testid="chess-clock-opponent" />
-      <Row pid={playerId} label="You" testid="chess-clock-self" />
+    <span
+      data-testid={testid}
+      data-active={active}
+      data-low-time={low}
+      className={cn(
+        'flex items-center gap-1 rounded-md px-2.5 py-1 text-sm font-bold tabular-nums',
+        active ? 'bg-brand/25 text-foreground ring-1 ring-brand/40' : 'bg-background/70 text-muted-foreground',
+        low && 'text-destructive',
+        low && active && 'animate-pulse',
+      )}
+    >
+      {active && <span className={cn('h-1.5 w-1.5 rounded-full', low ? 'bg-destructive' : 'bg-success')} />}
+      {formatClock(ms)}
+    </span>
+  );
+}
+
+/** Live single-player clock: the active player's budget ticks down locally between server updates
+ *  (re-synced whenever the server clock advances); the paused side shows its banked value. */
+function ChessClockChip({ clock, pid, testid }: { clock: NonNullable<ChessView['clock']>; pid: string; testid: string }) {
+  const active = clock.active ?? null;
+  const isActive = pid === active;
+  const banked = clock.remainingMs[pid] ?? 0;
+  const [, setTick] = useState(0);
+  const sync = useRef({ at: Date.now(), remaining: banked });
+  useEffect(() => { sync.current = { at: Date.now(), remaining: banked }; }, [banked, isActive]);
+  useEffect(() => {
+    if (!isActive) return;
+    const id = setInterval(() => setTick((n) => n + 1), 250);
+    return () => clearInterval(id);
+  }, [isActive]);
+  const ms = isActive ? Math.max(0, sync.current.remaining - (Date.now() - sync.current.at)) : banked;
+  return <ClockPill ms={ms} active={isActive} low={ms < LOW_TIME_MS} testid={testid} />;
+}
+
+/** Slot-pill aside for chess: each side's clock — live from the view in-match, or the selected
+ *  control's base budget (e.g. 10:00) pre-match. Wired into both pills by the GameHub template. */
+function ChessSlotAside(args: GameAreaArgs, side: 'opponent' | 'own'): ReactNode {
+  const view = args.gameState as ChessView | null;
+  const pid = side === 'own' ? args.playerId : args.opponentId;
+  const testid = side === 'own' ? 'chess-clock-self' : 'chess-clock-opponent';
+  if (view?.clock && pid) return <ChessClockChip clock={view.clock} pid={pid} testid={testid} />;
+  if (args.timeControlBaseMs != null) return <ClockPill ms={args.timeControlBaseMs} active={false} low={false} testid={testid} />;
+  return null;
+}
+
+/** Pre-game / searching board (owner decision): just the empty full-bleed board — no pieces, no
+ *  table, no helper text. Real pieces render on match.start. */
+function ChessEmptyBoard() {
+  return (
+    <div className="-mx-4" data-testid="chess-board">
+      <div aria-hidden className="grid grid-cols-8">
+        {Array.from({ length: 64 }, (_, i) => {
+          const dark = (Math.floor(i / 8) + i) % 2 === 1;
+          return <div key={i} className="aspect-square" style={{ backgroundColor: dark ? DARK_SQUARE : LIGHT_SQUARE }} />;
+        })}
+      </div>
     </div>
   );
 }
 
 /**
- * The live in-match chess board — ChessPlay's logic lifted into the GameHub slot: position is
- * server-authoritative (perfect info, no redaction), interaction (click + drag + promotion) is
- * gated by the server-issued legalMoves, and the dual clocks render from the view's PlayerClocks.
- * The slot types legalMoves/onMove as string for the generic games — narrow them back to ChessMove
- * (as MinesPanel narrows to numbers); the App's generic signature is unchanged.
+ * The live in-match chess board (full-bleed). Position is server-authoritative (perfect info, no
+ * redaction); interaction (click + drag + promotion) is gated by the server-issued legalMoves.
+ * No on-board text — clocks live in the slot pills, the picker in the play panel. The slot types
+ * legalMoves/onMove as string for the generic games — narrow them back to ChessMove.
  */
-function ChessBoard({ playerId, opponentId, username, gameState, legalMoves, onMove, onForfeit }: GameAreaArgs) {
+function ChessBoard({ playerId, gameState, legalMoves, onMove }: GameAreaArgs) {
   const view = gameState as ChessView | null;
-  // Chess moves are {from,to,promotion?} objects, not strings — narrow the generic slot types.
   const moves = legalMoves as unknown as ChessMove[];
   const move = onMove as unknown as (m: ChessMove) => void;
 
@@ -119,20 +118,20 @@ function ChessBoard({ playerId, opponentId, username, gameState, legalMoves, onM
   const isMyTurn = moves.length > 0;
 
   // chess.js is used ONLY for display facts derivable from the FEN (check + the king's square).
-  const { inCheck, checkedKingSquare } = useMemo(() => {
-    if (!fen) return { inCheck: false, checkedKingSquare: null as Square | null };
+  const { checkedKingSquare } = useMemo(() => {
+    if (!fen) return { checkedKingSquare: null as Square | null };
     try {
       const chess = new Chess(fen);
-      if (!chess.inCheck()) return { inCheck: false, checkedKingSquare: null as Square | null };
+      if (!chess.inCheck()) return { checkedKingSquare: null as Square | null };
       const turn = chess.turn();
       for (const row of chess.board()) {
         for (const sq of row) {
-          if (sq && sq.type === 'k' && sq.color === turn) return { inCheck: true, checkedKingSquare: sq.square as Square };
+          if (sq && sq.type === 'k' && sq.color === turn) return { checkedKingSquare: sq.square as Square };
         }
       }
-      return { inCheck: true, checkedKingSquare: null as Square | null };
+      return { checkedKingSquare: null as Square | null };
     } catch {
-      return { inCheck: false, checkedKingSquare: null as Square | null };
+      return { checkedKingSquare: null as Square | null };
     }
   }, [fen]);
 
@@ -189,115 +188,61 @@ function ChessBoard({ playerId, opponentId, username, gameState, legalMoves, onM
   }, [checkedKingSquare, selected, targetsForSelected]);
 
   return (
-    <div className="flex flex-col gap-3" data-testid="hub-board">
-      {/* You / turn / check status */}
-      <div className="flex items-center justify-between text-xs">
-        <span data-testid="play-you" className="font-medium text-muted-foreground">
-          {username ? <>You (<strong className="text-foreground">{username}</strong>)</> : 'You'}
-          <span className="ml-1 text-foreground/40">· {isWhite ? 'White' : 'Black'}</span>
-        </span>
-        <span className="flex items-center gap-2">
-          {inCheck && (
-            <span data-testid="check-badge" className="rounded-full border border-destructive/40 bg-destructive/10 px-2 py-0.5 font-semibold text-destructive">
-              Check!
-            </span>
-          )}
-          <span data-testid="turn-indicator" className={cn('font-semibold', isMyTurn ? 'text-brand' : 'text-muted-foreground')}>
-            {isMyTurn ? 'Your move' : "Opponent's move"}
-          </span>
-        </span>
-      </div>
-
-      {/* Dual clocks (cumulative budgets; the active one ticks). */}
-      {view?.clock && playerId && opponentId && (
-        <ChessClocks clock={view.clock} playerId={playerId} opponentId={opponentId} />
+    <div className="relative -mx-4" data-testid="chess-board" style={{ width: boardWidth }}>
+      {fen ? (
+        <Chessboard
+          id="rapidclash-chess-hub"
+          position={fen}
+          boardWidth={boardWidth}
+          boardOrientation={orientation}
+          arePiecesDraggable={isMyTurn}
+          onSquareClick={handleSquareClick}
+          onPieceDrop={handlePieceDrop}
+          customSquareStyles={customSquareStyles}
+          customDarkSquareStyle={{ backgroundColor: DARK_SQUARE }}
+          customLightSquareStyle={{ backgroundColor: LIGHT_SQUARE }}
+          customBoardStyle={{ borderRadius: 0 }}
+          animationDuration={200}
+        />
+      ) : (
+        <div className="aspect-square w-full animate-pulse bg-surface" />
       )}
 
-      {/* The board: server-authoritative position, moves gated by legalMoves. */}
-      <div className="relative mx-auto" data-testid="chess-board" style={{ width: boardWidth }}>
-        {fen ? (
-          <Chessboard
-            id="rapidclash-chess-hub"
-            position={fen}
-            boardWidth={boardWidth}
-            boardOrientation={orientation}
-            arePiecesDraggable={isMyTurn}
-            onSquareClick={handleSquareClick}
-            onPieceDrop={handlePieceDrop}
-            customSquareStyles={customSquareStyles}
-            customDarkSquareStyle={{ backgroundColor: DARK_SQUARE }}
-            customLightSquareStyle={{ backgroundColor: LIGHT_SQUARE }}
-            customBoardStyle={{ borderRadius: '0.75rem', boxShadow: '0 10px 30px rgba(0,0,0,0.45)' }}
-            animationDuration={200}
-          />
-        ) : (
-          <div className="aspect-square w-full animate-pulse rounded-xl border border-border bg-surface" />
-        )}
-
-        {pendingPromotion && (
-          <div data-testid="promotion-picker" className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-xl bg-black/70 backdrop-blur-sm">
-            <p className="text-sm font-semibold text-white/80">Promote to…</p>
-            <div className="flex gap-2">
-              {PROMOTION_PIECES.map(({ piece, label, glyph }) => (
-                <button
-                  key={piece}
-                  type="button"
-                  onClick={() => choosePromotion(piece)}
-                  aria-label={`Promote to ${label}`}
-                  data-testid={`promote-${piece}`}
-                  className="flex h-14 w-14 items-center justify-center rounded-xl border border-white/15 bg-white/[0.06] text-3xl text-white transition-colors hover:border-brand/60 hover:bg-white/[0.12] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-                >
-                  {glyph}
-                </button>
-              ))}
-            </div>
+      {pendingPromotion && (
+        <div data-testid="promotion-picker" className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/70 backdrop-blur-sm">
+          <p className="text-sm font-semibold text-white/80">Promote to…</p>
+          <div className="flex gap-2">
+            {PROMOTION_PIECES.map(({ piece, label, glyph }) => (
+              <button
+                key={piece}
+                type="button"
+                onClick={() => choosePromotion(piece)}
+                aria-label={`Promote to ${label}`}
+                data-testid={`promote-${piece}`}
+                className="flex h-14 w-14 items-center justify-center rounded-xl border border-white/15 bg-white/[0.06] text-3xl text-white transition-colors hover:border-brand/60 hover:bg-white/[0.12] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+              >
+                {glyph}
+              </button>
+            ))}
           </div>
-        )}
-      </div>
-
-      <p className="text-center text-xs text-muted-foreground">Tap a piece, then a highlighted square. Your clock runs on your turn.</p>
-
-      <button type="button" onClick={onForfeit} className="pt-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-        Resign
-      </button>
+        </div>
+      )}
     </div>
   );
 }
 
-/** Greyed board preview shown in Idle/Waiting — the visual anchor before a match starts. */
-function ChessIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
-  return (
-    <div className="flex flex-col items-center gap-4 py-1">
-      <div aria-hidden className="grid w-full max-w-[280px] grid-cols-8 overflow-hidden rounded-xl opacity-50">
-        {Array.from({ length: 64 }, (_, i) => {
-          const dark = (Math.floor(i / 8) + i) % 2 === 1;
-          return <div key={i} className="aspect-square" style={{ backgroundColor: dark ? DARK_SQUARE : LIGHT_SQUARE }} />;
-        })}
-      </div>
-      <p className="text-xs text-muted-foreground">
-        {phase === 'waiting' ? 'Waiting for an opponent…' : 'Pick a bet + time control and press PLAY, or JOIN an open challenge'}
-      </p>
-    </div>
-  );
-}
-
-/** The Chess game-area slot: greyed idle preview, or the live board + clocks in-match. */
+/** The Chess game-area slot: an empty full-bleed board pre-match, the live board in-match. The
+ *  arena owns its surface (no grey table card). */
 function ChessPanel(args: GameAreaArgs) {
-  // The arena owns its surface now (GameHub no longer wraps it in a grey card).
-  return (
-    <div className="rounded-2xl border border-border bg-card p-4">
-      {args.phase === 'in-match' ? <ChessBoard {...args} /> : <ChessIdle phase={args.phase} />}
-    </div>
-  );
+  return args.phase === 'idle' || args.phase === 'waiting' ? <ChessEmptyBoard /> : <ChessBoard {...args} />;
 }
 
 /**
- * Chess Hub = the shared GameHub + a Chess play-panel (react-chessboard, legalMoves-gated
- * interaction, promotion picker, dual cumulative clocks). The generic GameHub renders the
- * data-driven time-control picker (from meta.timeControl) in the challenge-creation area, and
- * the feed rows show each challenge's control. Mechanic / WS flow / server-authoritative clock
- * are unchanged — this is the presentation client for the Parts 1/2 clock feature.
+ * Chess Hub = the shared GameHub + a full-bleed chess board, with the dual cumulative clocks
+ * migrated into the slot pills (opponent name + clock above, your name + clock below) via the
+ * generic renderSlotAside mechanism, and the data-driven two-line time-control picker in the play
+ * panel. Mechanic / WS flow / server-authoritative clock are unchanged — presentation only.
  */
 export function ChessHubScreen(props: GameHubScreenProps) {
-  return <GameHub gameId="chess" gameName="Chess" renderGameArea={ChessPanel} {...props} />;
+  return <GameHub gameId="chess" gameName="Chess" renderGameArea={ChessPanel} renderSlotAside={ChessSlotAside} {...props} />;
 }

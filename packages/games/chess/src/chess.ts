@@ -19,10 +19,12 @@ const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 /** Cumulative per-player clocks, declared so the picker is data-driven (CHESS_TIME_CONTROL.md).
  *  Sudden-death for v1 (incrementMs 0); the field exists so Fischer is a later config change. */
 const CHESS_TIME_CONTROL: NonNullable<GameModule['meta']['timeControl']> = {
+  // Shortest-first for the picker (ids + defaultId unchanged — matchmaking keys + the bot crowd
+  // depend on them). The "Default" label became "Rapid"; the duration/name render on two lines.
   options: [
-    { id: 'rapid10', label: 'Default · 10 min', baseMs: 600_000, incrementMs: 0 },
-    { id: 'blitz5', label: 'Blitz · 5 min', baseMs: 300_000, incrementMs: 0 },
     { id: 'bullet1', label: 'Bullet · 1 min', baseMs: 60_000, incrementMs: 0 },
+    { id: 'blitz5', label: 'Blitz · 5 min', baseMs: 300_000, incrementMs: 0 },
+    { id: 'rapid10', label: 'Rapid · 10 min', baseMs: 600_000, incrementMs: 0 },
   ],
   defaultId: 'rapid10',
 };

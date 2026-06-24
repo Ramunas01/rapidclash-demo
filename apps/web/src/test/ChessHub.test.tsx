@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { ChessHubScreen } from '../screens/ChessHub.js';
 import type { ChessView, ChessMove, GameView } from '../App.js';
 import type { PlayerClocks, GameMeta } from '@rapidclash/shared';
@@ -17,9 +17,9 @@ const CHESS_META: GameMeta = {
   averageDurationSec: 300, rakeRate: 0.1,
   timeControl: {
     options: [
-      { id: 'rapid10', label: 'Default · 10 min', baseMs: 600_000, incrementMs: 0 },
-      { id: 'blitz5', label: 'Blitz · 5 min', baseMs: 300_000, incrementMs: 0 },
       { id: 'bullet1', label: 'Bullet · 1 min', baseMs: 60_000, incrementMs: 0 },
+      { id: 'blitz5', label: 'Blitz · 5 min', baseMs: 300_000, incrementMs: 0 },
+      { id: 'rapid10', label: 'Rapid · 10 min', baseMs: 600_000, incrementMs: 0 },
     ],
     defaultId: 'rapid10',
   },
@@ -83,7 +83,6 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
       <ChessHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({}), legalMoves: asLegal(OPENING), onMakeMove })} />,
     );
     expect(screen.getByTestId('chess-board')).toBeInTheDocument();
-    expect(screen.getByTestId('turn-indicator').textContent).toBe('Your move');
 
     fireEvent.click(sq(container, 'e2')); // select the pawn
     fireEvent.click(sq(container, 'e4')); // push it (a server-issued legal target)
@@ -95,14 +94,28 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
     expect(onMakeMove).not.toHaveBeenCalled();
   });
 
-  it('In-match: renders both clocks; the active side is flagged and shows a low-time warning under 10s', () => {
+  it('Picker: each option is a two-line button — large duration over small mode name', async () => {
+    render(<ChessHubScreen {...baseProps()} />);
+    const rapid = await screen.findByTestId('hub-tc-rapid10');
+    expect(rapid.textContent).toContain('10 min');
+    expect(rapid.textContent).toContain('Rapid');
+    expect(screen.getByTestId('hub-tc-bullet1').textContent).toContain('1 min');
+    expect(screen.getByTestId('hub-tc-bullet1').textContent).toContain('Bullet');
+    // Default control (rapid10) is pre-selected.
+    expect(rapid.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('In-match: the clocks live INSIDE the slot pills (opponent above, you below)', () => {
     const clock: PlayerClocks = {
       remainingMs: { alice: 300_000, bob: 8_000 }, active: 'bob', activeSince: Date.now(), timeControlId: 'blitz5',
     };
     render(<ChessHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ clock }), legalMoves: asLegal([]) })} />);
 
-    const self = screen.getByTestId('chess-clock-self');
-    const opp = screen.getByTestId('chess-clock-opponent');
+    // Migrated into the pills — not a separate grey clock table above the board.
+    const ownPill = within(screen.getByTestId('hub-slot-own'));
+    const oppPill = within(screen.getByTestId('hub-slot-opponent'));
+    const self = ownPill.getByTestId('chess-clock-self');
+    const opp = oppPill.getByTestId('chess-clock-opponent');
     expect(self.textContent).toContain('5:00'); // alice, paused at full
     expect(self.getAttribute('data-active')).toBe('false');
     // bob is on the move with <10s left → active + low-time.
@@ -110,9 +123,26 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
     expect(opp.getAttribute('data-low-time')).toBe('true');
   });
 
-  it('not-your-turn hides the move affordance (no legalMoves → opponent to move)', () => {
-    render(<ChessHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({}), legalMoves: asLegal([]) })} />);
-    expect(screen.getByTestId('turn-indicator').textContent).toBe("Opponent's move");
+  it('Pre-game: the board is empty (no pieces) and carries no instructional text', async () => {
+    const { container } = render(<ChessHubScreen {...baseProps()} />);
+    await screen.findByTestId('hub-tc-rapid10'); // wait for /games
+    // No pieces and no on-board helper copy before the match starts.
+    expect(container.querySelector('[data-piece]')).toBeNull();
+    expect(container.textContent ?? '').not.toMatch(/tap a piece/i);
+    expect(container.textContent ?? '').not.toMatch(/pick a bet/i);
+    expect(container.textContent ?? '').not.toMatch(/waiting for an opponent…/i);
+  });
+
+  it('not-your-turn: no legalMoves → a click never produces a move (pieces inert)', () => {
+    const onMakeMove = vi.fn();
+    const { container } = render(
+      <ChessHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({}), legalMoves: asLegal([]), onMakeMove })} />,
+    );
+    // The board still renders, but with no server-issued legalMoves a click sends nothing.
+    expect(screen.getByTestId('chess-board')).toBeInTheDocument();
+    fireEvent.click(sq(container, 'e2'));
+    fireEvent.click(sq(container, 'e4'));
+    expect(onMakeMove).not.toHaveBeenCalled();
   });
 
   it('Feed: a chess open-challenge shows in the cross-game Open Games ticker (game + ¢ stake)', async () => {
