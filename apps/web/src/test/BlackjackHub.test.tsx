@@ -102,7 +102,7 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
     expect(screen.getByTestId('round-note').textContent).toContain('push');
   });
 
-  it('Result: a decisive match.end shows the overlay with the ¢ delta + final totals', async () => {
+  it('Item 2: match.end shows NO pop-up — the final cards persist on the board (both hands revealed)', async () => {
     const terminal = inPlayView({
       hands: {
         pid: { cards: [{ rank: 'K', suit: '♠' }, { rank: 'Q', suit: '♥' }], done: true }, // 20
@@ -111,19 +111,23 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       winner: 'pid',
     });
     const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
-    expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
     rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
-    // Presentation pacing: the overlay holds a beat (RESULT_HOLD_MS) behind match.end so the
-    // terminal reveal animates first — wait past the hold (real timers).
-    await waitFor(() => expect(screen.getByTestId('hub-result-overlay')).toBeInTheDocument(), { timeout: 4000 });
-    expect(screen.getByTestId('hub-result-text').textContent).toContain('You Won');
-    expect(screen.getByTestId('hub-result-delta').textContent).toBe('+19¢');
-    const reveal = within(screen.getByTestId('hub-result-blackjack'));
-    expect(reveal.getByText('20')).toBeInTheDocument();
-    expect(reveal.getByText('17')).toBeInTheDocument();
+    // Blackjack opts OUT of the shared result pop-up.
+    expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
+    // The board stays up with BOTH hands revealed (no face-down) — the final cards persist.
+    expect(screen.getByTestId('hub-board')).toBeInTheDocument();
+    expect(within(screen.getByTestId('own-hand')).getAllByTestId('card')).toHaveLength(2);
+    expect(within(screen.getByTestId('opp-hand')).getAllByTestId('card')).toHaveLength(2);
+    expect(screen.queryByTestId('card-back')).toBeNull();
+    // No wallet / balance-change result text anywhere (only the live ribbon chip updates).
+    expect(screen.queryByText(/wallet change/i)).toBeNull();
+    expect(screen.queryByText(/new balance/i)).toBeNull();
+    // It never pops the overlay even after a beat.
+    await new Promise((r) => setTimeout(r, 60));
+    expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
   });
 
-  it('Pacing: match.end holds the board in-match for a beat before the result overlay', async () => {
+  it('Item 2: a beat after the reveal a green frame rings the player\'s own cards on a win (server outcome)', async () => {
     const terminal = inPlayView({
       hands: {
         pid: { cards: [{ rank: 'K', suit: '♠' }, { rank: 'Q', suit: '♥' }], done: true },
@@ -133,13 +137,66 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
     });
     const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
     rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
-    // Immediately after the server ends the match the overlay is NOT shown yet — the board is
-    // still mounted (reveal-hold) and the play panel still reads "Playing…".
-    expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
-    expect(screen.getByTestId('hub-board')).toBeInTheDocument();
-    expect(screen.getByTestId('hub-play').textContent).toMatch(/playing/i);
-    // …then the overlay arrives once the hold elapses.
-    await waitFor(() => expect(screen.getByTestId('hub-result-overlay')).toBeInTheDocument(), { timeout: 4000 });
+    // The win frame lands a beat after the reveal (FRAME_DELAY_MS) and stays.
+    await waitFor(() => {
+      for (const c of within(screen.getByTestId('own-hand')).getAllByTestId('card')) {
+        expect(c.className).toMatch(/ring-success/);
+      }
+    }, { timeout: 2000 });
+    // The opponent's cards are never framed; the frame is the player's own win/lose only.
+    for (const c of within(screen.getByTestId('opp-hand')).getAllByTestId('card')) {
+      expect(c.className).not.toMatch(/ring-success|ring-destructive/);
+    }
+  });
+
+  it('Item 2: a loss rings the own cards red; a draw rings nothing (server outcome only)', async () => {
+    const terminal = inPlayView({
+      hands: {
+        pid: { cards: [{ rank: '9', suit: '♠' }, { rank: '8', suit: '♥' }], done: true },
+        bob: { cards: [{ rank: 'K', suit: '♣' }, { rank: 'Q', suit: '♦' }], done: true },
+      },
+      winner: 'bob',
+    });
+    const { rerender, unmount } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
+    // A loss is the server outcome `type:'win'` with the OPPONENT as winner (there is no 'lose').
+    rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'bob' }, lastSettlement: { delta: -10, newBalance: 990 } })} />);
+    await waitFor(() => {
+      expect(within(screen.getByTestId('own-hand')).getAllByTestId('card')[0].className).toMatch(/ring-destructive/);
+    }, { timeout: 2000 });
+    unmount();
+
+    // A draw is a non win/lose terminal → no frame (neutral, handled gracefully).
+    const drawView = inPlayView({
+      hands: {
+        pid: { cards: [{ rank: 'K', suit: '♠' }, { rank: '9', suit: '♥' }], done: true },
+        bob: { cards: [{ rank: 'K', suit: '♣' }, { rank: '9', suit: '♦' }], done: true },
+      },
+      forcedOutcome: { type: 'draw' },
+    });
+    const { rerender: rr2 } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm2', gameState: drawView, legalMoves: [] })} />);
+    rr2(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: drawView, lastOutcome: { type: 'draw' }, lastSettlement: { delta: 0, newBalance: 1000 } })} />);
+    await new Promise((r) => setTimeout(r, 1200));
+    for (const c of within(screen.getByTestId('own-hand')).getAllByTestId('card')) {
+      expect(c.className).not.toMatch(/ring-success|ring-destructive/);
+    }
+  });
+
+  it('Item 2: after match.end the play button returns to PLAY (not "Playing…") to start a new game', () => {
+    const terminal = inPlayView({
+      hands: {
+        pid: { cards: [{ rank: 'K', suit: '♠' }, { rank: 'Q', suit: '♥' }], done: true },
+        bob: { cards: [{ rank: '9', suit: '♣' }, { rank: '8', suit: '♦' }], done: true },
+      },
+      winner: 'pid',
+    });
+    const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
+    expect(screen.getByTestId('hub-play').textContent).toMatch(/playing/i); // in-match
+    rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
+    // Result phase: PLAY is back (panel unfrozen) so a new game can start; bet re-enabled.
+    const play = screen.getByTestId('hub-play');
+    expect(play.textContent).toMatch(/play/i);
+    expect(play.textContent).not.toMatch(/playing/i);
+    expect(screen.getByTestId('hub-bet-10')).not.toBeDisabled();
   });
 
   it('Item 6: Hit/Stand live in the player\'s own slot pill (not on the table)', () => {

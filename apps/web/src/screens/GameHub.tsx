@@ -45,6 +45,10 @@ export interface GameAreaArgs {
    *  Lets a hub render the picked clock in the slot pills pre-match (before any server clock).
    *  Generic (derived from the meta) — undefined for games without a time control. */
   timeControlBaseMs?: number;
+  /** The server's match.end outcome — set only in the result phase (null otherwise). Lets a game
+   *  area paint a terminal result on the board itself (e.g. Blackjack's win/lose card frames) when
+   *  it opts out of the shared result overlay. Driven strictly by the server, never inferred. */
+  outcome?: Outcome | null;
 }
 
 /** The generic, per-game-agnostic props the App feeds every Game hub (Coinflip, RPS, …). */
@@ -105,6 +109,12 @@ interface GameHubProps extends GameHubScreenProps {
   renderSlotAside?(args: GameAreaArgs, side: 'opponent' | 'own'): ReactNode;
   /** Optional game-specific reveal at the top of the result overlay (e.g. the Coinflip coin). */
   renderResultReveal?(args: { outcome: Outcome; gameState: GameView | null; playerId: string | null }): ReactNode;
+  /** Opt out of the shared result pop-up (mirrors holdResultMs being opt-in). When true the hub
+   *  never renders the ResultOverlay; it instead holds the result phase open with the board mounted
+   *  (gameState = the terminal frame, areaArgs.outcome set) so the game presents the result on the
+   *  board itself, persisting until a new game starts or the player leaves. Other games omit it →
+   *  the overlay shows as before (the regression guard). */
+  suppressResultOverlay?: boolean;
   /** Presentation-only reveal pacing (opt-in). When > 0, the hub keeps the board mounted in the
    *  In-match phase for this long after the server ends the match, so the game area can animate
    *  its final state transitions (e.g. Blackjack's opponent reveal) before the result overlay
@@ -136,7 +146,7 @@ function useNow(active: boolean): number {
  */
 export function GameHub(props: GameHubProps) {
   const {
-    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, holdResultMs,
+    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, suppressResultOverlay, holdResultMs,
     token, playerId, username, opponentId, opponentName, balance, currentMatchId, gameState, legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
     onPlay, onCancel, onRepost, onTakeChallenge, onMakeMove, onForfeit, onTrackChallenges,
@@ -271,6 +281,10 @@ export function GameHub(props: GameHubProps) {
 
   function handlePlay() {
     if (armedStake == null) return;
+    // Starting a new game clears any persisted result (the opt-out games keep the last board up
+    // until now) so the panel/board leave the result phase cleanly.
+    setOverlay(null);
+    clearPendingResult();
     searchStartRef.current = Date.now(); // start the Searching dwell floor
     if (timeControl) onPlay(armedStake, selectedControl);
     else onPlay(armedStake);
@@ -289,9 +303,14 @@ export function GameHub(props: GameHubProps) {
     return [...playable, ...soon].filter((t) => t.id !== gameId);
   }, [games, gameId]);
 
-  // Built once and fed to the game area and the per-game slot asides (Hit/Stand, chess clocks).
+  // A match is forming (the search dwell holds an already-paired match) or live — both freeze the
+  // play panel (bet + Play-a-Friend greyed); the result phase does NOT (PLAY returns to start anew).
+  const matchForming = phase === 'waiting' && currentMatchId != null;
+  const playFrozen = phase === 'in-match' || matchForming;
+
+  // Built once and fed to the game area, the per-game slot asides (chess clocks) and the play action.
   const timeControlBaseMs = timeControl?.options.find((o) => o.id === selectedControl)?.baseMs;
-  const areaArgs: GameAreaArgs = { phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, playerId, opponentId, username, timeControlBaseMs };
+  const areaArgs: GameAreaArgs = { phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, playerId, opponentId, username, timeControlBaseMs, outcome: overlay?.outcome ?? null };
 
   return (
     <div className={HUB_SHELL}>
@@ -314,23 +333,21 @@ export function GameHub(props: GameHubProps) {
             />
           </section>
 
-          {/* 3 — Unified play panel. Idle → live PLAY; Waiting → countdown+cancel (or, while the
-              search dwell holds a found match, a brief "Opponent found"); In-match/Result → the
-              SAME panel, disabled with "Playing…" (item 7 — bet + Play-a-Friend stay visible). */}
-          {phase === 'waiting' ? (
+          {/* 3 — Unified play panel. Genuinely waiting on your own resting bet → countdown+cancel.
+              Otherwise the SAME panel: Idle/Result → live PLAY (an opt-out game's Result phase
+              starts a new game from here); a forming match (search dwell) or In-match → frozen,
+              "Playing…" (bet + Play-a-Friend greyed but visible). The searching→matched transition
+              shows NO separate "found" block — the opponent pill is the only search cue. */}
+          {phase === 'waiting' && !currentMatchId ? (
             <div className="px-4">
               <div className="rounded-2xl border border-border bg-card p-4">
-                {currentMatchId ? (
-                  <FoundBlock />
-                ) : (
-                  <WaitingBlock expiresAt={waitingExpiresAt} expired={lobbyExpired} onCancel={handleCancel} onRepost={onRepost} />
-                )}
+                <WaitingBlock expiresAt={waitingExpiresAt} expired={lobbyExpired} onCancel={handleCancel} onRepost={onRepost} />
               </div>
             </div>
           ) : (
             <div className="px-4">
               <PlayPanel
-                playing={phase === 'in-match' || phase === 'result'}
+                playing={playFrozen}
                 armedStake={armedStake}
                 onArm={setArmedStake}
                 onPlay={handlePlay}
@@ -378,7 +395,9 @@ export function GameHub(props: GameHubProps) {
 
       <HubToolbar onGames={onOpenGameList} onAccount={onOpenWallet} active="games" />
 
-      {overlay && (
+      {/* Opt-out games (Blackjack) suppress the pop-up and present the result on the board instead;
+          the overlay stays the default for every other hub (the regression guard). */}
+      {overlay && !suppressResultOverlay && (
         <ResultOverlay
           outcome={overlay.outcome}
           settlement={overlay.settlement}
@@ -437,11 +456,12 @@ function OpponentSlot({ phase, opponentName, scanNames, aside }: { phase: Phase;
           {inMatch ? (opponentName || 'Opponent') : 'Opponent'}
         </span>
       )}
-      {/* A per-game aside (e.g. chess clock) takes the right slot; otherwise the in-match tag. */}
+      {/* A per-game aside (e.g. chess clock) takes the right slot; otherwise the live "Playing…"
+          tag — only while actually in-match (a persisted post-match board is not "playing"). */}
       {aside ? (
         <span className="flex shrink-0 items-center gap-2">{aside}</span>
       ) : (
-        inMatch && <span className="shrink-0 text-xs font-black uppercase tracking-wide text-foreground/70">Playing…</span>
+        phase === 'in-match' && <span className="shrink-0 text-xs font-black uppercase tracking-wide text-foreground/70">Playing…</span>
       )}
     </div>
   );
@@ -457,19 +477,6 @@ function OwnSlot({ label, isOwn, aside }: { label: string; isOwn: boolean; aside
       </span>
       <span className={cn('min-w-0 flex-1 truncate text-sm font-bold', isOwn ? 'text-foreground' : 'text-muted-foreground')}>{label}</span>
       {aside && <span className="flex shrink-0 items-center gap-2">{aside}</span>}
-    </div>
-  );
-}
-
-/** Brief "opponent found" beat shown while the search-dwell floor holds an already-formed match
- *  (no cancel — the match is live server-side; this is presentation only). */
-function FoundBlock() {
-  return (
-    <div className="flex flex-col items-center gap-2 py-2" data-testid="hub-found">
-      <span className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-success">
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" /> Opponent found
-      </span>
-      <p className="text-sm font-semibold text-foreground/80">Starting the match…</p>
     </div>
   );
 }
