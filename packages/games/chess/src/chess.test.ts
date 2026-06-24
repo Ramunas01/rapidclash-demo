@@ -53,9 +53,9 @@ describe('chessModule.meta', () => {
       rakeRate: 0.1,
       timeControl: {
         options: [
-          { id: 'rapid10', label: 'Default · 10 min', baseMs: 600_000, incrementMs: 0 },
-          { id: 'blitz5', label: 'Blitz · 5 min', baseMs: 300_000, incrementMs: 0 },
           { id: 'bullet1', label: 'Bullet · 1 min', baseMs: 60_000, incrementMs: 0 },
+          { id: 'blitz5', label: 'Blitz · 5 min', baseMs: 300_000, incrementMs: 0 },
+          { id: 'rapid10', label: 'Rapid · 10 min', baseMs: 600_000, incrementMs: 0 },
         ],
         defaultId: 'rapid10',
       },
@@ -66,10 +66,11 @@ describe('chessModule.meta', () => {
     expect(chessModule.meta.rakeRate).toBe(0.1);
   });
 
-  it('declares three cumulative time-control presets, default rapid10', () => {
+  it('declares three cumulative time-control presets shortest-first, default rapid10', () => {
     const tc = chessModule.meta.timeControl!;
     expect(tc.defaultId).toBe('rapid10');
-    expect(tc.options.map((o) => o.id)).toEqual(['rapid10', 'blitz5', 'bullet1']);
+    expect(tc.options.map((o) => o.id)).toEqual(['bullet1', 'blitz5', 'rapid10']);
+    expect(tc.options.find((o) => o.id === 'rapid10')!.label).toBe('Rapid · 10 min');
     expect(tc.options.find((o) => o.id === 'rapid10')!.baseMs).toBe(600_000);
     expect(tc.options.every((o) => o.incrementMs === 0)).toBe(true); // sudden-death v1
   });

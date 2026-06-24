@@ -18,6 +18,16 @@ import { HubFooter } from '../components/hub-shared/HubFooter.js';
 /** Bet presets within the shared 1–100 demo range (every demo game's BetRules). Rendered ¢. */
 const BET_PRESETS = [1, 5, 10, 25, 50, 100];
 
+/** Two-line time-control labelling (data-driven from the meta option). The big line is the
+ *  duration derived from `baseMs`; the small line is the mode name parsed from `"Name · X min"`. */
+const tcDuration = (baseMs: number): string => {
+  const mins = baseMs / 60_000;
+  if (mins >= 1 && Number.isInteger(mins)) return `${mins} min`;
+  const secs = Math.round(baseMs / 1_000);
+  return `${secs} sec`;
+};
+const tcName = (label: string): string => label.split('·')[0]!.trim();
+
 export type Phase = 'idle' | 'waiting' | 'in-match' | 'result';
 
 /** Args the per-game play-panel slot receives — everything it needs to render the in-match
@@ -31,6 +41,10 @@ export interface GameAreaArgs {
   playerId: string | null;
   opponentId: string | null;
   username: string | null;
+  /** Base budget (ms) of the currently selected time control, for games that declare one (chess).
+   *  Lets a hub render the picked clock in the slot pills pre-match (before any server clock).
+   *  Generic (derived from the meta) — undefined for games without a time control. */
+  timeControlBaseMs?: number;
 }
 
 /** The generic, per-game-agnostic props the App feeds every Game hub (Coinflip, RPS, …). */
@@ -84,9 +98,11 @@ interface GameHubProps extends GameHubScreenProps {
   gameName: string;
   /** The in-match (and greyed-idle) game area, provided per game. */
   renderGameArea(args: GameAreaArgs): ReactNode;
-  /** Optional per-game controls rendered inside the player's OWN slot pill during a match
-   *  (frame: Blackjack's Hit/Stand sit beside the player's name). Only shown in-match. */
-  renderSlotControls?(args: GameAreaArgs): ReactNode;
+  /** Optional per-game content rendered right-aligned inside a slot pill, for the given side.
+   *  Called for BOTH pills in EVERY phase — the game decides what (if anything) to show and when
+   *  (Blackjack: Hit/Stand in the own pill in-match; Chess: each side's clock, pre-match + live).
+   *  A non-null opponent-side result replaces the default in-match "Playing…" tag. */
+  renderSlotAside?(args: GameAreaArgs, side: 'opponent' | 'own'): ReactNode;
   /** Optional game-specific reveal at the top of the result overlay (e.g. the Coinflip coin). */
   renderResultReveal?(args: { outcome: Outcome; gameState: GameView | null; playerId: string | null }): ReactNode;
   /** Presentation-only reveal pacing (opt-in). When > 0, the hub keeps the board mounted in the
@@ -120,7 +136,7 @@ function useNow(active: boolean): number {
  */
 export function GameHub(props: GameHubProps) {
   const {
-    gameId, gameName, renderGameArea, renderSlotControls, renderResultReveal, holdResultMs,
+    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, holdResultMs,
     token, playerId, username, opponentId, opponentName, balance, currentMatchId, gameState, legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
     onPlay, onCancel, onRepost, onTakeChallenge, onMakeMove, onForfeit, onTrackChallenges,
@@ -273,8 +289,9 @@ export function GameHub(props: GameHubProps) {
     return [...playable, ...soon].filter((t) => t.id !== gameId);
   }, [games, gameId]);
 
-  // Built once and fed to both the game area and the per-game slot controls (Hit/Stand).
-  const areaArgs: GameAreaArgs = { phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, playerId, opponentId, username };
+  // Built once and fed to the game area and the per-game slot asides (Hit/Stand, chess clocks).
+  const timeControlBaseMs = timeControl?.options.find((o) => o.id === selectedControl)?.baseMs;
+  const areaArgs: GameAreaArgs = { phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, playerId, opponentId, username, timeControlBaseMs };
 
   return (
     <div className={HUB_SHELL}>
@@ -288,12 +305,12 @@ export function GameHub(props: GameHubProps) {
               No grey card frame here — each panel owns its surface (Blackjack's greyish table
               fills the section; the other arenas wrap themselves in a card). */}
           <section data-testid="hub-section-game" aria-label={gameName} className="flex flex-col gap-3 px-4">
-            <OpponentSlot phase={phase} opponentName={opponentName} scanNames={scanNames} />
+            <OpponentSlot phase={phase} opponentName={opponentName} scanNames={scanNames} aside={renderSlotAside?.(areaArgs, 'opponent')} />
             {renderGameArea(areaArgs)}
             <OwnSlot
               label={loggedIn ? (username || 'You') : 'Sign in'}
               isOwn={loggedIn}
-              controls={phase === 'in-match' ? renderSlotControls?.(areaArgs) : null}
+              aside={renderSlotAside?.(areaArgs, 'own')}
             />
           </section>
 
@@ -401,7 +418,7 @@ function useNameScan(active: boolean, names: string[]): string | null {
  *  "Searching…" beat with a decorative online-name scan; In-match/Result → the REAL opponent's
  *  name in bright white (or a neutral "Opponent" when the joiner's name never reached the client).
  *  Never an opponentId, never a fabricated/cycled name (Charter #2 + DEMO_PRESENTATION honesty). */
-function OpponentSlot({ phase, opponentName, scanNames }: { phase: Phase; opponentName?: string | null; scanNames: string[] }) {
+function OpponentSlot({ phase, opponentName, scanNames, aside }: { phase: Phase; opponentName?: string | null; scanNames: string[]; aside?: ReactNode }) {
   const searching = phase === 'waiting';
   const inMatch = phase === 'in-match' || phase === 'result';
   const scan = useNameScan(searching, scanNames);
@@ -420,21 +437,26 @@ function OpponentSlot({ phase, opponentName, scanNames }: { phase: Phase; oppone
           {inMatch ? (opponentName || 'Opponent') : 'Opponent'}
         </span>
       )}
-      {inMatch && <span className="shrink-0 text-xs font-black uppercase tracking-wide text-foreground/70">Playing…</span>}
+      {/* A per-game aside (e.g. chess clock) takes the right slot; otherwise the in-match tag. */}
+      {aside ? (
+        <span className="flex shrink-0 items-center gap-2">{aside}</span>
+      ) : (
+        inMatch && <span className="shrink-0 text-xs font-black uppercase tracking-wide text-foreground/70">Playing…</span>
+      )}
     </div>
   );
 }
 
-/** Item 1/6 — the player's own slot below the board: their name, with optional in-match game
- *  controls (Blackjack's Hit/Stand) rendered beside it. */
-function OwnSlot({ label, isOwn, controls }: { label: string; isOwn: boolean; controls?: ReactNode }) {
+/** Item 1/6 — the player's own slot below the board: their name, with an optional per-game aside
+ *  (Blackjack's Hit/Stand in-match, Chess's clock) rendered beside it. */
+function OwnSlot({ label, isOwn, aside }: { label: string; isOwn: boolean; aside?: ReactNode }) {
   return (
     <div data-testid="hub-slot-own" className="flex items-center gap-2.5 rounded-full bg-surface px-3.5 py-2.5">
       <span className={cn('grid h-8 w-8 shrink-0 place-items-center rounded-full', isOwn ? 'bg-brand text-white' : 'bg-[#2a2a4a] text-muted-foreground')}>
         <PersonGlyph className="h-[18px] w-[18px]" />
       </span>
       <span className={cn('min-w-0 flex-1 truncate text-sm font-bold', isOwn ? 'text-foreground' : 'text-muted-foreground')}>{label}</span>
-      {controls && <span className="flex shrink-0 items-center gap-2">{controls}</span>}
+      {aside && <span className="flex shrink-0 items-center gap-2">{aside}</span>}
     </div>
   );
 }
@@ -507,27 +529,35 @@ function PlayPanel({
           ))}
         </div>
 
-        {/* Time-control picker — shown only for games that declare one (chess). */}
+        {/* Time-control picker — shown only for games that declare one (chess). Each option is a
+            two-line button: the large duration over the small mode name (e.g. "10 min" / "Rapid"). */}
         {timeControl && (
           <div data-testid="hub-section-timecontrol" className="mt-4">
             <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Time control</span>
             <div className="mt-2 grid grid-cols-3 gap-2">
-              {timeControl.options.map((o) => (
-                <button
-                  key={o.id}
-                  type="button"
-                  disabled={playing}
-                  data-testid={`hub-tc-${o.id}`}
-                  aria-pressed={selectedControl === o.id}
-                  onClick={() => onSelectControl(o.id)}
-                  className={cn(
-                    'rounded-lg px-2 py-2 text-center text-[11px] font-bold leading-tight transition-colors',
-                    selectedControl === o.id ? 'bg-brand text-white' : 'bg-background text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {o.label}
-                </button>
-              ))}
+              {timeControl.options.map((o) => {
+                const selected = selectedControl === o.id;
+                return (
+                  <button
+                    key={o.id}
+                    type="button"
+                    disabled={playing}
+                    data-testid={`hub-tc-${o.id}`}
+                    aria-pressed={selected}
+                    aria-label={o.label}
+                    onClick={() => onSelectControl(o.id)}
+                    className={cn(
+                      'flex flex-col items-center justify-center rounded-lg px-2 py-2.5 text-center leading-tight transition-colors',
+                      selected ? 'bg-brand text-white' : 'bg-background text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    <span className="text-sm font-extrabold">{tcDuration(o.baseMs)}</span>
+                    <span className={cn('mt-0.5 text-[10px] font-bold uppercase tracking-wide', selected ? 'text-white/75' : 'text-muted-foreground')}>
+                      {tcName(o.label)}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
