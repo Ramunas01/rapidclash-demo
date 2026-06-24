@@ -1,6 +1,6 @@
 # Chess Time Control — spec (v1)
 
-Turns the `CHESS_TIME_CONTROL_ANALYSIS.md` (#103) into a build authority. Adds **cumulative per-player game clocks** to chess (Default 10 min / Blitz 5 min / Bullet 1 min). This is a **functional feature spanning core + protocol + client** — not presentation — so it is specified before any code.
+Turns the `CHESS_TIME_CONTROL_ANALYSIS.md` (#103) into a build authority. Adds **cumulative per-player game clocks** to chess (Bullet 1 min / Blitz 5 min / Rapid 10 min). This is a **functional feature spanning core + protocol + client** — not presentation — so it is specified before any code.
 
 The guiding decision: this is **a second mode of the per-player-timer capability #91 already built**, not a new parallel timer. The core gains one generic notion of "a player's clock," declared in `GameMeta`, with two models — *per-move reset* (existing: Blackjack/Mines) and *cumulative budget* (new: chess) — and never a `if (gameId === 'chess')` branch (invariant #5).
 
@@ -18,11 +18,11 @@ Three presets, **declared by the chess module** (so the picker is data-driven, n
 
 | id | label | base | increment (v1) |
 |----|-------|------|----------------|
-| `rapid10` | Default · 10 min | 600 000 ms | 0 |
-| `blitz5` | Blitz · 5 min | 300 000 ms | 0 |
 | `bullet1` | Bullet · 1 min | 60 000 ms | 0 |
+| `blitz5` | Blitz · 5 min | 300 000 ms | 0 |
+| `rapid10` | Rapid · 10 min | 600 000 ms | 0 |
 
-Default = `rapid10`.
+Picker order is **shortest-first (Bullet → Blitz → Rapid)**, each rendered as a **two-line button** (large duration over a small name, e.g. "10 min" / "Rapid"). Default **selection** = `rapid10` (Rapid · 10 min).
 
 ## The eight decisions (resolved)
 
@@ -63,7 +63,7 @@ Normal chess draws (stalemate, threefold, 50-move, insufficient material, agreem
 
 ## Client (display only)
 
-A time-control **picker** (Default / Blitz / Bullet) on the chess hub's challenge-creation step, sourced from `meta.timeControl.options`. **Both players' clocks** rendered, the active one ticking, with a low-time warning under ~10 s. The display animates the server's authoritative `remainingMs`; it never decides anything (invariant #2). Minor client/server drift from latency is acceptable for the demo — the server is truth.
+A time-control **picker** (Bullet / Blitz / Rapid, shortest-first, two-line buttons) on the chess hub's challenge-creation step, sourced from `meta.timeControl.options`. **Both players' clocks** rendered, the active one ticking, with a low-time warning under ~10 s. The display animates the server's authoritative `remainingMs`; it never decides anything (invariant #2). Minor client/server drift from latency is acceptable for the demo — the server is truth.
 
 ## Sequencing (parallel-safe, per the analysis)
 
