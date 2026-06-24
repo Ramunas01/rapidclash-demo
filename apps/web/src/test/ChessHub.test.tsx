@@ -101,8 +101,10 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
     expect(rapid.textContent).toContain('Rapid');
     expect(screen.getByTestId('hub-tc-bullet1').textContent).toContain('1 min');
     expect(screen.getByTestId('hub-tc-bullet1').textContent).toContain('Bullet');
-    // Default control (rapid10) is pre-selected.
-    expect(rapid.getAttribute('aria-pressed')).toBe('true');
+    // Default control (rapid10) is pre-selected. The selection settles a tick after the picker
+    // mounts (it's set by an effect once /games resolves the meta), so wait for it rather than
+    // reading aria-pressed synchronously — otherwise the assertion races the effect (flaky).
+    await waitFor(() => expect(screen.getByTestId('hub-tc-rapid10').getAttribute('aria-pressed')).toBe('true'));
   });
 
   it('In-match: the clocks live INSIDE the slot pills (opponent above, you below)', () => {
