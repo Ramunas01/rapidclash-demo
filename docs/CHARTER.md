@@ -39,7 +39,7 @@ Games are grouped in the UI as **Originals** (PvP-native and PvP-redefined signa
 | Keno | No (house by default) | **Coming soon — PvP redefinition pending.** See `GAME_REDEFINITION.md`. |
 | Hilo | No (house by default) | **Coming soon — PvP redefinition pending.** See `GAME_REDEFINITION.md`. |
 | Dice | No (house by default) | **Coming soon — PvP redefinition pending.** See `GAME_REDEFINITION.md`. |
-| Roulette | No (house by default) | **Coming soon — PvP redefinition pending.** See `GAME_REDEFINITION.md`. |
+| Roulette | No (house by default) | **Confirmed PvP redefinition** — zeroless 36-pocket duel, see `ROULETTE.md`. Ranks by net winnings. |
 
 A "coming soon" game is shown as a non-playable tile (subtly dimmed). It is **never** playable in its house form; it becomes playable only when its two-player ruleset is confirmed as a spec and registered. The set of *playable* games is always exactly what `/games` returns.
 

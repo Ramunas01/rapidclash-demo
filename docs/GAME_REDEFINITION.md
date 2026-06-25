@@ -29,7 +29,7 @@ If a candidate game cannot be made fair under this recipe, that is a finding wor
 | Keno | Pick spots; RNG draws; matches pay | Seed below — to confirm |
 | Hilo | Guess the next card higher/lower | Seed below — to confirm |
 | Dice | Roll over/under a chosen line | Seed below — to confirm |
-| Roulette | Bet on a wheel against the house | Seed below — to confirm (hardest) |
+| Roulette | Bet on a wheel against the house | **Confirmed** — `ROULETTE.md` |
 
 ## Provisional redefinition seeds
 
@@ -41,8 +41,8 @@ If a candidate game cannot be made fair under this recipe, that is a finding wor
 - **Keno** — both pick the same count of spots on one grid; **one shared seeded draw**; more matches wins; tie → draw.
 - **Hilo** — a **shared seeded deck**; both call higher/lower simultaneously each step; the longer correct streak (or more correct over N steps) wins.
 - **Dice** — both call over/under and a line on **one shared seeded roll**, resolved against each other; or "closest to a target without going over." 
-- **Roulette** (hardest) — a head-to-head over **one shared seeded spin**: each claims a section/colour and the pot transfers to whoever's claim lands; overlapping/!both-miss cases → refund. Needs the most care; flagged as the marquee "impossible" conversion the thesis is really about.
+- **Roulette** — *confirmed, see `ROULETTE.md`.* The marquee "impossible" conversion, done: a **zeroless 36-pocket wheel** (removing the green zero deletes the house edge by construction), one shared seeded spin, both players secretly allocate their **full** chip stack across the bet set, higher resulting stack wins. The full-stack rule prevents min-bet stalling.
 
 ## Process
 
-Each game leaves "coming soon" only when: (1) it has a confirmed spec in this `docs/` set following the recipe, (2) it's implemented as a plug-in module (no core branch), and (3) it's registered so `/games` returns it. Until then it is a dimmed tile that sells the roadmap. Advisor drafts each spec on request; suggested order by tractability: Keno, Hilo, Limbo, Dice, Baccarat, Roulette.
+Each game leaves "coming soon" only when: (1) it has a confirmed spec in this `docs/` set following the recipe, (2) it's implemented as a plug-in module (no core branch), and (3) it's registered so `/games` returns it. Until then it is a dimmed tile that sells the roadmap. Advisor drafts each spec on request; suggested order by tractability: Keno, Hilo, Limbo, Dice, Baccarat.
