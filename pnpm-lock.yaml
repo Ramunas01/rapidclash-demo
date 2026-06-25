@@ -62,6 +62,9 @@ importers:
       '@rapidclash/game-rps':
         specifier: workspace:*
         version: link:../../packages/games/rps
+      '@rapidclash/game-ships-battle':
+        specifier: workspace:*
+        version: link:../../packages/games/ships-battle
       '@rapidclash/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -328,6 +331,12 @@ importers:
         version: link:../../shared
 
   packages/games/rps:
+    dependencies:
+      '@rapidclash/shared':
+        specifier: workspace:*
+        version: link:../../shared
+
+  packages/games/ships-battle:
     dependencies:
       '@rapidclash/shared':
         specifier: workspace:*

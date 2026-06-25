@@ -18,6 +18,7 @@
     "@rapidclash/game-crash": "workspace:*",
     "@rapidclash/game-mines": "workspace:*",
     "@rapidclash/game-roulette": "workspace:*",
+    "@rapidclash/game-ships-battle": "workspace:*",
     "@rapidclash/game-rps": "workspace:*",
     "@rapidclash/shared": "workspace:*",
     "better-sqlite3": "^11.9.1",

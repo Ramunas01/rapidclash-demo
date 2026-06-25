@@ -53,6 +53,17 @@ function rouletteMove(moves: Move[]): Move | null {
   return (allIn[Math.floor(Math.random() * allIn.length)] ?? null) as Move | null;
 }
 
+/** Ships Battle policy: in PLACEMENT, take the `auto` move (seeded server-side auto-placer — a
+ *  random per-square build would be slow/unreliable); in SHOOTING, fire a random un-probed square.
+ *  Returns null if neither is offered (caller falls back to a random move). */
+function shipsBattleMove(moves: Move[]): Move | null {
+  const ms = moves as { t?: string; c?: number }[];
+  const auto = moves.find((m): m is Move => !!m && typeof m === 'object' && (m as { t?: string }).t === 'auto');
+  if (auto) return auto;
+  const fires = ms.filter((m) => m && m.t === 'fire');
+  return (fires.length ? fires[Math.floor(Math.random() * fires.length)] : null) as Move | null;
+}
+
 export class Bot {
   private readonly ws: BotWsClient;
   private state: BotState = 'connecting';
@@ -225,6 +236,7 @@ export class Bot {
     // game is fine with a random legal move. Fall back to random if the policy finds nothing.
     const move =
       (this.cfg.gameId === 'roulette' ? rouletteMove(moves) : null) ??
+      (this.cfg.gameId === 'ships-battle' ? shipsBattleMove(moves) : null) ??
       moves[Math.floor(Math.random() * moves.length)];
     // A brief "thinking" pause keeps cadence human-ish and the server unflooded.
     this.movePending = true;

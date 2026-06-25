@@ -19,13 +19,14 @@ import { RpsHubScreen } from './screens/RpsHub.js';
 import { BlackjackHubScreen } from './screens/BlackjackHub.js';
 import { MinesHubScreen } from './screens/MinesHub.js';
 import { RouletteHubScreen } from './screens/RouletteHub.js';
+import { ShipsBattleHubScreen } from './screens/ShipsBattleHub.js';
 import { ChessHubScreen } from './screens/ChessHub.js';
 import { CrashHubScreen } from './screens/CrashHub.js';
 import { HomeHubScreen } from './screens/HomeHub.js';
 import { ProfileHubScreen } from './screens/ProfileHub.js';
 import { AuthModal } from './components/AuthModal.js';
 
-type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub' | 'crash-hub' | 'roulette-hub';
+type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub' | 'crash-hub' | 'roulette-hub' | 'ships-battle-hub';
 
 /** A commit-to-play action captured when a logged-out visitor hits the auth wall, replayed
  *  automatically once they register/sign in (the resume that makes the wall feel seamless). */
@@ -37,11 +38,11 @@ const RECONNECT_NOTICE = 'Connection lost — reconnecting. Try again in a momen
 
 /** Games that play through the shared one-screen Game hub (vs the multi-screen flow).
  *  Each maps to a `<gameId>-hub` screen. Adding a game here wires it to the hub. */
-const HUB_GAMES = new Set(['coinflip', 'rps', 'blackjack', 'mines', 'chess', 'crash', 'roulette']);
+const HUB_GAMES = new Set(['coinflip', 'rps', 'blackjack', 'mines', 'chess', 'crash', 'roulette', 'ships-battle']);
 const hubScreenFor = (gameId: string | null | undefined): Screen | null =>
   gameId && HUB_GAMES.has(gameId) ? (`${gameId}-hub` as Screen) : null;
 const isGameHubScreen = (s: Screen): boolean =>
-  s === 'coinflip-hub' || s === 'rps-hub' || s === 'blackjack-hub' || s === 'mines-hub' || s === 'chess-hub' || s === 'crash-hub' || s === 'roulette-hub';
+  s === 'coinflip-hub' || s === 'rps-hub' || s === 'blackjack-hub' || s === 'mines-hub' || s === 'chess-hub' || s === 'crash-hub' || s === 'roulette-hub' || s === 'ships-battle-hub';
 
 export interface RpsView {
   players: [string, string];
@@ -165,9 +166,30 @@ export interface RouletteView {
   seed?: number;
 }
 
+/** One player's board in the redacted Ships Battle view. Own board: full (ships + current build +
+ *  incoming shots). Opponent board: only my probes (`shots`) + revealed SUNK ships (`ships`). */
+export interface ShipsBoardView {
+  ships: number[][];
+  current: number[];
+  placementDone: boolean;
+  shots: Record<number, 'hit' | 'miss'>;
+  sunk: number[];
+}
+export interface ShipsBattleView {
+  players: [string, string];
+  phase: 'placement' | 'shooting';
+  placementStartedAt: number;
+  turn: string | null;
+  turnStartedAt: number;
+  boards: Record<string, ShipsBoardView>;
+  seed?: number;
+  winner?: string;
+  forcedOutcome?: { type: string };
+}
+
 /** A per-game redacted view as it arrives from the server. The active game (and so
  *  which screen renders it) is tracked separately in `activeGameId`. */
-export type GameView = RpsView | CoinflipView | ChessView | BlackjackView | MinesView | CrashView | RouletteView;
+export type GameView = RpsView | CoinflipView | ChessView | BlackjackView | MinesView | CrashView | RouletteView | ShipsBattleView;
 
 function loadAuth() {
   return {
@@ -684,7 +706,8 @@ export function App() {
       case 'mines-hub':
       case 'chess-hub':
       case 'crash-hub':
-      case 'roulette-hub': {
+      case 'roulette-hub':
+      case 'ships-battle-hub': {
         const HubScreen =
           screen === 'rps-hub'
             ? RpsHubScreen
@@ -698,7 +721,9 @@ export function App() {
                     ? CrashHubScreen
                     : screen === 'roulette-hub'
                       ? RouletteHubScreen
-                      : CoinflipHubScreen;
+                      : screen === 'ships-battle-hub'
+                        ? ShipsBattleHubScreen
+                        : CoinflipHubScreen;
         return <HubScreen
           token={token ?? ''}
           playerId={playerId}
