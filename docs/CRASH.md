@@ -14,8 +14,10 @@ The PvP redefinition of Crash, per the conversion thesis (`CHARTER.md` / `GAME_R
 
 **The rocket.** On launch the server fixes a **hidden crash altitude `C`** (seeded random, drawn from a capped range so a round lasts only seconds to a few tens of seconds). A single rocket **climbs**, its altitude rising over time on a deterministic curve, shown live in metres. Both players watch the **same** climb.
 
+**Round start (v1, as built — #121).** A match opens with a brief server-authoritative **SETUP** window (~3 s; a "get ready" countdown — owner-tuned down from 10 s) then ~1 s of **ignition**; only then does the climb begin (origin `startedAt = launch + setupMs + ignitionMs`). Nothing can crash on the pad — the whole schedule is anchored to `startedAt`, so the boundaries are public but `C` stays hidden. The curve is a **gentle slow-start exponential** (`altitude = scale·(e^(growth·s) − 1)`, tuned so the first 1–2 s barely move, then it accelerates) — this makes the start robust to client latency. The client aligns to the server clock (the gateway stamps `serverNow` on the match payload → a generic `serverClockOffset`) so the **displayed altitude matches what the server banks** on eject.
+
 **Ejecting.** Each player ejects exactly once, by either:
-- a **pre-set auto-eject altitude**, committed before/at launch (the rocket ejects them automatically when the climb reaches it), and/or
+- a **pre-set auto-eject altitude** — a **server-authoritative move set during the SETUP window** (not an `init` param), scheduled via the generic `scheduledDeadlines` path so it fires exactly at its altitude. *(v1 note: the human-facing auto-eject input was removed — a numeric altitude is too stressful to set in a 3 s countdown — so for players v1 is **live-EJECT only**; the server capability is retained and the demo bots use it, a clean re-add later.)* and/or
 - a **live EJECT tap** during the climb.
 
 Whichever comes first fires. A player's eject altitude is **hidden from the opponent** until the round resolves.
