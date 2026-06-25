@@ -8,6 +8,7 @@
     { "path": "./packages/games/chess" },
     { "path": "./packages/games/blackjack" },
     { "path": "./packages/games/mines" },
+    { "path": "./packages/games/crash" },
     { "path": "./apps/server" },
     { "path": "./apps/web" }
   ]

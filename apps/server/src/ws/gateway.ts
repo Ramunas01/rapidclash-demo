@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { SocketStream } from '@fastify/websocket';
 import type { Identity, Matchmaking, JoinMatched } from '@rapidclash/core';
-import { ChallengeError, usesPlayerTimers } from '@rapidclash/core';
+import { ChallengeError, usesPlayerTimers, usesScheduledDeadlines } from '@rapidclash/core';
 import { IllegalMove } from '@rapidclash/shared';
 import type {
   Envelope,
@@ -107,6 +107,7 @@ export function registerWsGateway(
       opponentName: identity.getUsername(result.opponentId) ?? result.opponentId,
       gameId,
       state: curState,
+      serverNow: Date.now(), // lets the client align its clock to server-authoritative timers
     });
 
     const oppSocket = connections.get(result.opponentId);
@@ -118,6 +119,7 @@ export function registerWsGateway(
         opponentName: identity.getUsername(curId) ?? curId,
         gameId,
         state: oppState,
+        serverNow: Date.now(),
       });
     }
 
@@ -273,9 +275,11 @@ export function registerWsGateway(
         // which can take longer than the forfeit delay on a slow board (Mines: many 5s
         // reveals). Starting the timer would wrongly end the match mid-game. The absent
         // player's clock keeps firing server-side, so the game still progresses to a result.
-        // Generic predicate (meta.moveTimeoutMs) — no gameId branch.
+        // Generic predicate — no gameId branch. Covers both the per-move auto-act (Mines/
+        // Blackjack via meta.moveTimeoutMs) and the absolute scheduled auto-act (Crash: an absent
+        // player simply rides to the scheduled crash and busts via the same sweep).
         const closedMod = moduleByGame.get(closedMatch.gameId);
-        if (closedMod && usesPlayerTimers(closedMod)) return;
+        if (closedMod && (usesPlayerTimers(closedMod) || usesScheduledDeadlines(closedMod))) return;
 
         // Start forfeit timer — if the player doesn't reconnect in time, they forfeit.
         const handle = setTimeout(() => {
@@ -434,7 +438,7 @@ export function registerWsGateway(
                 send<MatchStatePayload>(
                   socket,
                   'match.state',
-                  { state, events: [], opponentName: oppId ? (identity.getUsername(oppId) ?? oppId) : undefined },
+                  { state, events: [], opponentName: oppId ? (identity.getUsername(oppId) ?? oppId) : undefined, serverNow: Date.now() },
                   matchId,
                 );
 

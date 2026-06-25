@@ -20,7 +20,7 @@ export const TILE_ART: Record<string, string> = {
 /** Breadth: games not (yet) returned by /games render as dimmed, non-playable "coming soon"
  *  tiles. The whole house canon is a PvP-redefinition target (CHARTER / GAME_REDEFINITION) —
  *  never shown in house form, never a playable house route (invariant #1). */
-export const COMING_SOON = ['baccarat', 'limbo', 'crash', 'keno', 'hilo', 'dice', 'roulette'];
+export const COMING_SOON = ['baccarat', 'limbo', 'keno', 'hilo', 'dice', 'roulette'];
 
 export function titleCase(id: string): string {
   return id.charAt(0).toUpperCase() + id.slice(1);

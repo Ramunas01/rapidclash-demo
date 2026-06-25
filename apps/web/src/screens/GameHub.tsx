@@ -41,6 +41,10 @@ export interface GameAreaArgs {
   playerId: string | null;
   opponentId: string | null;
   username: string | null;
+  /** Client→server clock offset (ms): add to `Date.now()` to align a display-only animation with
+   *  server-authoritative timers — Crash's live altitude must match the altitude the server banks.
+   *  Defaults to 0 (no skew) when the payload didn't carry the server clock. */
+  serverClockOffset?: number;
   /** Base budget (ms) of the currently selected time control, for games that declare one (chess).
    *  Lets a hub render the picked clock in the slot pills pre-match (before any server clock).
    *  Generic (derived from the meta) — undefined for games without a time control. */
@@ -61,6 +65,8 @@ export interface GameHubScreenProps {
    *  name from the feed). Null on the PLAY/post path (the joiner's name never reaches the client)
    *  → the slot falls back to a neutral "Opponent". Never a fabricated/cycled name (Charter #2). */
   opponentName?: string | null;
+  /** Client→server clock offset (ms) for aligning display-only timers (see GameAreaArgs). */
+  serverClockOffset?: number;
   /** Live balance from the app (source of truth; updates on match.end settlement). */
   balance: number;
   currentMatchId: string | null;
@@ -147,7 +153,7 @@ function useNow(active: boolean): number {
 export function GameHub(props: GameHubProps) {
   const {
     gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, suppressResultOverlay, holdResultMs,
-    token, playerId, username, opponentId, opponentName, balance, currentMatchId, gameState, legalMoves,
+    token, playerId, username, opponentId, opponentName, serverClockOffset = 0, balance, currentMatchId, gameState, legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
     onPlay, onCancel, onRepost, onTakeChallenge, onMakeMove, onForfeit, onTrackChallenges,
     onUntrackChallenges, onSelectGame, onOpenWallet, onOpenGameList, onResultDismiss,
@@ -310,7 +316,7 @@ export function GameHub(props: GameHubProps) {
 
   // Built once and fed to the game area, the per-game slot asides (chess clocks) and the play action.
   const timeControlBaseMs = timeControl?.options.find((o) => o.id === selectedControl)?.baseMs;
-  const areaArgs: GameAreaArgs = { phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, playerId, opponentId, username, timeControlBaseMs, outcome: overlay?.outcome ?? null };
+  const areaArgs: GameAreaArgs = { phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, playerId, opponentId, username, serverClockOffset, timeControlBaseMs, outcome: overlay?.outcome ?? null };
 
   return (
     <div className={HUB_SHELL}>

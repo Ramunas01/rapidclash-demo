@@ -15,6 +15,7 @@
     "@rapidclash/game-blackjack": "workspace:*",
     "@rapidclash/game-chess": "workspace:*",
     "@rapidclash/game-coinflip": "workspace:*",
+    "@rapidclash/game-crash": "workspace:*",
     "@rapidclash/game-mines": "workspace:*",
     "@rapidclash/game-rps": "workspace:*",
     "@rapidclash/shared": "workspace:*",

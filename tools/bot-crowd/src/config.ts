@@ -32,7 +32,7 @@ export interface BotConfig {
 }
 
 /**
- * Roster: 15 bots, all 🤖-prefixed — per live game (coinflip, rps, chess, blackjack, mines):
+ * Roster: 18 bots, all 🤖-prefixed — per live game (coinflip, rps, chess, blackjack, mines, crash):
  *   • 2 RESTERS at DISTINCT stakes (5 and 10) so the FIFO matchmaker never pairs them with
  *     each other — each stays a stable, joinable open challenge for a human; and
  *   • 1 TAKER that claims only HUMAN-posted challenges (never a bot's), giving a human who
@@ -42,7 +42,10 @@ export interface BotConfig {
  * and real human activity. The bot policy is game-agnostic (replies with a random move from
  * the server's `legalMoves`), so Blackjack (hit/stand) and Mines (reveal a square) need no
  * special handling — their per-player timers would auto-act a slow bot, but the ~700ms move
- * delay keeps the bots well inside the 5–10s windows.
+ * delay keeps the bots well inside the 5–10s windows. Crash is the exception (a continuous,
+ * turn-less game): its bot pre-sets a RANDOM auto-eject during SETUP (never taps the pad) — see the bot.
+ *
+ * NOTE: the 'crash' bots only resolve via real human JOINs (no bot-vs-bot), same as the rest.
  */
 export const ROSTER: BotConfig[] = [
   // 2 resters per game (distinct stakes) —
@@ -56,12 +59,15 @@ export const ROSTER: BotConfig[] = [
   { name: '🤖4-LOM', gameId: 'blackjack', stake: 10, policy: 'rester' },
   { name: '🤖L3-37', gameId: 'mines', stake: 5, policy: 'rester' },
   { name: '🤖EV-9D9', gameId: 'mines', stake: 10, policy: 'rester' },
+  { name: '🤖0-0-0', gameId: 'crash', stake: 5, policy: 'rester' },
+  { name: '🤖BT-1', gameId: 'crash', stake: 10, policy: 'rester' },
   // 1 taker per game — claims only HUMAN-posted challenges (never a bot's) —
   { name: '🤖HK-47', gameId: 'coinflip', stake: 5, policy: 'taker' },
   { name: '🤖2-1B', gameId: 'rps', stake: 5, policy: 'taker' },
   { name: '🤖FX-7', gameId: 'chess', stake: 5, policy: 'taker' },
   { name: '🤖AP-5', gameId: 'blackjack', stake: 5, policy: 'taker' },
   { name: '🤖BD-1', gameId: 'mines', stake: 5, policy: 'taker' },
+  { name: '🤖C1-10P', gameId: 'crash', stake: 5, policy: 'taker' },
 ];
 
 function num(envName: string, fallback: number): number {

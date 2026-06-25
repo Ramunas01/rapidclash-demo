@@ -128,6 +128,11 @@ export interface MatchStartPayload {
   opponentName: string;
   gameId: string; // authoritative game to route to (Charter invariant #2: server-authoritative)
   state: GameState; // viewFor result — opponent's hidden info already stripped
+  /** The server's wall-clock `now` (ms) at send time. The client computes a one-time clock offset
+   *  (`serverNow − clientNow`) so it can align its display to server-authoritative timers — e.g.
+   *  Crash's live altitude must match the altitude the server banks (`altitudeAt(ctx.now −
+   *  startedAt)`) despite client/server clock skew. Generic; ignorable by games without timers. */
+  serverNow: number;
 }
 
 /** Updated redacted view after a move, plus events to animate on the client. */
@@ -138,6 +143,9 @@ export interface MatchStatePayload {
    *  so the name survives a reconnect/reload. Omitted on per-move broadcasts (the client already
    *  has it from match.start). Public alias only — never hidden game state. */
   opponentName?: string;
+  /** Server wall-clock `now` (ms) at send time — carried on the resume path so a reconnecting
+   *  client can re-align its clock offset for in-progress timer-based games (see MatchStartPayload). */
+  serverNow?: number;
 }
 
 /** It is your turn; here are the moves you may legally submit. */
