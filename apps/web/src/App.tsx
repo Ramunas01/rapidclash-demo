@@ -19,11 +19,12 @@ import { RpsHubScreen } from './screens/RpsHub.js';
 import { BlackjackHubScreen } from './screens/BlackjackHub.js';
 import { MinesHubScreen } from './screens/MinesHub.js';
 import { ChessHubScreen } from './screens/ChessHub.js';
+import { CrashHubScreen } from './screens/CrashHub.js';
 import { HomeHubScreen } from './screens/HomeHub.js';
 import { ProfileHubScreen } from './screens/ProfileHub.js';
 import { AuthModal } from './components/AuthModal.js';
 
-type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub';
+type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub' | 'crash-hub';
 
 /** A commit-to-play action captured when a logged-out visitor hits the auth wall, replayed
  *  automatically once they register/sign in (the resume that makes the wall feel seamless). */
@@ -35,11 +36,11 @@ const RECONNECT_NOTICE = 'Connection lost — reconnecting. Try again in a momen
 
 /** Games that play through the shared one-screen Game hub (vs the multi-screen flow).
  *  Each maps to a `<gameId>-hub` screen. Adding a game here wires it to the hub. */
-const HUB_GAMES = new Set(['coinflip', 'rps', 'blackjack', 'mines', 'chess']);
+const HUB_GAMES = new Set(['coinflip', 'rps', 'blackjack', 'mines', 'chess', 'crash']);
 const hubScreenFor = (gameId: string | null | undefined): Screen | null =>
   gameId && HUB_GAMES.has(gameId) ? (`${gameId}-hub` as Screen) : null;
 const isGameHubScreen = (s: Screen): boolean =>
-  s === 'coinflip-hub' || s === 'rps-hub' || s === 'blackjack-hub' || s === 'mines-hub' || s === 'chess-hub';
+  s === 'coinflip-hub' || s === 'rps-hub' || s === 'blackjack-hub' || s === 'mines-hub' || s === 'chess-hub' || s === 'crash-hub';
 
 export interface RpsView {
   players: [string, string];
@@ -118,9 +119,24 @@ export interface MinesView {
   mines?: number[];
 }
 
+/** Redacted Crash view (see packages/games/crash). `startedAt` (public) drives the client's
+ *  display-only climb; `crashAltitude` (C) and the opponent's result are present ONLY at terminal.
+ *  `results[me]` appears the moment this player ejects/crashes (they see their own eject at once). */
+export interface CrashResultView {
+  altitude: number;
+  crashed: boolean;
+}
+export interface CrashView {
+  players: [string, string];
+  startedAt: number;
+  crashAltitude?: number;
+  results: Record<string, CrashResultView | undefined>;
+  terminal?: boolean;
+}
+
 /** A per-game redacted view as it arrives from the server. The active game (and so
  *  which screen renders it) is tracked separately in `activeGameId`. */
-export type GameView = RpsView | CoinflipView | ChessView | BlackjackView | MinesView;
+export type GameView = RpsView | CoinflipView | ChessView | BlackjackView | MinesView | CrashView;
 
 function loadAuth() {
   return {
@@ -630,7 +646,8 @@ export function App() {
       case 'rps-hub':
       case 'blackjack-hub':
       case 'mines-hub':
-      case 'chess-hub': {
+      case 'chess-hub':
+      case 'crash-hub': {
         const HubScreen =
           screen === 'rps-hub'
             ? RpsHubScreen
@@ -640,7 +657,9 @@ export function App() {
                 ? MinesHubScreen
                 : screen === 'chess-hub'
                   ? ChessHubScreen
-                  : CoinflipHubScreen;
+                  : screen === 'crash-hub'
+                    ? CrashHubScreen
+                    : CoinflipHubScreen;
         return <HubScreen
           token={token ?? ''}
           playerId={playerId}

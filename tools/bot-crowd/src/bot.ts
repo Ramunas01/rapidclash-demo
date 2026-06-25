@@ -173,12 +173,18 @@ export class Bot {
     const moves = p.legalMoves;
     if (!moves || moves.length === 0) return;
     const move = moves[Math.floor(Math.random() * moves.length)];
-    // A brief "thinking" pause keeps cadence human-ish and the server unflooded.
+    // Crash has no turns — its only move is 'eject', offered at launch. A simple nerve policy:
+    // eject at a random altitude by waiting a random delay (it may bust if it holds too long).
+    // Every other game keeps the brief, human-ish "thinking" pause.
+    const delay =
+      this.cfg.gameId === 'crash'
+        ? config.crashEjectMinMs + Math.random() * (config.crashEjectMaxMs - config.crashEjectMinMs)
+        : config.moveDelayMs;
     setTimeout(() => {
       if (this.state === 'in_match' && this.matchId === matchId) {
         if (this.ws.makeMove(move, matchId)) this.log(`↳ played ${describeMove(move)}`);
       }
-    }, config.moveDelayMs);
+    }, delay);
   }
 
   private onMatchEnd(p: MatchEndPayload, _matchId: string): void {

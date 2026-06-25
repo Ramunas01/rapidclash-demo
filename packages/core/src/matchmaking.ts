@@ -40,13 +40,20 @@ export function usesTimeControl(mod: GameModule): boolean {
   return mod.meta.timeControl != null;
 }
 
+/** Absolute scheduled per-player deadlines (Crash) — the THIRD mode: the module declares each
+ *  still-active player's absolute auto-fire time via `scheduledDeadlines`, and the core injects
+ *  `timeoutMove` on expiry through the same generic sweep (no game-id branch, invariant #5). */
+export function usesScheduledDeadlines(mod: GameModule): boolean {
+  return typeof mod.scheduledDeadlines === 'function' && typeof mod.timeoutMove === 'function';
+}
+
 /** Either per-player-timer mode (per-move reset OR cumulative clock). Used internally for the
  *  shared scheduling/sweep machinery and to take a clocked match OUT of the single per-match
  *  deadline (forfeit-the-laggard). NOTE: the gateway's close-forfeit skip keys off
  *  `usesPlayerTimers` only — a clocked game (chess) keeps the socket-close abandonment backstop
  *  (Q6/Q7), since its absent player isn't auto-acted, only drained. */
 function hasPerPlayerClock(mod: GameModule): boolean {
-  return usesPlayerTimers(mod) || usesTimeControl(mod);
+  return usesPlayerTimers(mod) || usesTimeControl(mod) || usesScheduledDeadlines(mod);
 }
 
 /** Seed a cumulative clock onto a freshly-init'd state (the core has the formation `now`;
@@ -348,6 +355,19 @@ export function createMatchmaking(
       return;
     }
 
+    // Scheduled mode (Crash): the module declares each still-active player's absolute auto-fire
+    // time (e.g. the shared crash). Read it straight from the state and keep only players who
+    // still have a legal move — a resolved (ejected/crashed) player drops out automatically.
+    if (usesScheduledDeadlines(mod)) {
+      const declared = mod.scheduledDeadlines!(match.state);
+      const deadlines: Record<PlayerId, number> = {};
+      for (const p of match.players) {
+        if (declared[p] !== undefined && mod.legalMoves(match.state, p).length > 0) deadlines[p] = declared[p];
+      }
+      match.playerDeadlines = deadlines;
+      return;
+    }
+
     // Per-move mode (Blackjack/Mines): each player's timer resets to a fixed budget.
     const timeout = mod.meta.moveTimeoutMs!;
     const deadlines = match.playerDeadlines ?? {};
@@ -415,6 +435,8 @@ export function createMatchmaking(
       matches.set(matchId, record);
       // Both players queued under the same key → the same control (the waiter's intrinsic one).
       if (usesTimeControl(mod)) seedTimeControl(record.state, mod, record.players, nowFn(), waiter.timeControlId);
+      // Generic formation hook: stamp the launch time for games that need it (Crash's startedAt).
+      if (mod.launch) record.state = mod.launch(record.state, nowFn());
       if (hasPerPlayerClock(mod)) refreshPlayerTimers(record, mod, nowFn());
 
       return { status: 'matched', matchId, opponentId: waiter.playerId, initialState };
@@ -496,6 +518,8 @@ export function createMatchmaking(
     matches.set(matchId, record);
     // The control is intrinsic to the resting challenge — taking it inherits the owner's.
     if (usesTimeControl(mod)) seedTimeControl(record.state, mod, record.players, nowFn(), entry.timeControlId);
+    // Generic formation hook: stamp the launch time for games that need it (Crash's startedAt).
+    if (mod.launch) record.state = mod.launch(record.state, nowFn());
     if (hasPerPlayerClock(mod)) refreshPlayerTimers(record, mod, nowFn());
 
     return { status: 'matched', matchId, opponentId: ownerId, initialState };

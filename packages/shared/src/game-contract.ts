@@ -139,8 +139,24 @@ export interface GameModule {
    *  auto-inject when `playerId`'s timer expires while they still have legal moves.
    *  MUST return a move currently in `legalMoves(state, playerId)` and respect
    *  redaction/determinism — use the injected seeded `rng`, never ambient randomness.
-   *  e.g. Blackjack → 'stand'; Mines → a random covered square. The core applies the
-   *  returned move through the normal applyMove path, so isTerminal/viewFor/settlement
-   *  all flow as usual. Modules that don't set `meta.moveTimeoutMs` omit this. */
+   *  e.g. Blackjack → 'stand'; Mines → a random covered square; Crash → 'eject'. The core
+   *  applies the returned move through the normal applyMove path, so isTerminal/viewFor/
+   *  settlement all flow as usual. Modules that don't schedule timers omit this. */
   timeoutMove?(state: GameState, playerId: PlayerId, rng: Rng): Move;
+
+  /** OPT-IN match-formation hook. Called ONCE by the core right after `init`, with the formation
+   *  `now` (ms), for games whose starting state depends on the wall-clock launch time — e.g.
+   *  Crash stamps `startedAt` so the shared climb (and its scheduled crash) begin from it.
+   *  Returns the launched state. Deterministic given (state, now) — no ambient clock/RNG. Generic:
+   *  the core calls it for any module that declares it; the rest omit it. */
+  launch?(state: GameState, now: number): GameState;
+
+  /** OPT-IN absolute per-player deadlines (paired with `timeoutMove`). For games whose timer is
+   *  neither a per-move budget (`meta.moveTimeoutMs`) nor a cumulative clock (`meta.timeControl`)
+   *  but an ABSOLUTE scheduled event derived from the state — e.g. Crash's shared crash time.
+   *  Returns, per still-active player, the wall-clock `now` (ms) at which `timeoutMove` should
+   *  auto-fire; omit a player with nothing scheduled. The core reads it to drive the SAME generic
+   *  move-timer sweep Blackjack/Mines use, injecting `timeoutMove` on expiry — never a game-id
+   *  branch (invariant #5). Modules that don't schedule absolute deadlines omit this. */
+  scheduledDeadlines?(state: GameState): Record<PlayerId, number>;
 }

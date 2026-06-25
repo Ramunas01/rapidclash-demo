@@ -725,6 +725,116 @@ describe('per-player move timers', () => {
   });
 });
 
+// ─── Absolute scheduled deadlines (Crash) — generic core mode (THIRD timer shape) ───────────
+// A tiny fake that declares `launch` + `scheduledDeadlines` + `timeoutMove` but NO moveTimeoutMs
+// /timeControl — exercising the new generic scheduled-event path end-to-end, with no dependency on
+// the real crash module. The core stamps `startedAt` via `launch`, schedules each player's
+// absolute deadline, and injects `timeoutMove` on expiry through the same sweep.
+
+describe('scheduled deadlines (absolute per-player auto-fire, Crash-shape)', () => {
+  const CRASH_OFFSET = 5_000;
+  interface RocketState {
+    players: [PlayerId, PlayerId];
+    startedAt: number;
+    results: Record<PlayerId, number | undefined>; // banked "altitude" (= elapsed ms), 0 = crashed
+  }
+  const isResolved = (s: RocketState, p: PlayerId) => s.results[p] !== undefined;
+  const isTerm = (s: RocketState) => s.players.every((p) => isResolved(s, p));
+
+  const rocketModule: GameModule = {
+    meta: {
+      id: 'rocket', displayName: 'Rocket', minPlayers: 2, maxPlayers: 2,
+      ranking: { kind: 'net_winnings' }, bet: { minStake: 1, maxStake: 100, symmetricStake: true },
+      averageDurationSec: 5, rakeRate: 0.025,
+    },
+    init: (players) => ({ players: [players[0], players[1]], startedAt: 0, results: {} } as RocketState),
+    launch: (state, now) => ({ ...(state as RocketState), startedAt: now } as GameState),
+    legalMoves: (state, p) => {
+      const s = state as RocketState;
+      return !isTerm(s) && !isResolved(s, p) ? ['go'] : [];
+    },
+    applyMove: (state, _move, ctx): ApplyResult => {
+      const s = state as RocketState;
+      const elapsed = ctx.now - s.startedAt;
+      const banked = elapsed >= CRASH_OFFSET ? 0 : elapsed; // crash busts to 0
+      return { state: { ...s, results: { ...s.results, [ctx.playerId]: banked } } as GameState, events: [] };
+    },
+    isTerminal: (state) => isTerm(state as RocketState),
+    outcome: (state): Outcome => {
+      const s = state as RocketState;
+      const [a, b] = s.players;
+      const ba = s.results[a]!, bb = s.results[b]!;
+      return ba === bb ? { type: 'draw' } : { type: 'win', winner: ba > bb ? a : b };
+    },
+    viewFor: (state) => state,
+    forfeit: (state, quitter) => {
+      const s = state as RocketState;
+      const opp = s.players.find((p) => p !== quitter)!;
+      return { ...s, results: { ...s.results, [quitter]: 0, [opp]: s.results[opp] ?? 1 } } as GameState;
+    },
+    scheduledDeadlines: (state) => {
+      const s = state as RocketState;
+      if (s.startedAt === 0 || isTerm(s)) return {};
+      const out: Record<PlayerId, number> = {};
+      for (const p of s.players) if (!isResolved(s, p)) out[p] = s.startedAt + CRASH_OFFSET;
+      return out;
+    },
+    timeoutMove: () => 'go',
+  };
+
+  function setup(stake = 50) {
+    let clock = 1_000_000;
+    const db = new Database(':memory:');
+    const ledger = createLedger(db);
+    const mm = createMatchmaking(ledger, [rocketModule], undefined, { now: () => clock });
+    ledger.grant('alice');
+    ledger.grant('bob');
+    mm.joinQueue('alice', 'rocket', stake);
+    const r = mm.joinQueue('bob', 'rocket', stake);
+    if (r.status !== 'matched') throw new Error('expected matched');
+    return { ledger, mm, matchId: r.matchId, start: clock, advance: (ms: number) => { clock += ms; }, now: () => clock };
+  }
+
+  it('launch stamps startedAt and schedules both players at the absolute crash time', () => {
+    const { mm, matchId, start } = setup();
+    const match = mm.getActiveMatch(matchId)!;
+    expect((match.state as RocketState).startedAt).toBe(start); // generic launch hook ran
+    expect(match.playerDeadlines).toEqual({ alice: start + CRASH_OFFSET, bob: start + CRASH_OFFSET });
+  });
+
+  it('nobody ejects → the scheduled crash busts BOTH via the sweep → draw (refund)', () => {
+    const { mm, matchId, advance, now, ledger } = setup(50);
+    advance(CRASH_OFFSET + 100); // past the crash
+    const res = mm.sweepTimedOutMoves(now());
+    expect(res.map((r) => r.playerId)).toEqual(['alice', 'bob']); // both auto-ejected (crashed)
+    expect(res[1].terminal).toBe(true);
+    expect(res[1].outcome).toEqual({ type: 'draw' });
+    expect(mm.getActiveMatch(matchId)).toBeUndefined(); // settled + removed
+    expect(ledger.getBalance('alice')).toBe(GRANT_AMOUNT); // refunded, no rake
+    expect(ledger.getBalance(PLATFORM_ACCOUNT)).toBe(0);
+  });
+
+  it('one banks before the crash, the other rides to the crash → banker wins (rake once)', () => {
+    const { mm, matchId, advance, now, ledger } = setup(100);
+    advance(2_000);
+    mm.applyMove(matchId, 'alice', 'go', now()); // alice banks 2000
+    // alice resolved → her deadline drops; bob still scheduled at the crash.
+    expect(mm.getActiveMatch(matchId)!.playerDeadlines).toEqual({ bob: setupCrashAt(now(), 2_000) });
+    advance(CRASH_OFFSET); // bob rides past the crash
+    const res = mm.sweepTimedOutMoves(now());
+    expect(res).toHaveLength(1);
+    expect(res[0]).toMatchObject({ playerId: 'bob', terminal: true });
+    expect(res[0].outcome).toEqual({ type: 'win', winner: 'alice' });
+    expect(res[0].settlement!['alice'].delta).toBe(95); // 100 − round(200·0.025)=5
+    expect(ledger.getBalance(PLATFORM_ACCOUNT)).toBe(5);
+  });
+
+  // startedAt = (now at the bank) − 2000 elapsed; crash = startedAt + OFFSET.
+  function setupCrashAt(nowAtBank: number, elapsedAtBank: number): number {
+    return nowAtBank - elapsedAtBank + CRASH_OFFSET;
+  }
+});
+
 // ─── Cumulative per-player clock (time control) — generic core mode ───────────
 // A tiny turn-based fake that declares timeControl. The CORE seeds the clock at match start;
 // the module ADVANCES it on each move (like chess). No dependency on the real chess module.
