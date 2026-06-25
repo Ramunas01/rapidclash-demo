@@ -32,7 +32,7 @@ export interface BotConfig {
 }
 
 /**
- * Roster: 21 bots, all 🤖-prefixed — per live game (coinflip, rps, chess, blackjack, mines, crash, roulette):
+ * Roster: 24 bots, all 🤖-prefixed — per live game (coinflip, rps, chess, blackjack, mines, crash, roulette, ships-battle):
  *   • 2 RESTERS at DISTINCT stakes (5 and 10) so the FIFO matchmaker never pairs them with
  *     each other — each stays a stable, joinable open challenge for a human; and
  *   • 1 TAKER that claims only HUMAN-posted challenges (never a bot's), giving a human who
@@ -45,9 +45,10 @@ export interface BotConfig {
  * delay keeps the bots well inside the 5–10s windows. Two exceptions: Crash (continuous, turn-less)
  * pre-sets a RANDOM auto-eject during SETUP (never taps the pad); and Roulette, where a random move
  * would fiddle chips forever, so its bot uses a full-stack policy (all-in on a random even-money
- * colour, then lock) — see `rouletteMove` in bot.ts.
+ * colour, then lock) — see `rouletteMove` in bot.ts. And Ships Battle, whose bot auto-places its
+ * fleet (the `auto` move) then fires random un-probed squares — see `shipsBattleMove` in bot.ts.
  *
- * NOTE: the crash/roulette bots only resolve via real human JOINs (no bot-vs-bot), same as the rest.
+ * NOTE: the crash/roulette/ships-battle bots only resolve via real human JOINs (no bot-vs-bot), same as the rest.
  */
 export const ROSTER: BotConfig[] = [
   // 2 resters per game (distinct stakes) —
@@ -65,6 +66,8 @@ export const ROSTER: BotConfig[] = [
   { name: '🤖BT-1', gameId: 'crash', stake: 10, policy: 'rester' },
   { name: '🤖Q9-0', gameId: 'roulette', stake: 5, policy: 'rester' },
   { name: '🤖PROXY', gameId: 'roulette', stake: 10, policy: 'rester' },
+  { name: '🤖ADM-1', gameId: 'ships-battle', stake: 5, policy: 'rester' },
+  { name: '🤖NAV-2', gameId: 'ships-battle', stake: 10, policy: 'rester' },
   // 1 taker per game — claims only HUMAN-posted challenges (never a bot's) —
   { name: '🤖HK-47', gameId: 'coinflip', stake: 5, policy: 'taker' },
   { name: '🤖2-1B', gameId: 'rps', stake: 5, policy: 'taker' },
@@ -73,6 +76,7 @@ export const ROSTER: BotConfig[] = [
   { name: '🤖BD-1', gameId: 'mines', stake: 5, policy: 'taker' },
   { name: '🤖C1-10P', gameId: 'crash', stake: 5, policy: 'taker' },
   { name: '🤖8D8', gameId: 'roulette', stake: 5, policy: 'taker' },
+  { name: '🤖SY-3', gameId: 'ships-battle', stake: 5, policy: 'taker' },
 ];
 
 function num(envName: string, fallback: number): number {

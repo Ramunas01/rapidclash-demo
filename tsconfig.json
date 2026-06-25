@@ -10,6 +10,7 @@
     { "path": "./packages/games/mines" },
     { "path": "./packages/games/crash" },
     { "path": "./packages/games/roulette" },
+    { "path": "./packages/games/ships-battle" },
     { "path": "./apps/server" },
     { "path": "./apps/web" }
   ]
