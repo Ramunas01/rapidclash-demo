@@ -31,6 +31,28 @@ function describeMove(move: Move): string {
   return JSON.stringify(move);
 }
 
+/** A roulette legal move, as the bot inspects it (mirrors the module's enumerable move set). */
+type RouletteMoveLike = { t?: string; bet?: string; amount?: number };
+
+/**
+ * Roulette full-stack policy (smoke-test aid). A random move would shuffle chips forever and
+ * rarely complete the full stack, so the bot instead goes ALL-IN on a random even-money colour and
+ * then locks: pick the largest `place` amount on red/black (the "all remaining" option the module
+ * offers → 1000 in one move) — choosing red vs black at random for round-to-round variance — and on
+ * the next turn the `lock` move appears (full stack placed) and is taken. Returns null if neither
+ * is available (lets the caller fall back to a random move, never wedging the bot).
+ */
+function rouletteMove(moves: Move[]): Move | null {
+  const ms = moves as RouletteMoveLike[];
+  const lock = moves.find((m): m is Move => !!m && typeof m === 'object' && (m as RouletteMoveLike).t === 'lock');
+  if (lock) return lock;
+  const evenMoney = ms.filter((m) => m && m.t === 'place' && (m.bet === 'red' || m.bet === 'black') && typeof m.amount === 'number');
+  if (evenMoney.length === 0) return null;
+  const maxAmt = Math.max(...evenMoney.map((m) => m.amount ?? 0));
+  const allIn = evenMoney.filter((m) => m.amount === maxAmt); // the all-remaining options on red & black
+  return (allIn[Math.floor(Math.random() * allIn.length)] ?? null) as Move | null;
+}
+
 export class Bot {
   private readonly ws: BotWsClient;
   private state: BotState = 'connecting';
@@ -38,6 +60,10 @@ export class Bot {
   private token = '';
   private balance = 0;
   private matchId: string | null = null;
+  /** One move in flight at a time. Roulette is concurrent (both bet at once), so the gateway
+   *  resends `your_turn` to this bot whenever the OPPONENT places a chip — without this guard the
+   *  bot would schedule duplicate all-ins from those resends (harmless but noisy rejections). */
+  private movePending = false;
   private topUpSeq = 0;
   private warnedNoAdmin = false;
   /** Crash: true once this bot has pre-set its auto-eject for the current match (set it once). */
@@ -169,6 +195,7 @@ export class Bot {
     this.state = 'in_match';
     this.matchId = matchId;
     this.crashActed = false;
+    this.movePending = false;
     this.log(`🎮 matched vs ${p.opponent.slice(0, 8)} (${p.gameId})`);
   }
 
@@ -193,8 +220,16 @@ export class Bot {
       return;
     }
 
-    const move = moves[Math.floor(Math.random() * moves.length)];
+    if (this.movePending) return; // one move in flight (dedupes roulette's concurrent your_turn resends)
+    // Roulette needs a full-stack policy (all-in on an even-money colour, then lock); every other
+    // game is fine with a random legal move. Fall back to random if the policy finds nothing.
+    const move =
+      (this.cfg.gameId === 'roulette' ? rouletteMove(moves) : null) ??
+      moves[Math.floor(Math.random() * moves.length)];
+    // A brief "thinking" pause keeps cadence human-ish and the server unflooded.
+    this.movePending = true;
     setTimeout(() => {
+      this.movePending = false;
       if (this.state === 'in_match' && this.matchId === matchId) {
         if (this.ws.makeMove(move, matchId)) this.log(`↳ played ${describeMove(move)}`);
       }

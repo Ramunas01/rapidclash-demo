@@ -56,6 +56,9 @@ importers:
       '@rapidclash/game-mines':
         specifier: workspace:*
         version: link:../../packages/games/mines
+      '@rapidclash/game-roulette':
+        specifier: workspace:*
+        version: link:../../packages/games/roulette
       '@rapidclash/game-rps':
         specifier: workspace:*
         version: link:../../packages/games/rps
@@ -313,6 +316,12 @@ importers:
         version: link:../../shared
 
   packages/games/mines:
+    dependencies:
+      '@rapidclash/shared':
+        specifier: workspace:*
+        version: link:../../shared
+
+  packages/games/roulette:
     dependencies:
       '@rapidclash/shared':
         specifier: workspace:*
