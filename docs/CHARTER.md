@@ -35,7 +35,7 @@ Games are grouped in the UI as **Originals** (PvP-native and PvP-redefined signa
 | Mines | No (house by default) | **Confirmed PvP redefinition** — two-player race on identical boards, see `MINES.md`. Ranks by net winnings. |
 | Baccarat | No (house by default) | **Coming soon — PvP redefinition pending.** See `GAME_REDEFINITION.md`. |
 | Limbo | No (house by default) | **Coming soon — PvP redefinition pending.** See `GAME_REDEFINITION.md`. |
-| Crash | No (house by default) | **Coming soon — PvP redefinition pending.** See `GAME_REDEFINITION.md`. |
+| Crash | No (house by default) | **Confirmed PvP redefinition** — shared-rocket nerve duel, see `CRASH.md`. Ranks by net winnings. |
 | Keno | No (house by default) | **Coming soon — PvP redefinition pending.** See `GAME_REDEFINITION.md`. |
 | Hilo | No (house by default) | **Coming soon — PvP redefinition pending.** See `GAME_REDEFINITION.md`. |
 | Dice | No (house by default) | **Coming soon — PvP redefinition pending.** See `GAME_REDEFINITION.md`. |

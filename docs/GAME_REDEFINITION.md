@@ -24,7 +24,7 @@ If a candidate game cannot be made fair under this recipe, that is a finding wor
 | Blackjack | Player vs dealer to 21 | **Confirmed** — `BLACKJACK.md` |
 | Mines | Solo reveal-and-cash-out vs the system | **Confirmed** — `MINES.md` |
 | Baccarat | Player backs a hand vs the banker | Seed below — to confirm |
-| Crash | Multiplier rises, cash out before a random crash | Seed below — to confirm |
+| Crash | Multiplier rises, cash out before a random crash | **Confirmed** — `CRASH.md` |
 | Limbo | Pick a target multiplier; instant RNG pays if cleared | Seed below — to confirm |
 | Keno | Pick spots; RNG draws; matches pay | Seed below — to confirm |
 | Hilo | Guess the next card higher/lower | Seed below — to confirm |
@@ -36,7 +36,7 @@ If a candidate game cannot be made fair under this recipe, that is a finding wor
 **Illustrative directions, not commitments** — each becomes real only as its own confirmed spec. They exist to show the conversion is thinkable for every game (including the ones that "sound impossible") and to give designers something concrete.
 
 - **Baccarat** — players **alternate the Banker role** each round (or each backs a hand and the standard draw rules decide); the loser's stake transfers; rotation neutralises any banker advantage.
-- **Crash** — both watch the **same seeded rising multiplier**; each secretly sets a cash-out point; the higher cash-out *reached before the crash* wins; both caught by the crash → draw. A pure nerve duel.
+- **Crash** — *confirmed, see `CRASH.md`.* Both ride **one shared seeded hidden crash altitude**; each ejects (pre-set auto-eject and/or a live tap); the higher altitude banked before the crash wins; reaching the crash unejected **busts** (banks 0); both crash → draw. A pure nerve duel.
 - **Limbo** — both secretly commit a **target multiplier** against one **shared seeded draw**; if the draw clears both, the braver (higher) target wins; if it clears one, that player wins; if neither, the safer (lower) target wins. Bravery vs caution, head to head.
 - **Keno** — both pick the same count of spots on one grid; **one shared seeded draw**; more matches wins; tie → draw.
 - **Hilo** — a **shared seeded deck**; both call higher/lower simultaneously each step; the longer correct streak (or more correct over N steps) wins.
@@ -45,4 +45,4 @@ If a candidate game cannot be made fair under this recipe, that is a finding wor
 
 ## Process
 
-Each game leaves "coming soon" only when: (1) it has a confirmed spec in this `docs/` set following the recipe, (2) it's implemented as a plug-in module (no core branch), and (3) it's registered so `/games` returns it. Until then it is a dimmed tile that sells the roadmap. Advisor drafts each spec on request; suggested order by tractability: Keno, Hilo, Crash, Limbo, Dice, Baccarat, Roulette.
+Each game leaves "coming soon" only when: (1) it has a confirmed spec in this `docs/` set following the recipe, (2) it's implemented as a plug-in module (no core branch), and (3) it's registered so `/games` returns it. Until then it is a dimmed tile that sells the roadmap. Advisor drafts each spec on request; suggested order by tractability: Keno, Hilo, Limbo, Dice, Baccarat, Roulette.
