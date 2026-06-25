@@ -24,13 +24,14 @@ Empty lobbies are the obvious risk at low player counts. We solve it **outside t
 
 ## Game roster
 
-Games are grouped in the UI as **Originals** (PvP-native and PvP-redefined signature games), **Classics** (traditional games — Chess today, more later), and surfaced alongside **Events** (tournaments). See `SCREENS.md` for the display taxonomy.
+Games are grouped in the UI as **Originals** (PvP-native and PvP-redefined signature games), **Classics** (traditional skill games — Chess and Ships Battle today, more later), and surfaced alongside **Events** (tournaments). See `SCREENS.md` for the display taxonomy.
 
 | Game | Natively 2-player? | Status |
 |------|--------------------|--------|
 | Rock-Paper-Scissors | Yes | **Live.** First slice. Simultaneous single move, instant outcome. |
 | Coinflip | Yes | **Live.** Pure chance; both players secretly pick a side; mismatch → seeded flip. Ranks by net winnings. |
 | Chess | Yes | **Live (building).** Skill game, ELO ranking; external move-validation lib. Cumulative time control — see `CHESS_TIME_CONTROL.md`. The first **Classic**. |
+| Ships Battle | Yes | **Confirmed skill game** — hidden-fleet naval duel on a 10×10, see `SHIPS_BATTLE.md`. ELO ranking; a **Classic**. |
 | Blackjack | No (house by default) | **Confirmed PvP redefinition** — head-to-head duel, see `BLACKJACK.md`. |
 | Mines | No (house by default) | **Confirmed PvP redefinition** — two-player race on identical boards, see `MINES.md`. Ranks by net winnings. |
 | Baccarat | No (house by default) | **Coming soon — PvP redefinition pending.** See `GAME_REDEFINITION.md`. |
