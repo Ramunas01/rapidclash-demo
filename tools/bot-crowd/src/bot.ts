@@ -40,6 +40,8 @@ export class Bot {
   private matchId: string | null = null;
   private topUpSeq = 0;
   private warnedNoAdmin = false;
+  /** Crash: true once this bot has pre-set its auto-eject for the current match (set it once). */
+  private crashActed = false;
   /** Open challenges currently visible on this bot's game feed (takers only). */
   private readonly openChallenges = new Map<string, OpenChallenge>();
 
@@ -166,25 +168,37 @@ export class Bot {
   private onMatchStart(p: MatchStartPayload, matchId: string): void {
     this.state = 'in_match';
     this.matchId = matchId;
+    this.crashActed = false;
     this.log(`🎮 matched vs ${p.opponent.slice(0, 8)} (${p.gameId})`);
   }
 
   private onMatchYourTurn(p: MatchYourTurnPayload, matchId: string): void {
     const moves = p.legalMoves;
     if (!moves || moves.length === 0) return;
+
+    // Crash is continuous (no turns): legalMoves offers 'eject' + the auto-eject ladder. The bot
+    // pre-sets a RANDOM auto-eject ONCE during SETUP and then idles — the server auto-ejects it at
+    // that altitude. It never taps on the pad, and never wastes its eject on a mistimed climb tap.
+    if (this.cfg.gameId === 'crash') {
+      if (this.crashActed) return;
+      const autos = moves.filter((m): m is string => typeof m === 'string' && m.startsWith('auto:') && m !== 'auto:off');
+      if (autos.length === 0) return;
+      const pick = autos[Math.floor(Math.random() * autos.length)];
+      this.crashActed = true;
+      setTimeout(() => {
+        if (this.state === 'in_match' && this.matchId === matchId) {
+          if (this.ws.makeMove(pick, matchId)) this.log(`↳ auto-eject ${describeMove(pick)}`);
+        }
+      }, config.moveDelayMs);
+      return;
+    }
+
     const move = moves[Math.floor(Math.random() * moves.length)];
-    // Crash has no turns — its only move is 'eject', offered at launch. A simple nerve policy:
-    // eject at a random altitude by waiting a random delay (it may bust if it holds too long).
-    // Every other game keeps the brief, human-ish "thinking" pause.
-    const delay =
-      this.cfg.gameId === 'crash'
-        ? config.crashEjectMinMs + Math.random() * (config.crashEjectMaxMs - config.crashEjectMinMs)
-        : config.moveDelayMs;
     setTimeout(() => {
       if (this.state === 'in_match' && this.matchId === matchId) {
         if (this.ws.makeMove(move, matchId)) this.log(`↳ played ${describeMove(move)}`);
       }
-    }, delay);
+    }, config.moveDelayMs);
   }
 
   private onMatchEnd(p: MatchEndPayload, _matchId: string): void {

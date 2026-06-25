@@ -21,9 +21,16 @@ function baseProps(over: Partial<Props> = {}): Props {
   };
 }
 
-/** A live Crash view: the round launched a few seconds ago, this player still aboard. */
+/** A live CLIMB view: setup + ignition are in the past, this player still aboard. */
 function inPlayView(over: Partial<CrashView> = {}): CrashView {
-  return { players: ['pid', 'bob'], startedAt: Date.now() - 3000, results: {}, ...over };
+  const now = Date.now();
+  return { players: ['pid', 'bob'], setupEndsAt: now - 4000, startedAt: now - 3000, results: {}, ...over };
+}
+
+/** A SETUP view: the launch is still ~8s out (set your auto-eject). */
+function setupView(over: Partial<CrashView> = {}): CrashView {
+  const now = Date.now();
+  return { players: ['pid', 'bob'], setupEndsAt: now + 8000, startedAt: now + 9000, results: {}, ...over };
 }
 
 describe('CrashHubScreen (GameHub + CrashPanel)', () => {
@@ -52,12 +59,25 @@ describe('CrashHubScreen (GameHub + CrashPanel)', () => {
     expect(within(board).queryByTestId('crash-eject')).toBeNull();
   });
 
-  it('Pre-launch: shows the 3-2-1 countdown with EJECT disabled (server-authoritative pad)', () => {
-    const view = inPlayView({ startedAt: Date.now() + 2000 }); // launches in ~2s
-    render(<CrashHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view, legalMoves: ['eject'] })} />);
+  it('SETUP: shows the countdown + auto-eject presets, no altitude/EJECT (server pad)', () => {
+    render(<CrashHubScreen {...baseProps({ currentMatchId: 'm1', gameState: setupView(), legalMoves: ['eject', 'auto:off', 'auto:100'] })} />);
     expect(screen.getByTestId('crash-countdown').textContent).toMatch(/launching in/i);
-    expect(screen.getByTestId('crash-eject')).toBeDisabled(); // a pad tap can't waste the eject
+    expect(screen.getByTestId('crash-auto-eject')).toBeInTheDocument();
     expect(screen.queryByTestId('crash-altitude')).toBeNull(); // no altitude until the climb begins
+    expect(screen.queryByTestId('crash-eject')).toBeNull(); // no climb EJECT on the pad
+  });
+
+  it('SETUP: tapping a preset sends a server set-auto-eject; the armed one reads from the view', () => {
+    const onMakeMove = vi.fn();
+    const { rerender } = render(
+      <CrashHubScreen {...baseProps({ currentMatchId: 'm1', gameState: setupView(), legalMoves: ['eject', 'auto:100'], onMakeMove })} />,
+    );
+    fireEvent.click(screen.getByTestId('crash-auto-100'));
+    expect(onMakeMove).toHaveBeenCalledWith('auto:100'); // server-authoritative auto-eject
+
+    // The armed preset is reflected from the (server) view, not local state.
+    rerender(<CrashHubScreen {...baseProps({ currentMatchId: 'm1', gameState: setupView({ autoEject: { pid: 100 } }), legalMoves: ['eject', 'auto:100'] })} />);
+    expect(screen.getByTestId('crash-auto-100').className).toContain('bg-brand');
   });
 
   it('In-match: a climbing altitude + EJECT gated by legalMoves → onMove("eject")', () => {

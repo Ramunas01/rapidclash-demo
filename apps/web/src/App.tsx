@@ -128,8 +128,12 @@ export interface CrashResultView {
 }
 export interface CrashView {
   players: [string, string];
+  /** Public phase boundaries (ms): SETUP ends, then the climb origin a brief ignition later. */
+  setupEndsAt: number;
   startedAt: number;
   crashAltitude?: number;
+  /** Each player's pre-set auto-eject (own visible; opponent's only at terminal). */
+  autoEject?: Record<string, number | undefined>;
   results: Record<string, CrashResultView | undefined>;
   terminal?: boolean;
 }

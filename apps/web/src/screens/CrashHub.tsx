@@ -1,23 +1,37 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import type { Outcome } from '@rapidclash/shared';
 import type { CrashView, GameView } from '../App.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
 
-/** Display-only mirror of the server's altitude curve (packages/games/crash `CRASH_CONFIG`).
- *  The client animates the SAME shared climb from the server's `startedAt`; the server stays
- *  authoritative for the bank/crash, so a little latency drift here is fine. */
-const ALTITUDE_RATE = 10;
-const ALTITUDE_EXP = 2;
+/** Display-only mirror of the server's curve + auto-eject ladder (packages/games/crash
+ *  `CRASH_CONFIG`). The client animates the SAME shared climb from the server's `startedAt`; the
+ *  server stays authoritative for the bank/crash, so a little latency drift here is fine. The slow
+ *  start means a sub-second hiccup near launch skips almost no altitude. */
+const SCALE = 5;
+const GROWTH = 0.3;
+const AUTO_LADDER = [50, 100, 200, 350, 500, 750, 1000, 1500];
 function altitudeAt(elapsedMs: number): number {
   const s = Math.max(0, elapsedMs) / 1000;
-  return Math.floor(ALTITUDE_RATE * Math.pow(s, ALTITUDE_EXP));
+  return Math.floor(SCALE * (Math.exp(GROWTH * s) - 1));
+}
+
+/** A 100ms local ticker (smooth countdown/climb) while the round is live and we're still aboard;
+ *  it interpolates toward the server's fixed instants rather than re-rendering off sparse frames. */
+function useNow(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => setNow(Date.now()), 100);
+    return () => clearInterval(id);
+  }, [active]);
+  return now;
 }
 
 /** Pre-game / waiting board — no rocket yet; it launches on match.start. */
 function CrashIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
   return (
-    <div data-testid="hub-board" className="flex min-h-[220px] flex-col items-center justify-center gap-3 rounded-2xl bg-surface p-6 text-center">
+    <div data-testid="hub-board" className="flex min-h-[240px] flex-col items-center justify-center gap-3 rounded-2xl bg-surface p-6 text-center">
       <span className="text-5xl" aria-hidden="true">🚀</span>
       <p className="text-sm font-semibold text-muted-foreground">
         {phase === 'waiting' ? 'Finding a rival…' : 'Place your bet and launch'}
@@ -27,66 +41,82 @@ function CrashIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
 }
 
 /**
- * Live Crash board: the shared rocket's altitude climbs from `startedAt` (display-only), with an
- * EJECT button (gated by the server's legalMoves) and an optional client-side auto-eject. The
- * opponent's nerve is hidden until the round resolves (viewFor) — a blind duel.
+ * Live Crash board across the three phases — SETUP (pre-set your auto-eject), IGNITION (a brief
+ * beat), then the CLIMB (watch the shared altitude rise, EJECT before it crashes). Phase is
+ * derived from the server's public `setupEndsAt`/`startedAt`, interpolated locally so the
+ * countdown is smooth and both players stay synced. The opponent's nerve (and the crash altitude)
+ * stay hidden until the round resolves — a blind duel.
  */
 function CrashBoard({ gameState, legalMoves, onMove, playerId }: GameAreaArgs) {
   const view = gameState as CrashView | null;
   const startedAt = view?.startedAt ?? 0;
+  const setupEndsAt = view?.setupEndsAt ?? 0;
   const myResult = (playerId && view?.results?.[playerId]) || undefined;
+  const myAuto = (playerId && view?.autoEject?.[playerId]) ?? null;
   const done = Boolean(myResult);
 
-  // Climb locally between server frames; freeze once we've ejected/crashed. While `elapsed < 0`
-  // the rocket is on the pad (the server's pre-launch countdown) — `altitudeAt` clamps it to 0.
-  const [elapsed, setElapsed] = useState(() => (startedAt ? Date.now() - startedAt : 0));
-  useEffect(() => {
-    if (!startedAt || done) return;
-    const id = setInterval(() => setElapsed(Date.now() - startedAt), 50);
-    return () => clearInterval(id);
-  }, [startedAt, done]);
-  const liveAltitude = altitudeAt(elapsed);
-  const prelaunch = !done && elapsed < 0;
-  const countdownSec = Math.max(1, Math.ceil(-elapsed / 1000));
-  // EJECT is server-gated on the pad too (a pre-launch tap is rejected) — disable it client-side.
-  const canEject = legalMoves.length > 0 && !prelaunch;
+  const now = useNow(Boolean(startedAt) && !done);
+  const inSetup = !done && startedAt > 0 && now < setupEndsAt;
+  const inIgnition = !done && startedAt > 0 && now >= setupEndsAt && now < startedAt;
+  const liveAltitude = altitudeAt(now - startedAt);
+  // EJECT is server-gated to the climb (a pad tap is rejected); gate on the phase, not the
+  // transient legalMoves, but still require the server to currently offer a move.
+  const canEject = !done && startedAt > 0 && now >= startedAt && legalMoves.length > 0;
 
-  // Optional client-side auto-eject: fire EJECT once the climb reaches the chosen altitude.
-  const [autoEject, setAutoEject] = useState<number | null>(null);
-  const fired = useRef(false);
-  useEffect(() => { fired.current = false; }, [startedAt]);
-  useEffect(() => {
-    if (canEject && !fired.current && autoEject != null && liveAltitude >= autoEject) {
-      fired.current = true;
-      onMove('eject');
-    }
-  }, [canEject, autoEject, liveAltitude, onMove]);
-
-  // Pre-launch: rocket on the pad, a 3-2-1 beat, no altitude/EJECT yet.
-  if (prelaunch) {
+  // ── SETUP: pre-set the auto-eject (a server move, hidden from the opponent) ──────────────
+  if (inSetup) {
+    const countdownSec = Math.max(1, Math.ceil((setupEndsAt - now) / 1000));
     return (
-      <div data-testid="hub-board" className="flex min-h-[220px] flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl bg-surface p-6 text-center">
-        <span className="text-5xl" aria-hidden="true">🚀</span>
-        <p data-testid="crash-countdown" className="text-3xl font-black tabular-nums text-foreground">
-          Launching in {countdownSec}…
-        </p>
-        <button
-          type="button"
-          data-testid="crash-eject"
-          disabled
-          className="w-full max-w-xs rounded-xl bg-brand py-4 text-lg font-black uppercase tracking-wider text-white opacity-40"
-        >
-          Eject
-        </button>
+      <div data-testid="hub-board" className="flex min-h-[240px] flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl bg-surface p-6 text-center">
+        <span className="text-4xl" aria-hidden="true">🚀</span>
+        <p data-testid="crash-countdown" className="text-2xl font-black tabular-nums text-foreground">Launching in {countdownSec}…</p>
+        <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Auto-eject (optional)</p>
+        <div data-testid="crash-auto-eject" className="grid grid-cols-4 gap-1.5">
+          {AUTO_LADDER.map((alt) => (
+            <button
+              key={alt}
+              type="button"
+              data-testid={`crash-auto-${alt}`}
+              onClick={() => onMove(`auto:${alt}`)}
+              className={cn(
+                'rounded-lg px-2 py-1.5 text-xs font-bold tabular-nums transition-colors',
+                myAuto === alt ? 'bg-brand text-white' : 'bg-background text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {alt}m
+            </button>
+          ))}
+          <button
+            type="button"
+            data-testid="crash-auto-off"
+            onClick={() => onMove('auto:off')}
+            className={cn(
+              'rounded-lg px-2 py-1.5 text-xs font-bold transition-colors',
+              myAuto == null ? 'bg-brand text-white' : 'bg-background text-muted-foreground hover:text-foreground',
+            )}
+          >
+            Off
+          </button>
+        </div>
       </div>
     );
   }
 
-  const altitude = done ? (myResult!.crashed ? liveAltitude : myResult!.altitude) : liveAltitude;
+  // ── IGNITION: a brief beat before the climb ─────────────────────────────────────────────
+  if (inIgnition) {
+    return (
+      <div data-testid="hub-board" className="flex min-h-[240px] flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl bg-surface p-6 text-center">
+        <span className="text-5xl" aria-hidden="true">🔥</span>
+        <p data-testid="crash-ignition" className="text-2xl font-black uppercase tracking-wider text-foreground">Ignition…</p>
+        {myAuto != null && <p className="text-xs text-muted-foreground">Auto-eject armed at {myAuto} m</p>}
+      </div>
+    );
+  }
 
+  // ── CLIMB (and the post-eject "waiting" beat) ───────────────────────────────────────────
+  const altitude = done ? (myResult!.crashed ? liveAltitude : myResult!.altitude) : liveAltitude;
   return (
-    <div data-testid="hub-board" className="flex min-h-[220px] flex-col items-center justify-center gap-4 overflow-hidden rounded-2xl bg-surface p-6">
-      {/* Altitude readout */}
+    <div data-testid="hub-board" className="flex min-h-[240px] flex-col items-center justify-center gap-4 overflow-hidden rounded-2xl bg-surface p-6">
       <div className="text-center">
         <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Altitude</p>
         <p
@@ -117,19 +147,7 @@ function CrashBoard({ gameState, legalMoves, onMove, playerId }: GameAreaArgs) {
           >
             Eject
           </button>
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span>Auto-eject at</span>
-            <input
-              type="number"
-              min={1}
-              data-testid="crash-auto-eject"
-              value={autoEject ?? ''}
-              onChange={(e) => setAutoEject(e.target.value === '' ? null : Math.max(1, Number(e.target.value)))}
-              placeholder="—"
-              className="w-20 rounded-lg bg-background px-2 py-1 text-center text-foreground tabular-nums outline-none focus:ring-2 focus:ring-brand"
-            />
-            <span>m</span>
-          </label>
+          {myAuto != null && <p className="text-xs text-muted-foreground">Auto-eject armed at {myAuto} m</p>}
         </>
       )}
     </div>
@@ -171,9 +189,10 @@ function CrashReveal({ gameState, playerId }: { outcome: Outcome; gameState: Gam
 }
 
 /**
- * Crash Hub = the shared GameHub + a Crash play-panel (the climbing altitude readout, EJECT, an
- * optional client-side auto-eject) and a final reveal. The shared seeded crash, the eject/bust
- * logic, redaction and settlement are all server-authoritative — this is the presentation client.
+ * Crash Hub = the shared GameHub + a Crash play-panel (SETUP auto-eject presets, ignition beat,
+ * the climbing altitude readout + EJECT) and a final reveal. The shared seeded crash, the
+ * eject/bust logic, the auto-eject schedule, redaction and settlement are all server-authoritative
+ * — this is the presentation client.
  */
 export function CrashHubScreen(props: GameHubScreenProps) {
   return (

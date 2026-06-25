@@ -43,7 +43,7 @@ export interface BotConfig {
  * the server's `legalMoves`), so Blackjack (hit/stand) and Mines (reveal a square) need no
  * special handling — their per-player timers would auto-act a slow bot, but the ~700ms move
  * delay keeps the bots well inside the 5–10s windows. Crash is the exception (a continuous,
- * turn-less game): its bot ejects after a random delay (a random altitude) — see the bot.
+ * turn-less game): its bot pre-sets a RANDOM auto-eject during SETUP (never taps the pad) — see the bot.
  *
  * NOTE: the 'crash' bots only resolve via real human JOINs (no bot-vs-bot), same as the rest.
  */
@@ -103,11 +103,6 @@ export const config = {
   repostDelayMs: num('BOT_REPOST_DELAY_MS', 4000), // pause before a rester re-posts
   moveDelayMs: num('BOT_MOVE_DELAY_MS', 700), // "thinking" pause before replying a move
   reconnectDelayMs: num('BOT_RECONNECT_DELAY_MS', 2000),
-  // Crash: a bot ejects at a RANDOM nerve — a delay (from match.start) drawn in [min, max], so it
-  // banks a varied altitude (and occasionally holds too long and busts). The min sits past the
-  // ~3 s pre-launch pad countdown so a bot never wastes its eject on the pad; max is under the cap.
-  crashEjectMinMs: num('BOT_CRASH_EJECT_MIN_MS', 4000),
-  crashEjectMaxMs: num('BOT_CRASH_EJECT_MAX_MS', 14_000),
 
   /** Top-ups: when balance < stake × factor, admin-credit `topUpAmount` (if admin login works). */
   lowBalanceFactor: num('BOT_LOW_BALANCE_FACTOR', 5),

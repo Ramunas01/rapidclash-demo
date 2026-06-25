@@ -3,41 +3,48 @@ import type { Rng } from '@rapidclash/shared';
 /**
  * The one tunable Crash config (like Mines' MINE_COUNT) — owner-adjustable.
  *
- * The rocket's altitude (metres) climbs as a deterministic, accelerating function of elapsed
- * time; the hidden crash altitude `C` is drawn skewed-LOW and capped so a round is "authentic,
- * short & tense" — usually a few seconds, never more than ~`maxCrashAltitude`'s climb time.
- * Nothing here reads a clock or `Math.random` — `C` is drawn from the injected seeded rng and
- * the curve is a pure function of elapsed ms, so a round replays exactly (invariant #2).
+ * Round shape: a fixed SETUP window (set your auto-eject), a brief IGNITION beat, then the climb.
+ * The rocket's altitude (metres) climbs on a SLOW-START, accelerating (exponential, rocket-like)
+ * curve — so the first ~1–2 s rise barely moves, which makes the launch far less sensitive to
+ * client latency (a sub-second hiccup skips almost no altitude). The hidden crash altitude `C` is
+ * drawn skewed-LOW and capped so a round stays "authentic, short & tense". Nothing here reads a
+ * clock or `Math.random` — `C` is drawn from the injected seeded rng and the curve is a pure
+ * function of elapsed ms, so a round replays exactly (invariant #2).
  */
 export const CRASH_CONFIG = {
-  /** altitude(s) = ALTITUDE_RATE · s^ALTITUDE_EXP  (metres; EXP > 1 ⇒ an accelerating climb). */
-  altitudeRate: 10,
-  altitudeExp: 2,
-  /** `C` is drawn in [minCrashAltitude, maxCrashAltitude]. With rate 10 / exp 2 these map to a
-   *  climb time of ~1.6 s … ~22 s. */
-  minCrashAltitude: 25,
-  maxCrashAltitude: 5000,
+  /** Pre-climb phases (ms). [now, now+setupMs) = SETUP (set auto-eject); then ignitionMs of
+   *  "ignition"; the climb's origin is `now + setupMs + ignitionMs`. Tunable. */
+  setupMs: 10_000,
+  ignitionMs: 1_000,
+  /** altitude(s) = scale · (e^(growth·s) − 1)  (metres; slow at first, then accelerating). */
+  scale: 5,
+  growth: 0.3,
+  /** `C` is drawn in [minCrashAltitude, maxCrashAltitude]. With this curve those map to a climb
+   *  time of ~2 s … ~20 s. */
+  minCrashAltitude: 5,
+  maxCrashAltitude: 2000,
   /** Low-skew exponent: C = min + (max − min)·u^crashSkew, u ~ U[0,1). > 1 ⇒ C is usually low
    *  (most rounds short and tense), the cap reached only rarely. */
   crashSkew: 2.5,
-  /** Server-authoritative pre-launch hold: the rocket sits on the pad for this long before the
-   *  climb's origin. A real server phase (the climb's `startedAt` is shifted forward by it, so the
-   *  crash + auto-ejects are all scheduled AFTER it) — not a cosmetic client countdown. A 3-2-1
-   *  beat so short rounds + client latency never crash before the altitude even renders. */
-  launchCountdownMs: 3000,
+  /** Enumerable pre-set auto-eject altitudes (metres). The core validates a move by exact
+   *  membership in `legalMoves`, so the auto-eject can't be a free number — it's this fixed
+   *  ladder (the client offers them as presets). */
+  autoEjectLadder: [50, 100, 200, 350, 500, 750, 1000, 1500],
 } as const;
 
 /** Integer altitude (metres) reached `elapsedMs` after launch. The sole climb function — the
- *  client animates the same curve from the server's `startedAt` (display-only). */
+ *  client animates the same curve from the server's `startedAt` (display-only). Clamped to 0 for
+ *  negative elapsed (the rocket is still on the pad during SETUP/ignition). */
 export function altitudeAt(elapsedMs: number): number {
   const s = Math.max(0, elapsedMs) / 1000;
-  return Math.floor(CRASH_CONFIG.altitudeRate * Math.pow(s, CRASH_CONFIG.altitudeExp));
+  return Math.floor(CRASH_CONFIG.scale * (Math.exp(CRASH_CONFIG.growth * s) - 1));
 }
 
 /** Inverse of the curve: the ms after launch at which the climb first reaches `altitude`. Used to
- *  schedule the crash terminal at `C`. Rounded UP so `altitudeAt(timeToAltitudeMs(C)) >= C`. */
+ *  schedule the crash terminal at `C` (and any pre-set auto-eject). Rounded UP so
+ *  `altitudeAt(timeToAltitudeMs(C)) >= C`. */
 export function timeToAltitudeMs(altitude: number): number {
-  const s = Math.pow(Math.max(0, altitude) / CRASH_CONFIG.altitudeRate, 1 / CRASH_CONFIG.altitudeExp);
+  const s = Math.log(Math.max(0, altitude) / CRASH_CONFIG.scale + 1) / CRASH_CONFIG.growth;
   return Math.ceil(s * 1000);
 }
 
