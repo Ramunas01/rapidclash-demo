@@ -18,12 +18,13 @@ import { CoinflipHubScreen } from './screens/CoinflipHub.js';
 import { RpsHubScreen } from './screens/RpsHub.js';
 import { BlackjackHubScreen } from './screens/BlackjackHub.js';
 import { MinesHubScreen } from './screens/MinesHub.js';
+import { RouletteHubScreen } from './screens/RouletteHub.js';
 import { ChessHubScreen } from './screens/ChessHub.js';
 import { HomeHubScreen } from './screens/HomeHub.js';
 import { ProfileHubScreen } from './screens/ProfileHub.js';
 import { AuthModal } from './components/AuthModal.js';
 
-type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub';
+type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub' | 'roulette-hub';
 
 /** A commit-to-play action captured when a logged-out visitor hits the auth wall, replayed
  *  automatically once they register/sign in (the resume that makes the wall feel seamless). */
@@ -35,7 +36,7 @@ const RECONNECT_NOTICE = 'Connection lost — reconnecting. Try again in a momen
 
 /** Games that play through the shared one-screen Game hub (vs the multi-screen flow).
  *  Each maps to a `<gameId>-hub` screen. Adding a game here wires it to the hub. */
-const HUB_GAMES = new Set(['coinflip', 'rps', 'blackjack', 'mines', 'chess']);
+const HUB_GAMES = new Set(['coinflip', 'rps', 'blackjack', 'mines', 'chess', 'roulette']);
 const hubScreenFor = (gameId: string | null | undefined): Screen | null =>
   gameId && HUB_GAMES.has(gameId) ? (`${gameId}-hub` as Screen) : null;
 const isGameHubScreen = (s: Screen): boolean =>
@@ -118,9 +119,36 @@ export interface MinesView {
   mines?: number[];
 }
 
+/** Roulette redacted view. During betting my own `allocation` is full; the opponent's is `{}` and
+ *  only their `locked` flag shows (hidden until both lock). `lastResult` (a resolved round) is
+ *  public; the spin seed/pocket and both allocations reveal at terminal. Chips are scoring units,
+ *  never credits. */
+export interface RouletteBetView {
+  allocation?: Record<string, number>;
+  locked: boolean;
+  autoSpread?: boolean;
+  stack?: number;
+}
+export interface RouletteRoundResult {
+  round: number;
+  pocket: number;
+  bets: Record<string, Record<string, number>>;
+  stacks: Record<string, number>;
+}
+export interface RouletteView {
+  players: [string, string];
+  round: number;
+  replays: number;
+  bets: Record<string, RouletteBetView>;
+  lastResult?: RouletteRoundResult;
+  winner?: string;
+  forcedOutcome?: { type: string; winner?: string };
+  seed?: number;
+}
+
 /** A per-game redacted view as it arrives from the server. The active game (and so
  *  which screen renders it) is tracked separately in `activeGameId`. */
-export type GameView = RpsView | CoinflipView | ChessView | BlackjackView | MinesView;
+export type GameView = RpsView | CoinflipView | ChessView | BlackjackView | MinesView | RouletteView;
 
 function loadAuth() {
   return {
@@ -630,6 +658,7 @@ export function App() {
       case 'rps-hub':
       case 'blackjack-hub':
       case 'mines-hub':
+      case 'roulette-hub':
       case 'chess-hub': {
         const HubScreen =
           screen === 'rps-hub'
@@ -638,9 +667,11 @@ export function App() {
               ? BlackjackHubScreen
               : screen === 'mines-hub'
                 ? MinesHubScreen
-                : screen === 'chess-hub'
-                  ? ChessHubScreen
-                  : CoinflipHubScreen;
+                : screen === 'roulette-hub'
+                  ? RouletteHubScreen
+                  : screen === 'chess-hub'
+                    ? ChessHubScreen
+                    : CoinflipHubScreen;
         return <HubScreen
           token={token ?? ''}
           playerId={playerId}

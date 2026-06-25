@@ -4,6 +4,7 @@ import { coinflipModule } from '@rapidclash/game-coinflip';
 import { chessModule } from '@rapidclash/game-chess';
 import { blackjackModule } from '@rapidclash/game-blackjack';
 import { minesModule } from '@rapidclash/game-mines';
+import { rouletteModule } from '@rapidclash/game-roulette';
 
 /**
  * The platform's registered games — the single source of truth for what is LIVE.
@@ -16,4 +17,5 @@ export const gameModules: GameModule[] = [
   chessModule,
   blackjackModule,
   minesModule,
+  rouletteModule,
 ];

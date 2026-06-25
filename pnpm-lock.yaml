@@ -53,6 +53,9 @@ importers:
       '@rapidclash/game-mines':
         specifier: workspace:*
         version: link:../../packages/games/mines
+      '@rapidclash/game-roulette':
+        specifier: workspace:*
+        version: link:../../packages/games/roulette
       '@rapidclash/game-rps':
         specifier: workspace:*
         version: link:../../packages/games/rps
@@ -304,6 +307,12 @@ importers:
         version: link:../../shared
 
   packages/games/mines:
+    dependencies:
+      '@rapidclash/shared':
+        specifier: workspace:*
+        version: link:../../shared
+
+  packages/games/roulette:
     dependencies:
       '@rapidclash/shared':
         specifier: workspace:*
@@ -6753,14 +6762,6 @@ snapshots:
       chai: 5.3.3
       tinyrainbow: 1.2.0
 
-  '@vitest/mocker@2.1.9(vite@5.4.21(@types/node@20.19.43)(terser@5.48.0))':
-    dependencies:
-      '@vitest/spy': 2.1.9
-      estree-walker: 3.0.3
-      magic-string: 0.30.21
-    optionalDependencies:
-      vite: 5.4.21(@types/node@20.19.43)(terser@5.48.0)
-
   '@vitest/mocker@2.1.9(vite@5.4.21(@types/node@25.9.3)(terser@5.48.0))':
     dependencies:
       '@vitest/spy': 2.1.9
@@ -9239,7 +9240,7 @@ snapshots:
   vitest@2.1.9(@types/node@20.19.43)(jsdom@25.0.1)(terser@5.48.0):
     dependencies:
       '@vitest/expect': 2.1.9
-      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@20.19.43)(terser@5.48.0))
+      '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@25.9.3)(terser@5.48.0))
       '@vitest/pretty-format': 2.1.9
       '@vitest/runner': 2.1.9
       '@vitest/snapshot': 2.1.9
