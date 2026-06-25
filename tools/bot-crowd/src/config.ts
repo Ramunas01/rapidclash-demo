@@ -103,10 +103,11 @@ export const config = {
   repostDelayMs: num('BOT_REPOST_DELAY_MS', 4000), // pause before a rester re-posts
   moveDelayMs: num('BOT_MOVE_DELAY_MS', 700), // "thinking" pause before replying a move
   reconnectDelayMs: num('BOT_RECONNECT_DELAY_MS', 2000),
-  // Crash: a bot ejects at a RANDOM nerve — a delay drawn in [min, max] after launch, so it banks
-  // a varied altitude (and occasionally holds too long and busts). Picked under the ~22s cap.
-  crashEjectMinMs: num('BOT_CRASH_EJECT_MIN_MS', 1500),
-  crashEjectMaxMs: num('BOT_CRASH_EJECT_MAX_MS', 12_000),
+  // Crash: a bot ejects at a RANDOM nerve — a delay (from match.start) drawn in [min, max], so it
+  // banks a varied altitude (and occasionally holds too long and busts). The min sits past the
+  // ~3 s pre-launch pad countdown so a bot never wastes its eject on the pad; max is under the cap.
+  crashEjectMinMs: num('BOT_CRASH_EJECT_MIN_MS', 4000),
+  crashEjectMaxMs: num('BOT_CRASH_EJECT_MAX_MS', 14_000),
 
   /** Top-ups: when balance < stake × factor, admin-credit `topUpAmount` (if admin login works). */
   lowBalanceFactor: num('BOT_LOW_BALANCE_FACTOR', 5),

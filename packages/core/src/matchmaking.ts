@@ -439,7 +439,9 @@ export function createMatchmaking(
       if (mod.launch) record.state = mod.launch(record.state, nowFn());
       if (hasPerPlayerClock(mod)) refreshPlayerTimers(record, mod, nowFn());
 
-      return { status: 'matched', matchId, opponentId: waiter.playerId, initialState };
+      // Return the FORMED state (record.state) — `launch` may have replaced it (Crash's countdown),
+      // and seedTimeControl mutates it in place; the local `initialState` is the pre-launch copy.
+      return { status: 'matched', matchId, opponentId: waiter.playerId, initialState: record.state };
     }
 
     // No waiter — add this player to the queue as an open challenge.
@@ -522,7 +524,8 @@ export function createMatchmaking(
     if (mod.launch) record.state = mod.launch(record.state, nowFn());
     if (hasPerPlayerClock(mod)) refreshPlayerTimers(record, mod, nowFn());
 
-    return { status: 'matched', matchId, opponentId: ownerId, initialState };
+    // Return the FORMED state (see joinQueue) — `launch` may have replaced the pre-launch copy.
+    return { status: 'matched', matchId, opponentId: ownerId, initialState: record.state };
   }
 
   function listOpenChallenges(

@@ -52,6 +52,14 @@ describe('CrashHubScreen (GameHub + CrashPanel)', () => {
     expect(within(board).queryByTestId('crash-eject')).toBeNull();
   });
 
+  it('Pre-launch: shows the 3-2-1 countdown with EJECT disabled (server-authoritative pad)', () => {
+    const view = inPlayView({ startedAt: Date.now() + 2000 }); // launches in ~2s
+    render(<CrashHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view, legalMoves: ['eject'] })} />);
+    expect(screen.getByTestId('crash-countdown').textContent).toMatch(/launching in/i);
+    expect(screen.getByTestId('crash-eject')).toBeDisabled(); // a pad tap can't waste the eject
+    expect(screen.queryByTestId('crash-altitude')).toBeNull(); // no altitude until the climb begins
+  });
+
   it('In-match: a climbing altitude + EJECT gated by legalMoves → onMove("eject")', () => {
     const onMakeMove = vi.fn();
     const { rerender } = render(

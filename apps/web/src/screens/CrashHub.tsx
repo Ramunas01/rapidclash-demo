@@ -33,12 +33,12 @@ function CrashIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
  */
 function CrashBoard({ gameState, legalMoves, onMove, playerId }: GameAreaArgs) {
   const view = gameState as CrashView | null;
-  const canEject = legalMoves.length > 0;
   const startedAt = view?.startedAt ?? 0;
   const myResult = (playerId && view?.results?.[playerId]) || undefined;
   const done = Boolean(myResult);
 
-  // Climb locally between server frames; freeze once we've ejected/crashed.
+  // Climb locally between server frames; freeze once we've ejected/crashed. While `elapsed < 0`
+  // the rocket is on the pad (the server's pre-launch countdown) — `altitudeAt` clamps it to 0.
   const [elapsed, setElapsed] = useState(() => (startedAt ? Date.now() - startedAt : 0));
   useEffect(() => {
     if (!startedAt || done) return;
@@ -46,6 +46,10 @@ function CrashBoard({ gameState, legalMoves, onMove, playerId }: GameAreaArgs) {
     return () => clearInterval(id);
   }, [startedAt, done]);
   const liveAltitude = altitudeAt(elapsed);
+  const prelaunch = !done && elapsed < 0;
+  const countdownSec = Math.max(1, Math.ceil(-elapsed / 1000));
+  // EJECT is server-gated on the pad too (a pre-launch tap is rejected) — disable it client-side.
+  const canEject = legalMoves.length > 0 && !prelaunch;
 
   // Optional client-side auto-eject: fire EJECT once the climb reaches the chosen altitude.
   const [autoEject, setAutoEject] = useState<number | null>(null);
@@ -57,6 +61,26 @@ function CrashBoard({ gameState, legalMoves, onMove, playerId }: GameAreaArgs) {
       onMove('eject');
     }
   }, [canEject, autoEject, liveAltitude, onMove]);
+
+  // Pre-launch: rocket on the pad, a 3-2-1 beat, no altitude/EJECT yet.
+  if (prelaunch) {
+    return (
+      <div data-testid="hub-board" className="flex min-h-[220px] flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl bg-surface p-6 text-center">
+        <span className="text-5xl" aria-hidden="true">🚀</span>
+        <p data-testid="crash-countdown" className="text-3xl font-black tabular-nums text-foreground">
+          Launching in {countdownSec}…
+        </p>
+        <button
+          type="button"
+          data-testid="crash-eject"
+          disabled
+          className="w-full max-w-xs rounded-xl bg-brand py-4 text-lg font-black uppercase tracking-wider text-white opacity-40"
+        >
+          Eject
+        </button>
+      </div>
+    );
+  }
 
   const altitude = done ? (myResult!.crashed ? liveAltitude : myResult!.altitude) : liveAltitude;
 

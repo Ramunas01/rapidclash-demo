@@ -91,10 +91,13 @@ export const crashModule: GameModule = {
     return state;
   },
 
-  /** Generic match-formation hook: stamp the launch `now` so the climb (and the scheduled crash)
-   *  start. Deterministic given (state, now) — no ambient clock. */
+  /** Generic match-formation hook: set the climb's ORIGIN to `now + launchCountdownMs` — the
+   *  rocket sits on the pad through a server-authoritative 3-2-1, then climbs from 0. Because the
+   *  crash terminal and any auto-eject are scheduled from this shifted `startedAt`, the whole
+   *  schedule moves forward with it (nothing can crash on the pad). Deterministic given (state,
+   *  now) — `startedAt` is still a pure function of the injected `now`. */
   launch(state: GameState, now: number): GameState {
-    return { ...cast(state), startedAt: now };
+    return { ...cast(state), startedAt: now + CRASH_CONFIG.launchCountdownMs };
   },
 
   legalMoves(state: GameState, playerId: PlayerId): Move[] {
@@ -117,6 +120,11 @@ export const crashModule: GameModule = {
     }
     if (move !== EJECT) {
       throw new IllegalMove(`"${String(move)}" is not a legal move`);
+    }
+    // On the pad (pre-launch): reject the eject WITHOUT consuming it — a 3-2-1 tap must not waste
+    // the player's single eject (nothing can crash here either, so there's nothing to escape yet).
+    if (now < s.startedAt) {
+      throw new IllegalMove(`${playerId} cannot eject before launch`);
     }
 
     const altitude = altitudeAt(now - s.startedAt);

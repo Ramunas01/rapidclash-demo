@@ -11,15 +11,17 @@ const START = 1_000_000; // arbitrary non-zero launch `now`
 /** Seeded rng stub. `init` draws C with a single `rng.next()`. */
 const rngWith = (u: number): Rng => ({ next: () => u, int: () => 0 });
 
-/** A fresh launched round at C drawn from `u`. */
+/** A fresh launched round at C drawn from `u`. The climb origin sits a countdown ahead of START. */
 function launched(u = 0.5): { state: GameState; C: number } {
   const s0 = crash.init([A, B], rngWith(u));
   const state = crash.launch!(s0, START);
   return { state, C: (state as { crashAltitude: number }).crashAltitude };
 }
 
+const startedAt = (s: GameState) => (s as { startedAt: number }).startedAt;
+/** Eject `atMs` after LAUNCH (i.e. after the pad countdown) → elapsed === atMs. */
 const eject = (state: GameState, p: PlayerId, atMs: number) =>
-  crash.applyMove(state, 'eject', { playerId: p, now: START + atMs });
+  crash.applyMove(state, 'eject', { playerId: p, now: startedAt(state) + atMs });
 
 describe('crash curve', () => {
   it('altitude accelerates and the inverse round-trips above C', () => {
@@ -39,6 +41,35 @@ describe('crash curve', () => {
     // Skewed low: the midpoint u draws C well below the linear midpoint.
     const mid = drawCrashAltitude(rngWith(0.5));
     expect(mid).toBeLessThan((CRASH_CONFIG.minCrashAltitude + CRASH_CONFIG.maxCrashAltitude) / 2);
+  });
+});
+
+describe('crash pre-launch countdown (server-authoritative pad)', () => {
+  it('launch sets the climb origin a countdown ahead of `now`', () => {
+    const s = crash.launch!(crash.init([A, B], rngWith(0.5)), START);
+    expect(startedAt(s)).toBe(START + CRASH_CONFIG.launchCountdownMs);
+  });
+
+  it('the whole schedule (the crash) shifts forward by the countdown — nothing fires on the pad', () => {
+    const { state } = launched(0.5); // C = 904
+    const crashAt = crash.scheduledDeadlines!(state)[A];
+    expect(crashAt).toBe(START + CRASH_CONFIG.launchCountdownMs + timeToAltitudeMs(904));
+    expect(crashAt).toBeGreaterThan(startedAt(state)); // crash is after the pad, never on it
+  });
+
+  it('an eject ON THE PAD is rejected and does NOT consume the single eject', () => {
+    const { state } = launched(0.5);
+    // now during the countdown (before startedAt) → rejected.
+    expect(() => crash.applyMove(state, 'eject', { playerId: A, now: START + 1000 })).toThrow(IllegalMove);
+    // The eject is intact: A can still eject once the climb begins, banking the live altitude.
+    expect(crash.legalMoves(state, A)).toEqual(['eject']);
+    const r = eject(state, A, 2000); // 2 s after launch → 10·2² = 40 m
+    expect((crash.viewFor(r.state, A) as { results: Record<string, { altitude: number }> }).results[A].altitude).toBe(40);
+  });
+
+  it('altitude is clamped to 0 on the pad (negative elapsed)', () => {
+    expect(altitudeAt(-CRASH_CONFIG.launchCountdownMs)).toBe(0);
+    expect(altitudeAt(-1)).toBe(0);
   });
 });
 
@@ -113,7 +144,7 @@ describe('crash redaction (viewFor)', () => {
 
     // B's in-play view: no C, no sight of A's ejection, but B sees the public startedAt.
     const bView = crash.viewFor(r1.state, B) as Record<string, unknown>;
-    expect(bView.startedAt).toBe(START);
+    expect(bView.startedAt).toBe(START + CRASH_CONFIG.launchCountdownMs);
     expect(bView.crashAltitude).toBeUndefined();
     expect((bView.results as Record<string, unknown>)[A]).toBeUndefined(); // opponent ejection hidden
     expect((bView.results as Record<string, unknown>)[B]).toBeUndefined(); // B hasn't ejected
@@ -134,8 +165,8 @@ describe('crash redaction (viewFor)', () => {
 
 describe('crash scheduled crash (generic timer integration)', () => {
   it('scheduledDeadlines holds the crash time for un-resolved players and drops resolved ones', () => {
-    const { state } = launched(0.5); // crash at START + timeToAltitudeMs(904)
-    const crashAt = START + timeToAltitudeMs(904);
+    const { state } = launched(0.5); // crash at startedAt + timeToAltitudeMs(904)
+    const crashAt = startedAt(state) + timeToAltitudeMs(904);
     expect(crash.scheduledDeadlines!(state)).toEqual({ [A]: crashAt, [B]: crashAt });
 
     const r1 = eject(state, A, 3000);

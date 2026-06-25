@@ -20,6 +20,11 @@ export const CRASH_CONFIG = {
   /** Low-skew exponent: C = min + (max − min)·u^crashSkew, u ~ U[0,1). > 1 ⇒ C is usually low
    *  (most rounds short and tense), the cap reached only rarely. */
   crashSkew: 2.5,
+  /** Server-authoritative pre-launch hold: the rocket sits on the pad for this long before the
+   *  climb's origin. A real server phase (the climb's `startedAt` is shifted forward by it, so the
+   *  crash + auto-ejects are all scheduled AFTER it) — not a cosmetic client countdown. A 3-2-1
+   *  beat so short rounds + client latency never crash before the altitude even renders. */
+  launchCountdownMs: 3000,
 } as const;
 
 /** Integer altitude (metres) reached `elapsedMs` after launch. The sole climb function — the
