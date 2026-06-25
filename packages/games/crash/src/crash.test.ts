@@ -32,15 +32,15 @@ const setAuto = (state: GameState, p: PlayerId, altitude: number, move: Move = `
 describe('crash curve (gentle, slow-start exponential)', () => {
   it('rises slowly at first, then accelerates', () => {
     expect(altitudeAt(0)).toBe(0);
-    expect(altitudeAt(1000)).toBe(1); // barely moves in the first second (latency-tolerant)
-    expect(altitudeAt(2000)).toBe(4);
-    expect(altitudeAt(5000)).toBe(17);
-    expect(altitudeAt(10_000)).toBe(95); // then climbs fast
+    expect(altitudeAt(1000)).toBe(0); // barely moves in the first ~second (latency-tolerant)
+    expect(altitudeAt(2000)).toBe(1);
+    expect(altitudeAt(5000)).toBe(6);
+    expect(altitudeAt(10_000)).toBe(71); // then climbs fast
     expect(altitudeAt(-500)).toBe(0); // clamped on the pad
   });
 
   it('the inverse round-trips at or above C across the range', () => {
-    for (const C of [5, 50, 358, 1000, 2000]) {
+    for (const C of [5, 50, 269, 1000, 1500]) {
       expect(altitudeAt(timeToAltitudeMs(C))).toBeGreaterThanOrEqual(C);
     }
   });
@@ -73,7 +73,7 @@ describe('crash SETUP → ignition → climb phases', () => {
     expect(() => crash.applyMove(state, 'eject', { playerId: A, now: START + CRASH_CONFIG.setupMs + 500 })).toThrow(IllegalMove);
     // The eject is intact → A can still bank once the climb begins.
     const r = eject(state, A, 5000);
-    expect(results(view(r.state, A))[A]!.altitude).toBe(17);
+    expect(results(view(r.state, A))[A]!.altitude).toBe(6);
   });
 });
 
@@ -99,17 +99,17 @@ describe('crash gameplay (the climb)', () => {
   });
 
   it('ejecting below C banks the live altitude; the higher bank wins', () => {
-    const { state, C } = launched(0.5); // C = 358
-    expect(C).toBe(358);
-    const r1 = eject(state, A, 3000); // 7 m
-    const r2 = eject(r1.state, B, 7000); // 35 m
+    const { state, C } = launched(0.5); // C = 269
+    expect(C).toBe(269);
+    const r1 = eject(state, A, 3000); // 2 m
+    const r2 = eject(r1.state, B, 7000); // 17 m
     expect(crash.isTerminal(r2.state)).toBe(true);
     expect(crash.outcome(r2.state)).toEqual({ type: 'win', winner: B });
   });
 
   it('reaching C before ejecting busts you (bank 0) — banker beats a crash', () => {
-    const { state } = launched(0.5); // C = 358 → crash ~14.3 s into the climb
-    const r1 = eject(state, A, 3000); // banks 7
+    const { state } = launched(0.5); // C = 269 → crash ~13 s into the climb
+    const r1 = eject(state, A, 3000); // banks 2
     const r2 = eject(r1.state, B, 16_000); // ≥ C → crash, banks 0
     expect(crash.outcome(r2.state)).toEqual({ type: 'win', winner: A });
   });
@@ -135,8 +135,8 @@ describe('crash auto-eject (server-authoritative pre-set)', () => {
   });
 
   it('schedules the auto-eject at min(its altitude time, the crash) and banks EXACTLY the preset', () => {
-    const { state } = launched(0.5); // C = 358
-    const r = setAuto(state, A, 100); // 100 < 358 → fires before the crash
+    const { state } = launched(0.5); // C = 269
+    const r = setAuto(state, A, 100); // 100 < 269 → fires before the crash
     const autoAt = startedAt(r.state) + timeToAltitudeMs(100);
     expect(crash.scheduledDeadlines!(r.state)[A]).toBe(autoAt);
     // The sweep injects eject at that deadline → banks exactly 100 (deterministic, not now-sensitive).
@@ -148,9 +148,9 @@ describe('crash auto-eject (server-authoritative pre-set)', () => {
   });
 
   it('an auto-eject set above C is overtaken by the crash (scheduled at the crash) → busts', () => {
-    const { state } = launched(0.5); // C = 358
-    const r = setAuto(state, A, 1000); // 1000 > 358
-    const crashAt = startedAt(r.state) + timeToAltitudeMs(358);
+    const { state } = launched(0.5); // C = 269
+    const r = setAuto(state, A, 1000); // 1000 > 269
+    const crashAt = startedAt(r.state) + timeToAltitudeMs(269);
     expect(crash.scheduledDeadlines!(r.state)[A]).toBe(crashAt); // the crash comes first
     const fired = crash.applyMove(r.state, 'eject', { playerId: A, now: crashAt });
     expect(results(view(fired.state, A))[A]!.crashed).toBe(true);
@@ -172,7 +172,7 @@ describe('crash redaction (viewFor)', () => {
   it('hides C + the opponent auto-eject + the opponent ejection in play; reveals all at terminal', () => {
     const { state, C } = launched(0.5);
     const r0 = setAuto(state, B, 100); // B pre-sets (hidden from A)
-    const r1 = eject(r0.state, A, 3000); // A banks 7, B still aboard
+    const r1 = eject(r0.state, A, 3000); // A banks 2, B still aboard
 
     const aView = view(r1.state, A);
     expect(aView.setupEndsAt).toBe(START + CRASH_CONFIG.setupMs); // public boundary
@@ -180,14 +180,14 @@ describe('crash redaction (viewFor)', () => {
     expect(aView.crashAltitude).toBeUndefined(); // C hidden
     expect((aView.autoEject as Record<string, unknown>)[B]).toBeUndefined(); // opponent's pre-set hidden
     expect(results(aView)[B]).toBeUndefined(); // opponent ejection hidden
-    expect(results(aView)[A]!.altitude).toBe(7); // own ejection seen at once
+    expect(results(aView)[A]!.altitude).toBe(2); // own ejection seen at once
 
     // Terminal → C + both auto-ejects + both ejections revealed.
     const r2 = eject(r1.state, B, 5000);
     const term = view(r2.state, A);
     expect(term.crashAltitude).toBe(C);
     expect((term.autoEject as Record<string, number>)[B]).toBe(100);
-    expect(results(term)[B]!.altitude).toBe(17);
+    expect(results(term)[B]!.altitude).toBe(6);
   });
 });
 
@@ -199,7 +199,7 @@ describe('crash scheduled crash + forfeit (generic timer integration)', () => {
 
   it('forfeit busts the quitter and the opponent wins (terminal, never a void)', () => {
     const { state } = launched(0.5);
-    const r1 = eject(state, A, 3000); // A banks 7
+    const r1 = eject(state, A, 3000); // A banks 2
     const term = crash.forfeit(r1.state, B); // B gives up → crashes
     expect(crash.isTerminal(term)).toBe(true);
     expect(crash.outcome(term)).toEqual({ type: 'win', winner: A });
@@ -209,17 +209,17 @@ describe('crash scheduled crash + forfeit (generic timer integration)', () => {
 describe('crash determinism', () => {
   it('same seed + same move times (auto-eject set + ejects) → identical C, banks, outcome', () => {
     const play = () => {
-      const { state, C } = launched(0.5); // C = 358
+      const { state, C } = launched(0.5); // C = 269
       const r1 = setAuto(state, A, 100); // A pre-sets auto-eject at 100
       const aAt = startedAt(r1.state) + timeToAltitudeMs(100);
       const r2 = crash.applyMove(r1.state, 'eject', { playerId: A, now: aAt }); // A auto-banks 100
-      const r3 = eject(r2.state, B, 5000); // B manual at 5 s → 17
+      const r3 = eject(r2.state, B, 5000); // B manual at 5 s → 6
       const v = view(r3.state, A);
       return { C, a: results(v)[A]!.altitude, b: results(v)[B]!.altitude, outcome: crash.outcome(r3.state) };
     };
     const first = play();
     expect(first).toEqual(play());
     // Exact expected values (not just self-consistency).
-    expect(first).toEqual({ C: 358, a: 100, b: 17, outcome: { type: 'win', winner: A } });
+    expect(first).toEqual({ C: 269, a: 100, b: 6, outcome: { type: 'win', winner: A } });
   });
 });

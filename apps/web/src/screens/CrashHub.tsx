@@ -4,20 +4,21 @@ import type { Outcome } from '@rapidclash/shared';
 import type { CrashView, GameView } from '../App.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
 
-/** Display-only mirror of the server's curve + auto-eject ladder (packages/games/crash
- *  `CRASH_CONFIG`). The client animates the SAME shared climb from the server's `startedAt`; the
- *  server stays authoritative for the bank/crash, so a little latency drift here is fine. The slow
- *  start means a sub-second hiccup near launch skips almost no altitude. */
-const SCALE = 5;
-const GROWTH = 0.3;
-const AUTO_LADDER = [50, 100, 200, 350, 500, 750, 1000, 1500];
-function altitudeAt(elapsedMs: number): number {
+/** Display-only mirror of the server's altitude curve (packages/games/crash `CRASH_CONFIG`). The
+ *  client animates the SAME shared climb from the server's `startedAt`, aligned to the server's
+ *  clock (see `serverClockOffset`), so what the player sees matches what the server banks. The
+ *  slow start (initial rate ≈ scale·growth) means a sub-second hiccup near launch skips almost no
+ *  altitude. Exported for the client↔server agreement test. */
+const SCALE = 0.8;
+const GROWTH = 0.45;
+/** Throttle the altitude number to ~4 Hz so it's readable (the countdown keeps its smooth tick). */
+const ALTITUDE_THROTTLE_MS = 250;
+export function altitudeAt(elapsedMs: number): number {
   const s = Math.max(0, elapsedMs) / 1000;
   return Math.floor(SCALE * (Math.exp(GROWTH * s) - 1));
 }
 
-/** A 100ms local ticker (smooth countdown/climb) while the round is live and we're still aboard;
- *  it interpolates toward the server's fixed instants rather than re-rendering off sparse frames. */
+/** A 100ms local ticker (smooth countdown/climb) while the round is live and we're still aboard. */
 function useNow(active: boolean): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -41,63 +42,38 @@ function CrashIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
 }
 
 /**
- * Live Crash board across the three phases — SETUP (pre-set your auto-eject), IGNITION (a brief
- * beat), then the CLIMB (watch the shared altitude rise, EJECT before it crashes). Phase is
- * derived from the server's public `setupEndsAt`/`startedAt`, interpolated locally so the
- * countdown is smooth and both players stay synced. The opponent's nerve (and the crash altitude)
- * stay hidden until the round resolves — a blind duel.
+ * Live Crash board across the phases — a brief SETUP countdown, IGNITION, then the CLIMB (watch
+ * the shared altitude rise, EJECT before it crashes). Phase + altitude are derived from the
+ * server's public `setupEndsAt`/`startedAt`, with the local clock aligned to the server's via
+ * `serverClockOffset` so the displayed altitude matches the altitude the server banks. The
+ * opponent's nerve (and the crash altitude) stay hidden until the round resolves — a blind duel.
  */
-function CrashBoard({ gameState, legalMoves, onMove, playerId }: GameAreaArgs) {
+function CrashBoard({ gameState, legalMoves, onMove, playerId, serverClockOffset = 0 }: GameAreaArgs) {
   const view = gameState as CrashView | null;
   const startedAt = view?.startedAt ?? 0;
   const setupEndsAt = view?.setupEndsAt ?? 0;
   const myResult = (playerId && view?.results?.[playerId]) || undefined;
-  const myAuto = (playerId && view?.autoEject?.[playerId]) ?? null;
   const done = Boolean(myResult);
 
-  const now = useNow(Boolean(startedAt) && !done);
+  // Align the local tick to the SERVER clock (offset from the match payload) — otherwise the live
+  // counter drifts from the server's authoritative altitudeAt(ctx.now − startedAt) on clock skew.
+  const now = useNow(Boolean(startedAt) && !done) + serverClockOffset;
+  const elapsed = now - startedAt;
   const inSetup = !done && startedAt > 0 && now < setupEndsAt;
   const inIgnition = !done && startedAt > 0 && now >= setupEndsAt && now < startedAt;
-  const liveAltitude = altitudeAt(now - startedAt);
-  // EJECT is server-gated to the climb (a pad tap is rejected); gate on the phase, not the
-  // transient legalMoves, but still require the server to currently offer a move.
+  // Throttle the displayed altitude to ~4 Hz so the number is readable as it accelerates.
+  const displayElapsed = Math.floor(Math.max(0, elapsed) / ALTITUDE_THROTTLE_MS) * ALTITUDE_THROTTLE_MS;
+  const liveAltitude = altitudeAt(displayElapsed);
   const canEject = !done && startedAt > 0 && now >= startedAt && legalMoves.length > 0;
 
-  // ── SETUP: pre-set the auto-eject (a server move, hidden from the opponent) ──────────────
+  // ── SETUP: a short "get ready" countdown (live-EJECT only — no auto-eject input) ─────────
   if (inSetup) {
     const countdownSec = Math.max(1, Math.ceil((setupEndsAt - now) / 1000));
     return (
       <div data-testid="hub-board" className="flex min-h-[240px] flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl bg-surface p-6 text-center">
         <span className="text-4xl" aria-hidden="true">🚀</span>
-        <p data-testid="crash-countdown" className="text-2xl font-black tabular-nums text-foreground">Launching in {countdownSec}…</p>
-        <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Auto-eject (optional)</p>
-        <div data-testid="crash-auto-eject" className="grid grid-cols-4 gap-1.5">
-          {AUTO_LADDER.map((alt) => (
-            <button
-              key={alt}
-              type="button"
-              data-testid={`crash-auto-${alt}`}
-              onClick={() => onMove(`auto:${alt}`)}
-              className={cn(
-                'rounded-lg px-2 py-1.5 text-xs font-bold tabular-nums transition-colors',
-                myAuto === alt ? 'bg-brand text-white' : 'bg-background text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {alt}m
-            </button>
-          ))}
-          <button
-            type="button"
-            data-testid="crash-auto-off"
-            onClick={() => onMove('auto:off')}
-            className={cn(
-              'rounded-lg px-2 py-1.5 text-xs font-bold transition-colors',
-              myAuto == null ? 'bg-brand text-white' : 'bg-background text-muted-foreground hover:text-foreground',
-            )}
-          >
-            Off
-          </button>
-        </div>
+        <p data-testid="crash-countdown" className="text-3xl font-black tabular-nums text-foreground">Launching in {countdownSec}…</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Get ready to eject</p>
       </div>
     );
   }
@@ -108,7 +84,6 @@ function CrashBoard({ gameState, legalMoves, onMove, playerId }: GameAreaArgs) {
       <div data-testid="hub-board" className="flex min-h-[240px] flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl bg-surface p-6 text-center">
         <span className="text-5xl" aria-hidden="true">🔥</span>
         <p data-testid="crash-ignition" className="text-2xl font-black uppercase tracking-wider text-foreground">Ignition…</p>
-        {myAuto != null && <p className="text-xs text-muted-foreground">Auto-eject armed at {myAuto} m</p>}
       </div>
     );
   }
@@ -137,18 +112,15 @@ function CrashBoard({ gameState, legalMoves, onMove, playerId }: GameAreaArgs) {
           <p className="mt-1 text-xs text-muted-foreground">Waiting for the round to resolve…</p>
         </div>
       ) : (
-        <>
-          <button
-            type="button"
-            data-testid="crash-eject"
-            disabled={!canEject}
-            onClick={() => onMove('eject')}
-            className="w-full max-w-xs rounded-xl bg-brand py-4 text-lg font-black uppercase tracking-wider text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-          >
-            Eject
-          </button>
-          {myAuto != null && <p className="text-xs text-muted-foreground">Auto-eject armed at {myAuto} m</p>}
-        </>
+        <button
+          type="button"
+          data-testid="crash-eject"
+          disabled={!canEject}
+          onClick={() => onMove('eject')}
+          className="w-full max-w-xs rounded-xl bg-brand py-4 text-lg font-black uppercase tracking-wider text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+        >
+          Eject
+        </button>
       )}
     </div>
   );
@@ -189,10 +161,10 @@ function CrashReveal({ gameState, playerId }: { outcome: Outcome; gameState: Gam
 }
 
 /**
- * Crash Hub = the shared GameHub + a Crash play-panel (SETUP auto-eject presets, ignition beat,
- * the climbing altitude readout + EJECT) and a final reveal. The shared seeded crash, the
- * eject/bust logic, the auto-eject schedule, redaction and settlement are all server-authoritative
- * — this is the presentation client.
+ * Crash Hub = the shared GameHub + a Crash play-panel (a short SETUP countdown, ignition, the
+ * climbing altitude readout + EJECT) and a final reveal. Live-EJECT only for humans (the module
+ * keeps its server-side auto-eject for bots). The shared seeded crash, the eject/bust logic,
+ * redaction and settlement are all server-authoritative — this is the presentation client.
  */
 export function CrashHubScreen(props: GameHubScreenProps) {
   return (

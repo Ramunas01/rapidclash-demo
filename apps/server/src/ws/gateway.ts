@@ -107,6 +107,7 @@ export function registerWsGateway(
       opponentName: identity.getUsername(result.opponentId) ?? result.opponentId,
       gameId,
       state: curState,
+      serverNow: Date.now(), // lets the client align its clock to server-authoritative timers
     });
 
     const oppSocket = connections.get(result.opponentId);
@@ -118,6 +119,7 @@ export function registerWsGateway(
         opponentName: identity.getUsername(curId) ?? curId,
         gameId,
         state: oppState,
+        serverNow: Date.now(),
       });
     }
 
@@ -436,7 +438,7 @@ export function registerWsGateway(
                 send<MatchStatePayload>(
                   socket,
                   'match.state',
-                  { state, events: [], opponentName: oppId ? (identity.getUsername(oppId) ?? oppId) : undefined },
+                  { state, events: [], opponentName: oppId ? (identity.getUsername(oppId) ?? oppId) : undefined, serverNow: Date.now() },
                   matchId,
                 );
 

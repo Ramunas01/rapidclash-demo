@@ -173,6 +173,9 @@ export function App() {
   // from an id and never fabricated (the hub falls back to a neutral "Opponent").
   const [opponentName, setOpponentName] = useState<string | null>(null);
   const [gameState, setGameState] = useState<GameView | null>(null);
+  // Client→server clock offset (ms): `serverNow − clientNow` from the match payload. The hub adds
+  // it to Date.now() so display-only timers (Crash's live altitude) align to the server's clock.
+  const [serverClockOffset, setServerClockOffset] = useState(0);
   // The game whose match is currently active — drives which play screen renders.
   // Persisted alongside currentMatchId (#10) so a mid-match reload resumes the right one.
   const [activeGameId, setActiveGameId] = useState<string | null>(readStoredGameId());
@@ -299,6 +302,7 @@ export function App() {
         // Server-authoritative opponent alias — the real name on BOTH the PLAY and JOIN paths
         // (a public alias, not hidden state). Supersedes the JOIN-only ownerName capture below.
         setOpponentName(payload.opponentName ?? null);
+        if (payload.serverNow != null) setServerClockOffset(payload.serverNow - Date.now());
         setGameState(payload.state as GameView);
         // Route from the server-authoritative gameId (Charter invariant #2), not the
         // local pendingGameId — the take-challenge path never set pendingGameId, which
@@ -323,6 +327,7 @@ export function App() {
         // On reconnect/reload, restore the opponent's real alias from the resume payload (the
         // in-memory name is lost on reload; per-move broadcasts omit it and must not clear it).
         if (payload.opponentName) setOpponentName(payload.opponentName);
+        if (payload.serverNow != null) setServerClockOffset(payload.serverNow - Date.now());
         // Hub games resume onto their hub (in-place); other games use the play screen.
         setScreen((s) => (isGameHubScreen(s) ? s : (hubScreenFor(activeGameId) ?? 'play')));
       },
@@ -670,6 +675,7 @@ export function App() {
           username={username}
           opponentId={opponentId}
           opponentName={opponentName}
+          serverClockOffset={serverClockOffset}
           balance={balance}
           currentMatchId={currentMatchId}
           gameState={gameState}

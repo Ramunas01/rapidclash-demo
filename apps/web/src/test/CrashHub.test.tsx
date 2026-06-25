@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
-import { CrashHubScreen } from '../screens/CrashHub.js';
+import { CrashHubScreen, altitudeAt } from '../screens/CrashHub.js';
 import type { CrashView } from '../App.js';
 
 // canvas-confetti needs a real <canvas> (absent in jsdom) — mock it (matches the other hub tests).
@@ -17,6 +17,7 @@ function baseProps(over: Partial<Props> = {}): Props {
     onPlay: vi.fn(), onCancel: vi.fn(), onRepost: vi.fn(), onTakeChallenge: vi.fn(),
     onMakeMove: vi.fn(), onForfeit: vi.fn(), onTrackChallenges: vi.fn(), onUntrackChallenges: vi.fn(),
     onSelectGame: vi.fn(), onOpenWallet: vi.fn(), onOpenGameList: vi.fn(), onResultDismiss: vi.fn(),
+    serverClockOffset: 0,
     ...over,
   };
 }
@@ -59,25 +60,38 @@ describe('CrashHubScreen (GameHub + CrashPanel)', () => {
     expect(within(board).queryByTestId('crash-eject')).toBeNull();
   });
 
-  it('SETUP: shows the countdown + auto-eject presets, no altitude/EJECT (server pad)', () => {
+  it('SETUP: shows a short countdown, no altitude/EJECT, and NO auto-eject input (live-eject only)', () => {
     render(<CrashHubScreen {...baseProps({ currentMatchId: 'm1', gameState: setupView(), legalMoves: ['eject', 'auto:off', 'auto:100'] })} />);
     expect(screen.getByTestId('crash-countdown').textContent).toMatch(/launching in/i);
-    expect(screen.getByTestId('crash-auto-eject')).toBeInTheDocument();
+    expect(screen.queryByTestId('crash-auto-eject')).toBeNull(); // auto-eject input removed from the human UI
+    expect(screen.queryByTestId('crash-auto-100')).toBeNull();
     expect(screen.queryByTestId('crash-altitude')).toBeNull(); // no altitude until the climb begins
     expect(screen.queryByTestId('crash-eject')).toBeNull(); // no climb EJECT on the pad
   });
 
-  it('SETUP: tapping a preset sends a server set-auto-eject; the armed one reads from the view', () => {
-    const onMakeMove = vi.fn();
-    const { rerender } = render(
-      <CrashHubScreen {...baseProps({ currentMatchId: 'm1', gameState: setupView(), legalMoves: ['eject', 'auto:100'], onMakeMove })} />,
-    );
-    fireEvent.click(screen.getByTestId('crash-auto-100'));
-    expect(onMakeMove).toHaveBeenCalledWith('auto:100'); // server-authoritative auto-eject
+  it('Bug #1: the displayed altitude aligns to the SERVER clock (offset), not the raw client clock', () => {
+    const startedAt = 1_000_000;
+    const serverNow = startedAt + 5000; // server says 5s into the climb → altitudeAt(5000)
+    const clientNow = serverNow - 7000; // this client's clock is 7s behind the server (skew)
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(clientNow);
+    try {
+      const offset = serverNow - clientNow; // = what App computes from payload.serverNow
+      const view = inPlayView({ startedAt, setupEndsAt: startedAt - 1000 });
+      render(<CrashHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view, legalMoves: ['eject'], serverClockOffset: offset })} />);
+      // Without alignment the raw client clock (998_000 < startedAt) would read as pre-launch;
+      // aligned (clientNow + offset = serverNow) it's 5s in → the server-authoritative altitude.
+      expect(screen.getByTestId('crash-altitude').textContent).toContain(String(altitudeAt(5000)));
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
 
-    // The armed preset is reflected from the (server) view, not local state.
-    rerender(<CrashHubScreen {...baseProps({ currentMatchId: 'm1', gameState: setupView({ autoEject: { pid: 100 } }), legalMoves: ['eject', 'auto:100'] })} />);
-    expect(screen.getByTestId('crash-auto-100').className).toContain('bg-brand');
+  it('client altitude curve matches the server (same constants → same metres banked)', () => {
+    // The exact values the crash module test also asserts — "what you see == what you bank".
+    expect(altitudeAt(0)).toBe(0);
+    expect(altitudeAt(2000)).toBe(1);
+    expect(altitudeAt(5000)).toBe(6);
+    expect(altitudeAt(10_000)).toBe(71);
   });
 
   it('In-match: a climbing altitude + EJECT gated by legalMoves → onMove("eject")', () => {

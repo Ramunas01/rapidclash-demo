@@ -12,17 +12,19 @@ import type { Rng } from '@rapidclash/shared';
  * function of elapsed ms, so a round replays exactly (invariant #2).
  */
 export const CRASH_CONFIG = {
-  /** Pre-climb phases (ms). [now, now+setupMs) = SETUP (set auto-eject); then ignitionMs of
+  /** Pre-climb phases (ms). [now, now+setupMs) = SETUP (settle/prepare); then ignitionMs of
    *  "ignition"; the climb's origin is `now + setupMs + ignitionMs`. Tunable. */
-  setupMs: 10_000,
+  setupMs: 3000,
   ignitionMs: 1_000,
-  /** altitude(s) = scale · (e^(growth·s) − 1)  (metres; slow at first, then accelerating). */
-  scale: 5,
-  growth: 0.3,
+  /** altitude(s) = scale · (e^(growth·s) − 1)  (metres). Slow at first (initial rate scale·growth
+   *  ≈ 0.36 m/s — ~4× gentler than before, so the readout is readable and latency-tolerant near
+   *  launch), then the exponential takes over (real-rocket acceleration). */
+  scale: 0.8,
+  growth: 0.45,
   /** `C` is drawn in [minCrashAltitude, maxCrashAltitude]. With this curve those map to a climb
-   *  time of ~2 s … ~20 s. */
+   *  time of ~4 s … ~17 s. */
   minCrashAltitude: 5,
-  maxCrashAltitude: 2000,
+  maxCrashAltitude: 1500,
   /** Low-skew exponent: C = min + (max − min)·u^crashSkew, u ~ U[0,1). > 1 ⇒ C is usually low
    *  (most rounds short and tense), the cap reached only rarely. */
   crashSkew: 2.5,
