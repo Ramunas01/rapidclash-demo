@@ -189,6 +189,31 @@ describe('crash redaction (viewFor)', () => {
     expect((term.autoEject as Record<string, number>)[B]).toBe(100);
     expect(results(term)[B]!.altitude).toBe(6);
   });
+
+  // The cheating-vector guarantee (refinement #1): the pre-terminal redacted view must carry NONE
+  // of the four leak vectors — the opponent's manual eject, their SETUP-scheduled auto-eject, the
+  // crash altitude C, or anything the seed could be recovered from. A leak here is a redaction bug,
+  // not a UI concern, so assert it structurally over the serialized wire payload.
+  it('pre-terminal view leaks none of: opponent eject, opponent auto-eject, C, or the seed', () => {
+    const { state } = launched(0.5);
+    const r0 = setAuto(state, B, 200); // B's SETUP-scheduled auto-eject (easiest to leak)
+    const r1 = eject(r0.state, A, 3000); // A ejects; B still aboard → strictly pre-terminal
+    expect(crash.isTerminal(r1.state)).toBe(false);
+
+    const aView = view(r1.state, A);
+    // 1. opponent's manual eject — absent.
+    expect(results(aView)[B]).toBeUndefined();
+    // 2. opponent's SETUP-scheduled auto-eject ladder value — absent (B set 200; A must not see it).
+    expect((aView.autoEject as Record<string, unknown>)[B]).toBeUndefined();
+    // 3. the crash altitude C — absent (no key at all, not just a falsy value).
+    expect('crashAltitude' in aView).toBe(false);
+    // 4. the seed — never stored in state, so it cannot appear on the wire under any key.
+    expect(JSON.stringify(aView)).not.toMatch(/seed/i);
+    // Whitelist the entire shape so a future field can't silently start leaking.
+    expect(Object.keys(aView).sort()).toEqual(['autoEject', 'players', 'results', 'setupEndsAt', 'startedAt', 'terminal']);
+    expect(Object.keys(aView.autoEject as object)).toEqual([A]); // own pre-set only (A set none → key absent or self)
+    expect(Object.keys(results(aView))).toEqual([A]); // own result only
+  });
 });
 
 describe('crash scheduled crash + forfeit (generic timer integration)', () => {

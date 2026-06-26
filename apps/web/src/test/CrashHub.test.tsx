@@ -108,22 +108,39 @@ describe('CrashHubScreen (GameHub + CrashPanel)', () => {
     expect(screen.getByTestId('crash-eject')).toBeDisabled();
   });
 
-  it('In-match: after my own ejection the bank shows and EJECT is gone (own eject seen at once)', () => {
+  it('In-match: after my own ejection the bank locks and EJECT is gone (own eject seen at once)', () => {
     const view = inPlayView({ results: { pid: { altitude: 120, crashed: false } } });
     render(<CrashHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view, legalMoves: [] })} />);
-    expect(screen.getByTestId('crash-own-result').textContent).toMatch(/ejected at 120 m/i);
+    expect(screen.getByTestId('crash-own-result').textContent).toMatch(/locked at 120 m · waiting/i);
     expect(screen.queryByTestId('crash-eject')).toBeNull();
   });
 
-  it('Result: a decisive match.end reveals C + both banks with the ¢ delta', async () => {
+  it('Redaction: the climbing view exposes only the live curve — no opponent eject, no crash point', () => {
+    // The server's redacted in-play view carries neither the opponent's result nor C (asserted at
+    // the module level); the climbing render must therefore show no opponent marker and no
+    // explosion (C is unknown until terminal) — only this player's own rising altitude.
+    render(<CrashHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView({ results: {} }), legalMoves: ['eject'] })} />);
+    expect(screen.getByTestId('crash-curve')).toBeInTheDocument();
+    expect(screen.getByTestId('crash-rocket')).toBeInTheDocument();
+    expect(screen.queryByTestId('crash-explosion')).toBeNull(); // C is hidden → no crash point drawn
+    const board = screen.getByTestId('hub-board');
+    expect(board.textContent ?? '').not.toMatch(/opponent/i); // no opponent altitude/marker in-climb
+  });
+
+  it('Result: the terminal board explodes at C, then the reveal shows both banks + the ¢ delta', async () => {
     const terminal = inPlayView({
       crashAltitude: 904,
       terminal: true,
       results: { pid: { altitude: 250, crashed: false }, bob: { altitude: 0, crashed: true } },
     });
     const { rerender } = render(<CrashHubScreen {...baseProps({ currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
+    // During the hold beat the board snaps to the crash (item 7) before the overlay reveal.
+    expect(screen.getByTestId('crash-explosion')).toBeInTheDocument();
+    expect(screen.getByTestId('hub-board').textContent).toMatch(/exploded at 904 m/i);
+
     rerender(<CrashHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
-    const reveal = await screen.findByTestId('hub-result-crash');
+    // The overlay reveal is held behind the explosion beat (holdResultMs) → wait it out.
+    const reveal = await screen.findByTestId('hub-result-crash', undefined, { timeout: 3000 });
     expect(reveal.textContent).toMatch(/crashed at 904 m/i);
     expect(reveal.textContent).toContain('250 m');
     expect(screen.getByTestId('hub-result-delta').textContent).toBe('+19¢');
