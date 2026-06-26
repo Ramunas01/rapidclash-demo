@@ -53,6 +53,23 @@ function rouletteMove(moves: Move[]): Move | null {
   return (allIn[Math.floor(Math.random() * allIn.length)] ?? null) as Move | null;
 }
 
+/** Keno policy: take the `autofill` move — fills 8 seeded spots + locks in one move (a per-spot
+ *  random pick would be slow and rarely complete the exact 8). Returns null if not offered. */
+function kenoMove(moves: Move[]): Move | null {
+  return (moves.find((m): m is Move => !!m && typeof m === 'object' && (m as { t?: string }).t === 'autofill') ?? null) as Move | null;
+}
+
+/** Limbo policy: take the `auto` move — auto-assigns a seeded target + locks in one move. */
+function limboMove(moves: Move[]): Move | null {
+  return (moves.find((m): m is Move => !!m && typeof m === 'object' && (m as { t?: string }).t === 'auto') ?? null) as Move | null;
+}
+
+/** Hilo policy: call hi/lo at random each card (excludes the internal `timeout` freeze move). */
+function hiloMove(moves: Move[]): Move | null {
+  const calls = moves.filter((m): m is Move => !!m && typeof m === 'object' && ((m as { t?: string }).t === 'hi' || (m as { t?: string }).t === 'lo'));
+  return (calls.length ? calls[Math.floor(Math.random() * calls.length)] : null) as Move | null;
+}
+
 /** Ships Battle policy: in PLACEMENT, take the `auto` move (seeded server-side auto-placer — a
  *  random per-square build would be slow/unreliable); in SHOOTING, fire a random un-probed square.
  *  Returns null if neither is offered (caller falls back to a random move). */
@@ -237,6 +254,9 @@ export class Bot {
     const move =
       (this.cfg.gameId === 'roulette' ? rouletteMove(moves) : null) ??
       (this.cfg.gameId === 'ships-battle' ? shipsBattleMove(moves) : null) ??
+      (this.cfg.gameId === 'keno' ? kenoMove(moves) : null) ??
+      (this.cfg.gameId === 'limbo' ? limboMove(moves) : null) ??
+      (this.cfg.gameId === 'hilo' ? hiloMove(moves) : null) ??
       moves[Math.floor(Math.random() * moves.length)];
     // A brief "thinking" pause keeps cadence human-ish and the server unflooded.
     this.movePending = true;

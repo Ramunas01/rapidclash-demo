@@ -11,6 +11,9 @@
     { "path": "./packages/games/crash" },
     { "path": "./packages/games/roulette" },
     { "path": "./packages/games/ships-battle" },
+    { "path": "./packages/games/keno" },
+    { "path": "./packages/games/limbo" },
+    { "path": "./packages/games/hilo" },
     { "path": "./apps/server" },
     { "path": "./apps/web" }
   ]
