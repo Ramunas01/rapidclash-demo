@@ -37,7 +37,7 @@ export const STAKE_SET = [1, 5, 10, 25, 50, 100] as const;
 const randStake = (): number => STAKE_SET[Math.floor(Math.random() * STAKE_SET.length)];
 
 /**
- * Roster: 16 bots, all 🤖-prefixed — per live game (coinflip, rps, chess, blackjack, mines, crash, roulette, ships-battle):
+ * Roster: 20 bots, all 🤖-prefixed — per live game (coinflip, rps, chess, blackjack, mines, crash, roulette, ships-battle, dice, baccarat):
  *   • 1 RESTER at a random stake (STAKE_SET, chosen at startup) — a stable, joinable open
  *     challenge for a human; a single bot per game can never self-pair (no bot-vs-bot); and
  *   • 1 TAKER that claims only HUMAN-posted challenges (never a bot's), giving a human who
@@ -65,6 +65,8 @@ export const ROSTER: BotConfig[] = [
   { name: '🤖0-0-0-Crash', gameId: 'crash', stake: randStake(), policy: 'rester' },
   { name: '🤖Q9-Roulette', gameId: 'roulette', stake: randStake(), policy: 'rester' },
   { name: '🤖ADM-ships', gameId: 'ships-battle', stake: randStake(), policy: 'rester' },
+  { name: '🤖D6-dice', gameId: 'dice', stake: randStake(), policy: 'rester' },
+  { name: '🤖BC-baccarat', gameId: 'baccarat', stake: randStake(), policy: 'rester' },
   // 1 taker per game — claims only HUMAN-posted challenges (never a bot's) —
   { name: '🤖HK-CoinLover', gameId: 'coinflip', stake: 5, policy: 'taker' },
   { name: '🤖2-RockEater', gameId: 'rps', stake: 5, policy: 'taker' },
@@ -74,6 +76,8 @@ export const ROSTER: BotConfig[] = [
   { name: '🤖C1-CrashLover', gameId: 'crash', stake: 5, policy: 'taker' },
   { name: '🤖8D8-RouletteGamer', gameId: 'roulette', stake: 5, policy: 'taker' },
   { name: '🤖SY-ShipsSinker', gameId: 'ships-battle', stake: 5, policy: 'taker' },
+  { name: '🤖D6-DiceRoller', gameId: 'dice', stake: 5, policy: 'taker' },
+  { name: '🤖BC-BaccaratPro', gameId: 'baccarat', stake: 5, policy: 'taker' },
 ];
 
 function num(envName: string, fallback: number): number {

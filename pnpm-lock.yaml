@@ -41,6 +41,9 @@ importers:
       '@rapidclash/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@rapidclash/game-baccarat':
+        specifier: workspace:*
+        version: link:../../packages/games/baccarat
       '@rapidclash/game-blackjack':
         specifier: workspace:*
         version: link:../../packages/games/blackjack
@@ -53,6 +56,9 @@ importers:
       '@rapidclash/game-crash':
         specifier: workspace:*
         version: link:../../packages/games/crash
+      '@rapidclash/game-dice':
+        specifier: workspace:*
+        version: link:../../packages/games/dice
       '@rapidclash/game-mines':
         specifier: workspace:*
         version: link:../../packages/games/mines
@@ -291,6 +297,12 @@ importers:
         specifier: ^2.1.1
         version: 2.1.9(@types/node@20.19.43)(jsdom@25.0.1)(terser@5.48.0)
 
+  packages/games/baccarat:
+    dependencies:
+      '@rapidclash/shared':
+        specifier: workspace:*
+        version: link:../../shared
+
   packages/games/blackjack:
     dependencies:
       '@rapidclash/shared':
@@ -313,6 +325,12 @@ importers:
         version: link:../../shared
 
   packages/games/crash:
+    dependencies:
+      '@rapidclash/shared':
+        specifier: workspace:*
+        version: link:../../shared
+
+  packages/games/dice:
     dependencies:
       '@rapidclash/shared':
         specifier: workspace:*
