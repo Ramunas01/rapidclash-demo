@@ -404,9 +404,13 @@ export function createMatchmaking(
     const key = queueKey(gameId, stake, tcId);
     const queue = queues.get(key) ?? [];
 
-    // Is there already a waiting player?
-    if (queue.length > 0) {
-      const waiter = queue.shift()!;
+    // Pair with the OLDEST waiter who is a DIFFERENT player — never match an account against
+    // itself (invariant #1: humans vs humans). The FIFO take-challenge path already rejects a
+    // SELF_TAKE; this closes the same hole in the auto-pairing path. A second open session of the
+    // same account therefore can never be its own opponent — it just rests like anyone else.
+    const waiterIdx = queue.findIndex((w) => w.playerId !== playerId);
+    if (waiterIdx >= 0) {
+      const waiter = queue.splice(waiterIdx, 1)[0];
       if (queue.length === 0) queues.delete(key);
       playerEntry.delete(`${waiter.playerId}:${gameId}`);
       entryByMatchId.delete(waiter.matchId); // no longer a resting open challenge
@@ -442,6 +446,15 @@ export function createMatchmaking(
       // Return the FORMED state (record.state) — `launch` may have replaced it (Crash's countdown),
       // and seedTimeControl mutates it in place; the local `initialState` is the pre-launch copy.
       return { status: 'matched', matchId, opponentId: waiter.playerId, initialState: record.state };
+    }
+
+    // No different-player waiter to pair with. If THIS account already rests on this exact
+    // challenge (another open session of the same player), reuse that resting entry rather than
+    // leak a second one — a duplicate queue entry + a double escrow + orphaned playerEntry/
+    // entryByMatchId bookkeeping. The second session simply sees the same open challenge.
+    const ownEntry = queue.find((w) => w.playerId === playerId);
+    if (ownEntry) {
+      return { status: 'waiting', matchId: ownEntry.matchId, since: ownEntry.since, expiresAt: ownEntry.expiresAt, timeControlId: ownEntry.timeControlId };
     }
 
     // No waiter — add this player to the queue as an open challenge.
