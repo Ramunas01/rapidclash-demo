@@ -57,23 +57,23 @@ const randStake = (): number => STAKE_SET[Math.floor(Math.random() * STAKE_SET.l
  */
 export const ROSTER: BotConfig[] = [
   // 1 rester per game at a random stake (STAKE_SET, chosen at startup) —
-  { name: '🤖C-3PO', gameId: 'coinflip', stake: randStake(), policy: 'rester' },
-  { name: '🤖BB-8', gameId: 'rps', stake: randStake(), policy: 'rester' },
-  { name: '🤖Chewie', gameId: 'chess', stake: randStake(), policy: 'rester', timeControlId: 'rapid10' },
-  { name: '🤖IG-88', gameId: 'blackjack', stake: randStake(), policy: 'rester' },
-  { name: '🤖L3-37', gameId: 'mines', stake: randStake(), policy: 'rester' },
-  { name: '🤖0-0-0', gameId: 'crash', stake: randStake(), policy: 'rester' },
-  { name: '🤖Q9-0', gameId: 'roulette', stake: randStake(), policy: 'rester' },
-  { name: '🤖ADM-1', gameId: 'ships-battle', stake: randStake(), policy: 'rester' },
+  { name: '🤖C-3PO-coin', gameId: 'coinflip', stake: randStake(), policy: 'rester' },
+  { name: '🤖BB-RPS', gameId: 'rps', stake: randStake(), policy: 'rester' },
+  { name: '🤖Chewie-chess', gameId: 'chess', stake: randStake(), policy: 'rester', timeControlId: 'rapid10' },
+  { name: '🤖IG-BJack', gameId: 'blackjack', stake: randStake(), policy: 'rester' },
+  { name: '🤖L3-mines', gameId: 'mines', stake: randStake(), policy: 'rester' },
+  { name: '🤖0-0-0-Crash', gameId: 'crash', stake: randStake(), policy: 'rester' },
+  { name: '🤖Q9-Roulette', gameId: 'roulette', stake: randStake(), policy: 'rester' },
+  { name: '🤖ADM-ships', gameId: 'ships-battle', stake: randStake(), policy: 'rester' },
   // 1 taker per game — claims only HUMAN-posted challenges (never a bot's) —
-  { name: '🤖HK-47', gameId: 'coinflip', stake: 5, policy: 'taker' },
-  { name: '🤖2-1B', gameId: 'rps', stake: 5, policy: 'taker' },
-  { name: '🤖FX-7', gameId: 'chess', stake: 5, policy: 'taker' },
-  { name: '🤖AP-5', gameId: 'blackjack', stake: 5, policy: 'taker' },
-  { name: '🤖BD-1', gameId: 'mines', stake: 5, policy: 'taker' },
-  { name: '🤖C1-10P', gameId: 'crash', stake: 5, policy: 'taker' },
-  { name: '🤖8D8', gameId: 'roulette', stake: 5, policy: 'taker' },
-  { name: '🤖SY-3', gameId: 'ships-battle', stake: 5, policy: 'taker' },
+  { name: '🤖HK-CoinLover', gameId: 'coinflip', stake: 5, policy: 'taker' },
+  { name: '🤖2-RockEater', gameId: 'rps', stake: 5, policy: 'taker' },
+  { name: '🤖FX-chess', gameId: 'chess', stake: 5, policy: 'taker' },
+  { name: '🤖AP-BJexpert', gameId: 'blackjack', stake: 5, policy: 'taker' },
+  { name: '🤖BD-MineDetonator', gameId: 'mines', stake: 5, policy: 'taker' },
+  { name: '🤖C1-CrashLover', gameId: 'crash', stake: 5, policy: 'taker' },
+  { name: '🤖8D8-RouletteGamer', gameId: 'roulette', stake: 5, policy: 'taker' },
+  { name: '🤖SY-ShipsSinker', gameId: 'ships-battle', stake: 5, policy: 'taker' },
 ];
 
 function num(envName: string, fallback: number): number {
