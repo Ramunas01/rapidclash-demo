@@ -5,6 +5,8 @@
     { "path": "./packages/core" },
     { "path": "./packages/games/rps" },
     { "path": "./packages/games/coinflip" },
+    { "path": "./packages/games/dice" },
+    { "path": "./packages/games/baccarat" },
     { "path": "./packages/games/chess" },
     { "path": "./packages/games/blackjack" },
     { "path": "./packages/games/mines" },

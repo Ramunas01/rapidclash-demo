@@ -32,7 +32,7 @@ export interface BotConfig {
 }
 
 /**
- * Roster: 24 bots, all 🤖-prefixed — per live game (coinflip, rps, chess, blackjack, mines, crash, roulette, ships-battle):
+ * Roster: 30 bots, all 🤖-prefixed — per live game (coinflip, rps, chess, blackjack, mines, crash, roulette, ships-battle, dice, baccarat):
  *   • 2 RESTERS at DISTINCT stakes (5 and 10) so the FIFO matchmaker never pairs them with
  *     each other — each stays a stable, joinable open challenge for a human; and
  *   • 1 TAKER that claims only HUMAN-posted challenges (never a bot's), giving a human who
@@ -68,6 +68,10 @@ export const ROSTER: BotConfig[] = [
   { name: '🤖PROXY', gameId: 'roulette', stake: 10, policy: 'rester' },
   { name: '🤖ADM-1', gameId: 'ships-battle', stake: 5, policy: 'rester' },
   { name: '🤖NAV-2', gameId: 'ships-battle', stake: 10, policy: 'rester' },
+  { name: '🤖D6-X', gameId: 'dice', stake: 5, policy: 'rester' },
+  { name: '🤖D6-Y', gameId: 'dice', stake: 10, policy: 'rester' },
+  { name: '🤖BC-9', gameId: 'baccarat', stake: 5, policy: 'rester' },
+  { name: '🤖BC-A', gameId: 'baccarat', stake: 10, policy: 'rester' },
   // 1 taker per game — claims only HUMAN-posted challenges (never a bot's) —
   { name: '🤖HK-47', gameId: 'coinflip', stake: 5, policy: 'taker' },
   { name: '🤖2-1B', gameId: 'rps', stake: 5, policy: 'taker' },
@@ -77,6 +81,8 @@ export const ROSTER: BotConfig[] = [
   { name: '🤖C1-10P', gameId: 'crash', stake: 5, policy: 'taker' },
   { name: '🤖8D8', gameId: 'roulette', stake: 5, policy: 'taker' },
   { name: '🤖SY-3', gameId: 'ships-battle', stake: 5, policy: 'taker' },
+  { name: '🤖D6-Z', gameId: 'dice', stake: 5, policy: 'taker' },
+  { name: '🤖BC-B', gameId: 'baccarat', stake: 5, policy: 'taker' },
 ];
 
 function num(envName: string, fallback: number): number {

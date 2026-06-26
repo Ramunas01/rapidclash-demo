@@ -20,13 +20,15 @@ import { BlackjackHubScreen } from './screens/BlackjackHub.js';
 import { MinesHubScreen } from './screens/MinesHub.js';
 import { RouletteHubScreen } from './screens/RouletteHub.js';
 import { ShipsBattleHubScreen } from './screens/ShipsBattleHub.js';
+import { DiceHubScreen } from './screens/DiceHub.js';
+import { BaccaratHubScreen } from './screens/BaccaratHub.js';
 import { ChessHubScreen } from './screens/ChessHub.js';
 import { CrashHubScreen } from './screens/CrashHub.js';
 import { HomeHubScreen } from './screens/HomeHub.js';
 import { ProfileHubScreen } from './screens/ProfileHub.js';
 import { AuthModal } from './components/AuthModal.js';
 
-type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub' | 'crash-hub' | 'roulette-hub' | 'ships-battle-hub';
+type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub' | 'crash-hub' | 'roulette-hub' | 'ships-battle-hub' | 'dice-hub' | 'baccarat-hub';
 
 /** A commit-to-play action captured when a logged-out visitor hits the auth wall, replayed
  *  automatically once they register/sign in (the resume that makes the wall feel seamless). */
@@ -38,11 +40,11 @@ const RECONNECT_NOTICE = 'Connection lost — reconnecting. Try again in a momen
 
 /** Games that play through the shared one-screen Game hub (vs the multi-screen flow).
  *  Each maps to a `<gameId>-hub` screen. Adding a game here wires it to the hub. */
-const HUB_GAMES = new Set(['coinflip', 'rps', 'blackjack', 'mines', 'chess', 'crash', 'roulette', 'ships-battle']);
+const HUB_GAMES = new Set(['coinflip', 'rps', 'blackjack', 'mines', 'chess', 'crash', 'roulette', 'ships-battle', 'dice', 'baccarat']);
 const hubScreenFor = (gameId: string | null | undefined): Screen | null =>
   gameId && HUB_GAMES.has(gameId) ? (`${gameId}-hub` as Screen) : null;
 const isGameHubScreen = (s: Screen): boolean =>
-  s === 'coinflip-hub' || s === 'rps-hub' || s === 'blackjack-hub' || s === 'mines-hub' || s === 'chess-hub' || s === 'crash-hub' || s === 'roulette-hub' || s === 'ships-battle-hub';
+  s === 'coinflip-hub' || s === 'rps-hub' || s === 'blackjack-hub' || s === 'mines-hub' || s === 'chess-hub' || s === 'crash-hub' || s === 'roulette-hub' || s === 'ships-battle-hub' || s === 'dice-hub' || s === 'baccarat-hub';
 
 export interface RpsView {
   players: [string, string];
@@ -187,9 +189,38 @@ export interface ShipsBattleView {
   forcedOutcome?: { type: string };
 }
 
+/** Redacted Dice view (independent-roll). Pre-terminal carries only the public scaffolding; the
+ *  rolls + seeds appear only in `result`/`seeds` at the simultaneous reveal (terminal). */
+export interface DiceView {
+  players: [string, string];
+  seeds: Record<string, number>;
+  round: number;
+  replays: number;
+  revealed: Record<string, boolean>;
+  result?: { rolls: Record<string, number>; round: number };
+  winner?: string;
+  forcedOutcome?: { type: string };
+}
+
+/** Redacted Baccarat view. Pre-terminal carries the viewer's OWN hand (`hands[me]`); the opponent's
+ *  hand + both seeds appear only at terminal (`result`/`seeds`). */
+export interface BaccaratCard { rank: string; suit: string; }
+export interface BaccaratHand { cards: BaccaratCard[]; total: number; natural: boolean; }
+export interface BaccaratView {
+  players: [string, string];
+  seeds: Record<string, number>;
+  round: number;
+  replays: number;
+  revealed: Record<string, boolean>;
+  hands?: Record<string, BaccaratHand>;
+  result?: { hands: Record<string, BaccaratHand>; round: number };
+  winner?: string;
+  forcedOutcome?: { type: string };
+}
+
 /** A per-game redacted view as it arrives from the server. The active game (and so
  *  which screen renders it) is tracked separately in `activeGameId`. */
-export type GameView = RpsView | CoinflipView | ChessView | BlackjackView | MinesView | CrashView | RouletteView | ShipsBattleView;
+export type GameView = RpsView | CoinflipView | ChessView | BlackjackView | MinesView | CrashView | RouletteView | ShipsBattleView | DiceView | BaccaratView;
 
 function loadAuth() {
   return {
@@ -707,7 +738,9 @@ export function App() {
       case 'chess-hub':
       case 'crash-hub':
       case 'roulette-hub':
-      case 'ships-battle-hub': {
+      case 'ships-battle-hub':
+      case 'dice-hub':
+      case 'baccarat-hub': {
         const HubScreen =
           screen === 'rps-hub'
             ? RpsHubScreen
@@ -723,7 +756,11 @@ export function App() {
                       ? RouletteHubScreen
                       : screen === 'ships-battle-hub'
                         ? ShipsBattleHubScreen
-                        : CoinflipHubScreen;
+                        : screen === 'dice-hub'
+                          ? DiceHubScreen
+                          : screen === 'baccarat-hub'
+                            ? BaccaratHubScreen
+                            : CoinflipHubScreen;
         return <HubScreen
           token={token ?? ''}
           playerId={playerId}
