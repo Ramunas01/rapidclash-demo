@@ -31,10 +31,15 @@ export interface BotConfig {
   timeControlId?: string;
 }
 
+/** Stakes a rester picks from (matches the UI bet presets). Each rester is assigned ONE random
+ *  stake at startup — varied bets across games, without needing two bots per game. */
+export const STAKE_SET = [1, 5, 10, 25, 50, 100] as const;
+const randStake = (): number => STAKE_SET[Math.floor(Math.random() * STAKE_SET.length)];
+
 /**
- * Roster: 24 bots, all 🤖-prefixed — per live game (coinflip, rps, chess, blackjack, mines, crash, roulette, ships-battle):
- *   • 2 RESTERS at DISTINCT stakes (5 and 10) so the FIFO matchmaker never pairs them with
- *     each other — each stays a stable, joinable open challenge for a human; and
+ * Roster: 16 bots, all 🤖-prefixed — per live game (coinflip, rps, chess, blackjack, mines, crash, roulette, ships-battle):
+ *   • 1 RESTER at a random stake (STAKE_SET, chosen at startup) — a stable, joinable open
+ *     challenge for a human; a single bot per game can never self-pair (no bot-vs-bot); and
  *   • 1 TAKER that claims only HUMAN-posted challenges (never a bot's), giving a human who
  *     posts their own bet a quick opponent.
  *
@@ -51,23 +56,15 @@ export interface BotConfig {
  * NOTE: the crash/roulette/ships-battle bots only resolve via real human JOINs (no bot-vs-bot), same as the rest.
  */
 export const ROSTER: BotConfig[] = [
-  // 2 resters per game (distinct stakes) —
-  { name: '🤖C-3PO', gameId: 'coinflip', stake: 5, policy: 'rester' },
-  { name: '🤖R2-D2', gameId: 'coinflip', stake: 10, policy: 'rester' },
-  { name: '🤖BB-8', gameId: 'rps', stake: 5, policy: 'rester' },
-  { name: '🤖K-2SO', gameId: 'rps', stake: 10, policy: 'rester' },
-  { name: '🤖Chewie', gameId: 'chess', stake: 5, policy: 'rester', timeControlId: 'rapid10' },
-  { name: '🤖R5-D4', gameId: 'chess', stake: 10, policy: 'rester', timeControlId: 'rapid10' },
-  { name: '🤖IG-88', gameId: 'blackjack', stake: 5, policy: 'rester' },
-  { name: '🤖4-LOM', gameId: 'blackjack', stake: 10, policy: 'rester' },
-  { name: '🤖L3-37', gameId: 'mines', stake: 5, policy: 'rester' },
-  { name: '🤖EV-9D9', gameId: 'mines', stake: 10, policy: 'rester' },
-  { name: '🤖0-0-0', gameId: 'crash', stake: 5, policy: 'rester' },
-  { name: '🤖BT-1', gameId: 'crash', stake: 10, policy: 'rester' },
-  { name: '🤖Q9-0', gameId: 'roulette', stake: 5, policy: 'rester' },
-  { name: '🤖PROXY', gameId: 'roulette', stake: 10, policy: 'rester' },
-  { name: '🤖ADM-1', gameId: 'ships-battle', stake: 5, policy: 'rester' },
-  { name: '🤖NAV-2', gameId: 'ships-battle', stake: 10, policy: 'rester' },
+  // 1 rester per game at a random stake (STAKE_SET, chosen at startup) —
+  { name: '🤖C-3PO', gameId: 'coinflip', stake: randStake(), policy: 'rester' },
+  { name: '🤖BB-8', gameId: 'rps', stake: randStake(), policy: 'rester' },
+  { name: '🤖Chewie', gameId: 'chess', stake: randStake(), policy: 'rester', timeControlId: 'rapid10' },
+  { name: '🤖IG-88', gameId: 'blackjack', stake: randStake(), policy: 'rester' },
+  { name: '🤖L3-37', gameId: 'mines', stake: randStake(), policy: 'rester' },
+  { name: '🤖0-0-0', gameId: 'crash', stake: randStake(), policy: 'rester' },
+  { name: '🤖Q9-0', gameId: 'roulette', stake: randStake(), policy: 'rester' },
+  { name: '🤖ADM-1', gameId: 'ships-battle', stake: randStake(), policy: 'rester' },
   // 1 taker per game — claims only HUMAN-posted challenges (never a bot's) —
   { name: '🤖HK-47', gameId: 'coinflip', stake: 5, policy: 'taker' },
   { name: '🤖2-1B', gameId: 'rps', stake: 5, policy: 'taker' },
