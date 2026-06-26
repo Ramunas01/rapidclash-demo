@@ -34,12 +34,12 @@ Games are grouped in the UI as **Originals** (PvP-native and PvP-redefined signa
 | Ships Battle | Yes | **Confirmed skill game** — hidden-fleet naval duel on a 10×10, see `SHIPS_BATTLE.md`. ELO ranking; a **Classic**. |
 | Blackjack | No (house by default) | **Confirmed PvP redefinition** — head-to-head duel, see `BLACKJACK.md`. |
 | Mines | No (house by default) | **Confirmed PvP redefinition** — two-player race on identical boards, see `MINES.md`. Ranks by net winnings. |
-| Baccarat | No (house by default) | **Coming soon — PvP redefinition pending.** See `GAME_REDEFINITION.md`. |
-| Limbo | No (house by default) | **Coming soon — PvP redefinition pending.** See `GAME_REDEFINITION.md`. |
+| Baccarat | No (house by default) | **Confirmed PvP redefinition** — each player is their own hand, no banker/commission, see `BACCARAT.md`. Ranks by net winnings. |
+| Limbo | No (house by default) | **Confirmed PvP redefinition** — zero-edge target-multiplier nerve duel, see `LIMBO.md`. Ranks by net winnings. |
 | Crash | No (house by default) | **Confirmed PvP redefinition** — shared-rocket nerve duel, see `CRASH.md`. Ranks by net winnings. |
-| Keno | No (house by default) | **Coming soon — PvP redefinition pending.** See `GAME_REDEFINITION.md`. |
-| Hilo | No (house by default) | **Coming soon — PvP redefinition pending.** See `GAME_REDEFINITION.md`. |
-| Dice | No (house by default) | **Coming soon — PvP redefinition pending.** See `GAME_REDEFINITION.md`. |
+| Keno | No (house by default) | **Confirmed PvP redefinition** — shared-draw match race on a 1–40 pool, see `KENO.md`. Ranks by net winnings. |
+| Hilo | No (house by default) | **Confirmed PvP redefinition** — mirrored-sequence streak race, see `HILO.md`. Ranks by net winnings. |
+| Dice | No (house by default) | **Confirmed PvP redefinition** — two independent rolls, higher wins, see `DICE.md`. Ranks by net winnings. |
 | Roulette | No (house by default) | **Confirmed PvP redefinition** — zeroless 36-pocket duel, see `ROULETTE.md`. Ranks by net winnings. |
 
 A "coming soon" game is shown as a non-playable tile (subtly dimmed). It is **never** playable in its house form; it becomes playable only when its two-player ruleset is confirmed as a spec and registered. The set of *playable* games is always exactly what `/games` returns.
