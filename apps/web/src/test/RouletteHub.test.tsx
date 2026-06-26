@@ -117,6 +117,75 @@ describe('RouletteHubScreen (GameHub + RoulettePanel)', () => {
     expect(screen.getByTestId('replay-note').textContent).toMatch(/replaying/i);
   });
 
+  // A decisive terminal view: alice all-in Red, bob all-in Black, pocket 19 (red) → alice 2000, bob 0.
+  function terminalView(): RouletteView {
+    return {
+      players: ['alice', 'bob'],
+      round: 0,
+      replays: 0,
+      bets: {
+        alice: { allocation: { red: 1000 }, locked: true },
+        bob: { allocation: { black: 1000 }, locked: true },
+      },
+      lastResult: { round: 0, pocket: 19, bets: { alice: { red: 1000 }, bob: { black: 1000 } }, stacks: { alice: 2000, bob: 0 } },
+      winner: 'alice',
+      seed: 123,
+    };
+  }
+
+  /** Render in-match then transition to the terminal (match.end) so GameHub enters the result phase. */
+  function renderTerminal() {
+    const terminal = terminalView();
+    const r = render(<RouletteHubScreen {...baseProps({ currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
+    r.rerender(
+      <RouletteHubScreen
+        {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'alice' }, lastSettlement: { delta: 9, newBalance: 1009 } })}
+      />,
+    );
+    return r;
+  }
+
+  it('Terminal: NO result pop-up — Roulette opts out (suppressResultOverlay)', () => {
+    renderTerminal();
+    expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
+    expect(screen.getByTestId('roulette-result')).toBeInTheDocument();
+  });
+
+  it('Terminal: the on-board breakdown shows the winning pocket, both bet lists, and totals', () => {
+    renderTerminal();
+    // a. winning pocket (number + colour).
+    expect(screen.getByTestId('result-pocket').textContent).toBe('19');
+    expect(screen.getByTestId('roulette-result').textContent).toMatch(/Red/);
+    // b. side-by-side breakdown: my Red won (+1000), opponent's Black lost (−1000).
+    const you = within(screen.getByTestId('result-you'));
+    expect(you.getByText('Red')).toBeInTheDocument();
+    expect(you.getByText('+1000')).toBeInTheDocument();
+    const opp = within(screen.getByTestId('result-opp'));
+    expect(opp.getByText('Black')).toBeInTheDocument();
+    expect(opp.getByText('−1000')).toBeInTheDocument();
+    // c. cumulative totals per player.
+    expect(screen.getByTestId('result-you-total').textContent).toBe('2000');
+    expect(screen.getByTestId('result-opp-total').textContent).toBe('0');
+    // winner highlighted + verdict.
+    expect(within(screen.getByTestId('result-you')).getByText(/win/i)).toBeInTheDocument();
+    expect(screen.getByTestId('result-verdict').textContent).toMatch(/you win with 2000/i);
+  });
+
+  it('Terminal: a void (equal stacks) shows a push with no winner highlight', () => {
+    const terminal: RouletteView = {
+      players: ['alice', 'bob'],
+      round: 0,
+      replays: 10,
+      bets: { alice: { allocation: { red: 1000 }, locked: true }, bob: { allocation: { red: 1000 }, locked: true } },
+      lastResult: { round: 0, pocket: 19, bets: { alice: { red: 1000 }, bob: { red: 1000 } }, stacks: { alice: 2000, bob: 2000 } },
+      forcedOutcome: { type: 'void' },
+    };
+    const { rerender } = render(<RouletteHubScreen {...baseProps({ currentMatchId: 'm1', gameState: terminal })} />);
+    rerender(<RouletteHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'void' }, lastSettlement: { delta: 0, newBalance: 1000 } })} />);
+    expect(screen.getByTestId('result-verdict').textContent).toMatch(/push/i);
+    expect(within(screen.getByTestId('result-you')).queryByText(/win/i)).toBeNull();
+  });
+
   it('is sanitized: no $ anywhere on the hub (play-money credits, chips are scoring only)', () => {
     const { container } = render(<RouletteHubScreen {...inMatch()} />);
     expect(container.textContent ?? '').not.toMatch(/\$/);
