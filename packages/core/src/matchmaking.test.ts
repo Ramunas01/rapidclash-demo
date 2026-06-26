@@ -223,6 +223,44 @@ describe('matchmaking', () => {
     expect(ledger.getBalance('bob')).toBe(GRANT_AMOUNT);
   });
 
+  it('never matches an account against itself — a second session of the same player rests (#1)', () => {
+    ledger.grant('alice');
+    const granted = ledger.getBalance('alice');
+    const r1 = matchmaking.joinQueue('alice', 'mock', 100);
+    const r2 = matchmaking.joinQueue('alice', 'mock', 100); // alice's 2nd open session, same key
+    expect(r1.status).toBe('waiting');
+    expect(r2.status).toBe('waiting'); // self can never be its own opponent (invariant #1)
+    // The 2nd session REUSES the resting entry (same matchId) — no duplicate queue entry, and the
+    // stake is escrowed exactly ONCE (no double-debit, no orphaned bookkeeping).
+    if (r1.status === 'waiting' && r2.status === 'waiting') expect(r2.matchId).toBe(r1.matchId);
+    expect(ledger.getBalance('alice')).toBe(granted - 100);
+  });
+
+  it('a different player then matches the self-rested challenge normally', () => {
+    ledger.grant('alice');
+    const r1 = matchmaking.joinQueue('alice', 'mock', 100);
+    matchmaking.joinQueue('alice', 'mock', 100); // 2nd session — still just waiting (reused)
+    ledger.grant('bob');
+    const rb = matchmaking.joinQueue('bob', 'mock', 100);
+    expect(rb.status).toBe('matched');
+    if (rb.status === 'matched' && r1.status === 'waiting') {
+      expect(rb.opponentId).toBe('alice');
+      expect(rb.matchId).toBe(r1.matchId); // bob pairs with alice's original resting entry
+    }
+  });
+
+  it('pairs with the OLDEST different player, skipping the joiner’s own resting entry', () => {
+    // bob rests first; alice rests behind him (different player → she matches bob, so to get a
+    // self-entry-then-different-join we seed alice first, then alice again, then bob).
+    ledger.grant('alice');
+    matchmaking.joinQueue('alice', 'mock', 100); // alice rests
+    matchmaking.joinQueue('alice', 'mock', 100); // alice again → reused, still one entry
+    ledger.grant('bob');
+    const rb = matchmaking.joinQueue('bob', 'mock', 100);
+    expect(rb.status).toBe('matched');
+    if (rb.status === 'matched') expect(rb.opponentId).toBe('alice'); // the different player pairs fine
+  });
+
   it('after a match forms, getActiveMatch returns the match record', () => {
     grantAndJoin(ledger, matchmaking, 'alice', 100);
     const r2 = grantAndJoin(ledger, matchmaking, 'bob', 100);
