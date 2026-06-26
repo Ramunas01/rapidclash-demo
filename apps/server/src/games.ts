@@ -9,6 +9,9 @@ import { rouletteModule } from '@rapidclash/game-roulette';
 import { shipsBattleModule } from '@rapidclash/game-ships-battle';
 import { diceModule } from '@rapidclash/game-dice';
 import { baccaratModule } from '@rapidclash/game-baccarat';
+import { kenoModule } from '@rapidclash/game-keno';
+import { limboModule } from '@rapidclash/game-limbo';
+import { hiloModule } from '@rapidclash/game-hilo';
 
 /**
  * The platform's registered games — the single source of truth for what is LIVE.
@@ -26,4 +29,7 @@ export const gameModules: GameModule[] = [
   shipsBattleModule,
   diceModule,
   baccaratModule,
+  kenoModule,
+  limboModule,
+  hiloModule,
 ];

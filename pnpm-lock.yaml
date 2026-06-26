@@ -59,6 +59,15 @@ importers:
       '@rapidclash/game-dice':
         specifier: workspace:*
         version: link:../../packages/games/dice
+      '@rapidclash/game-hilo':
+        specifier: workspace:*
+        version: link:../../packages/games/hilo
+      '@rapidclash/game-keno':
+        specifier: workspace:*
+        version: link:../../packages/games/keno
+      '@rapidclash/game-limbo':
+        specifier: workspace:*
+        version: link:../../packages/games/limbo
       '@rapidclash/game-mines':
         specifier: workspace:*
         version: link:../../packages/games/mines
@@ -331,6 +340,24 @@ importers:
         version: link:../../shared
 
   packages/games/dice:
+    dependencies:
+      '@rapidclash/shared':
+        specifier: workspace:*
+        version: link:../../shared
+
+  packages/games/hilo:
+    dependencies:
+      '@rapidclash/shared':
+        specifier: workspace:*
+        version: link:../../shared
+
+  packages/games/keno:
+    dependencies:
+      '@rapidclash/shared':
+        specifier: workspace:*
+        version: link:../../shared
+
+  packages/games/limbo:
     dependencies:
       '@rapidclash/shared':
         specifier: workspace:*

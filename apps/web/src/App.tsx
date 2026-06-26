@@ -22,13 +22,16 @@ import { RouletteHubScreen } from './screens/RouletteHub.js';
 import { ShipsBattleHubScreen } from './screens/ShipsBattleHub.js';
 import { DiceHubScreen } from './screens/DiceHub.js';
 import { BaccaratHubScreen } from './screens/BaccaratHub.js';
+import { KenoHubScreen } from './screens/KenoHub.js';
+import { LimboHubScreen } from './screens/LimboHub.js';
+import { HiloHubScreen } from './screens/HiloHub.js';
 import { ChessHubScreen } from './screens/ChessHub.js';
 import { CrashHubScreen } from './screens/CrashHub.js';
 import { HomeHubScreen } from './screens/HomeHub.js';
 import { ProfileHubScreen } from './screens/ProfileHub.js';
 import { AuthModal } from './components/AuthModal.js';
 
-type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub' | 'crash-hub' | 'roulette-hub' | 'ships-battle-hub' | 'dice-hub' | 'baccarat-hub';
+type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub' | 'crash-hub' | 'roulette-hub' | 'ships-battle-hub' | 'dice-hub' | 'baccarat-hub' | 'keno-hub' | 'limbo-hub' | 'hilo-hub';
 
 /** A commit-to-play action captured when a logged-out visitor hits the auth wall, replayed
  *  automatically once they register/sign in (the resume that makes the wall feel seamless). */
@@ -40,11 +43,11 @@ const RECONNECT_NOTICE = 'Connection lost — reconnecting. Try again in a momen
 
 /** Games that play through the shared one-screen Game hub (vs the multi-screen flow).
  *  Each maps to a `<gameId>-hub` screen. Adding a game here wires it to the hub. */
-const HUB_GAMES = new Set(['coinflip', 'rps', 'blackjack', 'mines', 'chess', 'crash', 'roulette', 'ships-battle', 'dice', 'baccarat']);
+const HUB_GAMES = new Set(['coinflip', 'rps', 'blackjack', 'mines', 'chess', 'crash', 'roulette', 'ships-battle', 'dice', 'baccarat', 'keno', 'limbo', 'hilo']);
 const hubScreenFor = (gameId: string | null | undefined): Screen | null =>
   gameId && HUB_GAMES.has(gameId) ? (`${gameId}-hub` as Screen) : null;
 const isGameHubScreen = (s: Screen): boolean =>
-  s === 'coinflip-hub' || s === 'rps-hub' || s === 'blackjack-hub' || s === 'mines-hub' || s === 'chess-hub' || s === 'crash-hub' || s === 'roulette-hub' || s === 'ships-battle-hub' || s === 'dice-hub' || s === 'baccarat-hub';
+  s === 'coinflip-hub' || s === 'rps-hub' || s === 'blackjack-hub' || s === 'mines-hub' || s === 'chess-hub' || s === 'crash-hub' || s === 'roulette-hub' || s === 'ships-battle-hub' || s === 'dice-hub' || s === 'baccarat-hub' || s === 'keno-hub' || s === 'limbo-hub' || s === 'hilo-hub';
 
 export interface RpsView {
   players: [string, string];
@@ -168,6 +171,83 @@ export interface RouletteView {
   seed?: number;
 }
 
+/** Keno redacted view: my own `picks` are full while choosing; the opponent's is `[]` and only
+ *  their `locked` flag shows (hidden until both lock). `lastResult` (a resolved round) + the draw
+ *  are public; the seed is stripped pre-terminal. */
+export interface KenoPlayerView {
+  picks?: number[];
+  locked: boolean;
+  autoFilled?: boolean;
+}
+export interface KenoRoundResult {
+  round: number;
+  draw: number[];
+  picks: Record<string, number[]>;
+  matched: Record<string, number>;
+}
+export interface KenoView {
+  players: [string, string];
+  round: number;
+  replays: number;
+  picks: Record<string, KenoPlayerView>;
+  lastResult?: KenoRoundResult;
+  winner?: string;
+  forcedOutcome?: { type: string; winner?: string };
+  seed?: number;
+}
+
+/** Limbo redacted view: my own `target` shows while choosing; the opponent's is null and only
+ *  their `locked` flag shows (hidden until both lock). `lastResult` (roll + both targets) is
+ *  public; the seed is stripped pre-terminal. */
+export interface LimboPlayerView {
+  target?: number | null;
+  locked: boolean;
+  auto?: boolean;
+}
+export interface LimboRoundResult {
+  round: number;
+  roll: number;
+  targets: Record<string, number>;
+  winner: string | null;
+}
+export interface LimboView {
+  players: [string, string];
+  round: number;
+  replays: number;
+  picks: Record<string, LimboPlayerView>;
+  lastResult?: LimboRoundResult;
+  winner?: string;
+  forcedOutcome?: { type: string; winner?: string };
+  seed?: number;
+}
+
+/** Hilo redacted view: my own progress carries my current `card` + position/streak; the opponent's
+ *  is `{}` (hidden until terminal). `startedAt`/`endsAt` (the shared 30s clock) are public; the seed
+ *  is stripped pre-terminal (it would reveal future cards). */
+export interface HiloCard {
+  rank: number;
+  suit: string;
+}
+export interface HiloProgressView {
+  position?: number;
+  busted?: boolean;
+  frozen?: boolean;
+  card?: HiloCard;
+  bustCard?: HiloCard;
+}
+export interface HiloView {
+  players: [string, string];
+  round: number;
+  replays: number;
+  startedAt: number;
+  endsAt: number;
+  progress: Record<string, HiloProgressView>;
+  lastResult?: { round: number; streaks: Record<string, number> };
+  winner?: string;
+  forcedOutcome?: { type: string; winner?: string };
+  seed?: number;
+}
+
 /** One player's board in the redacted Ships Battle view. Own board: full (ships + current build +
  *  incoming shots). Opponent board: only my probes (`shots`) + revealed SUNK ships (`ships`). */
 export interface ShipsBoardView {
@@ -220,7 +300,7 @@ export interface BaccaratView {
 
 /** A per-game redacted view as it arrives from the server. The active game (and so
  *  which screen renders it) is tracked separately in `activeGameId`. */
-export type GameView = RpsView | CoinflipView | ChessView | BlackjackView | MinesView | CrashView | RouletteView | ShipsBattleView | DiceView | BaccaratView;
+export type GameView = RpsView | CoinflipView | ChessView | BlackjackView | MinesView | CrashView | RouletteView | ShipsBattleView | DiceView | BaccaratView | KenoView | LimboView | HiloView;
 
 function loadAuth() {
   return {
@@ -740,7 +820,10 @@ export function App() {
       case 'roulette-hub':
       case 'ships-battle-hub':
       case 'dice-hub':
-      case 'baccarat-hub': {
+      case 'baccarat-hub':
+      case 'keno-hub':
+      case 'limbo-hub':
+      case 'hilo-hub': {
         const HubScreen =
           screen === 'rps-hub'
             ? RpsHubScreen
@@ -760,7 +843,13 @@ export function App() {
                           ? DiceHubScreen
                           : screen === 'baccarat-hub'
                             ? BaccaratHubScreen
-                            : CoinflipHubScreen;
+                            : screen === 'keno-hub'
+                              ? KenoHubScreen
+                              : screen === 'limbo-hub'
+                                ? LimboHubScreen
+                                : screen === 'hilo-hub'
+                                  ? HiloHubScreen
+                                  : CoinflipHubScreen;
         return <HubScreen
           token={token ?? ''}
           playerId={playerId}
