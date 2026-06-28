@@ -174,6 +174,69 @@ wins** — but it matches the **owner's** stake, not the player's armed amount:
 - **Balance-check before claiming:** if the player can't cover the owner's stake, refuse clearly
   (don't silently fail). No extra confirm dialog is needed as long as the stake is on the row.
 
+## Coinflip arena polish — preview + in-play states (designer pass)
+
+Refines **§1 (the coin game area)** into two designed states. Reference images (gitignored):
+`design-ref/coinflip-hub/` — `CoinFlip_current_preview_stage.png`, `CoinFlip_needed_preview_stage.png`,
+`CoinFlip_current_in_play.png`, `CoinFlip_needed_in_play.png`. This is **presentation-layer** work;
+the one redaction-timing point is handled by client staging (below) so **no server change is needed**.
+
+> **⚠ Money framing — lift the visuals, NOT the currency.** The two *needed* mocks regress to
+> `$` / `USDT` (`$118.74` wallet, `$0.00 USDT`, `$1…$100` chips). The live build is already correct
+> in **`¢` integer credits**. Keep `¢` everywhere (`formatCredits`) — do **not** reintroduce `$`/USDT.
+> Same mandatory sanitization as the rest of this doc; it just has to be re-applied to these mocks.
+
+### Preview (idle tile, before PLAY)
+- **Drop the H/T buttons from the tile** — side selection now happens *after* PLAY, in-play (below).
+- **Coin = solid gold with a soft glow** (the resting/ready state); retire the purple "?" coin.
+- **Helper text → "Place your bet and play."** (one line).
+- Otherwise minimal: gold coin, glow, one line of text — nothing else on the tile.
+
+### In-play (after PLAY)
+- **10 s circular countdown to the left of the coin.** During these 10 s **both players choose
+  Heads or Tails.** The countdown is the **server-authoritative pick deadline**, client-rendered
+  against the server clock (the `serverClockOffset` alignment Crash already uses) — reuse the
+  **generic scheduled-timer capability**, not a new mechanism.
+- **H/T selection moves into the player's own slot row** as **small pills** (gold **HEADS** /
+  silver **TAILS**), shrunk and relocated from the big stacked buttons. The player taps their pill
+  to choose.
+- **Picks are hidden during the 10 s** — each row shows only *its own* player's selection; the
+  opponent's pill shows no choice yet.
+- **Lock at 0.** Whatever each player has selected locks. *(Define the no-pick case: recommend a
+  seeded auto-pick on timeout so the round always resolves — same spirit as Keno/Limbo auto-fill.)*
+- **Reveal sequence:** pick (hidden) → timer ends → both lock → **opponent's pick reveals on their
+  row** → **coin flips** → result.
+- **Result via the player's own pill outline** (reuse the **Blackjack card-outline convention**):
+  **green = you won, red = you lost, orange = draw (same side chosen) → instant replay.**
+- **Remove** the "YOUR PICK / OPPONENT" status boxes (including the 🤫 box) and the **"Forfeit"**
+  text. Keep the coin gold with its glow.
+
+### Two reconciliations for the PM (the only non-trivial points)
+
+1. **Result presentation supersedes §1's "self-dismissing overlay" → the pill-outline convention.**
+   The flip animates in the tile and the verdict shows as the own-pill outline (green/red/orange),
+   matching Blackjack. **Keep the scroll-safety the overlay solved (Q2):** a match can resolve while
+   the player is scrolled down at Open Games — so still guarantee the result reaches them (a brief
+   settlement cue, or auto-scroll the tile into view on `match.end`). Don't lose that just because
+   the outline replaces the overlay.
+
+2. **Reveal-after-lock is staged client-side from the `match.end` payload — no `viewFor` change.**
+   Redaction requires each pick stay hidden until **both are locked**; revealing locked picks before
+   the flip leaks nothing (neither can change, the flip is independent). The clean way to get the
+   designed "reveal → flip → result" beats **without** a server change: at `match.end` the client
+   receives both picks + the outcome together (as today), and **choreographs** the animation —
+   show the opponent's pick, pause, flip, then light the outline. This preserves "no server/protocol
+   change" *and* keeps redaction airtight (the picks never exist on the client before `match.end`).
+   *(Only if a true pre-flip server reveal is ever wanted would a lock-time reveal event be needed —
+   not for this pass.)*
+
+> **Template note:** both moves are template-shaped, not Coinflip-only — **H/T in the player's own
+> slot pill** is the existing `renderSlotAside(args, 'self')` path (Blackjack puts Hit/Stand there),
+> and the **green/red/orange result outline** is the Blackjack card-outline convention. Reuse both;
+> the draw→replay (orange) is Coinflip's same-side rule. Why hidden picks matter: seeing the
+> opponent's side before lock lets you force a decisive win or a replay at will — the 10 s blind
+> window is what keeps the flip a fair 50/50.
+
 ## Product integrity — no house-only games in the roster
 
 The **PvP-only corollary to invariant #1** (`CHARTER.md`). The related-games ribbon (5) is data-driven from `/games`, which is
