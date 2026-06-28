@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { CoinflipHubScreen } from '../screens/CoinflipHub.js';
 import type { CoinflipView } from '../App.js';
 
@@ -77,30 +77,44 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     expect(screen.getByTestId('home-join-c1')).toBeDisabled();
   });
 
-  it('In-match: the board activates, choices come from legalMoves, and the opponent stays hidden', () => {
+  it('In-match: the board + countdown activate, H/T move into the own slot pill, opponent hidden', () => {
     const onMakeMove = vi.fn();
     const gameState: CoinflipView = { players: ['pid', 'bob'], choices: {} };
     render(<CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['heads', 'tails'], onMakeMove })} />);
     expect(screen.getByTestId('hub-board')).toBeInTheDocument();
-    // Redaction: the opponent's pick is never shown before match.end.
-    expect(screen.getByTestId('hub-opponent-pick').textContent).toBe('🤫');
+    expect(screen.getByTestId('coin-countdown')).toBeInTheDocument(); // 10s pick deadline (cosmetic)
+    // Redaction: the opponent's pick is never rendered before match.end.
+    expect(screen.queryByTestId('coin-opp-pick')).toBeNull();
+    expect(screen.getByTestId('hub-slot-opponent').textContent).not.toMatch(/heads|tails/i);
+    // H/T now live in the player's own slot pill (renderSlotAside 'own'); tapping picks.
+    const ownSlot = screen.getByTestId('hub-slot-own');
+    expect(within(ownSlot).getByTestId('hub-move-heads')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('hub-move-heads'));
     expect(onMakeMove).toHaveBeenCalledWith('heads');
   });
 
-  it('In-match: choices are disabled when it is not your turn (no legalMoves)', () => {
+  it('In-match: the pick pills are disabled when not actionable (no legalMoves)', () => {
     const gameState: CoinflipView = { players: ['pid', 'bob'], choices: { pid: 'heads' } };
     render(<CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
     expect(screen.getByTestId('hub-move-heads')).toBeDisabled();
     expect(screen.getByTestId('hub-move-tails')).toBeDisabled();
   });
 
-  it('Result: ending a match shows the overlay with the ¢ delta, and dismiss resets to Idle', async () => {
-    const onResultDismiss = vi.fn();
+  it('Idle: no H/T pills on the tile or in the slot (selection only happens in-play)', () => {
+    render(<CoinflipHubScreen {...baseProps()} />);
+    expect(screen.queryByTestId('hub-move-heads')).toBeNull();
+    expect(screen.queryByTestId('hub-move-tails')).toBeNull();
+    expect(screen.getByTestId('hub-board').textContent).toMatch(/place your bet and play/i);
+  });
+
+  it('Result: no pop-up overlay — the flip + opponent reveal stage on the board, then the own pill lights', async () => {
+    const scrollSpy = vi.fn();
+    Element.prototype.scrollIntoView = scrollSpy; // scroll-safety cue (reconciliation a)
     const gameState: CoinflipView = { players: ['pid', 'bob'], choices: { pid: 'heads', bob: 'tails' }, result: 'heads' };
     // Start in-match so the match-end edge fires on rerender.
     const { rerender } = render(<CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
-    expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
+
+    // match.end: currentMatchId clears with the terminal payload. The old pop-up is gone.
     rerender(
       <CoinflipHubScreen
         {...baseProps({
@@ -108,16 +122,22 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
           gameState,
           lastOutcome: { type: 'win', winner: 'pid' },
           lastSettlement: { delta: 90, newBalance: 1090 },
-          onResultDismiss,
         })}
       />,
     );
-    await waitFor(() => expect(screen.getByTestId('hub-result-overlay')).toBeInTheDocument());
-    expect(screen.getByTestId('hub-result-text').textContent).toContain('You Won');
-    expect(screen.getByTestId('hub-result-delta').textContent).toBe('+90¢');
-    fireEvent.click(screen.getByLabelText('Dismiss'));
-    expect(onResultDismiss).toHaveBeenCalled();
-    await waitFor(() => expect(screen.queryByTestId('hub-result-overlay')).toBeNull());
+    expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
+    // During the hold: the coin flips to the revealed face and the opponent's pick reveals.
+    await waitFor(() => {
+      expect(screen.getByTestId('coin-face').textContent).toBe('heads');
+      expect(screen.getByTestId('coin-opp-pick').textContent).toMatch(/tails/i);
+    });
+    expect(scrollSpy).toHaveBeenCalled(); // brought into view on resolve
+    // After the hold the outcome arrives → the own pick pill rings green (won) via the outline.
+    await waitFor(() => {
+      const own = screen.getByTestId('coin-own-pick');
+      expect(own.textContent).toMatch(/heads/i);
+      expect(own.className).toContain('ring-success');
+    }, { timeout: 3000 });
   });
 
   it('JOIN balance-check: refuses clearly when the owner stake is uncovered, without taking', () => {

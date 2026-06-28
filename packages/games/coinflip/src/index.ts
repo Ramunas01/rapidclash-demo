@@ -1,1 +1,1 @@
-export { coinflipModule } from './coinflip.js';
+export { coinflipModule, PICK_TIMEOUT_MS } from './coinflip.js';

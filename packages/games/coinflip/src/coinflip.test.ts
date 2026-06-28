@@ -74,6 +74,7 @@ describe('coinflipModule.meta', () => {
       bet: { minStake: 1, maxStake: 100, symmetricStake: true },
       averageDurationSec: 5,
       rakeRate: 0.025,
+      moveTimeoutMs: 10_000,
     });
   });
 
@@ -210,6 +211,45 @@ describe('coinflipModule.forfeit', () => {
     let mid = coinflipModule.init([P1, P2], fixedRng(0));
     mid = coinflipModule.applyMove(mid, 'heads', ctx(P1)).state;
     expect(coinflipModule.outcome(coinflipModule.forfeit(mid, P2))).toEqual({ type: 'void' });
+  });
+});
+
+describe('coinflipModule — pick timer + seeded auto-pick (opt-in per-player timer)', () => {
+  it('declares the 10s per-player pick timer', () => {
+    expect(coinflipModule.meta.moveTimeoutMs).toBe(10_000);
+  });
+
+  it('timeoutMove returns a valid, currently-legal side for a player who has not picked', () => {
+    const state = coinflipModule.init([P1, P2], seededRng(HEADS_SEED));
+    const m1 = coinflipModule.timeoutMove!(state, P1, fixedRng(0));
+    expect(coinflipModule.legalMoves(state, P1)).toContain(m1); // membership — the core re-checks this
+    expect(['heads', 'tails']).toContain(m1);
+  });
+
+  it('the auto-pick is deterministic (fixed at init) and ignores the injected rng', () => {
+    const state = coinflipModule.init([P1, P2], seededRng(HEADS_SEED));
+    expect(coinflipModule.timeoutMove!(state, P1, fixedRng(0))).toBe(coinflipModule.timeoutMove!(state, P1, fixedRng(1)));
+  });
+
+  it('a no-pick round resolves: both players auto-pick on timeout → terminal with an outcome', () => {
+    let state = coinflipModule.init([P1, P2], seededRng(TAILS_SEED));
+    state = coinflipModule.applyMove(state, coinflipModule.timeoutMove!(state, P1, fixedRng(0)), ctx(P1)).state;
+    state = coinflipModule.applyMove(state, coinflipModule.timeoutMove!(state, P2, fixedRng(0)), ctx(P2)).state;
+    expect(coinflipModule.isTerminal(state)).toBe(true);
+    expect(['win', 'draw']).toContain(coinflipModule.outcome(state).type);
+  });
+
+  it('timeoutMove throws once a player has already chosen (nothing to auto-pick)', () => {
+    let state = coinflipModule.init([P1, P2], fixedRng(0));
+    state = coinflipModule.applyMove(state, 'heads', ctx(P1)).state;
+    expect(() => coinflipModule.timeoutMove!(state, P1, fixedRng(0))).toThrow(IllegalMove);
+  });
+
+  it('redaction: the seed is stripped pre-terminal (no precomputing the opponent auto-pick)', () => {
+    let state = coinflipModule.init([P1, P2], seededRng(HEADS_SEED));
+    state = coinflipModule.applyMove(state, 'heads', ctx(P1)).state; // P1 picked, P2 has not → pre-terminal
+    const p2View = coinflipModule.viewFor(state, P2) as { seed: number };
+    expect(p2View.seed).toBe(0); // real seed never on the wire pre-terminal
   });
 });
 
