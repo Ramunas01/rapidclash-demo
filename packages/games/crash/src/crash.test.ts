@@ -114,14 +114,56 @@ describe('crash gameplay (the climb)', () => {
     expect(crash.outcome(r2.state)).toEqual({ type: 'win', winner: A });
   });
 
-  it('both crash → draw; equal banks → draw', () => {
+  it('equal banks (incl. both-crash) → instant re-launch, NOT a terminal draw (universal tie rule)', () => {
+    type TieView = { round: number; replays: number; results: Record<string, unknown>; startedAt: number };
+    // both crash → banks 0/0 → tie → re-launch a fresh rocket
     const both = launched(0.5);
-    const r = eject(eject(both.state, A, 16_000).state, B, 17_000);
-    expect(crash.outcome(r.state)).toEqual({ type: 'draw' });
+    const r = eject(eject(both.state, A, 16_000).state, B, 17_000).state;
+    expect(crash.isTerminal(r)).toBe(false);
+    const v = r as TieView;
+    expect(v.round).toBe(1);
+    expect(v.replays).toBe(1);
+    expect(v.results).toEqual({}); // fresh rocket — both eject again
+    expect(v.startedAt).toBeGreaterThan(startedAt(both.state)); // new SETUP→ignition window
 
+    // equal POSITIVE banks (both eject at the same instant) → also a tie → re-launch
     const tie = launched(0.5);
-    const r2 = eject(eject(tie.state, A, 3000).state, B, 3000);
-    expect(crash.outcome(r2.state)).toEqual({ type: 'draw' });
+    const r2 = eject(eject(tie.state, A, 3000).state, B, 3000).state;
+    expect(crash.isTerminal(r2)).toBe(false);
+    expect((r2 as TieView).replays).toBe(1);
+  });
+
+  it('a decisive round after a re-launch still settles', () => {
+    let s = launched(0.5).state;
+    s = eject(s, A, 16_000).state;
+    s = eject(s, B, 16_000).state; // both crash → tie → round 1
+    expect(crash.isTerminal(s)).toBe(false);
+    s = eject(s, A, 3000).state; // banks ~2 (well below any C ≥ 5)
+    s = eject(s, B, 16_000).state; // crashes (0) or banks high — either way ≠ 2
+    expect(crash.isTerminal(s)).toBe(true);
+    expect(crash.outcome(s).type).toBe('win');
+  });
+
+  it('10 consecutive ties → terminal void (refund both, no rake)', () => {
+    let s = launched(0.5).state;
+    for (let i = 0; i < 10; i++) {
+      expect(crash.isTerminal(s)).toBe(false);
+      // both eject at the SAME instant → equal banks → tie (re-launch resets startedAt each round)
+      s = eject(s, A, 16_000).state;
+      s = eject(s, B, 16_000).state;
+    }
+    expect(crash.isTerminal(s)).toBe(true);
+    expect(crash.outcome(s)).toEqual({ type: 'void' });
+    expect((s as { replays: number }).replays).toBe(10);
+  });
+
+  it('a re-launched C is deterministic (replay reproduces the chain)', () => {
+    const relaunch = () => {
+      const s0 = launched(0.5).state;
+      const s1 = eject(eject(s0, A, 16_000).state, B, 16_000).state; // tie → re-launch
+      return (s1 as { crashAltitude: number }).crashAltitude;
+    };
+    expect(relaunch()).toBe(relaunch());
   });
 });
 
