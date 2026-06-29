@@ -32,8 +32,8 @@ Games are grouped in the UI as **Originals** (PvP-native and PvP-redefined signa
 | Coinflip | Yes | **Live.** Pure chance; both players secretly pick a side; mismatch → seeded flip. Ranks by net winnings. |
 | Chess | Yes | **Live (building).** Skill game, ELO ranking; external move-validation lib. Cumulative time control — see `CHESS_TIME_CONTROL.md`. The first **Classic**. |
 | Ships Battle | Yes | **Confirmed skill game** — hidden-fleet naval duel on a 10×10, see `SHIPS_BATTLE.md`. ELO ranking; a **Classic**. |
-| Blackjack | No (house by default) | **Confirmed PvP redefinition** — head-to-head duel, see `BLACKJACK.md`. |
-| Mines | No (house by default) | **Confirmed PvP redefinition** — two-player race on identical boards, see `MINES.md`. Ranks by net winnings. |
+| Blackjack | No (house by default) | **Live.** PvP redefinition — head-to-head duel, see `BLACKJACK.md`. Ranks by net winnings. |
+| Mines | No (house by default) | **Live.** PvP redefinition — two-player race on identical boards, see `MINES.md`. Ranks by net winnings. |
 | Baccarat | No (house by default) | **Confirmed PvP redefinition** — each player is their own hand, no banker/commission, see `BACCARAT.md`. Ranks by net winnings. |
 | Limbo | No (house by default) | **Confirmed PvP redefinition** — zero-edge target-multiplier nerve duel, see `LIMBO.md`. Ranks by net winnings. |
 | Crash | No (house by default) | **Confirmed PvP redefinition** — shared-rocket nerve duel, see `CRASH.md`. Ranks by net winnings. |
@@ -52,7 +52,7 @@ Reworked to a **both-players-choose** mechanic (this supersedes the original one
 - **Choice:** both players **simultaneously and independently** choose a coin side — `heads` or `tails` — with equal ability. **No caller role.** Each choice is hidden from the opponent until both have chosen (exactly like RPS).
 - **Resolution:** if both chose the **same** side → **draw** (stakes refunded, no rake). If they chose **different** sides → the server flips the coin (deterministic from the **match seed**, independent of both choices) and the player whose choice matches the flip result wins `pot − rake`; the other loses. Exactly one winner.
 - **Hidden info:** `viewFor` hides **each player's choice and the flip result** until the match is terminal.
-- **Abandonment** before both have chosen → `void` (refund both), **not** a draw.
+- **Pick window.** Choices are made within a server-authoritative pick window (`meta.moveTimeoutMs`, ~10 s). If a player hasn't chosen when it expires — including on disconnect — the generic `timeoutMove` assigns a **seeded auto-pick** (the same opt-in timed-game pattern as Mines/Keno/Limbo), and the round resolves under the normal rules above (no `void`). *(Supersedes the earlier "abandonment before both have chosen → void" rule, retired when the pick-timer shipped in #129.)*
 - **Determinism:** flip = f(seed); replays identically. **Ranking:** `net_winnings` (see ADR-007) — unchanged.
 
 ### Redefining the house-game canon
@@ -61,7 +61,7 @@ This is the heart of the thesis, not a footnote. Each house game must be given a
 
 ## In scope for the demo
 
-Registration & sessions; play-money wallet with ledger; stake placement & escrow; matchmaking and lobby; two-player session orchestration; RPS fully, then the other natively-2P and confirmed-redefined games; settlement with platform fee; per-game leaderboard & ranking; mobile-web (PWA) client; an operator/admin interface for visibility and demo testing (player stats, game logs, add-money, account removal — see `ADMIN.md`).
+Registration & sessions; play-money wallet with ledger; stake placement & escrow; matchmaking and lobby; two-player session orchestration; RPS fully, then the other natively-2P and confirmed-redefined games; settlement with platform fee; per-game leaderboard & ranking; mobile-web (PWA) client; an operator/admin interface for visibility and demo testing (player stats, game logs, add-money, and a best-effort alias-freeing convenience — the canonical reset being a full database wipe; see `ADMIN.md`).
 
 ## Out of scope (for now)
 
@@ -78,4 +78,4 @@ Real payments; KYC/identity verification; anti-fraud/collusion detection; specta
 - **Game module** — a self-contained implementation of one game satisfying the plug-in contract.
 - **Ranking type** — how a game's results feed the leaderboard (ELO for skill, net winnings for chance, etc.).
 - **PvP redefinition** — a head-to-head, no-house reinterpretation of a house game; the platform's core design activity (see `GAME_REDEFINITION.md`).
-- **Administrator / operator** — a privileged role (not a player) who can view player stats and game logs, add play-money to a wallet, and remove an account to free its alias. Cannot influence match outcomes. See `ADMIN.md`.
+- **Administrator / operator** — a privileged role (not a player) who can view player stats and game logs, add play-money to a wallet, and (best-effort, for testing) free a single alias by removing its record — refused if that account has an active match or escrowed stake. The **canonical reset is a full database wipe-and-restart**, not per-account deletion, and there is no user-facing account-deletion flow. Cannot influence match outcomes. See `ADMIN.md`.
