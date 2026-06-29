@@ -72,6 +72,23 @@ gcloud secrets add-iam-policy-binding admin-password \
   --role="roles/secretmanager.secretAccessor"
 ```
 
+### 1b. Durable persistence bucket (ADR-011)
+
+SQLite on Cloud Run is ephemeral — it resets on every instance recycle/redeploy (ADR-009). To keep accounts, hashed credentials, and standings across recycles, the server snapshots the DB file to a Cloud Storage bucket and restores it on startup (ADR-011). This is opt-in: it activates only when `GCS_BUCKET` is set (below), so local dev is unchanged. Create the bucket once and grant the Cloud Run service account object read/write on it:
+
+```bash
+# Create the snapshot bucket (same region as the service; pick a globally-unique name).
+gsutil mb -l us-central1 gs://rapidclash-demo-snapshots
+
+# The Cloud Run service runs as the default compute SA (same one that builds — see §1).
+# Grant it object admin on the bucket so the server can download (restore) and upload (snapshot).
+gcloud storage buckets add-iam-policy-binding gs://rapidclash-demo-snapshots \
+  --member="serviceAccount:${COMPUTE_SA}" \
+  --role="roles/storage.objectAdmin"
+```
+
+No service-account key file is needed: inside Cloud Run the server authenticates via Application Default Credentials automatically. The bucket holds a single object (`rapidclash.db`), overwritten on each debounced snapshot — no versioning required. (For a true clean slate / hard reset, delete that object: `gsutil rm gs://rapidclash-demo-snapshots/rapidclash.db`, then redeploy.)
+
 ## 2. Set a budget alert (do this before deploying)
 
 Cloud platforms don't hard-stop spending by default, so this is non-negotiable. Easiest in the console: **Billing → Budgets & alerts → Create budget**, set a small monthly cap (e.g. €5–10) with email alerts at 50/90/100%. This won't cut off service; it emails you long before anything matters, which for a demo on the free tier is all you need.
@@ -94,16 +111,18 @@ gcloud run deploy rapidclash \
   --min-instances 1 \
   --max-instances 1 \
   --session-affinity \
-  --set-secrets ADMIN_PASSWORD=admin-password:latest
+  --set-secrets ADMIN_PASSWORD=admin-password:latest \
+  --set-env-vars GCS_BUCKET=rapidclash-demo-snapshots
 ```
 
 Flag rationale (see ADR-009):
 - `--source .` — Cloud Build builds the image from your `Dockerfile`; no manual registry steps.
 - `--allow-unauthenticated` — it's a public demo; players don't need Google accounts.
 - `--timeout 3600` — the 60-minute max for the WebSocket stream; `match.resume` handles reconnect on timeout.
-- `--max-instances 1` — **mandatory**: match state is in memory and the DB is a local file; neither survives scale-out.
+- `--max-instances 1` — **mandatory**: match state is in memory and the DB is a local file; neither survives scale-out (also makes the snapshot a single writer — no locking concern, ADR-011).
 - `--min-instances 1` — keeps a WebSocket-warm instance during demos (a few $/month). Set `0` when not demoing to drop to free (cold starts may delay/drop the first connection).
 - `--session-affinity` — best-effort routing of reconnects back to the same instance.
+- `--set-env-vars GCS_BUCKET=…` — enables durable persistence (ADR-011): the server restores the DB snapshot on startup and snapshots it back after each settlement. Omit it (or drop the bucket) to fall back to the original ephemeral behaviour. Requires the bucket + IAM grant from §1b.
 
 Cloud Run prints the HTTPS URL (`https://rapidclash-…-uc.a.run.app`) on success.
 
@@ -113,9 +132,9 @@ Open the printed URL on your phone over cellular (not just Wi-Fi — proving it'
 
 ## 5. Operating notes
 
-- **Reset for testing** = redeploy or recycle the instance; SQLite is ephemeral, so data clears on its own (this is the accepted reset story — see `ADMIN.md`). The admin account re-seeds on startup via `ensureAdmin`, so a reset never locks you out.
+- **Reset for testing** = redeploy or recycle the instance. *Without* `GCS_BUCKET`, SQLite is ephemeral, so data clears on its own. *With* `GCS_BUCKET` set (ADR-011), the snapshot now survives recycles — to force a clean slate (hard reset), delete the snapshot object before/while redeploying: `gsutil rm gs://<bucket>/rapidclash.db`. The admin account re-seeds on startup via `ensureAdmin`, so a reset never locks you out.
 - **Cost control** = `--min-instances 0` between demos; the budget alert is your backstop.
-- **When to graduate:** the moment you want data to persist across restarts, or more than one instance, switch to Cloud SQL (Postgres, ~$10–15/month to keep running) for the ledger/history and Redis (Memorystore) for live session/matchmaking state, then raise `--max-instances`. That's the ADR-005 scale shape — not needed for the demo.
+- **When to graduate:** the GCS snapshot (ADR-011) keeps demo data across restarts on a single instance, but it does **not** unlock scale-out — the moment you want more than one instance (concurrent writers), switch to Cloud SQL (Postgres, ~$10–15/month to keep running) for the ledger/history and Redis (Memorystore) for live session/matchmaking state, then raise `--max-instances`. That's the ADR-005 scale shape — not needed for the demo.
 
 ## 5b. Troubleshooting the first deploy
 
