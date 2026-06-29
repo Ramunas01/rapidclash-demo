@@ -50,6 +50,41 @@ A crashed player shows as busted (0 m) rather than an altitude. This side-by-sid
 
 When the shared climb reaches the hidden crash altitude `C`: **explosion at the crash point + the curve snaps red.** A player still aboard at `C` busts to **0 m** ("rocket exploded → {C}m"). If you had already ejected, your locked altitude stands; the explosion is the shared event that ends the round and triggers the reveal.
 
+## Designer refinement pass — staged states (Preview · Gameplay · Result)
+
+A later designer pass reorganises the arena into three explicit states and fixes two live-build bugs. Where it refines a numbered item above, the delta is called out. **All of it is presentation; the redaction + server-authority reconciliations at the top still bind.**
+
+### Stage 1 — Preview (idle, before PLAY)
+Show the **real chart frame at rest**, not a placeholder — the preview should look identical to the in-play screen, frozen at 0 m:
+- Full frame: Y-axis (altitude m) + X-axis (time markers), with the **rocket parked at the bottom-left origin (0 m), angled up**, ready to launch — the **proper rocket asset**, not a centred emoji.
+- **Moon top-right** (the goal), consistent with in-play.
+- Helper text centred over the chart: **"Place your bet and launch."**
+- Initial Y labels bottom→top: **0, 100, 300, 700, 1100, 2000** (monotonic ascending — the designer has now fixed the earlier duplicate/disorder, so this supersedes §3's placeholder example). X markers: 2.8s, 6.8s, 11.7s, 19.6s, 45.0s.
+
+(Mirrors the Coinflip preview pattern — the idle tile is the live game at rest.)
+
+### Stage 2 — Gameplay (in-flight) — refines §1, §5
+1. **One button that transforms in place — the #1 fix.** PLAY → **EJECT** during flight → back to PLAY after. The live build currently **spawns a second EJECT button**; instead, transform the existing PLAY button. (This is §5 tightened: do not add a second control.) The locked-altitude text moves **off the button onto your pill bar** (Stage 3); after you eject the button goes to a disabled waiting state, then returns to PLAY.
+2. **Smooth curve + follow-camera (fixes the bounce).** The curve is currently jagged/stair-stepped, and the rocket flies to the top of the frame then **bounces back down**. Fix: render **one smooth continuous curve** from the analytic altitude(t) function (not stair-stepped samples), gradient trail orange→pink→purple, rocket at the tip. Once the rocket reaches a set screen height it **holds position**, and the *axes* rescale (Y compresses, X extends) to convey continued climb — the world moves, not the rocket. This eliminates the bounce; it's the same idea as §3's auto-compressing axes, now stated as a camera rule.
+3. **Altitude readout** floats over the curve in a clean **pill** ("176m"), live (§2).
+4. Y/X axes as §3 — compressing Y, non-linear X.
+5. **Opponent bar stays blank during flight** — never show their altitude or status mid-flight; it would leak whether they've crashed. (The redaction reconciliation, made concrete.)
+6. **Fairness restated:** one shared curve + one crash point; **eject resolves server-side at the server-received time against the authoritative curve, not the client's rendered number** — latency must not grant an edge. This is exactly `CRASH.md`'s model (eject = intent timestamped with `ctx.now`; the display is aligned via `serverClockOffset` so what you see ≈ what banks). No change — just hold the line in the renderer: **never bank the client's number.**
+
+### Stage 3 — Result reveal — refines §6, §7
+The reveal moves onto the **slot pills with the outline convention** (consistent with Coinflip/Blackjack), replacing §6's separate side-by-side panel:
+1. **On EJECT** → your own pill immediately shows **"Locked {A}m"** (e.g. "Locked 345m"). Opponent's pill stays **blank** (their eject still hidden).
+2. **On crash** → round ends, opponent's pill reveals their **"Locked {B}m"** if they ejected, or **"Crashed"** if they never did. Same for your own pill — never ejected → **"Crashed"** (this replaces §7's "0 m" text *on the pill*; the explosion + red curve-snap from §7 remain the in-chart crash visual).
+3. **0.5 s after** the opponent's altitude lands → your pill gets the **outline**: green = won, red = lost, orange = draw.
+4. **Draw (orange) → instant replay** (fresh seed, no rake) when both crashed, or both locked the exact same altitude — the **universal tie rule** (now also written into `CRASH.md`).
+5. **The 0.5 s beat is deliberate:** opponent's number first, a pause, *then* your colour — never simultaneous, so the player reads the altitude before the verdict.
+
+Full beat: eject → your altitude locks on your pill → crash → opponent's altitude (or "Crashed") reveals → 0.5 s pause → your pill outlines green / red / orange.
+
+> **Template:** the *reveal → 0.5 s beat → outline* choreography and the "Locked {x}" / "Crashed" pill states are **reusable** — the same shape fits Coinflip (pick → flip → outline) and the other hidden-commit games. Build the reveal as a shared slot-pill behaviour, not Crash-only.
+
+**Revised build order (supersedes the one in Notes):** (1) smooth curve + follow-camera — the demo centrepiece and the bounce fix; (2) the single transforming button — the main bug; (3) the Preview frozen-chart state; (4) the Stage-3 pill reveal + outline + 0.5 s beat; (5) floating altitude pill + axes; (6) moon.
+
 ---
 
 ## Notes

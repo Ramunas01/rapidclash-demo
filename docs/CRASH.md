@@ -35,8 +35,8 @@ Your description floated a "safe auto-eject at a max altitude." I'd steer away f
 
 ## Draws & disconnect
 
-- **Draw policy:** a draw (equal banks, or both crash) → **refund both, no rake** (the Coinflip/RPS policy — Crash is a fast chance game). *Owner may instead prefer replay-until-decisive like Blackjack/Mines; flagged.*
-- **Disconnect:** a dropped player simply never ejects → they ride to `C` and **crash** (bank 0). No special void. Both disconnect → both crash → draw → refund.
+- **Draw policy:** a draw (equal banks, or both crash) → **instant replay** (fresh seed, no rake; 10-replay safety cap then refund) — the **universal tie rule** now shared across the canon (Coinflip and the redefined chance games all replay on a tie). *(Supersedes the earlier refund-on-draw recommendation.)*
+- **Disconnect:** a dropped player simply never ejects → they ride to `C` and **crash** (bank 0). No special void. Both disconnect → both crash → draw → replay.
 
 ## Mapping to the game-module contract
 
@@ -46,7 +46,7 @@ Satisfies the existing `GameModule` contract with **one shared core dependency**
 - **`legalMoves(player)`** — `["eject"]` until that player has ejected/crashed, then `[]`. (A pre-set auto-eject is a launch-time setup, not a turn.)
 - **`applyMove(player, "eject", ctx)`** — bank `altitude(ctx.now − startedAt)` if that is `< C`, else mark crashed (0). Uses the injected `ctx.now` — the module never reads the clock (determinism holds).
 - **`isTerminal`** — true once both players have ejected or crashed. The scheduled crash event forces resolution for anyone still aboard.
-- **`outcome`** — higher bank wins; equal or both-crash → draw (refund per policy).
+- **`outcome`** — higher bank wins; equal or both-crash → draw → replay (universal tie rule).
 - **`viewFor`** — public: the shared climbing altitude. Hidden until terminal: the crash altitude `C`, and the opponent's auto-eject setting and ejection. (A player sees their own ejection immediately.)
 - **`forfeit` (disconnect)** — no eject → crash at `C`; do not void.
 - **Determinism** — `C` and the curve derive from the seed; ejections are recorded with `ctx.now`; a replay reproduces the round exactly.
@@ -65,5 +65,5 @@ Per the brief, this needs only enough UI to make the point: a **climbing altitud
 ## Open decisions for the owner
 
 - **Live-reveal variant (roadmap, not v1):** v1 hides the opponent's eject until terminal — a clean blind nerve duel. A more thrilling variant *reveals* each eject the moment it happens, turning it into a game of chicken (neither wants to eject first and hand the other a target, but holding risks the shared crash). Symmetric and fair, but more to build and prone to both-crash draws — deferred.
-- **Draw policy:** refund (recommended) vs replay-until-decisive.
+- **Draw policy:** resolved → instant replay (universal tie rule); see Draws & disconnect above.
 - **Crash distribution & cap:** the shape and ceiling of `C` (tunes round length and how often both crash) — a config value, owner-tunable.
