@@ -115,6 +115,11 @@ interface GameHubProps extends GameHubScreenProps {
   renderSlotAside?(args: GameAreaArgs, side: 'opponent' | 'own'): ReactNode;
   /** Optional game-specific reveal at the top of the result overlay (e.g. the Coinflip coin). */
   renderResultReveal?(args: { outcome: Outcome; gameState: GameView | null; playerId: string | null }): ReactNode;
+  /** Optional in-match override for the ONE primary action button (PLAY's slot). When this returns
+   *  non-null the hub renders it INSTEAD of PLAY — so a game transforms the single button in place
+   *  (Crash: PLAY → EJECT → disabled-waiting → back to PLAY) rather than spawning a second control.
+   *  Return null to keep the default PLAY button (idle / result → play again). Template-shaped. */
+  renderPrimaryAction?(args: GameAreaArgs): ReactNode;
   /** Opt out of the shared result pop-up (mirrors holdResultMs being opt-in). When true the hub
    *  never renders the ResultOverlay; it instead holds the result phase open with the board mounted
    *  (gameState = the terminal frame, areaArgs.outcome set) so the game presents the result on the
@@ -152,7 +157,7 @@ function useNow(active: boolean): number {
  */
 export function GameHub(props: GameHubProps) {
   const {
-    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, suppressResultOverlay, holdResultMs,
+    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, suppressResultOverlay, holdResultMs,
     token, playerId, username, opponentId, opponentName, serverClockOffset = 0, balance, currentMatchId, gameState, legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
     onPlay, onCancel, onRepost, onTakeChallenge, onMakeMove, onForfeit, onTrackChallenges,
@@ -357,6 +362,7 @@ export function GameHub(props: GameHubProps) {
                 armedStake={armedStake}
                 onArm={setArmedStake}
                 onPlay={handlePlay}
+                actionSlot={renderPrimaryAction?.(areaArgs) ?? null}
                 timeControl={timeControl}
                 selectedControl={selectedControl}
                 onSelectControl={setSelectedControl}
@@ -490,31 +496,38 @@ function OwnSlot({ label, isOwn, aside }: { label: string; isOwn: boolean; aside
 /** The unified play panel (PLAY + bet grid + optional time control + Play-a-Friend). `playing`
  *  freezes it during a match (item 7): PLAY reads "Playing…" and every control greys but stays. */
 function PlayPanel({
-  playing, armedStake, onArm, onPlay, timeControl, selectedControl, onSelectControl,
+  playing, armedStake, onArm, onPlay, actionSlot, timeControl, selectedControl, onSelectControl,
 }: {
   playing: boolean;
   armedStake: number | null;
   onArm(v: number): void;
   onPlay(): void;
+  /** When provided, replaces the PLAY button in place — the game's transforming primary action
+   *  (e.g. Crash's EJECT during flight). Null → the default PLAY button (the #1-bug fix: ONE
+   *  button that transforms, never a second control). */
+  actionSlot?: ReactNode;
   timeControl?: GameMeta['timeControl'];
   selectedControl?: string;
   onSelectControl(id: string): void;
 }) {
   return (
     <div data-testid="hub-section-play" className="flex flex-col gap-3.5 rounded-[18px] bg-surface p-4">
-      {/* PLAY — always full purple; the bet gates the ACTION. In-match → "Playing…" + disabled. */}
-      <button
-        type="button"
-        disabled={playing || armedStake == null}
-        onClick={onPlay}
-        data-testid="hub-play"
-        className={cn(
-          'w-full rounded-xl bg-brand py-4 text-base font-black uppercase tracking-wider text-white transition-colors',
-          playing ? 'opacity-70' : 'hover:brightness-110',
-        )}
-      >
-        {playing ? 'Playing…' : 'Play'}
-      </button>
+      {/* The ONE primary action. Default = PLAY (always full purple; the bet gates the action;
+          in-match → "Playing…" disabled). A game may transform it in place via actionSlot. */}
+      {actionSlot ?? (
+        <button
+          type="button"
+          disabled={playing || armedStake == null}
+          onClick={onPlay}
+          data-testid="hub-play"
+          className={cn(
+            'w-full rounded-xl bg-brand py-4 text-base font-black uppercase tracking-wider text-white transition-colors',
+            playing ? 'opacity-70' : 'hover:brightness-110',
+          )}
+        >
+          {playing ? 'Playing…' : 'Play'}
+        </button>
+      )}
 
       {/* Bet amount — stays visible during a match, greyed + inert. */}
       <div data-testid="hub-section-bet" className={cn(playing && 'pointer-events-none opacity-50')}>

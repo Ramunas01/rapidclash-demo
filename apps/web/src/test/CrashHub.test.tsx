@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { CrashHubScreen, altitudeAt } from '../screens/CrashHub.js';
 import type { CrashView } from '../App.js';
 
@@ -53,11 +53,25 @@ describe('CrashHubScreen (GameHub + CrashPanel)', () => {
     expect(onPlay).toHaveBeenCalledWith(10);
   });
 
-  it('Idle board: shows the launch prompt and no live altitude/eject', () => {
+  it('Preview: the real chart frozen at 0m — parked rocket + helper text, no live altitude/eject', () => {
     render(<CrashHubScreen {...baseProps()} />);
     const board = screen.getByTestId('hub-board');
     expect(board.textContent).toMatch(/place your bet and launch/i);
-    expect(within(board).queryByTestId('crash-eject')).toBeNull();
+    expect(within(board).getByTestId('crash-chart')).toBeInTheDocument(); // the live frame at rest
+    expect(within(board).getByTestId('crash-rocket')).toBeInTheDocument(); // parked at the origin
+    expect(within(board).queryByTestId('crash-curve')).toBeNull(); // no trail at 0m
+    expect(within(board).queryByTestId('crash-altitude')).toBeNull();
+    expect(screen.queryByTestId('crash-eject')).toBeNull();
+    expect(screen.getByTestId('hub-play')).toBeInTheDocument(); // the one primary button = PLAY in idle
+  });
+
+  it('One transforming button: PLAY in idle is replaced in place by EJECT in flight (never both)', () => {
+    const { rerender } = render(<CrashHubScreen {...baseProps()} />);
+    expect(screen.getByTestId('hub-play')).toBeInTheDocument();
+    expect(screen.queryByTestId('crash-eject')).toBeNull();
+    rerender(<CrashHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: ['eject'] })} />);
+    expect(screen.getByTestId('crash-eject')).toBeInTheDocument();
+    expect(screen.queryByTestId('hub-play')).toBeNull(); // PLAY transformed in place — no second control
   });
 
   it('SETUP: shows a short countdown, no altitude/EJECT, and NO auto-eject input (live-eject only)', () => {
@@ -108,11 +122,15 @@ describe('CrashHubScreen (GameHub + CrashPanel)', () => {
     expect(screen.getByTestId('crash-eject')).toBeDisabled();
   });
 
-  it('In-match: after my own ejection the bank locks and EJECT is gone (own eject seen at once)', () => {
+  it('In-match: after my own ejection the locked altitude moves onto my pill; button → Waiting…', () => {
     const view = inPlayView({ results: { pid: { altitude: 120, crashed: false } } });
     render(<CrashHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view, legalMoves: [] })} />);
-    expect(screen.getByTestId('crash-own-result').textContent).toMatch(/locked at 120 m · waiting/i);
+    // Locked altitude is on the pill (off the button), seen the instant I eject.
+    expect(screen.getByTestId('crash-own-pill').textContent).toMatch(/locked 120m/i);
     expect(screen.queryByTestId('crash-eject')).toBeNull();
+    expect(screen.getByTestId('crash-waiting')).toBeInTheDocument(); // button → disabled waiting state
+    // Opponent pill stays blank during flight (leak guard).
+    expect(screen.queryByTestId('crash-opp-pill')).toBeNull();
   });
 
   it('Redaction: the climbing view exposes only the live curve — no opponent eject, no crash point', () => {
@@ -127,23 +145,24 @@ describe('CrashHubScreen (GameHub + CrashPanel)', () => {
     expect(board.textContent ?? '').not.toMatch(/opponent/i); // no opponent altitude/marker in-climb
   });
 
-  it('Result: the terminal board explodes at C, then the reveal shows both banks + the ¢ delta', async () => {
+  it('Result: explosion on the board + the Stage-3 pill reveal (no pop-up), then the 0.5s outline beat', async () => {
     const terminal = inPlayView({
       crashAltitude: 904,
       terminal: true,
       results: { pid: { altitude: 250, crashed: false }, bob: { altitude: 0, crashed: true } },
     });
     const { rerender } = render(<CrashHubScreen {...baseProps({ currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
-    // During the hold beat the board snaps to the crash (item 7) before the overlay reveal.
+    // §7 crash visual stays on the chart; the reveal moves onto the slot pills (no overlay).
     expect(screen.getByTestId('crash-explosion')).toBeInTheDocument();
     expect(screen.getByTestId('hub-board').textContent).toMatch(/exploded at 904 m/i);
+    expect(screen.getByTestId('crash-own-pill').textContent).toMatch(/locked 250m/i);
+    expect(screen.getByTestId('crash-opp-pill').textContent).toMatch(/crashed/i); // bob never ejected
+    expect(screen.queryByTestId('hub-result-crash')).toBeNull(); // the side-by-side overlay is gone
 
     rerender(<CrashHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
-    // The overlay reveal is held behind the explosion beat (holdResultMs) → wait it out.
-    const reveal = await screen.findByTestId('hub-result-crash', undefined, { timeout: 3000 });
-    expect(reveal.textContent).toMatch(/crashed at 904 m/i);
-    expect(reveal.textContent).toContain('250 m');
-    expect(screen.getByTestId('hub-result-delta').textContent).toBe('+19¢');
+    expect(screen.queryByTestId('hub-result-overlay')).toBeNull(); // suppressed — pill outline instead
+    // 0.5s after the opponent's reveal, the own pill outlines green (won) — driven by the server outcome.
+    await waitFor(() => expect(screen.getByTestId('crash-own-pill').className).toContain('ring-success'), { timeout: 2000 });
   });
 
   it('is sanitized: no $ anywhere on the hub', () => {
