@@ -96,7 +96,7 @@ export function buildApp(
 
   const auth = makeAuthMiddleware(identity);
   registerAuthRoutes(app, identity);
-  registerAdminRoutes(app, auth, ledger);
+  registerAdminRoutes(app, auth, ledger, identity);
   registerGamesRoutes(app, matchmaking);
   registerOpenChallengesRoutes(app, matchmaking);
   registerLeaderboardRoutes(app, matchHistory);
