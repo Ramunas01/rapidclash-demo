@@ -128,7 +128,17 @@ export function buildApp(
   return app;
 }
 
-export function createServices(db: Database.Database, gameModules: GameModule[]): AppServices {
+export interface ServicesOptions {
+  /** Called after every real settlement (ledger + standings write). The server wires this to
+   *  the GCS snapshotter's debounced upload (ADR-011); omitted in tests/local dev → no-op. */
+  onSettled?: () => void;
+}
+
+export function createServices(
+  db: Database.Database,
+  gameModules: GameModule[],
+  opts: ServicesOptions = {},
+): AppServices {
   const ledger = createLedger(db);
   const identity = createIdentity(db, ledger);
   // One shared username lookup (#40 / ADR-008): owner names in the open-challenge
@@ -138,6 +148,9 @@ export function createServices(db: Database.Database, gameModules: GameModule[])
   // generically by kind (ADR-007) — no game-specific code in the core.
   const rankingByGame = new Map(gameModules.map((m) => [m.meta.id, m.meta.ranking]));
   const matchHistory = createMatchHistory(db, rankingByGame, lookupUsername);
-  const matchmaking = createMatchmaking(ledger, gameModules, matchHistory, { lookupUsername });
+  const matchmaking = createMatchmaking(ledger, gameModules, matchHistory, {
+    lookupUsername,
+    onSettled: opts.onSettled,
+  });
   return { db, ledger, identity, matchmaking, matchHistory };
 }

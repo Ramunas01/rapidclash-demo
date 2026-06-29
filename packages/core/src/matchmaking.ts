@@ -237,6 +237,10 @@ export interface MatchmakingOptions {
   lookupUsername?: UsernameLookup;
   /** Injectable clock (testing). Default: Date.now. */
   now?: () => number;
+  /** Fired once per real settlement (after the ledger settle + standings write), never on the
+   *  idempotent re-settle of an already-completed match. The server uses this to debounce a
+   *  durable DB snapshot (ADR-011); the core itself stays storage-agnostic. */
+  onSettled?: () => void;
 }
 
 export interface Matchmaking {
@@ -301,6 +305,7 @@ export function createMatchmaking(
   const turnTimeoutMs = options.turnTimeoutMs ?? intEnv('MATCH_TURN_TIMEOUT_MS', 120_000);
   const lookupUsername = options.lookupUsername;
   const nowFn = options.now ?? (() => Date.now());
+  const onSettled = options.onSettled;
 
   // FIFO queues keyed by `${gameId}:${stake}` → [earliest, ...]
   const queues = new Map<string, QueueEntry[]>();
@@ -773,6 +778,16 @@ export function createMatchmaking(
     const completedMatch: CompletedMatch = { ...match, outcome, settlement };
     completed.set(matchId, completedMatch);
     matches.delete(matchId);
+
+    // A real settlement just mutated the ledger + standings — let the host schedule a durable
+    // snapshot (ADR-011). Guarded so a throwing callback can never corrupt settlement state.
+    if (onSettled) {
+      try {
+        onSettled();
+      } catch {
+        /* snapshotting is best-effort; never let it break a settled match */
+      }
+    }
 
     return { outcome, settlement };
   }
