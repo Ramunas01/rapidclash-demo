@@ -37,6 +37,8 @@ type CoinflipView = {
   players: [string, string];
   choices: Partial<Record<string, Side>>;
   result?: Side;
+  round?: number;
+  replays?: number;
   forcedOutcome?: unknown;
   caller?: unknown;
   call?: unknown;
@@ -154,12 +156,46 @@ describe('coinflipModule.isTerminal', () => {
   });
 });
 
-describe('coinflipModule.outcome', () => {
-  it('SAME choice → draw (both refunded), no flip needed', () => {
-    expect(coinflipModule.outcome(play(fixedRng(0), 'heads', 'heads'))).toEqual({ type: 'draw' });
-    expect(coinflipModule.outcome(play(fixedRng(1), 'tails', 'tails'))).toEqual({ type: 'draw' });
+describe('coinflipModule — tie → instant replay (universal tie rule)', () => {
+  it('SAME choice is NOT a terminal draw — it re-flips a fresh round (choices cleared, round bumped)', () => {
+    const s = play(fixedRng(0), 'heads', 'heads');
+    expect(coinflipModule.isTerminal(s)).toBe(false);
+    expect(view(s).choices).toEqual({});
+    expect(view(s).round).toBe(1);
+    expect(view(s).replays).toBe(1);
+    // ...and emits new_round, not match_decided.
+    let mid = coinflipModule.init([P1, P2], fixedRng(0));
+    mid = coinflipModule.applyMove(mid, 'heads', ctx(P1)).state;
+    const { events } = coinflipModule.applyMove(mid, 'heads', ctx(P2));
+    expect(events.some((e) => e.type === 'new_round')).toBe(true);
+    expect(events.some((e) => e.type === 'match_decided')).toBe(false);
   });
 
+  it('a decisive round after a tie still settles (same escrow)', () => {
+    let s = coinflipModule.init([P1, P2], fixedRng(0));
+    s = coinflipModule.applyMove(s, 'heads', ctx(P1)).state;
+    s = coinflipModule.applyMove(s, 'heads', ctx(P2)).state; // tie → round 1
+    expect(coinflipModule.isTerminal(s)).toBe(false);
+    s = coinflipModule.applyMove(s, 'heads', ctx(P1)).state;
+    s = coinflipModule.applyMove(s, 'tails', ctx(P2)).state; // different sides → decisive
+    expect(coinflipModule.isTerminal(s)).toBe(true);
+    expect(coinflipModule.outcome(s).type).toBe('win');
+  });
+
+  it('10 consecutive same-side rounds → terminal void (refund both, no rake)', () => {
+    let s = coinflipModule.init([P1, P2], fixedRng(0));
+    for (let i = 0; i < 10; i++) {
+      expect(coinflipModule.isTerminal(s)).toBe(false);
+      s = coinflipModule.applyMove(s, 'heads', ctx(P1)).state;
+      s = coinflipModule.applyMove(s, 'heads', ctx(P2)).state;
+    }
+    expect(coinflipModule.isTerminal(s)).toBe(true);
+    expect(coinflipModule.outcome(s)).toEqual({ type: 'void' });
+    expect(view(s).replays).toBe(10);
+  });
+});
+
+describe('coinflipModule.outcome', () => {
   it('DIFFERENT choices → the player whose side matches the flip wins', () => {
     // result = heads → whoever chose heads wins.
     expect(coinflipModule.outcome(play(fixedRng(0), 'heads', 'tails'))).toEqual({ type: 'win', winner: P1 });
@@ -231,12 +267,15 @@ describe('coinflipModule — pick timer + seeded auto-pick (opt-in per-player ti
     expect(coinflipModule.timeoutMove!(state, P1, fixedRng(0))).toBe(coinflipModule.timeoutMove!(state, P1, fixedRng(1)));
   });
 
-  it('a no-pick round resolves: both players auto-pick on timeout → terminal with an outcome', () => {
+  it('a no-pick round progresses: both auto-pick on timeout → decisive (terminal win) OR a same-side replay', () => {
     let state = coinflipModule.init([P1, P2], seededRng(TAILS_SEED));
     state = coinflipModule.applyMove(state, coinflipModule.timeoutMove!(state, P1, fixedRng(0)), ctx(P1)).state;
     state = coinflipModule.applyMove(state, coinflipModule.timeoutMove!(state, P2, fixedRng(0)), ctx(P2)).state;
-    expect(coinflipModule.isTerminal(state)).toBe(true);
-    expect(['win', 'draw']).toContain(coinflipModule.outcome(state).type);
+    if (coinflipModule.isTerminal(state)) {
+      expect(coinflipModule.outcome(state).type).toBe('win'); // auto-picks differed → decisive
+    } else {
+      expect(view(state).round).toBe(1); // auto-picks matched → tie → replayed
+    }
   });
 
   it('timeoutMove throws once a player has already chosen (nothing to auto-pick)', () => {

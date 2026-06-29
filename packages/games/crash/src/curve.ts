@@ -50,10 +50,30 @@ export function timeToAltitudeMs(altitude: number): number {
   return Math.ceil(s * 1000);
 }
 
-/** Draw the hidden crash altitude `C` from the seeded rng (skewed low, capped). Deterministic
- *  given the rng — the whole round derives from the match seed. */
-export function drawCrashAltitude(rng: Rng): number {
+/** Map a uniform `u ∈ [0,1)` to a crash altitude with the standard low-skew + cap. */
+function altitudeFromU(u: number): number {
   const { minCrashAltitude, maxCrashAltitude, crashSkew } = CRASH_CONFIG;
-  const u = rng.next();
   return Math.round(minCrashAltitude + (maxCrashAltitude - minCrashAltitude) * Math.pow(u, crashSkew));
+}
+
+/** Draw the hidden crash altitude `C` from the seeded rng (skewed low, capped). Deterministic
+ *  given the rng — the whole round derives from the match seed. Used for round 0 at init. */
+export function drawCrashAltitude(rng: Rng): number {
+  return altitudeFromU(rng.next());
+}
+
+/** A fresh hidden `C` for a tie REPLAY round, derived deterministically from the previous round's
+ *  `C` (the hidden, high-entropy base) + the new round index — so a re-launched rocket has a new
+ *  hidden crash altitude and the whole match still replays exactly from its seed. Same low-skew
+ *  distribution as the initial draw. Pure. */
+export function crashAltitudeForReplay(prevC: number, round: number): number {
+  let h = (prevC >>> 0) ^ 0x9e3779b9;
+  h = Math.imul(h ^ (round >>> 0), 0x85ebca6b);
+  h = (h ^ (h >>> 13)) >>> 0;
+  // mulberry32 step → a well-distributed u in [0,1) even from the low-entropy (prevC, round) input.
+  const a = (h + 0x6d2b79f5) | 0;
+  let t = Math.imul(a ^ (a >>> 15), 1 | a);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  const u = ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  return altitudeFromU(u);
 }

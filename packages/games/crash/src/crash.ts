@@ -1,5 +1,6 @@
 import type {
   ApplyResult,
+  GameEvent,
   GameMeta,
   GameModule,
   GameState,
@@ -10,7 +11,12 @@ import type {
   Rng,
 } from '@rapidclash/shared';
 import { IllegalMove } from '@rapidclash/shared';
-import { CRASH_CONFIG, altitudeAt, timeToAltitudeMs, drawCrashAltitude } from './curve.js';
+import { CRASH_CONFIG, altitudeAt, timeToAltitudeMs, drawCrashAltitude, crashAltitudeForReplay } from './curve.js';
+
+/** Consecutive ties (equal banks, incl. both-crash) before the match voids (refund both, no rake)
+ *  — the universal tie rule (CHARTER.md / CRASH.md). A tie is NOT terminal: a fresh rocket
+ *  re-launches (new hidden C, new SETUP→ignition) within the same escrow. */
+const REPLAY_CAP = 10;
 
 /** Moves. During SETUP a player pre-sets (or clears) an auto-eject altitude; during the climb
  *  they EJECT. Both are enumerable strings so the core's exact-membership check passes — the
@@ -53,9 +59,14 @@ interface CrashState {
   setupEndsAt: number;
   /** Each player's pre-set auto-eject altitude (metres). Hidden from the opponent until terminal. */
   autoEject: Record<PlayerId, number | undefined>;
-  /** Per-player resolution; an entry exists iff that player has ejected or crashed. */
+  /** Per-player resolution; an entry exists iff that player has ejected or crashed. Cleared on a
+   *  tie re-launch (a fresh rocket), so "both resolved" again means the next round resolved. */
   results: Record<PlayerId, CrashResult | undefined>;
-  /** Set by `forfeit` (an explicit give-up) → terminal with a forced result. */
+  /** Current round (0-based; bumped on each tie re-launch). Public scaffolding. */
+  round: number;
+  /** Consecutive ties so far. */
+  replays: number;
+  /** Set by `forfeit` (an explicit give-up), or void at the replay cap → terminal. */
   forcedOutcome?: Outcome;
 }
 
@@ -73,6 +84,29 @@ function terminal(s: CrashState): boolean {
 
 function bank(r: CrashResult): number {
   return r.crashed ? 0 : r.altitude;
+}
+
+/**
+ * Called once BOTH players have resolved (ejected/crashed). A decisive round (unequal banks) is
+ * left terminal — `outcome` reads the banks. A TIE (equal banks, incl. both-crash) is NOT terminal:
+ * re-launch a fresh rocket in the same escrow — clear `results`, draw a new hidden C, open a new
+ * SETUP→ignition window from `now` (so the core re-schedules the new crash via `scheduledDeadlines`);
+ * at REPLAY_CAP it voids instead. Mutates `s`; returns broadcast-safe events (round/replays only —
+ * no altitude/identity, so nothing leaks through the unredacted event channel). */
+function resolveOrReplay(s: CrashState, now: number): GameEvent[] {
+  const [a, b] = s.players;
+  if (bank(s.results[a]!) !== bank(s.results[b]!)) return []; // decisive → terminal (outcome handles it)
+  s.replays += 1;
+  if (s.replays >= REPLAY_CAP) {
+    s.forcedOutcome = { type: 'void' };
+    return [{ type: 'match_voided', payload: { reason: 'replay_cap', replays: s.replays } }];
+  }
+  s.round += 1;
+  s.crashAltitude = crashAltitudeForReplay(s.crashAltitude, s.round); // fresh hidden C
+  s.setupEndsAt = now + CRASH_CONFIG.setupMs;
+  s.startedAt = now + CRASH_CONFIG.setupMs + CRASH_CONFIG.ignitionMs;
+  s.results = {}; // fresh rocket — both eject again (auto-eject presets carry into the new SETUP)
+  return [{ type: 'new_round', payload: { round: s.round, replays: s.replays } }];
 }
 
 const meta: GameMeta = {
@@ -100,6 +134,8 @@ export const crashModule: GameModule = {
       setupEndsAt: 0,
       autoEject: {},
       results: {},
+      round: 0,
+      replays: 0,
     };
     return state;
   },
@@ -165,10 +201,14 @@ export const crashModule: GameModule = {
     const result: CrashResult = crashed ? { altitude: 0, crashed: true } : { altitude: bankAltitude, crashed: false };
 
     const next: CrashState = { ...s, results: { ...s.results, [playerId]: result } };
-    // NO events: the gateway broadcasts a move's events to BOTH players UNREDACTED, so emitting
-    // the altitude/identity would leak the opponent's nerve. The actor learns their own ejection
-    // from their redacted `viewFor`; the opponent learns nothing until the terminal reveal.
-    return { state: next, events: [] };
+    // A single eject emits NO events: the gateway broadcasts a move's events to BOTH players
+    // UNREDACTED, so emitting the altitude/identity would leak the opponent's nerve. The actor
+    // learns their own ejection from their redacted `viewFor`; the opponent learns nothing until
+    // the reveal. Once BOTH have resolved, resolve-or-replay runs: a tie re-launches (new_round —
+    // public, no per-player data), a decisive round stays terminal.
+    const events: GameEvent[] = [];
+    if (next.players.every((p) => resolved(next, p))) events.push(...resolveOrReplay(next, now));
+    return { state: next, events };
   },
 
   isTerminal(state: GameState): boolean {
@@ -181,7 +221,9 @@ export const crashModule: GameModule = {
     const [a, b] = s.players;
     const ba = bank(s.results[a]!);
     const bb = bank(s.results[b]!);
-    // Higher bank wins; equal banks (incl. both-crash at 0) → draw → refund both, no rake.
+    // Higher bank wins. Equal banks (incl. both-crash) re-launch a fresh round (see resolveOrReplay)
+    // and never reach a terminal here, so this draw is a defensive fallback only — a genuine
+    // both-crash draw arises just from `forfeit` (handled above via forcedOutcome).
     if (ba === bb) return { type: 'draw' };
     return { type: 'win', winner: ba > bb ? a : b };
   },

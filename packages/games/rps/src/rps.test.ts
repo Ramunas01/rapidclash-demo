@@ -69,7 +69,7 @@ describe('rpsModule.isTerminal', () => {
     expect(rpsModule.isTerminal(state)).toBe(false);
   });
 
-  it('is true when both players have chosen', () => {
+  it('is true once a round is decided (both chose, decisively)', () => {
     let state = rpsModule.init([P1, P2], rng);
     state = rpsModule.applyMove(state, 'rock', ctx(P1)).state;
     state = rpsModule.applyMove(state, 'scissors', ctx(P2)).state;
@@ -132,18 +132,57 @@ describe('rpsModule.outcome — win resolution', () => {
   });
 });
 
-describe('rpsModule.outcome — draw resolution', () => {
-  function playDraw(choice: string) {
+describe('rpsModule — tie → instant replay (universal tie rule)', () => {
+  type TieView = { choices: Record<string, unknown>; round: number; replays: number };
+  const tv = (s: unknown) => s as TieView;
+
+  function playTie(choice: string) {
     let state = rpsModule.init([P1, P2], rng);
     state = rpsModule.applyMove(state, choice, ctx(P1)).state;
     state = rpsModule.applyMove(state, choice, ctx(P2)).state;
-    return rpsModule.outcome(state);
+    return state;
   }
 
-  it('rock vs rock is a draw', () => expect(playDraw('rock')).toEqual({ type: 'draw' }));
-  it('paper vs paper is a draw', () => expect(playDraw('paper')).toEqual({ type: 'draw' }));
-  it('scissors vs scissors is a draw', () =>
-    expect(playDraw('scissors')).toEqual({ type: 'draw' }));
+  it('a same throw is NOT terminal — it re-deals a fresh round (choices cleared, round bumped)', () => {
+    for (const c of ['rock', 'paper', 'scissors']) {
+      const s = playTie(c);
+      expect(rpsModule.isTerminal(s)).toBe(false);
+      expect(tv(s).choices).toEqual({});
+      expect(tv(s).round).toBe(1);
+      expect(tv(s).replays).toBe(1);
+    }
+  });
+
+  it('emits new_round on a tie (never match_decided)', () => {
+    let state = rpsModule.init([P1, P2], rng);
+    state = rpsModule.applyMove(state, 'rock', ctx(P1)).state;
+    const { events } = rpsModule.applyMove(state, 'rock', ctx(P2));
+    expect(events.some((e) => e.type === 'new_round')).toBe(true);
+    expect(events.some((e) => e.type === 'match_decided')).toBe(false);
+  });
+
+  it('a decisive throw after a tie still settles (same escrow)', () => {
+    let state = rpsModule.init([P1, P2], rng);
+    state = rpsModule.applyMove(state, 'rock', ctx(P1)).state;
+    state = rpsModule.applyMove(state, 'rock', ctx(P2)).state; // tie → round 1
+    expect(rpsModule.isTerminal(state)).toBe(false);
+    state = rpsModule.applyMove(state, 'rock', ctx(P1)).state;
+    state = rpsModule.applyMove(state, 'scissors', ctx(P2)).state; // P1 wins
+    expect(rpsModule.isTerminal(state)).toBe(true);
+    expect(rpsModule.outcome(state)).toEqual({ type: 'win', winner: P1 });
+  });
+
+  it('10 consecutive ties → terminal void (refund both, no rake)', () => {
+    let state = rpsModule.init([P1, P2], rng);
+    for (let i = 0; i < 10; i++) {
+      expect(rpsModule.isTerminal(state)).toBe(false);
+      state = rpsModule.applyMove(state, 'rock', ctx(P1)).state;
+      state = rpsModule.applyMove(state, 'rock', ctx(P2)).state;
+    }
+    expect(rpsModule.isTerminal(state)).toBe(true);
+    expect(rpsModule.outcome(state)).toEqual({ type: 'void' });
+    expect(tv(state).replays).toBe(10);
+  });
 });
 
 describe('rpsModule.viewFor — hidden information', () => {

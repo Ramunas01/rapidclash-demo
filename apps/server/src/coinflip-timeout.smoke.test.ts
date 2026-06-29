@@ -26,19 +26,24 @@ describe('coinflip — generic pick-timer wiring (server-authoritative auto-pick
     expect(coinflipModule.meta.moveTimeoutMs).toBe(10_000);
   });
 
-  it('a no-pick round auto-resolves: both pick clocks expire → seeded auto-pick → terminal + settled', () => {
+  it('a no-pick round auto-resolves: both pick clocks expire → seeded auto-pick → the round resolves or replays', () => {
     const { mm, matchId, advance, now } = setup();
     advance(10_001); // both players had a legal move from the start → both timers expire
     const res = mm.sweepTimedOutMoves(now());
 
-    expect(res.map((r) => r.playerId)).toEqual(['alice', 'bob']); // both auto-picked
+    expect(res.map((r) => r.playerId)).toEqual(['alice', 'bob']); // both auto-picked (the no-show wiring)
     expect(res[0].terminal).toBe(false); // alice first (bob still pending)
-    expect(res[1].terminal).toBe(true); // bob's auto-pick is the resolving move
-    expect(['win', 'draw']).toContain(res[1].outcome!.type); // always resolves — never stuck
-    expect(mm.getActiveMatch(matchId)).toBeUndefined(); // settled + removed
+    // bob's auto-pick is the resolving move: DIFFERENT sides → a decisive win (settled + removed);
+    // SAME side → a tie, which the universal tie rule replays in the same escrow — never stuck.
+    if (res[1].terminal) {
+      expect(res[1].outcome!.type).toBe('win');
+      expect(mm.getActiveMatch(matchId)).toBeUndefined();
+    } else {
+      expect(mm.getActiveMatch(matchId)).toBeDefined(); // replayed (a fresh seeded round)
+    }
   });
 
-  it('a real pick resets that player; only the no-show is auto-picked, and the round still settles', () => {
+  it('a real pick resets that player; only the no-show is auto-picked, and the round resolves or replays', () => {
     const { mm, matchId, advance, now } = setup();
     advance(5_000);
     mm.applyMove(matchId, 'alice', 'heads', now()); // alice picks within her window
@@ -46,8 +51,12 @@ describe('coinflip — generic pick-timer wiring (server-authoritative auto-pick
     const res = mm.sweepTimedOutMoves(now());
 
     expect(res.map((r) => r.playerId)).toEqual(['bob']); // only the no-show is auto-picked
-    expect(res[0].terminal).toBe(true);
-    expect(['win', 'draw']).toContain(res[0].outcome!.type);
-    expect(mm.getActiveMatch(matchId)).toBeUndefined();
+    // bob auto-picks tails → decisive (settled); bob auto-picks heads → same as alice → tie → replay.
+    if (res[0].terminal) {
+      expect(res[0].outcome!.type).toBe('win');
+      expect(mm.getActiveMatch(matchId)).toBeUndefined();
+    } else {
+      expect(mm.getActiveMatch(matchId)).toBeDefined();
+    }
   });
 });
