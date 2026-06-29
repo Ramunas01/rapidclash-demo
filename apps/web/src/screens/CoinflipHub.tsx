@@ -3,7 +3,6 @@ import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import type { CoinflipView } from '../App.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
-import { useDelayedFlag, outlineForOutcome, outlineClasses } from './hub-shared/slotReveal.js';
 
 /** Coin-face material gradients lifted from the export — gold (heads) / silver (tails). The resting
  *  and pick-phase coin is solid gold with a glow; it only flips to a face at the reveal. */
@@ -18,8 +17,6 @@ const PICK_SECONDS = 10;
 /** Hold the board mounted after match.end so the reveal stages: terminal frame (flip + opponent
  *  reveal) plays during the hold, then `outcome` arrives at the result phase and lights the outline. */
 const HOLD_RESULT_MS = 1500;
-/** Beat before the own-pill result outline lights (after the flip lands). */
-const OUTLINE_DELAY_MS = 250;
 
 const SIDES = [
   { id: 'heads', label: 'Heads', face: COIN_GOLD },
@@ -118,8 +115,12 @@ function CoinflipBoard({ gameState }: GameAreaArgs) {
   }, [terminal]);
 
   return (
-    <div ref={ref} className="flex min-h-[200px] items-center justify-center gap-5 py-3" data-testid="hub-board">
-      {!terminal && <CountdownRing seconds={seconds} />}
+    <div ref={ref} className="relative flex min-h-[200px] items-center justify-center py-3" data-testid="hub-board">
+      {!terminal && (
+        <div className="absolute left-3 top-1/2 -translate-y-1/2">
+          <CountdownRing seconds={seconds} />
+        </div>
+      )}
       <Coin face={terminal ? result : null} />
     </div>
   );
@@ -130,27 +131,22 @@ function CoinflipBoard({ gameState }: GameAreaArgs) {
 function CoinflipPanel(args: GameAreaArgs) {
   const live = args.phase === 'in-match' || args.phase === 'result';
   return (
-    <div className="rounded-2xl border border-border bg-card p-4">
+    <div className="rounded-2xl border border-border bg-surface p-4">
       {live ? <CoinflipBoard {...args} /> : <CoinflipIdle phase={args.phase} />}
     </div>
   );
 }
 
-/** A small side pill: gold HEADS / silver TAILS. Tappable in the pick window, static (locked) at
- *  reveal, where `outline` rings it green (won) / red (lost) / orange (draw) — the Blackjack
- *  card-outline convention, applied to the slot pill. */
+/** A filled side capsule: gold HEADS / grey TAILS. Always shows the face colour. Tappable in the
+ *  pick window; static (locked) at the reveal. No dot icon — the fill IS the identity cue. */
 function SidePill({
   side,
-  picked,
   disabled,
-  outline,
   onClick,
   testid,
 }: {
   side: (typeof SIDES)[number];
-  picked: boolean;
   disabled?: boolean;
-  outline?: 'win' | 'lose' | 'draw' | null;
   onClick?: () => void;
   testid?: string;
 }) {
@@ -161,38 +157,30 @@ function SidePill({
       data-testid={testid ?? `hub-move-${side.id}`}
       aria-label={side.label}
       className={cn(
-        'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-extrabold uppercase tracking-wide transition-all',
-        picked ? 'text-white' : 'text-muted-foreground',
+        'flex items-center justify-center rounded-full px-3 py-1.5 text-[12px] font-extrabold uppercase tracking-wide text-white transition-all',
         onClick && 'disabled:cursor-not-allowed disabled:opacity-50',
-        outlineClasses(outline),
       )}
-      style={{ background: picked ? side.face : 'hsl(var(--surface))' }}
+      style={{ background: side.face }}
     >
-      <span className="h-3.5 w-3.5 rounded-full" style={{ background: side.face }} aria-hidden="true" />
       {side.label}
     </Tag>
   );
 }
 
-/** The own slot aside: H/T pills to pick during the window; at reveal, the locked pick rings with
- *  the win/lose/draw outline. Reuses the renderSlotAside('own') path Blackjack uses for Hit/Stand. */
+/** The own slot aside: H/T capsules to pick during the window; at reveal, the locked pick is shown
+ *  flat (no capsule outline — the bar-level result handles the win/lose/draw signal). */
 function OwnPills({ args }: { args: GameAreaArgs }) {
-  const { gameState, legalMoves, onMove, playerId, phase, outcome } = args;
+  const { gameState, legalMoves, onMove, playerId, phase } = args;
   const view = gameState as CoinflipView | null;
   const terminal = isTerminal(view);
   const myChoice = playerId ? (view?.choices?.[playerId] as 'heads' | 'tails' | undefined) : undefined;
   const canMove = legalMoves.length > 0;
 
-  // Result outline (server outcome only — shared mapping), lit a beat after the flip lands.
-  const frameKind = outlineForOutcome(outcome, playerId);
-  const lit = useDelayedFlag(phase === 'result' && frameKind != null, OUTLINE_DELAY_MS);
-  const outline = lit ? frameKind : null;
-
   if (terminal) {
-    // Locked (held result frame): show only the chosen side, ringed by the result outline.
+    // Locked result frame: show the chosen side flat — the bar carries the outcome signal.
     const side = SIDES.find((s) => s.id === myChoice);
     if (!side) return null;
-    return <SidePill side={side} picked outline={outline} testid="coin-own-pick" />;
+    return <SidePill side={side} testid="coin-own-pick" />;
   }
 
   // The H/T selector lives in the pill ONLY during the live pick window — never on the idle tile.
@@ -201,22 +189,27 @@ function OwnPills({ args }: { args: GameAreaArgs }) {
   return (
     <span className="flex items-center gap-1.5" role="group" aria-label="Pick a side">
       {SIDES.map((s) => (
-        <SidePill key={s.id} side={s} picked={myChoice === s.id} disabled={!canMove} onClick={() => onMove(s.id)} />
+        <SidePill key={s.id} side={s} disabled={!canMove} onClick={() => onMove(s.id)} />
       ))}
     </span>
   );
 }
 
-/** The opponent slot aside: nothing during the blind pick window (the slot keeps its "Playing…"
- *  tag); at reveal, the opponent's pick appears on their row (staged from match.end). */
+/** The opponent slot aside: shows "PLAYING…" during the blind pick window (correction 1 — the
+ *  renderSlotAside callback always returns a React element so the GameHub fallback never fires;
+ *  we render the tag explicitly). At terminal, the opponent's pick is staged from match.end. */
 function OpponentPill({ args }: { args: GameAreaArgs }) {
-  const { gameState, opponentId } = args;
+  const { gameState, opponentId, phase } = args;
   const view = gameState as CoinflipView | null;
-  if (!isTerminal(view) || !opponentId) return null;
+  if (!isTerminal(view)) {
+    if (phase !== 'in-match') return null;
+    return <span className="shrink-0 text-xs font-black uppercase tracking-wide text-foreground/70">PLAYING…</span>;
+  }
+  if (!opponentId) return null;
   const oppChoice = view?.choices?.[opponentId] as 'heads' | 'tails' | undefined;
   const side = SIDES.find((s) => s.id === oppChoice);
   if (!side) return null;
-  return <SidePill side={side} picked testid="coin-opp-pick" />;
+  return <SidePill side={side} testid="coin-opp-pick" />;
 }
 
 /**
@@ -234,6 +227,7 @@ export function CoinflipHubScreen(props: GameHubScreenProps) {
       renderSlotAside={(args, side) => (side === 'own' ? <OwnPills args={args} /> : <OpponentPill args={args} />)}
       suppressResultOverlay
       holdResultMs={HOLD_RESULT_MS}
+      ownBarResult
       {...props}
     />
   );

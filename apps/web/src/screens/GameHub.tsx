@@ -14,6 +14,10 @@ import { TILE_ART, COMING_SOON, titleCase } from '../components/hub-shared/tiles
 import { OpenGamesTicker } from '../components/hub-shared/OpenGames.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
+import { outlineForOutcome, useDelayedFlag, type Verdict } from './hub-shared/slotReveal.js';
+
+/** How long after the result phase starts before the own-bar verdict lights (ms). */
+const BAR_VERDICT_BEAT_MS = 250;
 
 /** Bet presets within the shared 1–100 demo range (every demo game's BetRules). Rendered ¢. */
 const BET_PRESETS = [1, 5, 10, 25, 50, 100];
@@ -126,6 +130,11 @@ interface GameHubProps extends GameHubScreenProps {
    *  board itself, persisting until a new game starts or the player leaves. Other games omit it →
    *  the overlay shows as before (the regression guard). */
   suppressResultOverlay?: boolean;
+  /** Opt in to bar-level result coloring on the own slot (Coinflip-style): the entire player bar
+   *  turns green + "You Win" on a win, red-outline on a loss, orange-outline on a draw — instead of
+   *  the per-element outline convention used by Blackjack and Crash. Fires BAR_VERDICT_BEAT_MS after
+   *  the result phase starts so the board can animate first. Other games omit this → no change. */
+  ownBarResult?: boolean;
   /** Presentation-only reveal pacing (opt-in). When > 0, the hub keeps the board mounted in the
    *  In-match phase for this long after the server ends the match, so the game area can animate
    *  its final state transitions (e.g. Blackjack's opponent reveal) before the result overlay
@@ -157,7 +166,7 @@ function useNow(active: boolean): number {
  */
 export function GameHub(props: GameHubProps) {
   const {
-    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, suppressResultOverlay, holdResultMs,
+    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, suppressResultOverlay, holdResultMs, ownBarResult,
     token, playerId, username, opponentId, opponentName, serverClockOffset = 0, balance, currentMatchId, gameState, legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
     onPlay, onCancel, onRepost, onTakeChallenge, onMakeMove, onForfeit, onTrackChallenges,
@@ -323,6 +332,15 @@ export function GameHub(props: GameHubProps) {
   const timeControlBaseMs = timeControl?.options.find((o) => o.id === selectedControl)?.baseMs;
   const areaArgs: GameAreaArgs = { phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, playerId, opponentId, username, serverClockOffset, timeControlBaseMs, outcome: overlay?.outcome ?? null };
 
+  // Bar-level result (opt-in, Coinflip-style). Fires BAR_VERDICT_BEAT_MS after the result phase
+  // starts so the board's flip/reveal animation plays first. Generic derivation from server outcome.
+  const ownBarFrameKind = outlineForOutcome(areaArgs.outcome, playerId);
+  const ownBarVerdictLit = useDelayedFlag(
+    ownBarResult === true && phase === 'result' && ownBarFrameKind != null,
+    BAR_VERDICT_BEAT_MS,
+  );
+  const ownBarVerdict: Verdict | null = (ownBarResult && ownBarVerdictLit) ? ownBarFrameKind : null;
+
   return (
     <div className={HUB_SHELL}>
       <HubRibbon balance={loggedIn ? liveBalance : null} onLogo={onOpenGameList} onWallet={onOpenWallet} loggedIn={loggedIn} />
@@ -341,6 +359,7 @@ export function GameHub(props: GameHubProps) {
               label={loggedIn ? (username || 'You') : 'Sign in'}
               isOwn={loggedIn}
               aside={renderSlotAside?.(areaArgs, 'own')}
+              barVerdict={ownBarVerdict}
             />
           </section>
 
@@ -480,15 +499,33 @@ function OpponentSlot({ phase, opponentName, scanNames, aside }: { phase: Phase;
 }
 
 /** Item 1/6 — the player's own slot below the board: their name, with an optional per-game aside
- *  (Blackjack's Hit/Stand in-match, Chess's clock) rendered beside it. */
-function OwnSlot({ label, isOwn, aside }: { label: string; isOwn: boolean; aside?: ReactNode }) {
+ *  (Blackjack's Hit/Stand in-match, Chess's clock) rendered beside it.
+ *  When `barVerdict` is set (Coinflip opt-in): win → solid green fill + "You Win"; lose/draw →
+ *  red/orange outline on the bar. Coinflip-specific — does not affect any other game hub. */
+function OwnSlot({ label, isOwn, aside, barVerdict }: { label: string; isOwn: boolean; aside?: ReactNode; barVerdict?: Verdict | null }) {
+  const win = barVerdict === 'win';
   return (
-    <div data-testid="hub-slot-own" className="flex items-center gap-2.5 rounded-full bg-surface px-3.5 py-2.5">
+    <div
+      data-testid="hub-slot-own"
+      className={cn(
+        'flex items-center gap-2.5 rounded-full px-3.5 py-2.5 transition-all duration-300',
+        win ? 'bg-success' :
+        barVerdict === 'lose' ? 'bg-surface ring-[3px] ring-destructive' :
+        barVerdict === 'draw' ? 'bg-surface ring-[3px] ring-amber-400' :
+        'bg-surface',
+      )}
+    >
       <span className={cn('grid h-8 w-8 shrink-0 place-items-center rounded-full', isOwn ? 'bg-brand text-white' : 'bg-[#2a2a4a] text-muted-foreground')}>
         <PersonGlyph className="h-[18px] w-[18px]" />
       </span>
-      <span className={cn('min-w-0 flex-1 truncate text-sm font-bold', isOwn ? 'text-foreground' : 'text-muted-foreground')}>{label}</span>
-      {aside && <span className="flex shrink-0 items-center gap-2">{aside}</span>}
+      {win ? (
+        <span className="min-w-0 flex-1 text-center text-sm font-extrabold text-white">You Win</span>
+      ) : (
+        <>
+          <span className={cn('min-w-0 flex-1 truncate text-sm font-bold', isOwn ? 'text-foreground' : 'text-muted-foreground')}>{label}</span>
+          {aside && <span className="flex shrink-0 items-center gap-2">{aside}</span>}
+        </>
+      )}
     </div>
   );
 }

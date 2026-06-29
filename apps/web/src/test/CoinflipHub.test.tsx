@@ -77,7 +77,7 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     expect(screen.getByTestId('home-join-c1')).toBeDisabled();
   });
 
-  it('In-match: the board + countdown activate, H/T move into the own slot pill, opponent hidden', () => {
+  it('In-match: the board + countdown activate, H/T move into the own slot pill, opponent shows PLAYING…', () => {
     const onMakeMove = vi.fn();
     const gameState: CoinflipView = { players: ['pid', 'bob'], choices: {} };
     render(<CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['heads', 'tails'], onMakeMove })} />);
@@ -85,7 +85,10 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     expect(screen.getByTestId('coin-countdown')).toBeInTheDocument(); // 10s pick deadline (cosmetic)
     // Redaction: the opponent's pick is never rendered before match.end.
     expect(screen.queryByTestId('coin-opp-pick')).toBeNull();
-    expect(screen.getByTestId('hub-slot-opponent').textContent).not.toMatch(/heads|tails/i);
+    const oppSlot = screen.getByTestId('hub-slot-opponent').textContent ?? '';
+    expect(oppSlot).not.toMatch(/heads|tails/i);
+    // Correction 1: "PLAYING…" is shown on the opponent bar during the pick window.
+    expect(oppSlot).toMatch(/playing/i);
     // H/T now live in the player's own slot pill (renderSlotAside 'own'); tapping picks.
     const ownSlot = screen.getByTestId('hub-slot-own');
     expect(within(ownSlot).getByTestId('hub-move-heads')).toBeInTheDocument();
@@ -132,11 +135,11 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
       expect(screen.getByTestId('coin-opp-pick').textContent).toMatch(/tails/i);
     });
     expect(scrollSpy).toHaveBeenCalled(); // brought into view on resolve
-    // After the hold the outcome arrives → the own pick pill rings green (won) via the outline.
+    // After the hold the own bar goes green + "You Win" (bar-level result, supersedes own-pill outline).
     await waitFor(() => {
-      const own = screen.getByTestId('coin-own-pick');
-      expect(own.textContent).toMatch(/heads/i);
-      expect(own.className).toContain('ring-success');
+      const ownBar = screen.getByTestId('hub-slot-own');
+      expect(ownBar.className).toContain('bg-success');
+      expect(ownBar.textContent).toMatch(/you win/i);
     }, { timeout: 3000 });
   });
 
