@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import type { CoinflipView } from '../App.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
+import { useDelayedFlag, outlineForOutcome, outlineClasses } from './hub-shared/slotReveal.js';
 
 /** Coin-face material gradients lifted from the export — gold (heads) / silver (tails). The resting
  *  and pick-phase coin is solid gold with a glow; it only flips to a face at the reveal. */
@@ -163,9 +164,7 @@ function SidePill({
         'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-extrabold uppercase tracking-wide transition-all',
         picked ? 'text-white' : 'text-muted-foreground',
         onClick && 'disabled:cursor-not-allowed disabled:opacity-50',
-        outline === 'win' && 'ring-[3px] ring-success shadow-[0_0_12px_rgba(34,197,94,0.5)]',
-        outline === 'lose' && 'ring-[3px] ring-destructive shadow-[0_0_12px_rgba(239,68,68,0.45)]',
-        outline === 'draw' && 'ring-[3px] ring-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.45)]',
+        outlineClasses(outline),
       )}
       style={{ background: picked ? side.face : 'hsl(var(--surface))' }}
     >
@@ -173,20 +172,6 @@ function SidePill({
       {side.label}
     </Tag>
   );
-}
-
-/** Delay a flag by `ms` after it goes true (Blackjack's outline-reveal timing). */
-function useDelayedFlag(active: boolean, ms: number): boolean {
-  const [on, setOn] = useState(false);
-  useEffect(() => {
-    if (!active) {
-      setOn(false);
-      return;
-    }
-    const id = setTimeout(() => setOn(true), ms);
-    return () => clearTimeout(id);
-  }, [active, ms]);
-  return on;
 }
 
 /** The own slot aside: H/T pills to pick during the window; at reveal, the locked pick rings with
@@ -198,9 +183,8 @@ function OwnPills({ args }: { args: GameAreaArgs }) {
   const myChoice = playerId ? (view?.choices?.[playerId] as 'heads' | 'tails' | undefined) : undefined;
   const canMove = legalMoves.length > 0;
 
-  // Result outline (server outcome only), lit a beat after the flip lands.
-  const frameKind =
-    outcome == null ? null : outcome.type === 'draw' ? 'draw' : outcome.type === 'void' ? null : outcome.winner === playerId ? 'win' : 'lose';
+  // Result outline (server outcome only — shared mapping), lit a beat after the flip lands.
+  const frameKind = outlineForOutcome(outcome, playerId);
   const lit = useDelayedFlag(phase === 'result' && frameKind != null, OUTLINE_DELAY_MS);
   const outline = lit ? frameKind : null;
 
