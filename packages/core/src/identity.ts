@@ -26,6 +26,12 @@ export interface Identity {
   verifyToken(token: string): TokenPayload;
   /** Display username for a playerId, or undefined if no such account. */
   getUsername: UsernameLookup;
+  /** Clear an account's password hash (sets it to NULL) so the alias becomes
+   *  re-claimable via {@link register} while the account, its match history, and
+   *  standings stay intact. Throws ACCOUNT_NOT_FOUND if no such playerId. The
+   *  soft-reset primitive (ADR-011); does not touch the wallet — the caller issues
+   *  the fresh grant. */
+  clearPassword(playerId: string): { playerId: string; username: string };
   /** Creates the admin account if it does not already exist. Safe to call on every startup. */
   ensureAdmin(username: string, password: string): Promise<void>;
 }
@@ -36,7 +42,9 @@ const BCRYPT_ROUNDS = process.env.NODE_ENV === 'test' ? 1 : 10;
 interface AccountRow {
   id: string;
   username: string;
-  password_hash: string;
+  // NULL after a soft reset (ADR-011): the alias exists but is unauthenticated and
+  // re-claimable. A new register() sets a fresh hash; login() is refused meanwhile.
+  password_hash: string | null;
   role: string;
 }
 
@@ -46,11 +54,13 @@ export function createIdentity(db: Database.Database, ledger: Ledger): Identity 
     console.warn('[identity] JWT_SECRET is not set — using insecure dev default');
   }
 
+  // password_hash is nullable: a soft reset (ADR-011) clears it to NULL to free the
+  // alias for re-claim without deleting the account or its standings.
   db.exec(`
     CREATE TABLE IF NOT EXISTS accounts (
       id            TEXT PRIMARY KEY,
       username      TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
+      password_hash TEXT,
       role          TEXT NOT NULL DEFAULT 'player'
     )
   `);
@@ -67,6 +77,14 @@ export function createIdentity(db: Database.Database, ledger: Ledger): Identity 
     `SELECT username FROM accounts WHERE id = ?`,
   );
 
+  const stmtSetPassword = db.prepare<[string, string]>(
+    `UPDATE accounts SET password_hash = ? WHERE id = ?`,
+  );
+
+  const stmtClearPassword = db.prepare<[string]>(
+    `UPDATE accounts SET password_hash = NULL WHERE id = ?`,
+  );
+
   function signToken(playerId: string, role: UserRole): string {
     return jwt.sign({ sub: playerId, role }, jwtSecret);
   }
@@ -76,8 +94,20 @@ export function createIdentity(db: Database.Database, ledger: Ledger): Identity 
     password: string,
     role: UserRole = 'player',
   ): Promise<{ token: string; playerId: string; balance: number }> {
-    if (stmtFindByUsername.get(username)) {
-      throw Object.assign(new Error(`Username "${username}" is already taken`), { code: 'DUPLICATE_USERNAME' });
+    const existing = stmtFindByUsername.get(username);
+    if (existing) {
+      // Alias is taken AND still has a password → genuine collision.
+      if (existing.password_hash !== null) {
+        throw Object.assign(new Error(`Username "${username}" is already taken`), { code: 'DUPLICATE_USERNAME' });
+      }
+      // Alias was soft-reset (ADR-011): re-claim it. Set a fresh password on the SAME
+      // account so its match history, standings, and (already-reset) wallet carry over.
+      // No grant — the soft reset already issued the starting credit; granting again
+      // here would double it. The original role is preserved.
+      const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+      stmtSetPassword.run(passwordHash, existing.id);
+      const balance = ledger.getBalance(existing.id);
+      return { token: signToken(existing.id, existing.role as UserRole), playerId: existing.id, balance };
     }
     const playerId = randomUUID();
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
@@ -92,7 +122,9 @@ export function createIdentity(db: Database.Database, ledger: Ledger): Identity 
     password: string,
   ): Promise<{ token: string; playerId: string; balance: number }> {
     const account = stmtFindByUsername.get(username);
-    if (!account) {
+    if (!account || account.password_hash === null) {
+      // No such account, or the alias was soft-reset and not yet re-claimed — either
+      // way it cannot authenticate. Same opaque error so neither case is enumerable.
       throw Object.assign(new Error('Invalid credentials'), { code: 'INVALID_CREDENTIALS' });
     }
     const valid = await bcrypt.compare(password, account.password_hash);
@@ -111,11 +143,20 @@ export function createIdentity(db: Database.Database, ledger: Ledger): Identity 
     return stmtFindUsernameById.get(playerId)?.username;
   }
 
+  function clearPassword(playerId: string): { playerId: string; username: string } {
+    const row = stmtFindUsernameById.get(playerId);
+    if (!row) {
+      throw Object.assign(new Error('Account not found'), { code: 'ACCOUNT_NOT_FOUND' });
+    }
+    stmtClearPassword.run(playerId);
+    return { playerId, username: row.username };
+  }
+
   async function ensureAdmin(username: string, password: string): Promise<void> {
     if (!stmtFindByUsername.get(username)) {
       await register(username, password, 'admin');
     }
   }
 
-  return { register, login, verifyToken, getUsername, ensureAdmin };
+  return { register, login, verifyToken, getUsername, clearPassword, ensureAdmin };
 }

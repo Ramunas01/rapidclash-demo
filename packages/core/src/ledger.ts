@@ -28,6 +28,13 @@ export interface Ledger {
   ): void;
   adminCredit(accountId: string, amount: number, idempotencyKey: string): LedgerEntry;
   accountExists(accountId: string): boolean;
+  /** True if the account holds any escrowed stake that has not yet been settled —
+   *  i.e. a BET_ESCROW on a match with no settlement entry (SETTLE_WIN, SETTLE_REFUND
+   *  or RAKE). Covers both a live match in progress and a resting open challenge
+   *  (which escrows on creation).
+   *  The single money-safety guard for the soft reset: never free an alias whose
+   *  stake is still locked in a pot. */
+  hasOpenEscrow(accountId: string): boolean;
   getBalance(accountId: string): number;
   getEntries(accountId: string): LedgerEntry[];
 }
@@ -78,6 +85,20 @@ export function createLedger(db: Database.Database): Ledger {
   const stmtEscrows = db.prepare<[string], { account_id: string; amount: number }>(
     `SELECT account_id, ABS(amount) AS amount FROM ledger_entry
      WHERE match_id = ? AND type = 'BET_ESCROW'`,
+  );
+
+  // Open escrow = a BET_ESCROW for this account whose match has no settlement entry
+  // yet. A live match (not settled) and a resting open challenge (escrowed, never
+  // matched) both qualify; a finished match (win → SETTLE_WIN/RAKE, draw/void →
+  // SETTLE_REFUND) does not. This is the money-safety guard for the soft reset.
+  const stmtOpenEscrow = db.prepare<[string], { cnt: number }>(
+    `SELECT COUNT(*) AS cnt FROM ledger_entry e
+     WHERE e.account_id = ? AND e.type = 'BET_ESCROW'
+       AND NOT EXISTS (
+         SELECT 1 FROM ledger_entry s
+         WHERE s.match_id = e.match_id
+           AND s.type IN ('SETTLE_WIN', 'SETTLE_REFUND', 'RAKE')
+       )`,
   );
 
   function rowToEntry(row: DbRow): LedgerEntry {
@@ -183,10 +204,14 @@ export function createLedger(db: Database.Database): Ledger {
     return stmtHasEntries.get(accountId)!.cnt > 0;
   }
 
+  function hasOpenEscrow(accountId: string): boolean {
+    return stmtOpenEscrow.get(accountId)!.cnt > 0;
+  }
+
   function adminCredit(accountId: string, amount: number, idempotencyKey: string): LedgerEntry {
     if (amount <= 0) throw new RangeError('Credit amount must be a positive integer');
     return writeEntry(accountId, null, 'ADMIN_CREDIT', amount, idempotencyKey);
   }
 
-  return { grant, escrow, refundEscrow, settle, adminCredit, accountExists, getBalance, getEntries };
+  return { grant, escrow, refundEscrow, settle, adminCredit, accountExists, hasOpenEscrow, getBalance, getEntries };
 }

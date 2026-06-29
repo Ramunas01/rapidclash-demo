@@ -58,6 +58,54 @@ describe('identity.login', () => {
   });
 });
 
+describe('identity.clearPassword (soft reset)', () => {
+  it('clears the hash, returns the alias, and keeps the same account', async () => {
+    const { identity } = makeServices();
+    const { playerId } = await identity.register('frank', 'pw');
+    const res = identity.clearPassword(playerId);
+    expect(res).toEqual({ playerId, username: 'frank' });
+    // getUsername still resolves — the account (and its standings) are untouched.
+    expect(identity.getUsername(playerId)).toBe('frank');
+  });
+
+  it('throws ACCOUNT_NOT_FOUND for an unknown playerId', () => {
+    const { identity } = makeServices();
+    expect(() => identity.clearPassword('no-such-id')).toThrow(/not found/i);
+  });
+
+  it('refuses login on a cleared alias until it is re-claimed', async () => {
+    const { identity } = makeServices();
+    const { playerId } = await identity.register('grace', 'pw');
+    identity.clearPassword(playerId);
+    await expect(identity.login('grace', 'pw')).rejects.toThrow(/invalid credentials/i);
+  });
+
+  it('re-claim via register reuses the SAME account and does NOT issue a second grant', async () => {
+    const { identity, ledger } = makeServices();
+    const first = await identity.register('heidi', 'pw');
+    // Simulate the soft reset: clear password + the admin wallet grant (null match_id).
+    identity.clearPassword(first.playerId);
+    ledger.adminCredit(first.playerId, GRANT_AMOUNT, `soft-reset:${first.playerId}`);
+    const balanceAfterReset = ledger.getBalance(first.playerId);
+
+    // A returning player re-registers the freed alias with a fresh password.
+    const reclaim = await identity.register('heidi', 'new-pw');
+    expect(reclaim.playerId).toBe(first.playerId); // same account, standings intact
+    // No new GRANT — balance is exactly what the soft reset left.
+    expect(ledger.getBalance(first.playerId)).toBe(balanceAfterReset);
+    expect(reclaim.balance).toBe(balanceAfterReset);
+    // The new password works; the old one does not.
+    await expect(identity.login('heidi', 'new-pw')).resolves.toBeTruthy();
+    await expect(identity.login('heidi', 'pw')).rejects.toThrow(/invalid credentials/i);
+  });
+
+  it('still rejects re-registration of an alias that has NOT been cleared', async () => {
+    const { identity } = makeServices();
+    await identity.register('ivan', 'pw');
+    await expect(identity.register('ivan', 'other')).rejects.toThrow(/already taken/i);
+  });
+});
+
 describe('identity.verifyToken', () => {
   it('rejects a tampered token', async () => {
     const { identity } = makeServices();
