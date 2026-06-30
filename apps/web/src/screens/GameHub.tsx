@@ -547,15 +547,47 @@ function PlayPanel({
   selectedControl?: string;
   onSelectControl(id: string): void;
 }) {
+  // "PLAY needs a bet" guided affordance (#143). PLAY stays enabled with no stake armed; pressing
+  // it then GUIDES the user to the bet panel (smooth-scroll + red frame + a11y hint) instead of
+  // dead-ending — it never starts a match. The cue clears the instant a bet is armed (no auto-play).
+  const betRef = useRef<HTMLDivElement>(null);
+  const [needsBet, setNeedsBet] = useState(false);
+
+  // Clear the cue the moment a stake is armed (any path: preset, initialStake, external) and
+  // whenever the panel freezes for a live match. Arming only clears the guide — it never presses
+  // PLAY; the user does that themselves on their next tap.
+  useEffect(() => { if (armedStake != null) setNeedsBet(false); }, [armedStake]);
+  useEffect(() => { if (playing) setNeedsBet(false); }, [playing]);
+
+  // The shared guard. Scroll the BET panel into view (centered → clears the fixed top ribbon and
+  // bottom nav; the scroll-margins below add explicit nav + safe-area clearance, robust to the
+  // body-scroll change in #142) and raise the red needs-bet frame + hint. Starts no match.
+  function guideToBet() {
+    setNeedsBet(true);
+    betRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+  function handlePlayPress() {
+    if (armedStake == null) { guideToBet(); return; } // no bet → guide; do NOT start a match
+    onPlay();
+  }
+  // Play a Friend is inert/visual-only (owner D1). The guard is pre-wired so that WHEN that path
+  // activates and requires a stake, an unarmed press guides to the bet panel exactly like PLAY.
+  // The friend flow itself is not built, so an armed press still does nothing (no behaviour change).
+  function handlePlayFriend() {
+    if (armedStake == null) { guideToBet(); return; }
+    /* TODO(D1): launch the friend-invite flow with the armed stake. */
+  }
+
   return (
     <div data-testid="hub-section-play" className="flex flex-col gap-3.5 rounded-[18px] bg-surface p-4">
-      {/* The ONE primary action. Default = PLAY (always full purple; the bet gates the action;
-          in-match → "Playing…" disabled). A game may transform it in place via actionSlot. */}
+      {/* The ONE primary action. Default = PLAY (always full purple, always pressable; an unarmed
+          press guides to the bet panel — #143; in-match → "Playing…" disabled). A game may
+          transform it in place via actionSlot. */}
       {actionSlot ?? (
         <button
           type="button"
-          disabled={playing || armedStake == null}
-          onClick={onPlay}
+          disabled={playing}
+          onClick={handlePlayPress}
           data-testid="hub-play"
           className={cn(
             'w-full rounded-xl bg-brand py-4 text-base font-black uppercase tracking-wider text-white transition-colors',
@@ -566,8 +598,20 @@ function PlayPanel({
         </button>
       )}
 
-      {/* Bet amount — stays visible during a match, greyed + inert. */}
-      <div data-testid="hub-section-bet" className={cn(playing && 'pointer-events-none opacity-50')}>
+      {/* Bet amount — stays visible during a match, greyed + inert. The needs-bet frame (#143) rings
+          it red when PLAY was pressed with no stake. scroll-mt clears the fixed top ribbon (~6rem);
+          scroll-mb clears the fixed bottom nav (~7rem) + safe-area so a scrolled-in panel lands
+          ABOVE the nav, never behind it (robust to the #142 body-scroll change). */}
+      <div
+        ref={betRef}
+        data-testid="hub-section-bet"
+        data-needs-bet={needsBet || undefined}
+        className={cn(
+          'scroll-mt-24 scroll-mb-[calc(7rem_+_env(safe-area-inset-bottom))] rounded-xl transition-shadow',
+          needsBet && 'ring-2 ring-destructive',
+          playing && 'pointer-events-none opacity-50',
+        )}
+      >
         <div className="mb-2.5 flex items-center justify-between">
           <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Bet amount</span>
           <span className="text-sm font-extrabold tabular-nums text-foreground">
@@ -591,6 +635,18 @@ function PlayPanel({
             </button>
           ))}
         </div>
+
+        {/* Not colour-alone (#143): a short text hint paired with a polite live region for
+            colourblind / screen-reader users. Always mounted as the live region (so the change is
+            announced); shows the red hint only in the needs-bet state, clearing with the frame. */}
+        <p
+          role="status"
+          aria-live="polite"
+          data-testid="hub-bet-hint"
+          className={cn('mt-2.5 text-xs font-semibold text-destructive', !needsBet && 'sr-only')}
+        >
+          {needsBet ? 'Select a bet amount to play' : ''}
+        </p>
 
         {/* Time-control picker — shown only for games that declare one (chess). Each option is a
             two-line button: the large duration over the small mode name (e.g. "10 min" / "Rapid"). */}
@@ -626,11 +682,14 @@ function PlayPanel({
         )}
       </div>
 
-      {/* Play a Friend — purple, inert/visual-only (owner D1); greys with the panel during a match. */}
+      {/* Play a Friend — purple, inert/visual-only (owner D1); greys with the panel during a match.
+          The #143 needs-bet guard is pre-wired (handlePlayFriend): no friend flow yet, so an armed
+          press is a no-op as before; an unarmed press guides to the bet panel. */}
       <button
         type="button"
         aria-disabled="true"
         data-testid="hub-play-friend"
+        onClick={handlePlayFriend}
         className={cn('w-full cursor-default rounded-xl bg-brand py-3.5 text-[15px] font-bold text-white', playing && 'opacity-50')}
       >
         Play a Friend

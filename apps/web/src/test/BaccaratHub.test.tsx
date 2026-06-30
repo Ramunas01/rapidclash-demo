@@ -49,6 +49,26 @@ describe('BaccaratHubScreen', () => {
     expect(onPlay).toHaveBeenCalledWith(10);
   });
 
+  it('#143: PLAY with no bet armed guides to the bet panel (no match starts); arming clears the cue, no auto-play', () => {
+    const scrollSpy = vi.fn();
+    Element.prototype.scrollIntoView = scrollSpy;
+    const onPlay = vi.fn();
+    render(<BaccaratHubScreen {...baseProps({ onPlay })} />);
+
+    const play = screen.getByTestId('hub-play');
+    expect(play).toBeEnabled(); // pressable with no stake armed (no longer a dead end)
+    fireEvent.click(play);
+    expect(onPlay).not.toHaveBeenCalled(); // guided to the bet panel, not started
+    expect(scrollSpy).toHaveBeenCalled(); // bet panel scrolled into view
+    expect(screen.getByTestId('hub-section-bet').getAttribute('data-needs-bet')).toBe('true');
+    expect(screen.getByTestId('hub-bet-hint').textContent).toMatch(/select a bet/i);
+
+    fireEvent.click(screen.getByTestId('hub-bet-10')); // selecting a bet clears the frame + hint…
+    expect(screen.getByTestId('hub-section-bet').getAttribute('data-needs-bet')).toBeNull();
+    expect(screen.getByTestId('hub-bet-hint').textContent).toBe('');
+    expect(onPlay).not.toHaveBeenCalled(); // …with NO auto-play
+  });
+
   it('In-match: auto-commits the reveal, shows OWN hand, hides the opponent', () => {
     const onMakeMove = vi.fn();
     render(<BaccaratHubScreen {...baseProps({ currentMatchId: 'm1', gameState: preDeal(), legalMoves: ['reveal'], onMakeMove })} />);
