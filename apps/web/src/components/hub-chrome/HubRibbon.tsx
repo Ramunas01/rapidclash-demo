@@ -15,11 +15,15 @@ interface Props {
 /**
  * Top ribbon — transparent except the wordmark (left) and a pill control (right): the
  * Login/Sign-up auth-gate when logged out, the live wallet chip (balance ¢ + Wallet) when
- * signed in. Shared across hubs; in-flow (not fixed) so each hub's flex-column layout holds.
+ * signed in. Shared across hubs. `sticky top-0` (in-flow) on the body-scroll layout (#142):
+ * it reserves the wordmark band at the top, then sticks as the page scrolls so content slides
+ * behind it (the bar stays transparent over the scroll surface). `pt-[safe-area-inset-top]`
+ * keeps the wordmark below the status bar under viewport-fit=cover; the safe-area strip above
+ * it shows the #0D0D0D shell behind the transparent header.
  */
 export function HubRibbon({ balance, onLogo, onWallet, loggedIn = true }: Props) {
   return (
-    <header className="fixed left-1/2 top-0 z-20 flex w-full max-w-md -translate-x-1/2 items-center justify-between bg-transparent px-4">
+    <header className="sticky top-0 z-20 mx-auto flex w-full max-w-md items-center justify-between bg-transparent px-4 pt-[env(safe-area-inset-top)]">
       <button type="button" onClick={onLogo} aria-label="RapidClash — home" className="-ml-3 flex items-center">
         <img src={logoUrl} alt="RapidClash" className="h-24 w-auto object-contain" />
       </button>

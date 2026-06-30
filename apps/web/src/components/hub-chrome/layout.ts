@@ -1,18 +1,19 @@
 /**
- * Shared layout for a hub with FIXED-overlay chrome. HubRibbon and HubToolbar are
- * `position: fixed` and float above a single full-viewport scroll surface, so content runs
- * top-to-bottom and slides behind the transparent bars (matching the design frame) — no
- * inner / middle-box scrollbar.
+ * Shared layout for a hub on BODY scroll (#142). The shell no longer owns a fixed-height
+ * inner scroll surface — the document body scrolls, which is what lets iOS Safari collapse and
+ * return its toolbar. HubRibbon is `position: sticky; top: 0` (in-flow at the top, so it owns
+ * the top clearance); HubToolbar stays `position: fixed` at the bottom. Content runs
+ * top-to-bottom and slides behind the transparent bars (matching the design frame).
  *
  *   <div className={HUB_SHELL}>
- *     <HubRibbon … />                                  // fixed top
+ *     <HubRibbon … />                                  // sticky top (in-flow)
  *     <main data-testid="…"><div className={cn('…', HUB_BODY)}>…</div></main>
  *     <HubToolbar … />                                 // fixed bottom
  *   </div>
  *
- * HUB_BODY pads the content so the first/last item clears the fixed bars and nothing is ever
- * hidden behind them: the ribbon is the wordmark band (~96px) and the toolbar is the nav pill
- * (~84px). Kept in one place so the clearance and the bar heights stay in lockstep.
+ * HUB_BODY pads the content so the last item clears the fixed toolbar (the nav pill ~84px +
+ * the bottom safe-area) and nothing is ever hidden behind it. There is no top pad: the
+ * sticky ribbon is in-flow, so it already reserves the ~96px wordmark band itself.
  */
-export const HUB_SHELL = 'relative h-[100dvh] overflow-y-auto no-scrollbar bg-background text-foreground';
-export const HUB_BODY = 'pt-24 pb-28';
+export const HUB_SHELL = 'relative min-h-[100dvh] bg-background text-foreground';
+export const HUB_BODY = 'pb-[calc(7rem_+_env(safe-area-inset-bottom))]';
