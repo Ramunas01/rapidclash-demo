@@ -43,15 +43,15 @@ The "wallet balance after" column is the running total of ledger entries ordered
 
 Credit play-money to a player's wallet. Implemented as a single `ADMIN_CREDIT` ledger entry (positive amount), keyed by an idempotency key so a double-submit credits once. Because it is a ledger entry, the new balance is automatically correct and the top-up shows up in audit. No balance field is ever edited directly.
 
-### Remove account
+### Reset password (soft reset)
 
-A **basic, best-effort convenience** so the operator can re-register the **same alias** during testing. It is **refused** if the account has an active match or any stake in escrow (a reset must never strand money in a pot); otherwise it removes the player's own record and ledger entries and frees the alias for reuse. It is the one sanctioned, out-of-band exception to the append-only rule in `WALLET_LEDGER.md` — reachable only through this admin function, never from any player or game code path.
+A **best-effort convenience** that **releases an alias without destroying it.** It clears the account's `passwordHash`, **auto-re-grants its wallet** to the starting demo amount, and **preserves the alias and its standings** (leaderboard position is untouched — standings live independently of the wallet). It is **refused** if the account has an active match or any stake in escrow (a reset must never strand money in a pot). An alias whose password has been cleared is **claimable**: the demo-team member re-registers it by setting a **new password**, keeping their standings and starting fresh financially. This is the one sanctioned, out-of-band exception to the append-only rule in `WALLET_LEDGER.md` (single-account wallet re-grant) — reachable only through this admin function, never from any player or game code path. It **replaces** the earlier "remove account" convenience: the account is no longer deleted, only its password released.
 
-For a full reset, prefer wiping the database (below) — that is the canonical reset and needs no per-account logic.
+For a full reset, wipe the database (below) — that is the canonical hard reset and needs no per-account logic.
 
 ### Resetting demo data
 
-The **canonical reset** is to wipe the database and restart: stop the server, delete the SQLite DB file (`DB_PATH`), and start it again. All players, wallets, and matches are cleared and the `admin` account **re-seeds automatically** on startup (via `ensureAdmin`). Add-money plus this full reset are the entire operator-reset story; no per-account deletion beyond the convenience above is needed or scoped.
+The **canonical reset** is to wipe the database and restart: stop the server, delete the SQLite DB file (`DB_PATH`), and start it again. All players, wallets, and matches are cleared and the `admin` account **re-seeds automatically** on startup (via `ensureAdmin`). Add-money plus this full reset are the entire operator-reset story; no per-account deletion is needed; the soft reset above (password-clear + wallet re-grant, standings kept) covers per-alias reuse.
 
 ## What this interface must not do
 

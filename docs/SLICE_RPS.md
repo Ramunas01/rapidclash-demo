@@ -70,7 +70,7 @@ A thin slice of `ADMIN.md` pays for itself *during* this slice as test tooling. 
 
 - **A1 — admin role + auth gate.** Pre-seeded admin account; `admin`-role check on all `/admin/*` endpoints.
 - **A2 — add money.** `POST /admin/players/:id/credit` → one idempotent `ADMIN_CREDIT` entry. Lets you top up wallets to exercise escrow at various balances.
-- **A3 — remove account.** `DELETE /admin/players/:id`, refused on active match/escrow, frees the alias. Lets you re-register the same alias repeatedly. (Assumes retain-history option (a) until the owner decides — see `ADMIN.md`.)
+- **A3 — release an alias.** *(Superseded by ADR-011: now a **soft reset** — `POST /admin/players/:id/reset-password` clears the password + re-grants the wallet + keeps standings, refused on active match/escrow, alias re-claimable with a new password. The original slice-1 form was `DELETE /admin/players/:id`.)* See `ADMIN.md`.
 
 ## After the slice
 

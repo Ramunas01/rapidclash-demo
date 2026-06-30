@@ -60,15 +60,20 @@ A **pre-seeded `admin` account** is created on every startup (username `admin`, 
 
 ### Resetting the demo (and freeing aliases)
 
-The runbook assumes **no prior state**, and **wipe-and-restart is the canonical reset** — there is no account-removal flow by design. To clear all players, wallets, and matches (and free any taken alias for re-use), stop the server, delete the single SQLite DB file, and restart; the `admin` account **re-seeds automatically** on startup:
+Two tiers of reset (see `ADMIN.md`):
+
+**Soft reset (per alias, keeps standings).** Use the admin **reset-password** action to release an alias without losing its leaderboard position: it clears the alias's password, **re-grants its wallet** to the starting amount, and **keeps its standings**. The demo-team member then re-claims the alias by registering a **new password** — same name, same standings, fresh wallet. Refused if that account has an active match or escrowed stake. This is the everyday "let someone start over but keep their ranking" tool, and (with ADR-011's GCS snapshot) standings persist across redeploys.
+
+**Hard reset (canonical, clears everything).** **Wipe-and-restart** clears all players, wallets, matches, *and* standings — there is no user-facing account-deletion flow. To wipe, stop the server, delete the single SQLite DB file, and restart; the `admin` account **re-seeds automatically** on startup. *(With durability on, also clear the GCS snapshot for a true clean slate, or it will be restored on boot.)*
 
 ```bash
 # stop the server, then:
 rm -f rapidclash.db        # or whatever DB_PATH points at
+# (durability on?) also delete the snapshot object in the GCS bucket
 # restart the server → fresh state, admin re-seeded
 ```
 
-The admin **add-money** endpoint plus this **full reset** are the entire operator-tooling story for the demo (see `ADMIN.md`) — no per-account deletion is needed or scoped.
+The admin **add-money** and **reset-password** endpoints plus this **full wipe** are the entire operator-tooling story for the demo (see `ADMIN.md`) — no per-account deletion is needed or scoped.
 
 ## 3. Build
 

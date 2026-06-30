@@ -61,7 +61,7 @@ This is the heart of the thesis, not a footnote. Each house game must be given a
 
 ## In scope for the demo
 
-Registration & sessions; play-money wallet with ledger; stake placement & escrow; matchmaking and lobby; two-player session orchestration; RPS fully, then the other natively-2P and confirmed-redefined games; settlement with platform fee; per-game leaderboard & ranking; mobile-web (PWA) client; an operator/admin interface for visibility and demo testing (player stats, game logs, add-money, and a best-effort alias-freeing convenience — the canonical reset being a full database wipe; see `ADMIN.md`).
+Registration & sessions; play-money wallet with ledger; stake placement & escrow; matchmaking and lobby; two-player session orchestration; RPS fully, then the other natively-2P and confirmed-redefined games; settlement with platform fee; per-game leaderboard & ranking; mobile-web (PWA) client; an operator/admin interface for visibility and demo testing (player stats, game logs, add-money, and a best-effort soft reset that releases an alias by clearing its password — re-granting the wallet, keeping standings; the canonical hard reset being a full database wipe; durability via GCS snapshot, ADR-011; see `ADMIN.md`).
 
 ## Out of scope (for now)
 
@@ -78,4 +78,4 @@ Real payments; KYC/identity verification; anti-fraud/collusion detection; specta
 - **Game module** — a self-contained implementation of one game satisfying the plug-in contract.
 - **Ranking type** — how a game's results feed the leaderboard (ELO for skill, net winnings for chance, etc.).
 - **PvP redefinition** — a head-to-head, no-house reinterpretation of a house game; the platform's core design activity (see `GAME_REDEFINITION.md`).
-- **Administrator / operator** — a privileged role (not a player) who can view player stats and game logs, add play-money to a wallet, and (best-effort, for testing) free a single alias by removing its record — refused if that account has an active match or escrowed stake. The **canonical reset is a full database wipe-and-restart**, not per-account deletion, and there is no user-facing account-deletion flow. Cannot influence match outcomes. See `ADMIN.md`.
+- **Administrator / operator** — a privileged role (not a player) who can view player stats and game logs, add play-money to a wallet, and (best-effort, for testing) **release an alias by clearing its password** — a **soft reset** that re-grants that account's wallet and **keeps its standings**, refused if the account has an active match or escrowed stake. The **canonical hard reset is a full database wipe-and-restart**, not per-account deletion, and there is no user-facing account-deletion flow. Cannot influence match outcomes. See `ADMIN.md`.
