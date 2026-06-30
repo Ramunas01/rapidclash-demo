@@ -54,7 +54,7 @@ The export's grid/ticker presents **Limbo, Crash, Keno, Hilo, Roulette, Dice** a
 
 Two consequences to honor:
 1. **CHARTER reconciliation (flag for the Advisor).** The PvP-only corollary in `CHARTER.md` (#84) currently names **Limbo/Crash/Keno/Hilo as "never offered"** (no PvP form). The owner's commitment reclassifies them as **deferred PvP-redefinitions** (like Baccarat). The Advisor should update the corollary so the docs don't contradict the coming-soon tiles.
-2. **Clean art only.** A coming-soon tile must use art free of multiplier/crypto framing. The export's **Limbo** tile (baked-in "900x/800x/700x") was **rejected** in the Foundation PR (#99) — so Limbo needs a **clean tile** before it is shown.
+2. **Clean art only — with one resolved exception for Limbo.** A coming-soon (or live) tile must use art free of *house-payout* / crypto framing. The export's **Limbo** tile (baked-in "900x/800x/700x") was **rejected** in the Foundation PR (#99) on that basis. **Resolved (owner, overriding #99): the Limbo multiplier tile is accepted** — in the PvP redefinition the multiplier is the **player-chosen target** each side secretly picks (the literal bet), not a payout the platform promises, so the number is on-mechanic for Limbo specifically. The no-house-payout-framing rule still holds for every other tile.
 
 ## 7. Honesty checklist — strip on the way in (invariant #1/#4)
 

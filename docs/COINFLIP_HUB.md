@@ -273,8 +273,11 @@ exist on a "never the house" platform in that form.** They may appear only as di
 **coming-soon** tiles — never as a playable **house-form route**, and never in the live
 related-games ribbon (which stays registered-PvP only). Roadmap/"coming soon" tiles may be **any
 PvP-redefined game** (coming-soon until it has a confirmed two-player spec — see
-`GAME_REDEFINITION.md`), **never a house-form route**. Do not let the multiplier framing (500x,
-etc.) drift back in via the asset pack.
+`GAME_REDEFINITION.md`), **never a house-form route**. Do not let *house-payout* multiplier framing
+(500x, etc.) drift back in via the asset pack — **with one resolved exception: Limbo's tile
+multiplier** (e.g. "900x") is accepted, because in Limbo the multiplier is the **player-chosen
+target** each side picks, not a payout the platform promises. The rule guards against framing that
+implies the *platform* pays you; a player-set target is on-mechanic.
 
 *(Now recorded as the PvP-only corollary to invariant #1 in `CHARTER.md` — so it governs every
 future game decision, not just this hub.)*
