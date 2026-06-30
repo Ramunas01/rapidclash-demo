@@ -24,9 +24,9 @@ Auth token is sent as a bearer header and also used to authenticate the WS conne
 | `GET`  | `/admin/players` | players overview: per-player games played/won/lost/drawn, money won/lost, wallet balance (all derived) |
 | `GET`  | `/admin/players/:id/log` | a player's match log: timestamp, opponent, result, signed amount, running balance |
 | `POST` | `/admin/players/:id/credit` | add play-money (`{ amount, idempotencyKey }` → one `ADMIN_CREDIT` entry) |
-| `DELETE` | `/admin/players/:id` | remove account and free its alias; refused if the account has an active match or escrowed stake |
+| `POST` | `/admin/players/:id/reset-password` | **soft reset** — clear the account's password, re-grant its wallet to the starting amount, keep its alias and standings; refused if the account has an active match or escrowed stake. The alias is then re-claimable by registering a new password. |
 
-These reject any non-admin token. See `ADMIN.md` for the derivations and the account-removal rules.
+These reject any non-admin token. See `ADMIN.md` for the derivations and the soft-reset rules (and ADR-011 for the two-tier reset model).
 
 ## WebSocket
 
