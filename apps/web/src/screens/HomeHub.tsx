@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
 import { HUB_SHELL, HUB_BODY } from '../components/hub-chrome/layout.js';
-import { TILE_ART, COMING_SOON, titleCase } from '../components/hub-shared/tiles.js';
+import { TILE_ART, COMING_SOON, HIDDEN_ON_HOME, titleCase } from '../components/hub-shared/tiles.js';
 import { OpenGamesTicker, PublicOpenGamesTicker } from '../components/hub-shared/OpenGames.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
@@ -95,9 +95,11 @@ export function HomeHubScreen({
 
   const nameByGame = useMemo(() => new Map(games.map((g) => [g.id, g.displayName])), [games]);
 
-  // The full roster: live playable tiles (data-driven) + coming-soon breadth tiles.
+  // The full roster: live playable tiles (data-driven) + coming-soon breadth tiles. Live games
+  // in HIDDEN_ON_HOME (no tile art yet) are kept off the grid — still registered/route-reachable.
   const tiles = useMemo<Tile[]>(() => {
-    const playable: Tile[] = games.map((g) => ({ id: g.id, name: g.displayName, playable: true, meta: g }));
+    const shown = games.filter((g) => !HIDDEN_ON_HOME.has(g.id));
+    const playable: Tile[] = shown.map((g) => ({ id: g.id, name: g.displayName, playable: true, meta: g }));
     const live = new Set(games.map((g) => g.id));
     const soon: Tile[] = COMING_SOON.filter((id) => !live.has(id)).map((id) => ({ id, name: titleCase(id), playable: false }));
     return [...playable, ...soon];
