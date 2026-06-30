@@ -58,6 +58,8 @@ Instances: `game-hub:coinflip`, `:rps`, `:blackjack`, `:mines`, `:chess`. Same r
 
 **Animation honours redaction** (template rule for hidden-info hubs): during `in-match`, an opponent's move animates with **face-down / hidden** representations; the opponent's concealed cards, choices, and true total reveal **only at the terminal `match.end`** (`viewFor`). An on-table opponent total shows the *visible-card* value until then — never the hidden total.
 
+**`PLAY` requires an armed stake — guide, don't disable** (template rule for every game hub): the **PLAY** button (`game-hub/play`) stays **enabled** with no stake selected; pressing it does **not** post a challenge but **scrolls `game-hub/stake` into view** (smooth — offset clear of the fixed footer + `env(safe-area-inset-bottom)` so it lands above the bottom nav, not behind it) and marks the stake region with a **red "needs-bet" frame**, paired with a short text hint ("Select a bet amount to play") and an `aria-live` announcement (never colour alone). Arming a stake (`onArm`) **clears the frame**; the player then presses PLAY themselves (no auto-submit). This **replaces** the earlier *disable-PLAY-until-armed* behaviour in `GameHub.tsx`, which dead-ended silently. The same guard applies to **Play a Friend** when that path requires a stake. (Insufficient balance *for* an armed stake is a separate validation — see `OpenGames.tsx` — not this rule.)
+
 ### `profile-hub` — account (auth-gated)
 
 | Region | Purpose | Data source (real) |
