@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { motion } from 'framer-motion';
 import { AlertCircle, Loader2, Lock, Swords, User, X } from 'lucide-react';
 import { api } from '../api.js';
@@ -25,6 +25,16 @@ export function AuthModal({ onSuccess, onClose, title = 'Sign in to play' }: Pro
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // On the body-scroll layout (#142) the page scrolls behind a fixed overlay; lock body
+  // scroll while the auth wall is open so the form can't drift under the user.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError('');
@@ -43,7 +53,7 @@ export function AuthModal({ onSuccess, onClose, title = 'Sign in to play' }: Pro
 
   return (
     <div
-      className="absolute inset-0 z-40 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-label="Sign in"

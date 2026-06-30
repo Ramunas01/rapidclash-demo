@@ -7,17 +7,19 @@
   left: 0;
   right: 0;
   z-index: 1000;
-  padding: 6px 12px;
+  /* viewport-fit=cover lets this edge-pinned strip run under the status bar / notch — pad
+     past the top safe-area so the text clears it. */
+  padding: calc(6px + env(safe-area-inset-top)) 12px 6px;
   text-align: center;
   font-size: 0.85rem;
   font-weight: 600;
   color: #fff;
   background: #b58900; /* amber: reconnecting */
 }
-.ws-banner-error { background: var(--accent); top: auto; bottom: 0; } /* action drop: red, bottom */
+.ws-banner-error { background: var(--accent); top: auto; bottom: 0; padding: 6px 12px calc(6px + env(safe-area-inset-bottom)); } /* action drop: red, bottom */
 
 :root {
-  --bg: #1a1a2e;
+  --bg: #0d0d0d;
   --surface: #16213e;
   --accent: #e94560;
   --text: #eaeaea;
@@ -26,20 +28,27 @@
   --min-touch: 44px;
 }
 
+/* #0D0D0D to the true edges: with viewport-fit=cover this fills behind the status bar and
+   home indicator (matching --background: 0 0% 5% in index.css), and the rubber-band
+   overscroll on iOS shows #0D0D0D rather than white. */
+html {
+  background: #0d0d0d;
+}
+
 body {
-  background: var(--bg);
+  background: #0d0d0d;
   color: var(--text);
   /* Inter is the v2 app font (loaded in main.tsx); falls back to the system stack. */
   font-family: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 16px;
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .screen {
   max-width: 480px;
   margin: 0 auto;
   padding: 16px;
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
