@@ -36,11 +36,40 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
   it('Idle: arming a bet enables PLAY, which posts that stake (shared GameHub)', () => {
     const onPlay = vi.fn();
     render(<RpsHubScreen {...baseProps({ onPlay })} />);
-    expect(screen.getByTestId('hub-play')).toBeDisabled();
+    expect(screen.getByTestId('hub-play')).toBeEnabled(); // #143: pressable even with no stake armed
     fireEvent.click(screen.getByTestId('hub-bet-25'));
     expect(screen.getByTestId('hub-play')).toBeEnabled();
     fireEvent.click(screen.getByTestId('hub-play'));
     expect(onPlay).toHaveBeenCalledWith(25);
+  });
+
+  it('#143: PLAY with no bet armed guides to the bet panel (no match starts); arming clears the cue, no auto-play', () => {
+    const scrollSpy = vi.fn();
+    Element.prototype.scrollIntoView = scrollSpy;
+    const onPlay = vi.fn();
+    render(<RpsHubScreen {...baseProps({ onPlay })} />);
+
+    const play = screen.getByTestId('hub-play');
+    expect(play).toBeEnabled(); // pressable with no stake armed (no longer a dead end)
+    fireEvent.click(play);
+    expect(onPlay).not.toHaveBeenCalled(); // guided to the bet panel, not started
+    expect(scrollSpy).toHaveBeenCalled(); // bet panel scrolled into view
+    expect(screen.getByTestId('hub-section-bet').getAttribute('data-needs-bet')).toBe('true');
+    expect(screen.getByTestId('hub-bet-hint').textContent).toMatch(/select a bet/i);
+
+    fireEvent.click(screen.getByTestId('hub-bet-10')); // selecting a bet clears the frame + hint…
+    expect(screen.getByTestId('hub-section-bet').getAttribute('data-needs-bet')).toBeNull();
+    expect(screen.getByTestId('hub-bet-hint').textContent).toBe('');
+    expect(onPlay).not.toHaveBeenCalled(); // …with NO auto-play
+  });
+
+  it('#143: the inert "Play a Friend" also guides to the bet panel when no stake is armed (guard pre-wired)', () => {
+    const scrollSpy = vi.fn();
+    Element.prototype.scrollIntoView = scrollSpy;
+    render(<RpsHubScreen {...baseProps()} />);
+    fireEvent.click(screen.getByTestId('hub-play-friend'));
+    expect(scrollSpy).toHaveBeenCalled();
+    expect(screen.getByTestId('hub-bet-hint').textContent).toMatch(/select a bet/i);
   });
 
   it('In-match: the RPS board activates, choices come from legalMoves, and the opponent stays hidden', () => {

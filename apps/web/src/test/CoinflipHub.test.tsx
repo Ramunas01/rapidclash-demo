@@ -55,11 +55,31 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
   it('Idle: arming a bet enables PLAY, which posts that stake', () => {
     const onPlay = vi.fn();
     render(<CoinflipHubScreen {...baseProps({ onPlay })} />);
-    expect(screen.getByTestId('hub-play')).toBeDisabled();
+    expect(screen.getByTestId('hub-play')).toBeEnabled(); // #143: pressable even with no stake armed
     fireEvent.click(screen.getByTestId('hub-bet-10'));
     expect(screen.getByTestId('hub-play')).toBeEnabled();
     fireEvent.click(screen.getByTestId('hub-play'));
     expect(onPlay).toHaveBeenCalledWith(10);
+  });
+
+  it('#143: PLAY with no bet armed guides to the bet panel (no match starts); arming clears the cue, no auto-play', () => {
+    const scrollSpy = vi.fn();
+    Element.prototype.scrollIntoView = scrollSpy;
+    const onPlay = vi.fn();
+    render(<CoinflipHubScreen {...baseProps({ onPlay })} />);
+
+    const play = screen.getByTestId('hub-play');
+    expect(play).toBeEnabled(); // pressable with no stake armed (no longer a dead end)
+    fireEvent.click(play);
+    expect(onPlay).not.toHaveBeenCalled(); // guided to the bet panel, not started
+    expect(scrollSpy).toHaveBeenCalled(); // bet panel scrolled into view
+    expect(screen.getByTestId('hub-section-bet').getAttribute('data-needs-bet')).toBe('true');
+    expect(screen.getByTestId('hub-bet-hint').textContent).toMatch(/select a bet/i);
+
+    fireEvent.click(screen.getByTestId('hub-bet-10')); // selecting a bet clears the frame + hint…
+    expect(screen.getByTestId('hub-section-bet').getAttribute('data-needs-bet')).toBeNull();
+    expect(screen.getByTestId('hub-bet-hint').textContent).toBe('');
+    expect(onPlay).not.toHaveBeenCalled(); // …with NO auto-play
   });
 
   it('Waiting: a confirmed rest shows the countdown + cancel and hides the bet/PLAY block', async () => {
@@ -205,13 +225,18 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     expect(container.textContent ?? '').not.toMatch(/max /i);
   });
 
-  it('PLAY stays full purple even before a bet is armed (gate the action, not the colour)', () => {
-    render(<CoinflipHubScreen {...baseProps()} />);
+  it('PLAY stays full purple and pressable before a bet is armed (gate the ACTION via guidance, not colour/disable — #143)', () => {
+    const scrollSpy = vi.fn();
+    Element.prototype.scrollIntoView = scrollSpy;
+    const onPlay = vi.fn();
+    render(<CoinflipHubScreen {...baseProps({ onPlay })} />);
     const play = screen.getByTestId('hub-play');
-    expect(play).toBeDisabled(); // the bet still gates the action
+    expect(play).toBeEnabled(); // #143: pressable; the bet gates the action, not the button
     expect(play.className).toContain('bg-brand');
     expect(play.className).not.toContain('bg-brand/40'); // no dimmed variant
     expect(play.className).not.toContain('cursor-not-allowed');
+    fireEvent.click(play);
+    expect(onPlay).not.toHaveBeenCalled(); // pressing without a bet guides to the bet panel, never starts
   });
 });
 
