@@ -290,11 +290,13 @@ export function GameHub(props: GameHubProps) {
 
   // Decorative name-scan source for the "Searching…" beat: real online players from the live
   // cross-game Open Games feed (any game). Never fabricated — an empty feed shows just "Searching…".
+  // Excludes the current player's own resting challenges (name-based: OpenChallenge carries only
+  // ownerName, no owner id — #149) so the scan can't flash the player against themselves.
   const scanNames = useMemo(() => {
     const names = new Set<string>();
-    for (const list of Object.values(challengesByGame)) for (const c of list) if (c.ownerName) names.add(c.ownerName);
+    for (const list of Object.values(challengesByGame)) for (const c of list) if (c.ownerName && c.ownerName !== username) names.add(c.ownerName);
     return [...names];
-  }, [challengesByGame]);
+  }, [challengesByGame, username]);
 
   // ── Bet + time-control selection ────────────────────────────────────────────
   const [armedStake, setArmedStake] = useState<number | null>(initialStake ?? null);

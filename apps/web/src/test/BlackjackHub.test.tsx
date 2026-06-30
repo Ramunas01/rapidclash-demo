@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { BlackjackHubScreen } from '../screens/BlackjackHub.js';
 import type { BlackjackView } from '../App.js';
+import type { OpenChallenge } from '@rapidclash/shared';
 
 // canvas-confetti needs a real <canvas> (absent in jsdom) — mock it (matches the other hub tests).
 vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
@@ -248,6 +249,28 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
     expect(opp.textContent).toMatch(/searching/i);
     expect(screen.queryByTestId('hub-search-scan')).toBeNull();
     expect(opp.textContent).not.toMatch(/bob/); // opponentId is never shown
+  });
+
+  it('Item 2: the "Searching…" scan never flashes the player\'s OWN alias (#149)', () => {
+    // The cross-game feed holds the player's own resting challenge ('me') plus a rival's. While
+    // searching, the decorative scan must draw only from other players — never the current alias,
+    // which would read as being matched against yourself.
+    const ch = (matchId: string, ownerName: string): OpenChallenge => ({
+      matchId, ownerName, stake: 50, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'none',
+    });
+    render(
+      <BlackjackHubScreen
+        {...baseProps({
+          username: 'me',
+          waitingExpiresAt: Date.now() + 30_000,
+          challengesByGame: { blackjack: [ch('c1', 'me')], coinflip: [ch('c2', 'rival')] },
+        })}
+      />,
+    );
+    const scan = screen.getByTestId('hub-search-scan');
+    // Own challenge ('me') is excluded; only the rival remains in the pool.
+    expect(scan.textContent).toBe('rival');
+    expect(scan.textContent).not.toMatch(/me/);
   });
 
   it('Item 2: in-match shows a neutral "Opponent" when the joiner\'s name is unknown (never the id)', () => {
