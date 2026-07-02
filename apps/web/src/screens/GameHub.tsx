@@ -14,10 +14,15 @@ import { TILE_ART, COMING_SOON, titleCase } from '../components/hub-shared/tiles
 import { OpenGamesTicker } from '../components/hub-shared/OpenGames.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
-import { outlineClasses, outlineForOutcome, useDelayedFlag, type Verdict } from './hub-shared/slotReveal.js';
+import { outlineClasses, outlineForOutcome, replaysOf, useDelayedFlag, type Verdict } from './hub-shared/slotReveal.js';
 
 /** How long after the result phase starts before the own-bar verdict lights (ms). */
 const BAR_VERDICT_BEAT_MS = 250;
+
+/** Draw→rematch beat (#161): how long the orange "push — replaying" outline holds on BOTH bars
+ *  after a tie before the fresh round shows and the pick timer restarts. Tunable; shared by every
+ *  tie-replay game (the universal tie rule is game-agnostic). */
+const DRAW_REMATCH_HOLD_MS = 2000;
 
 /** Coinflip win-reveal timing (bar-level, #156). Phase 1: the solid green fill + "You Win" holds
  *  for WIN_FILL_HOLD_MS; phase 2: it eases out over WIN_FILL_FADE_MS, settling to the persistent
@@ -63,6 +68,11 @@ export interface GameAreaArgs {
    *  area paint a terminal result on the board itself (e.g. Blackjack's win/lose card frames) when
    *  it opts out of the shared result overlay. Driven strictly by the server, never inferred. */
   outcome?: Outcome | null;
+  /** True during the shared draw→rematch beat (#161) — the ~2 s window after a tie round pushes and
+   *  the server re-deals a fresh round in the same escrow. Lets a game area hold its own resolution
+   *  reveal (e.g. Limbo/Keno's `lastResult`, Coinflip's flip) while the bars show the orange outline,
+   *  before the fresh round takes over. Generic (driven by the `replays` signal); games ignore it. */
+  drawBeat?: boolean;
 }
 
 /** The generic, per-game-agnostic props the App feeds every Game hub (Coinflip, RPS, …). */
@@ -353,9 +363,37 @@ export function GameHub(props: GameHubProps) {
   const searchNow = useNow(searching);
   const waitingRemaining = waitingExpiresAt != null ? waitingExpiresAt - searchNow : 0;
 
+  // ── Draw→rematch beat (#161) — shared across every tie-replay game ───────────
+  // The universal tie rule already re-deals a fresh round in the SAME escrow server-side (the module
+  // bumps `replays`/`round` and returns a NON-terminal state; it settles once when decisive, and at
+  // the 10-replay cap it sends match.end with outcome:void). The ONLY generic tell that a push just
+  // happened is a rise in that public `replays` counter (replaysOf, no gameId branch). On a rise
+  // while the match is live we run the shared beat: an orange outline on BOTH bars for
+  // DRAW_REMATCH_HOLD_MS, then clear so the fresh round (already delivered) shows and the pick timer
+  // restarts. The client never touches escrow per round; the cap-void arrives as a normal terminal
+  // (match.end → result overlay), so there is no client-side loop.
+  const replays = replaysOf(gameState);
+  const [drawBeat, setDrawBeat] = useState(false);
+  const prevReplays = useRef<number | null>(null);
+  const drawBeatTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (drawBeatTimer.current) clearTimeout(drawBeatTimer.current); }, []);
+  // A new match starts its own replay count — reset the baseline so a prior match can't leak a beat.
+  useEffect(() => { prevReplays.current = null; setDrawBeat(false); }, [currentMatchId]);
+  useEffect(() => {
+    const prev = prevReplays.current;
+    prevReplays.current = replays;
+    // Only a genuine increase during a LIVE match is a draw — not the first frame, a reconnect
+    // resume (baseline reset above), or the terminal void at the cap (that clears currentMatchId).
+    if (prev != null && replays != null && replays > prev && currentMatchId != null) {
+      setDrawBeat(true);
+      if (drawBeatTimer.current) clearTimeout(drawBeatTimer.current);
+      drawBeatTimer.current = setTimeout(() => setDrawBeat(false), DRAW_REMATCH_HOLD_MS);
+    }
+  }, [replays, currentMatchId]);
+
   // Built once and fed to the game area, the per-game slot asides (chess clocks) and the play action.
   const timeControlBaseMs = timeControl?.options.find((o) => o.id === selectedControl)?.baseMs;
-  const areaArgs: GameAreaArgs = { phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, playerId, opponentId, username, serverClockOffset, timeControlBaseMs, outcome: overlay?.outcome ?? null };
+  const areaArgs: GameAreaArgs = { phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, playerId, opponentId, username, serverClockOffset, timeControlBaseMs, outcome: overlay?.outcome ?? null, drawBeat };
 
   // Bar-level result (opt-in, Coinflip-style). Fires BAR_VERDICT_BEAT_MS after the result phase
   // starts so the board's flip/reveal animation plays first. Generic derivation from server outcome.
@@ -378,13 +416,14 @@ export function GameHub(props: GameHubProps) {
               No grey card frame here — each panel owns its surface (Blackjack's greyish table
               fills the section; the other arenas wrap themselves in a card). */}
           <section data-testid="hub-section-game" aria-label={gameName} className="flex flex-col gap-3 px-4">
-            <OpponentSlot phase={phase} opponentName={opponentName} scanNames={scanNames} aside={renderSlotAside?.(areaArgs, 'opponent')} />
+            <OpponentSlot phase={phase} opponentName={opponentName} scanNames={scanNames} aside={renderSlotAside?.(areaArgs, 'opponent')} drawBeat={drawBeat} />
             {renderGameArea(areaArgs)}
             <OwnSlot
               label={loggedIn ? (username || 'You') : 'Sign in'}
               isOwn={loggedIn}
               aside={renderSlotAside?.(areaArgs, 'own')}
               barVerdict={ownBarVerdict}
+              drawBeat={drawBeat}
             />
           </section>
 
@@ -501,12 +540,19 @@ function useNameScan(active: boolean, names: string[]): string | null {
  *  "Searching…" beat with a decorative online-name scan; In-match/Result → the REAL opponent's
  *  name in bright white (or a neutral "Opponent" when the joiner's name never reached the client).
  *  Never an opponentId, never a fabricated/cycled name (Charter #2 + DEMO_PRESENTATION honesty). */
-function OpponentSlot({ phase, opponentName, scanNames, aside }: { phase: Phase; opponentName?: string | null; scanNames: string[]; aside?: ReactNode }) {
+function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat }: { phase: Phase; opponentName?: string | null; scanNames: string[]; aside?: ReactNode; drawBeat?: boolean }) {
   const searching = phase === 'waiting';
   const inMatch = phase === 'in-match' || phase === 'result';
   const scan = useNameScan(searching, scanNames);
   return (
-    <div data-testid="hub-slot-opponent" className="flex items-center gap-2.5 rounded-full bg-surface px-3.5 py-2.5">
+    <div
+      data-testid="hub-slot-opponent"
+      className={cn(
+        'flex items-center gap-2.5 rounded-full bg-surface px-3.5 py-2.5 transition-all duration-300',
+        // Shared draw→rematch beat (#161): both bars flash the orange push outline for ~2 s.
+        drawBeat && outlineClasses('draw'),
+      )}
+    >
       <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#2a2a4a] text-muted-foreground">
         <PersonGlyph className="h-[18px] w-[18px]" />
       </span>
@@ -539,7 +585,7 @@ function OpponentSlot({ phase, opponentName, scanNames, aside }: { phase: Phase;
  *  behind the content as a background layer — for WIN_FILL_HOLD_MS, then eases out over
  *  WIN_FILL_FADE_MS into the persistent green outline. Loss/draw are outline-only (no fill/text).
  *  Coinflip-specific — does not affect any other game hub. */
-function OwnSlot({ label, isOwn, aside, barVerdict }: { label: string; isOwn: boolean; aside?: ReactNode; barVerdict?: Verdict | null }) {
+function OwnSlot({ label, isOwn, aside, barVerdict, drawBeat }: { label: string; isOwn: boolean; aside?: ReactNode; barVerdict?: Verdict | null; drawBeat?: boolean }) {
   const win = barVerdict === 'win';
   // Win reveal phases: `filling` is the held green fill; once WIN_FILL_HOLD_MS elapses it settles to
   // the outline (fill + "You Win" ease out over WIN_FILL_FADE_MS, then the label unmounts).
@@ -557,6 +603,8 @@ function OwnSlot({ label, isOwn, aside, barVerdict }: { label: string; isOwn: bo
         barVerdict === 'lose' && 'ring-[3px] ring-destructive',
         barVerdict === 'draw' && 'ring-[3px] ring-amber-400',
         win && winSettled && outlineClasses('win'),
+        // In-match draw→rematch beat (#161): the same orange push outline as the opponent bar.
+        drawBeat && outlineClasses('draw'),
       )}
     >
       {/* Green celebration fill — a background LAYER behind the content (never replaces the username).

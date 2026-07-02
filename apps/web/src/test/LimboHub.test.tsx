@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { LimboHubScreen } from '../screens/LimboHub.js';
 import type { LimboView } from '../App.js';
 
@@ -108,5 +108,79 @@ describe('LimboHubScreen (GameHub + LimboPanel)', () => {
   it('is sanitized: no $ anywhere on the hub', () => {
     const { container } = render(<LimboHubScreen {...inMatch()} />);
     expect(container.textContent ?? '').not.toMatch(/\$/);
+  });
+
+  // ── Shared draw→rematch beat (#161) — reuse proof on a SECOND game ───────────
+  // Driven by the generic `replays` signal in GameHub (NOT a per-gameId branch); Limbo gets the
+  // beat for free by exposing the same `replays` field every tie-replay module bumps on a push.
+  const ownRing = () => screen.getByTestId('hub-slot-own').className;
+  const oppRing = () => screen.getByTestId('hub-slot-opponent').className;
+  // A non-terminal tie round: replays bumped, a fresh pick round dealt, `lastResult` = the push
+  // (winner null). This is exactly what the server sends on the universal-tie replay.
+  const tieRound = (replays: number): LimboView =>
+    view(null, {
+      round: replays,
+      replays,
+      lastResult: { round: replays - 1, roll: 5, targets: { alice: 5, bob: 5 }, winner: null },
+    });
+
+  it('a tie round flashes the orange outline on BOTH bars, holds, then clears for the fresh round', async () => {
+    vi.useFakeTimers();
+    try {
+      const onPlay = vi.fn();
+      const { rerender } = render(<LimboHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view(), onPlay })} />);
+      // The server re-deals in the same escrow → a NON-terminal state with replays 0 → 1.
+      rerender(<LimboHubScreen {...baseProps({ currentMatchId: 'm1', gameState: tieRound(1), onPlay })} />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+      expect(ownRing()).toContain('ring-amber-400'); // orange on the player's bar
+      expect(oppRing()).toContain('ring-amber-400'); // …and the opponent's bar
+      expect(onPlay).not.toHaveBeenCalled(); // AUTO-rematch is server-driven — the client never re-posts
+
+      // After the ~2 s hold the outline clears and the fresh pick round stands.
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000 + 50); });
+      expect(ownRing()).not.toContain('ring-amber-400');
+      expect(oppRing()).not.toContain('ring-amber-400');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('re-fires the beat on a SECOND consecutive tie (each push is its own beat)', async () => {
+    vi.useFakeTimers();
+    try {
+      const { rerender } = render(<LimboHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view() })} />);
+      rerender(<LimboHubScreen {...baseProps({ currentMatchId: 'm1', gameState: tieRound(1) })} />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000 + 50); }); // first beat elapses
+      expect(ownRing()).not.toContain('ring-amber-400');
+      rerender(<LimboHubScreen {...baseProps({ currentMatchId: 'm1', gameState: tieRound(2) })} />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+      expect(ownRing()).toContain('ring-amber-400'); // the second push beats again
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the 10-replay cap terminates as a void via match.end (no infinite client loop), and no re-escrow', async () => {
+    vi.useFakeTimers();
+    try {
+      const onPlay = vi.fn();
+      const { rerender } = render(<LimboHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view(), onPlay })} />);
+      // Walk several ties — each a non-terminal replay in the SAME escrow (client posts nothing).
+      for (let r = 1; r <= 3; r++) {
+        rerender(<LimboHubScreen {...baseProps({ currentMatchId: 'm1', gameState: tieRound(r), onPlay })} />);
+        await act(async () => { await vi.advanceTimersByTimeAsync(2000 + 50); });
+      }
+      expect(onPlay).not.toHaveBeenCalled(); // escrow carried over across every replay — never re-collected
+
+      // At the cap the server settles once and sends match.end(void): currentMatchId clears +
+      // a void outcome. The hub shows the terminal result overlay — it does NOT keep beating.
+      rerender(<LimboHubScreen {...baseProps({ currentMatchId: null, gameState: tieRound(10), lastOutcome: { type: 'void' }, lastSettlement: { delta: 0, newBalance: 1000 } })} />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000 + 50); });
+      expect(screen.getByTestId('hub-result-overlay')).toBeInTheDocument();
+      expect(screen.getByTestId('hub-result-text').textContent).toMatch(/void/i);
+      expect(screen.getByTestId('hub-slot-own').className).not.toContain('ring-amber-400'); // beat did not loop
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
