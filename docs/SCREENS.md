@@ -41,7 +41,7 @@ The wall falls at the **commit to play** (`PLAY`/`JOIN`), never at the door. Bro
 
 ### `game-hub` — one template, one instance per game
 
-Instances: `game-hub:coinflip`, `:rps`, `:blackjack`, `:mines`, `:chess`. Same regions, per-game arena.
+Instances (one per registered game, **all live**): `game-hub:coinflip`, `:rps`, `:chess`, `:blackjack`, `:mines`, `:crash`, `:roulette`, `:dice`, `:baccarat`, `:keno`, `:limbo`, `:hilo`, `:ships-battle`. Same regions, per-game arena. (`ships-battle` is route-reachable but kept off the home grid until it has tile art — `HIDDEN_ON_HOME`, #148.)
 
 | Region | Purpose | Data source (real) |
 |--------|---------|--------------------|
@@ -49,7 +49,7 @@ Instances: `game-hub:coinflip`, `:rps`, `:blackjack`, `:mines`, `:chess`. Same r
 | `game-hub/stake` | Bet-amount selector (arms the stake) | local selection |
 | `game-hub/play` | The **PLAY** button (purple; post a challenge), in the unified play panel with the inert **Play a Friend** (#114/#115) | `ws.joinQueue` |
 | `game-hub/challenges` | **Cross-game "Open Games" ticker** (#114) — resting challenges across all games; rows say **JOIN** and route to that game's hub | cross-game `challenges` feed → `OpenChallenge[]` |
-| `game-hub/related` | Related-games rail (**whole roster incl. inert coming-soon tiles**, per #114; playable set still `/games`) | `api.games` + static coming-soon |
+| `game-hub/related` | Related-games rail (**whole roster**, data-driven from `/games`; any future pre-spec game would show as a dimmed coming-soon tile via the same mechanism) | `api.games` (+ static coming-soon fallback, currently empty) |
 | `game-hub/result` | Brief self-dismissing result overlay (lands wherever scrolled); some hubs override with an in-bar/pill reveal — Coinflip's bar fill+outline, Crash's pill outline (see those hub docs) | `match.end` |
 
 **States** (in place, over WS events — no navigation): `idle` (browse, arena greyed) → `waiting` (opponent search) → `in-match` (`match.start` activates the arena) → `result` (overlay, wallet updates) → back to `idle`. For internal-replay games (Blackjack/Mines draws), the replay loops in place; only the decisive result shows the overlay. See `COINFLIP_HUB.md` for the reference instance.
@@ -80,13 +80,13 @@ Register/login step over the current hub, triggered by `PLAY`/`JOIN`/account whe
 
 **Group tabs** switch what the grid shows:
 - **All** — every tile.
-- **Originals** — all PvP games (live + coming-soon) *except* chess; the platform's signature, all "redesigned for two players."
+- **Originals** — all PvP games (all live) *except* chess; the platform's signature, all "redesigned for two players."
 - **Classics** — traditional games: Chess today, more later.
 - **Events** — a Coin Flip **tournament announcement** banner (1 Sept 2026), framed as an invitation; play-money, no prize/real-money copy.
 
 **Controls** (design fidelity > exact behavior, client-side over the tile list): **Find** (looking-glass → text field → substring filter), **Filter** (Card-games / Table-games / Logic-games), **Sort** (A–Z / Z–A / by popularity; popularity = a simple demo metric).
 
-**Roster.** Live PvP: **RPS, Coinflip, Chess, Blackjack, Mines**. **Coming soon — PvP redefinition pending** (dimmed, non-playable tiles): **Baccarat, Limbo, Crash, Keno, Hilo, Dice, Roulette**. Per the conversion thesis (`CHARTER.md` / `GAME_REDEFINITION.md`), the whole house canon is a redefinition target — each becomes playable only once it has a confirmed two-player spec; none is ever shown in house form. Playable tiles are data-driven from `/games`; coming-soon tiles are static art, subtly dimmed (no verbose text).
+**Roster.** Live PvP (all registered in `/games`, data-driven tiles): **RPS, Coinflip, Chess, Blackjack, Mines, Crash, Roulette, Dice, Baccarat, Keno, Limbo, Hilo** — 12 on the home grid — **plus Ships Battle** (live + route-reachable but `HIDDEN_ON_HOME` until it has tile art, #148), for **13 registered games total**. **No "coming soon" tiles remain**: the whole house canon has been redefined into two-player form and shipped. The `COMING_SOON` list in `tiles.ts` (`baccarat, keno, hilo, dice, roulette`) is now **vestigial** — every entry is registered, so `HomeHub` filters it against the live set and auto-promotes them, rendering **zero** coming-soon tiles. Per the conversion thesis (`CHARTER.md` / `GAME_REDEFINITION.md`), each became playable only once it had a confirmed two-player spec; none is ever shown in house form. Should a future game ship pre-spec, it would render as a dimmed static coming-soon tile via that same mechanism.
 
 ## How to request a change
 
