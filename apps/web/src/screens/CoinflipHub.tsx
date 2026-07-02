@@ -94,18 +94,30 @@ function CoinflipIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
  * server-side); the client only choreographs the reveal beats. Scroll-safety: when the round
  * resolves the board scrolls itself into view (replacing the old self-dismissing overlay's reach).
  */
-function CoinflipBoard({ gameState }: GameAreaArgs) {
+function CoinflipBoard({ gameState, serverClockOffset = 0 }: GameAreaArgs) {
   const view = gameState as CoinflipView | null;
   const terminal = isTerminal(view);
   const result = (view?.result as 'heads' | 'tails' | undefined) ?? null;
 
-  // Cosmetic countdown (server clock authoritative). Starts on match mount, stops at lock.
+  // Cosmetic countdown, driven by the server's authoritative window close (`windowEndsAt`) when
+  // present — so it is accurate and RESTARTS automatically on each tie-replay round (windowEndsAt is
+  // re-stamped). Falls back to a plain local count if the field is absent. Stops at the lock.
+  const windowEndsAt = view?.windowEndsAt;
   const [seconds, setSeconds] = useState(PICK_SECONDS);
   useEffect(() => {
     if (terminal) return;
-    const id = setInterval(() => setSeconds((s) => Math.max(0, s - 1)), 1000);
+    const tick = () => {
+      if (windowEndsAt && windowEndsAt > 0) {
+        const remaining = (windowEndsAt - (Date.now() + serverClockOffset)) / 1000;
+        setSeconds(Math.max(0, Math.min(PICK_SECONDS, Math.ceil(remaining))));
+      } else {
+        setSeconds((s) => Math.max(0, s - 1));
+      }
+    };
+    tick();
+    const id = setInterval(tick, 250);
     return () => clearInterval(id);
-  }, [terminal]);
+  }, [terminal, windowEndsAt, serverClockOffset]);
 
   // Scroll-safety: a match can resolve while the player is scrolled down at Open Games. Bring the
   // board into view on resolution so the reveal/outline reaches them (no-op if already in view).
@@ -176,29 +188,28 @@ function SidePill({
 /** The own slot aside: H/T capsules to pick during the window; at reveal, the locked pick is shown
  *  flat (no capsule outline — the bar-level result handles the win/lose/draw signal).
  *
- *  Lag fix (#160): the tapped side rings PURPLE **immediately** from local state — we do NOT wait
- *  for the server to echo the pick into `view.choices` (that round-trip left the tap with no interim
- *  feedback, so it looked like nothing happened → the player tapped again). The server stays
- *  authoritative; picks are hidden, so an instant local highlight is safe. Coinflip is one-shot —
- *  `applyMove` throws once a side is chosen (`legalMoves` also empties) — so the FIRST tap IS the
- *  commit: a `pickRef` guard drops any later tap (never a rejected 2nd move; the outline can't
- *  desync from the recorded pick). See the PR for the pre-lock-re-pick spec conflict this resolves. */
+ *  Timer-only-resolve model (#164): the pick is CLIENT-LOCAL and FREELY CHANGEABLE for the whole
+ *  window — the tapped side rings PURPLE **immediately** from local state (no wait for the server to
+ *  echo `view.choices`), and tapping the other side just **moves** the outline. It is NEVER gated by
+ *  `legalMoves`/`your_turn` (both sides stay legal all window, and the client ignores that churn
+ *  regardless). The server is authoritative: every tap sends the replacement pick, and the flip
+ *  fires only when the server locks both at window expiry. Picks are hidden, so an instant local
+ *  highlight is safe. No same-side restriction — both pills always tappable (a "taken" side must
+ *  never be blocked; it would leak the opponent's pick). */
 function OwnPills({ args }: { args: GameAreaArgs }) {
-  const { gameState, legalMoves, onMove, playerId, phase } = args;
+  const { gameState, onMove, playerId, phase } = args;
   const view = gameState as CoinflipView | null;
   const terminal = isTerminal(view);
   // Own choice is NOT redacted by viewFor (only the opponent's is) — so this is the server-recorded
   // pick, just one round-trip behind the tap. The optimistic pick below bridges that gap.
   const myChoice = playerId ? (view?.choices?.[playerId] as 'heads' | 'tails' | undefined) : undefined;
-  const canMove = legalMoves.length > 0;
 
   const [optimisticPick, setOptimisticPick] = useState<'heads' | 'tails' | null>(null);
-  const pickRef = useRef<'heads' | 'tails' | null>(null);
   // A resolved round (a decisive result OR a draw before its auto-replay) closes the pick window;
   // clear the optimistic pick so the next window opens blank. The terminal frame reads the
   // server-recorded choice, so the outline never flickers during the reveal.
   useEffect(() => {
-    if (terminal) { setOptimisticPick(null); pickRef.current = null; }
+    if (terminal) setOptimisticPick(null);
   }, [terminal]);
 
   if (terminal) {
@@ -211,28 +222,18 @@ function OwnPills({ args }: { args: GameAreaArgs }) {
   // The H/T selector lives in the pill ONLY during the live pick window — never on the idle tile.
   if (phase !== 'in-match') return null;
 
-  // Local pick wins for the visual (the server echo agrees, since the pick is one-shot).
+  // Local pick wins for the visual; the server echoes the latest replacement into `view.choices`.
   const selected = optimisticPick ?? myChoice ?? null;
-  const picked = selected != null;
   function handlePick(id: 'heads' | 'tails') {
-    if (pickRef.current || myChoice) return; // one-shot: first tap commits; ignore the rest
-    pickRef.current = id;
-    setOptimisticPick(id); // optimistic purple outline — no wait for view.choices
-    onMove(id); // authoritative
+    setOptimisticPick(id); // optimistic purple outline — moves freely on every re-tap
+    onMove(id); // authoritative replacement pick (the server accepts a new pick all window)
   }
 
   return (
     <span className="flex items-center gap-1.5" role="group" aria-label="Pick a side">
       {SIDES.map((s) => (
-        <SidePill
-          key={s.id}
-          side={s}
-          selected={selected === s.id}
-          // Once committed, the picked pill stays vivid (purple ring); the other greys — the pick
-          // is locked (one-shot server). Before a pick, both are tappable while a move is legal.
-          disabled={picked ? s.id !== selected : !canMove}
-          onClick={() => handlePick(s.id)}
-        />
+        // Both pills stay tappable the whole window — tapping either just moves the purple outline.
+        <SidePill key={s.id} side={s} selected={selected === s.id} onClick={() => handlePick(s.id)} />
       ))}
     </span>
   );

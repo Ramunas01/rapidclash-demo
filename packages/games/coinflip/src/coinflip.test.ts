@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { Rng } from '@rapidclash/shared';
 import { IllegalMove } from '@rapidclash/shared';
-import { coinflipModule } from './coinflip.js';
+import { coinflipModule, PICK_WINDOW_MS } from './coinflip.js';
 
 const P1 = 'player-1';
 const P2 = 'player-2';
 
-const ctx = (playerId: string) => ({ playerId, now: 0 });
+/** A provisional pick lands DURING the open window (now < windowEndsAt). */
+const at = (playerId: string, now = 0) => ({ playerId, now });
 
 /** Mulberry32 — a copy of the core's seeded RNG, so these tests exercise the
  *  same deterministic behaviour the real match uses. Never Math.random. */
@@ -36,22 +37,43 @@ type Side = 'heads' | 'tails';
 type CoinflipView = {
   players: [string, string];
   choices: Partial<Record<string, Side>>;
+  locked?: Partial<Record<string, true>>;
+  windowEndsAt?: number;
   result?: Side;
+  seed?: number;
   round?: number;
   replays?: number;
   forcedOutcome?: unknown;
-  caller?: unknown;
-  call?: unknown;
 };
 function view(state: unknown): CoinflipView {
   return state as CoinflipView;
 }
 
-/** Play a full match: P1 chooses c1, then P2 chooses c2. */
-function play(rng: Rng, c1: Side, c2: Side) {
-  let s = coinflipModule.init([P1, P2], rng);
-  s = coinflipModule.applyMove(s, c1, ctx(P1)).state;
-  s = coinflipModule.applyMove(s, c2, ctx(P2)).state;
+/** init + launch: opens the fixed pick window at now=0 → windowEndsAt = PICK_WINDOW_MS. */
+function launched(rng: Rng) {
+  return coinflipModule.launch!(coinflipModule.init([P1, P2], rng), 0);
+}
+
+/** A provisional (mutable) pick inside the window. */
+function pick(state: unknown, p: string, side: Side, now = 0) {
+  return coinflipModule.applyMove(state, side, at(p, now));
+}
+
+/** The core's deadline lock for one player: inject `timeoutMove` at the window close. Returns the
+ *  ApplyResult so callers can read the events (resolve fires on the SECOND lock). */
+function lock(state: unknown, p: string, now = PICK_WINDOW_MS) {
+  const move = coinflipModule.timeoutMove!(state, p, fixedRng(0));
+  return coinflipModule.applyMove(state, move, at(p, now));
+}
+
+/** Full round: both pick provisionally inside the window, then both lock at the deadline (the
+ *  simultaneous close the core drives via the shared `scheduledDeadlines`). */
+function playWindow(rng: Rng, c1: Side, c2: Side) {
+  let s: unknown = launched(rng);
+  s = pick(s, P1, c1).state;
+  s = pick(s, P2, c2).state;
+  s = lock(s, P1).state;
+  s = lock(s, P2).state;
   return s;
 }
 
@@ -66,7 +88,7 @@ const TAILS_SEED = (() => {
 })();
 
 describe('coinflipModule.meta', () => {
-  it('has the exact meta specified in the contract (ranking: net_winnings)', () => {
+  it('has the exact meta specified in the contract (ranking: net_winnings) — NO moveTimeoutMs', () => {
     expect(coinflipModule.meta).toEqual({
       id: 'coinflip',
       displayName: 'Coinflip',
@@ -76,22 +98,30 @@ describe('coinflipModule.meta', () => {
       bet: { minStake: 1, maxStake: 100, symmetricStake: true },
       averageDurationSec: 5,
       rakeRate: 0.025,
-      moveTimeoutMs: 10_000,
     });
+    // The fixed window is a scheduled deadline, NOT a per-move budget.
+    expect(coinflipModule.meta.moveTimeoutMs).toBeUndefined();
   });
 
-  it('declares a 2.5% rake rate', () => {
-    expect(coinflipModule.meta.rakeRate).toBe(0.025);
+  it('opts into the fixed-window hooks (launch + scheduledDeadlines + timeoutMove)', () => {
+    expect(typeof coinflipModule.launch).toBe('function');
+    expect(typeof coinflipModule.scheduledDeadlines).toBe('function');
+    expect(typeof coinflipModule.timeoutMove).toBe('function');
   });
 });
 
-describe('coinflipModule.init', () => {
-  it('starts with empty choices and no caller role', () => {
+describe('coinflipModule.init + launch — the pick window', () => {
+  it('starts with empty choices, nothing locked, and no window until launch', () => {
     const s = view(coinflipModule.init([P1, P2], fixedRng(0)));
     expect(s.players).toEqual([P1, P2]);
     expect(s.choices).toEqual({});
-    expect(s.caller).toBeUndefined();
-    expect(s.call).toBeUndefined();
+    expect(s.locked).toEqual({});
+    expect(s.windowEndsAt).toBe(0);
+  });
+
+  it('launch stamps an absolute window close = now + PICK_WINDOW_MS', () => {
+    const s = view(coinflipModule.launch!(coinflipModule.init([P1, P2], fixedRng(0)), 5_000));
+    expect(s.windowEndsAt).toBe(5_000 + PICK_WINDOW_MS);
   });
 
   it('fixes the flip from the rng (0 → heads, 1 → tails)', () => {
@@ -100,132 +130,184 @@ describe('coinflipModule.init', () => {
   });
 });
 
-describe('coinflipModule.legalMoves', () => {
-  it('offers BOTH players heads/tails before they choose (no caller)', () => {
-    const state = coinflipModule.init([P1, P2], fixedRng(0));
+describe('coinflipModule.legalMoves — both sides stay legal all window', () => {
+  it('offers BOTH players heads/tails before they choose', () => {
+    const state = launched(fixedRng(0));
     expect(coinflipModule.legalMoves(state, P1)).toEqual(['heads', 'tails']);
     expect(coinflipModule.legalMoves(state, P2)).toEqual(['heads', 'tails']);
   });
 
-  it('offers nothing to a player who has already chosen; the other may still choose', () => {
-    let state = coinflipModule.init([P1, P2], fixedRng(0));
-    state = coinflipModule.applyMove(state, 'heads', ctx(P1)).state;
-    expect(coinflipModule.legalMoves(state, P1)).toEqual([]);
+  it('STILL offers both sides after a provisional pick (picks are mutable — never [] mid-window)', () => {
+    const state = pick(launched(fixedRng(0)), P1, 'heads').state;
+    expect(coinflipModule.legalMoves(state, P1)).toEqual(['heads', 'tails']); // P1 may re-pick
     expect(coinflipModule.legalMoves(state, P2)).toEqual(['heads', 'tails']);
   });
 
-  it('offers nothing once both have chosen', () => {
-    const state = play(fixedRng(0), 'heads', 'tails');
+  it('offers nothing to a LOCKED player; only the deadline empties legalMoves', () => {
+    const state = lock(launched(fixedRng(0)), P1).state; // P1 locked at the window close
     expect(coinflipModule.legalMoves(state, P1)).toEqual([]);
-    expect(coinflipModule.legalMoves(state, P2)).toEqual([]);
+    expect(coinflipModule.legalMoves(state, P2)).toEqual(['heads', 'tails']);
   });
 });
 
-describe('coinflipModule.applyMove', () => {
-  it('records the choice and emits move_made WITHOUT leaking the side', () => {
-    const state = coinflipModule.init([P1, P2], fixedRng(0));
-    const { state: next, events } = coinflipModule.applyMove(state, 'tails', ctx(P1));
+describe('coinflipModule.applyMove — mutable picks, no early resolve', () => {
+  it('a provisional pick records the choice and emits NO events (no side/timing leak)', () => {
+    const { state: next, events } = pick(launched(fixedRng(0)), P1, 'tails');
     expect(view(next).choices[P1]).toBe('tails');
-    expect(events).toHaveLength(1);
-    expect(events[0].type).toBe('move_made');
-    // The side must NOT appear in the public event (it's hidden until terminal).
-    expect(events[0].payload).toEqual({ playerId: P1 });
+    expect(events).toEqual([]);
     expect(JSON.stringify(events)).not.toContain('tails');
   });
 
-  it('rejects a second choice from the same player with IllegalMove', () => {
-    let state = coinflipModule.init([P1, P2], fixedRng(0));
-    state = coinflipModule.applyMove(state, 'heads', ctx(P1)).state;
-    expect(() => coinflipModule.applyMove(state, 'tails', ctx(P1))).toThrow(IllegalMove);
+  it('BOTH players change their picks repeatedly before the lock (mutable window)', () => {
+    let s: unknown = launched(fixedRng(0));
+    s = pick(s, P1, 'heads').state;
+    s = pick(s, P1, 'tails').state; // P1 changes their mind
+    s = pick(s, P2, 'tails').state;
+    s = pick(s, P2, 'heads').state; // P2 changes their mind
+    s = pick(s, P1, 'heads').state; // ...and P1 again
+    expect(view(s).choices).toEqual({ [P1]: 'heads', [P2]: 'heads' });
+    expect(coinflipModule.isTerminal(s)).toBe(false); // never resolves mid-window
+    expect(view(s).locked).toEqual({});
+  });
+
+  it('does NOT resolve when both pick immediately — the round waits for the window (no early start)', () => {
+    let s: unknown = launched(fixedRng(0));
+    s = pick(s, P1, 'heads').state;
+    s = pick(s, P2, 'tails').state; // different sides, both in the first instant
+    expect(coinflipModule.isTerminal(s)).toBe(false); // NOT resolved — only the timer locks
+    expect(view(s).locked).toEqual({});
+  });
+
+  it('rejects a move from a LOCKED player with IllegalMove', () => {
+    const state = lock(launched(fixedRng(0)), P1).state;
+    expect(() => coinflipModule.applyMove(state, 'tails', at(P1, PICK_WINDOW_MS))).toThrow(IllegalMove);
   });
 
   it('rejects an invalid side with IllegalMove', () => {
-    const state = coinflipModule.init([P1, P2], fixedRng(0));
-    expect(() => coinflipModule.applyMove(state, 'edge', ctx(P1))).toThrow(IllegalMove);
+    expect(() => coinflipModule.applyMove(launched(fixedRng(0)), 'edge', at(P1))).toThrow(IllegalMove);
   });
 });
 
-describe('coinflipModule.isTerminal', () => {
-  it('is false until BOTH have chosen, then true', () => {
-    let state = coinflipModule.init([P1, P2], fixedRng(0));
-    expect(coinflipModule.isTerminal(state)).toBe(false);
-    state = coinflipModule.applyMove(state, 'heads', ctx(P1)).state;
-    expect(coinflipModule.isTerminal(state)).toBe(false); // only one chose
-    state = coinflipModule.applyMove(state, 'tails', ctx(P2)).state;
-    expect(coinflipModule.isTerminal(state)).toBe(true);
+describe('coinflipModule — timer-0 locks both simultaneously', () => {
+  it('at the deadline both current picks lock; resolve fires only on the SECOND lock', () => {
+    let s: unknown = launched(fixedRng(0)); // result = heads
+    s = pick(s, P1, 'heads').state;
+    s = pick(s, P2, 'tails').state;
+
+    const l1 = lock(s, P1); // first lock at the window close
+    expect(coinflipModule.isTerminal(l1.state)).toBe(false); // P2 not yet locked → no resolve
+    expect(view(l1.state).locked).toEqual({ [P1]: true });
+    expect(l1.events).toEqual([]); // no reveal yet
+
+    const l2 = lock(l1.state, P2); // second lock → both locked → resolve
+    expect(coinflipModule.isTerminal(l2.state)).toBe(true);
+    expect(view(l2.state).locked).toEqual({ [P1]: true, [P2]: true });
+    expect(l2.events.some((e) => e.type === 'match_decided')).toBe(true);
+    expect(coinflipModule.outcome(l2.state)).toEqual({ type: 'win', winner: P1 }); // heads matches
+  });
+
+  it('a NO-PICK round still resolves: both auto-pick (seeded) at the deadline', () => {
+    let s: unknown = launched(seededRng(TAILS_SEED)); // neither player picks
+    // The core injects timeoutMove for each unlocked player at the shared close.
+    s = lock(s, P1).state;
+    const l2 = lock(s, P2);
+    // Either the seeded auto-picks differed → decisive win, or matched → a tie replay (round bumped).
+    if (coinflipModule.isTerminal(l2.state)) {
+      expect(coinflipModule.outcome(l2.state).type).toBe('win');
+    } else {
+      expect(view(l2.state).round).toBe(1);
+    }
+  });
+
+  it('the timeoutMove locks the player\'s PROVISIONAL pick when they chose one', () => {
+    const s = pick(launched(fixedRng(0)), P1, 'tails').state;
+    expect(coinflipModule.timeoutMove!(s, P1, fixedRng(0))).toBe('tails'); // their own pick, not an auto-pick
   });
 });
 
 describe('coinflipModule — tie → instant replay (universal tie rule)', () => {
-  it('SAME choice is NOT a terminal draw — it re-flips a fresh round (choices cleared, round bumped)', () => {
-    const s = play(fixedRng(0), 'heads', 'heads');
-    expect(coinflipModule.isTerminal(s)).toBe(false);
-    expect(view(s).choices).toEqual({});
-    expect(view(s).round).toBe(1);
-    expect(view(s).replays).toBe(1);
-    // ...and emits new_round, not match_decided.
-    let mid = coinflipModule.init([P1, P2], fixedRng(0));
-    mid = coinflipModule.applyMove(mid, 'heads', ctx(P1)).state;
-    const { events } = coinflipModule.applyMove(mid, 'heads', ctx(P2));
+  it('SAME locked choice is NOT a terminal draw — it re-flips a fresh round + a FRESH window', () => {
+    let s: unknown = launched(fixedRng(0));
+    s = pick(s, P1, 'heads').state;
+    s = pick(s, P2, 'heads').state;
+    s = lock(s, P1).state;
+    const { state, events } = lock(s, P2); // same side → tie
+    expect(coinflipModule.isTerminal(state)).toBe(false);
+    expect(view(state).choices).toEqual({});
+    expect(view(state).locked).toEqual({});
+    expect(view(state).round).toBe(1);
+    expect(view(state).replays).toBe(1);
+    expect(view(state).windowEndsAt).toBe(PICK_WINDOW_MS + PICK_WINDOW_MS); // re-stamped from now=WINDOW
     expect(events.some((e) => e.type === 'new_round')).toBe(true);
     expect(events.some((e) => e.type === 'match_decided')).toBe(false);
   });
 
   it('a decisive round after a tie still settles (same escrow)', () => {
-    let s = coinflipModule.init([P1, P2], fixedRng(0));
-    s = coinflipModule.applyMove(s, 'heads', ctx(P1)).state;
-    s = coinflipModule.applyMove(s, 'heads', ctx(P2)).state; // tie → round 1
+    let s: unknown = launched(fixedRng(0));
+    s = pick(s, P1, 'heads').state;
+    s = pick(s, P2, 'heads').state;
+    s = lock(s, P1).state;
+    s = lock(s, P2).state; // tie → round 1 with a fresh window
     expect(coinflipModule.isTerminal(s)).toBe(false);
-    s = coinflipModule.applyMove(s, 'heads', ctx(P1)).state;
-    s = coinflipModule.applyMove(s, 'tails', ctx(P2)).state; // different sides → decisive
+    const round2Ends = view(s).windowEndsAt!;
+    s = pick(s, P1, 'heads', round2Ends - 1).state;
+    s = pick(s, P2, 'tails', round2Ends - 1).state;
+    s = lock(s, P1, round2Ends).state;
+    s = lock(s, P2, round2Ends).state; // different sides → decisive
     expect(coinflipModule.isTerminal(s)).toBe(true);
     expect(coinflipModule.outcome(s).type).toBe('win');
   });
 
   it('10 consecutive same-side rounds → terminal void (refund both, no rake)', () => {
-    let s = coinflipModule.init([P1, P2], fixedRng(0));
+    let s: unknown = launched(fixedRng(0));
+    let now = 0;
     for (let i = 0; i < 10; i++) {
       expect(coinflipModule.isTerminal(s)).toBe(false);
-      s = coinflipModule.applyMove(s, 'heads', ctx(P1)).state;
-      s = coinflipModule.applyMove(s, 'heads', ctx(P2)).state;
+      const ends = view(s).windowEndsAt!;
+      s = pick(s, P1, 'heads', ends - 1).state;
+      s = pick(s, P2, 'heads', ends - 1).state;
+      s = lock(s, P1, ends).state;
+      s = lock(s, P2, ends).state;
+      now = ends;
     }
+    void now;
     expect(coinflipModule.isTerminal(s)).toBe(true);
     expect(coinflipModule.outcome(s)).toEqual({ type: 'void' });
     expect(view(s).replays).toBe(10);
   });
 });
 
-describe('coinflipModule.outcome', () => {
+describe('coinflipModule.outcome — the flip decides between different sides', () => {
   it('DIFFERENT choices → the player whose side matches the flip wins', () => {
-    // result = heads → whoever chose heads wins.
-    expect(coinflipModule.outcome(play(fixedRng(0), 'heads', 'tails'))).toEqual({ type: 'win', winner: P1 });
-    expect(coinflipModule.outcome(play(fixedRng(0), 'tails', 'heads'))).toEqual({ type: 'win', winner: P2 });
-    // result = tails → whoever chose tails wins.
-    expect(coinflipModule.outcome(play(fixedRng(1), 'heads', 'tails'))).toEqual({ type: 'win', winner: P2 });
-    expect(coinflipModule.outcome(play(fixedRng(1), 'tails', 'heads'))).toEqual({ type: 'win', winner: P1 });
+    expect(coinflipModule.outcome(playWindow(fixedRng(0), 'heads', 'tails'))).toEqual({ type: 'win', winner: P1 });
+    expect(coinflipModule.outcome(playWindow(fixedRng(0), 'tails', 'heads'))).toEqual({ type: 'win', winner: P2 });
+    expect(coinflipModule.outcome(playWindow(fixedRng(1), 'heads', 'tails'))).toEqual({ type: 'win', winner: P2 });
+    expect(coinflipModule.outcome(playWindow(fixedRng(1), 'tails', 'heads'))).toEqual({ type: 'win', winner: P1 });
   });
 });
 
-describe('coinflipModule.viewFor — opponent choice AND flip hidden until terminal', () => {
-  it('leaks NO opponent choice and NO result pre-terminal (from BOTH views)', () => {
-    // Only P1 has chosen → not terminal.
-    let state = coinflipModule.init([P1, P2], fixedRng(0));
-    state = coinflipModule.applyMove(state, 'heads', ctx(P1)).state;
+describe('coinflipModule.viewFor — opponent choice, flip, seed, locked, ALL hidden until terminal', () => {
+  it('leaks NO opponent choice / result / seed / locked pre-terminal (window still public)', () => {
+    const state = pick(launched(seededRng(HEADS_SEED)), P1, 'heads').state; // only P1 picked, not terminal
 
     const p1View = view(coinflipModule.viewFor(state, P1));
     const p2View = view(coinflipModule.viewFor(state, P2));
 
-    // Neither view exposes the flip result.
+    // No flip result pre-terminal.
     expect('result' in p1View).toBe(false);
     expect('result' in p2View).toBe(false);
     // P1 sees their own choice; P2 must NOT see P1's choice.
     expect(p1View.choices[P1]).toBe('heads');
     expect(P1 in p2View.choices).toBe(false);
     expect(JSON.stringify(p2View)).not.toContain('heads');
+    // Seed is zeroed on the wire; the `locked` timing map is stripped; the fixed window is public.
+    expect(p2View.seed).toBe(0);
+    expect('locked' in p2View).toBe(false);
+    expect(p2View.windowEndsAt).toBe(PICK_WINDOW_MS);
   });
 
   it('reveals BOTH choices and the flip to BOTH players at terminal', () => {
-    const state = play(fixedRng(0), 'heads', 'tails'); // result heads
+    const state = playWindow(fixedRng(0), 'heads', 'tails'); // result heads
     for (const viewer of [P1, P2]) {
       const v = view(coinflipModule.viewFor(state, viewer));
       expect(v.result).toBe('heads');
@@ -235,64 +317,43 @@ describe('coinflipModule.viewFor — opponent choice AND flip hidden until termi
   });
 });
 
-describe('coinflipModule.forfeit', () => {
-  it('voids when abandoned before BOTH have chosen (both refunded), never a draw', () => {
-    // No one has chosen.
-    const fresh = coinflipModule.init([P1, P2], fixedRng(0));
-    const v0 = coinflipModule.forfeit(fresh, P1);
-    expect(coinflipModule.isTerminal(v0)).toBe(true);
-    expect(coinflipModule.outcome(v0)).toEqual({ type: 'void' });
+describe('coinflipModule.scheduledDeadlines — the fixed shared window drives the sweep', () => {
+  it('both players share the same absolute deadline while unlocked; none before launch', () => {
+    expect(coinflipModule.scheduledDeadlines!(coinflipModule.init([P1, P2], fixedRng(0)))).toEqual({});
+    const s = launched(fixedRng(0));
+    expect(coinflipModule.scheduledDeadlines!(s)).toEqual({ [P1]: PICK_WINDOW_MS, [P2]: PICK_WINDOW_MS });
+  });
 
-    // One player has chosen, the other abandons → still void (not a draw/win).
-    let mid = coinflipModule.init([P1, P2], fixedRng(0));
-    mid = coinflipModule.applyMove(mid, 'heads', ctx(P1)).state;
+  it('a locked player drops out of the schedule', () => {
+    const s = lock(launched(fixedRng(0)), P1).state;
+    expect(coinflipModule.scheduledDeadlines!(s)).toEqual({ [P2]: PICK_WINDOW_MS });
+  });
+});
+
+describe('coinflipModule.forfeit', () => {
+  it('voids when abandoned before a round resolves (both refunded), never a draw', () => {
+    const fresh = launched(fixedRng(0));
+    expect(coinflipModule.outcome(coinflipModule.forfeit(fresh, P1))).toEqual({ type: 'void' });
+
+    const mid = pick(launched(fixedRng(0)), P1, 'heads').state;
     expect(coinflipModule.outcome(coinflipModule.forfeit(mid, P2))).toEqual({ type: 'void' });
   });
 });
 
-describe('coinflipModule — pick timer + seeded auto-pick (opt-in per-player timer)', () => {
-  it('declares the 10s per-player pick timer', () => {
-    expect(coinflipModule.meta.moveTimeoutMs).toBe(10_000);
+describe('coinflipModule — deterministic auto-pick + replay', () => {
+  it('timeoutMove returns a currently-legal side for a no-pick player, ignoring the injected rng', () => {
+    const state = launched(seededRng(HEADS_SEED));
+    const m0 = coinflipModule.timeoutMove!(state, P1, fixedRng(0));
+    const m1 = coinflipModule.timeoutMove!(state, P1, fixedRng(1));
+    expect(coinflipModule.legalMoves(state, P1)).toContain(m0);
+    expect(m0).toBe(m1); // deterministic (fixed at init, not from the injected rng)
   });
 
-  it('timeoutMove returns a valid, currently-legal side for a player who has not picked', () => {
-    const state = coinflipModule.init([P1, P2], seededRng(HEADS_SEED));
-    const m1 = coinflipModule.timeoutMove!(state, P1, fixedRng(0));
-    expect(coinflipModule.legalMoves(state, P1)).toContain(m1); // membership — the core re-checks this
-    expect(['heads', 'tails']).toContain(m1);
-  });
-
-  it('the auto-pick is deterministic (fixed at init) and ignores the injected rng', () => {
-    const state = coinflipModule.init([P1, P2], seededRng(HEADS_SEED));
-    expect(coinflipModule.timeoutMove!(state, P1, fixedRng(0))).toBe(coinflipModule.timeoutMove!(state, P1, fixedRng(1)));
-  });
-
-  it('a no-pick round progresses: both auto-pick on timeout → decisive (terminal win) OR a same-side replay', () => {
-    let state = coinflipModule.init([P1, P2], seededRng(TAILS_SEED));
-    state = coinflipModule.applyMove(state, coinflipModule.timeoutMove!(state, P1, fixedRng(0)), ctx(P1)).state;
-    state = coinflipModule.applyMove(state, coinflipModule.timeoutMove!(state, P2, fixedRng(0)), ctx(P2)).state;
-    if (coinflipModule.isTerminal(state)) {
-      expect(coinflipModule.outcome(state).type).toBe('win'); // auto-picks differed → decisive
-    } else {
-      expect(view(state).round).toBe(1); // auto-picks matched → tie → replayed
-    }
-  });
-
-  it('timeoutMove throws once a player has already chosen (nothing to auto-pick)', () => {
-    let state = coinflipModule.init([P1, P2], fixedRng(0));
-    state = coinflipModule.applyMove(state, 'heads', ctx(P1)).state;
+  it('timeoutMove throws once a player is locked (nothing left to lock)', () => {
+    const state = lock(launched(fixedRng(0)), P1).state;
     expect(() => coinflipModule.timeoutMove!(state, P1, fixedRng(0))).toThrow(IllegalMove);
   });
 
-  it('redaction: the seed is stripped pre-terminal (no precomputing the opponent auto-pick)', () => {
-    let state = coinflipModule.init([P1, P2], seededRng(HEADS_SEED));
-    state = coinflipModule.applyMove(state, 'heads', ctx(P1)).state; // P1 picked, P2 has not → pre-terminal
-    const p2View = coinflipModule.viewFor(state, P2) as { seed: number };
-    expect(p2View.seed).toBe(0); // real seed never on the wire pre-terminal
-  });
-});
-
-describe('coinflipModule — determinism (S9 analogue)', () => {
   it('same seed + same choices replays to byte-identical final state and outcome', () => {
     const combos: Array<[Side, Side]> = [
       ['heads', 'heads'],
@@ -302,8 +363,8 @@ describe('coinflipModule — determinism (S9 analogue)', () => {
     ];
     for (const seed of [HEADS_SEED, TAILS_SEED]) {
       for (const [c1, c2] of combos) {
-        const a = play(seededRng(seed), c1, c2);
-        const b = play(seededRng(seed), c1, c2);
+        const a = playWindow(seededRng(seed), c1, c2);
+        const b = playWindow(seededRng(seed), c1, c2);
         expect(JSON.stringify(a)).toBe(JSON.stringify(b));
         expect(coinflipModule.outcome(a)).toEqual(coinflipModule.outcome(b));
       }
@@ -311,8 +372,8 @@ describe('coinflipModule — determinism (S9 analogue)', () => {
   });
 
   it('same seed → same flip, INDEPENDENT of the choices', () => {
-    const a = view(play(seededRng(HEADS_SEED), 'heads', 'tails')).result;
-    const b = view(play(seededRng(HEADS_SEED), 'tails', 'heads')).result;
-    expect(a).toBe(b); // identical flip; only who-matches-it differs
+    const a = view(playWindow(seededRng(HEADS_SEED), 'heads', 'tails')).result;
+    const b = view(playWindow(seededRng(HEADS_SEED), 'tails', 'heads')).result;
+    expect(a).toBe(b);
   });
 });

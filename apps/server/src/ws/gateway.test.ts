@@ -95,8 +95,15 @@ describe('S8 — WS reconnect / match.resume', () => {
   let bobToken: string;
   let bobId: string;
   const sockets: SocketRecorder[] = [];
+  let prevWindow: string | undefined;
 
   beforeEach(async () => {
+    // Fast pick window (#164 timer-only-resolve) so the sweep closes the round within the test's
+    // wait budget instead of the real 10s. Generous enough (1.5s) to outlast the reconnect + the
+    // opponent's move in the mid-move-disconnect case before both throws lock at the window close.
+    prevWindow = process.env.RC_PICK_WINDOW_MS;
+    process.env.RC_PICK_WINDOW_MS = '1500';
+
     const db = new Database(':memory:');
     services = createServices(db, [rpsModule]);
     app = buildApp(services, [rpsModule], { seedAdmin: false });
@@ -126,6 +133,8 @@ describe('S8 — WS reconnect / match.resume', () => {
     for (const s of sockets) s.close();
     sockets.length = 0;
     await app.close();
+    if (prevWindow === undefined) delete process.env.RC_PICK_WINDOW_MS;
+    else process.env.RC_PICK_WINDOW_MS = prevWindow;
   });
 
   /** Pair alice + bob into an RPS match and return the shared matchId. */
@@ -175,10 +184,12 @@ describe('S8 — WS reconnect / match.resume', () => {
     // Already moved this round → no fresh your_turn for alice.
     expect(resumed.matchId).toBe(matchId);
 
-    // The match continues correctly: bob moves, both see match.end.
+    // The match continues correctly: bob picks, then the round resolves at the pick-window close
+    // (timer-only-resolve #164 — NOT on bob's move). Both provisional throws lock at the window:
+    // alice's rock (preserved across her disconnect) beats bob's scissors.
     bob.send('move.make', { move: 'scissors' }, matchId);
-    const aliceEnd = await alice2.waitFor('match.end');
-    const bobEnd = await bob.waitFor('match.end');
+    const aliceEnd = await alice2.waitFor('match.end', 5000);
+    const bobEnd = await bob.waitFor('match.end', 5000);
 
     const aliceOutcome = (aliceEnd.payload as { outcome: { type: string; winner?: string } }).outcome;
     expect(aliceOutcome).toEqual({ type: 'win', winner: aliceId }); // rock beats scissors
@@ -186,7 +197,7 @@ describe('S8 — WS reconnect / match.resume', () => {
     const rake = Math.round(STAKE * 2 * FEE_RATE);
     expect(aliceSettle.delta).toBe(STAKE - rake);
     expect((bobEnd.payload as { settlement: { delta: number } }).settlement.delta).toBe(-STAKE);
-  });
+  }, 15000);
 
   it('terminal-resume returns match.end with the settled outcome and NO duplicate payout', async () => {
     const alice = await openSocket(port, aliceToken);
@@ -195,10 +206,12 @@ describe('S8 — WS reconnect / match.resume', () => {
 
     const matchId = await startMatch(alice, bob);
 
+    // Both pick real throws; the round resolves at the pick-window close (timer-only-resolve #164),
+    // rock beats scissors → alice wins.
     alice.send('move.make', { move: 'rock' }, matchId);
     bob.send('move.make', { move: 'scissors' }, matchId);
-    await alice.waitFor('match.end');
-    await bob.waitFor('match.end');
+    await alice.waitFor('match.end', 5000);
+    await bob.waitFor('match.end', 5000);
 
     // Snapshot the ledger after settlement.
     const balBefore = {
@@ -237,7 +250,7 @@ describe('S8 — WS reconnect / match.resume', () => {
     expect(services.ledger.getBalance(bobId)).toBe(balBefore.bob);
     expect(services.ledger.getBalance(PLATFORM_ACCOUNT)).toBe(balBefore.platform);
     expect(entriesAfter).toBe(entriesBefore);
-  });
+  }, 15000);
 
   it('resume by a non-player is rejected and never leaks state', async () => {
     const alice = await openSocket(port, aliceToken);
@@ -263,9 +276,11 @@ describe('S8 — WS reconnect / match.resume', () => {
 // ─── #31 — server-authoritative move timeout (socket stays OPEN) ─────────────────
 //
 // The socket-close forfeit (S8 above) can't help a client that is stuck but still
-// CONNECTED. This drives the real gateway, pairs two players, lets one move and the
-// other go silent (sockets stay open), and asserts the periodic sweep resolves the
-// match and pushes match.end to BOTH — with the stake settled, never orphaned.
+// CONNECTED. This drives the real gateway, pairs two players, lets one pick and the
+// other go silent (sockets stay open), and asserts the periodic sweep closes the pick
+// window and pushes match.end to BOTH — with the stake settled, never orphaned. Under
+// timer-only-resolve (#164) the silent player auto-picks at the window; the invariant
+// under test is escrow safety on a stuck match, not a silence-forfeit.
 
 describe('#31 — stuck-but-connected match resolves via the timeout sweep', () => {
   let app: FastifyInstance;
@@ -276,14 +291,14 @@ describe('#31 — stuck-but-connected match resolves via the timeout sweep', () 
   let bobToken: string;
   let bobId: string;
   const sockets: SocketRecorder[] = [];
-  let prevTimeout: string | undefined;
+  let prevWindow: string | undefined;
 
   beforeEach(async () => {
-    // Tiny per-move timeout so the (1s) sweep resolves the stuck match quickly; the
-    // window is still far larger than the sub-100ms it takes the mover to act, so the
-    // pre-first-move void branch can't race in ahead of the move.
-    prevTimeout = process.env.MATCH_TURN_TIMEOUT_MS;
-    process.env.MATCH_TURN_TIMEOUT_MS = '300';
+    // Short pick window (#164 timer-only-resolve) so the (1s) sweep closes the stuck round quickly;
+    // 300ms is well past the sub-100ms it takes the mover to act, so the mover's throw is a real
+    // provisional pick and only the silent player rides to the seeded auto-pick at the window close.
+    prevWindow = process.env.RC_PICK_WINDOW_MS;
+    process.env.RC_PICK_WINDOW_MS = '300';
 
     const db = new Database(':memory:');
     services = createServices(db, [rpsModule]);
@@ -314,8 +329,8 @@ describe('#31 — stuck-but-connected match resolves via the timeout sweep', () 
     for (const s of sockets) s.close();
     sockets.length = 0;
     await app.close();
-    if (prevTimeout === undefined) delete process.env.MATCH_TURN_TIMEOUT_MS;
-    else process.env.MATCH_TURN_TIMEOUT_MS = prevTimeout;
+    if (prevWindow === undefined) delete process.env.RC_PICK_WINDOW_MS;
+    else process.env.RC_PICK_WINDOW_MS = prevWindow;
   });
 
   async function startMatch(alice: SocketRecorder, bob: SocketRecorder): Promise<string> {
@@ -329,25 +344,29 @@ describe('#31 — stuck-but-connected match resolves via the timeout sweep', () 
     return (aStart.payload as MatchStartPayload).matchId;
   }
 
-  it('one player moved, the other is silent → non-responder forfeits, both get match.end, no orphaned escrow', async () => {
+  it('one player picked, the other is silent → the window closes, both get match.end, no orphaned escrow', async () => {
     const alice = await openSocket(port, aliceToken);
     const bob = await openSocket(port, bobToken);
     sockets.push(alice, bob);
 
     const matchId = await startMatch(alice, bob);
 
-    // bob moves; alice stays CONNECTED but never responds (the close-forfeit never fires).
+    // bob picks; alice stays CONNECTED but never picks (the close-forfeit never fires — rps rides the
+    // scheduled window sweep, not a disconnect). Timer-only-resolve (#164): a silent CONNECTED player
+    // is NOT a forfeit — at the window close her pick auto-fills (seeded) and both throws lock together.
     bob.send('move.make', { move: 'rock' }, matchId);
     await bob.waitFor('match.state');
 
-    // The sweep resolves it server-side and pushes match.end to BOTH open sockets.
-    const bobEnd = await bob.waitFor('match.end', 3000);
-    const aliceEnd = await alice.waitFor('match.end', 3000);
+    // The window-close sweep resolves it server-side and pushes match.end to BOTH open sockets.
+    const bobEnd = await bob.waitFor('match.end', 8000);
+    const aliceEnd = await alice.waitFor('match.end', 8000);
 
-    const rake = Math.round(STAKE * 2 * FEE_RATE);
-    expect((bobEnd.payload as { outcome: unknown }).outcome).toEqual({ type: 'win', winner: bobId });
-    expect((bobEnd.payload as { settlement: { delta: number } }).settlement.delta).toBe(STAKE - rake);
-    expect((aliceEnd.payload as { settlement: { delta: number } }).settlement.delta).toBe(-STAKE);
+    // The exact winner depends on alice's seeded auto-pick (and any tie-replays), but the match MUST
+    // settle terminally, identically for both, with no orphaned escrow: a decisive win (rake once) or
+    // a void at the replay cap (both refunded).
+    const outcome = (bobEnd.payload as { outcome: { type: string } }).outcome;
+    expect(['win', 'void']).toContain(outcome.type);
+    expect((aliceEnd.payload as { outcome: unknown }).outcome).toEqual(outcome);
 
     // Stake settled, nothing left escrowed: balances + rake reconstruct both grants.
     const total =
@@ -355,5 +374,5 @@ describe('#31 — stuck-but-connected match resolves via the timeout sweep', () 
       services.ledger.getBalance(bobId) +
       services.ledger.getBalance(PLATFORM_ACCOUNT);
     expect(total).toBe(GRANT_AMOUNT * 2);
-  });
+  }, 20000);
 });

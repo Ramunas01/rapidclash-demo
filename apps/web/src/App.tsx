@@ -52,6 +52,10 @@ const isGameHubScreen = (s: Screen): boolean =>
 export interface RpsView {
   players: [string, string];
   choices: Partial<Record<string, string>>;
+  /** Round scaffolding (public) — bumps on each tie replay. */
+  round?: number;
+  /** Absolute ms when the fixed pick window closes and both throws lock (server-authoritative). */
+  windowEndsAt?: number;
   forcedOutcome?: { type: string; winner?: string };
 }
 
@@ -62,6 +66,11 @@ export interface CoinflipView {
   choices: Partial<Record<string, string>>;
   /** Present ONLY at terminal — the server strips it pre-terminal via viewFor. */
   result?: string;
+  /** Round scaffolding (public) — bumps on each tie replay. */
+  round?: number;
+  /** Absolute ms when the fixed pick window closes and both picks lock (server-authoritative).
+   *  Drives the cosmetic countdown; re-stamped each replay so the ring restarts. */
+  windowEndsAt?: number;
   forcedOutcome?: { type: string; winner?: string };
 }
 

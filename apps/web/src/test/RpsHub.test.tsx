@@ -83,11 +83,21 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     expect(onMakeMove).toHaveBeenCalledWith('rock');
   });
 
-  it('In-match: choices are disabled when it is not your turn (no legalMoves)', () => {
+  it('In-match: picks stay enabled and mutable for the whole window (timer-only-resolve #164)', () => {
+    const onMakeMove = vi.fn();
+    // A prior pick is on the server view, and legalMoves is empty — under the OLD model this froze
+    // the board. The new model never gates on legalMoves/your_turn: all three throws stay tappable.
     const gameState: RpsView = { players: ['pid', 'bob'], choices: { pid: 'rock' } };
-    render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
-    expect(screen.getByTestId('hub-move-rock')).toBeDisabled();
-    expect(screen.getByTestId('hub-move-scissors')).toBeDisabled();
+    render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [], onMakeMove })} />);
+    expect(screen.getByTestId('hub-move-rock')).not.toBeDisabled();
+    expect(screen.getByTestId('hub-move-scissors')).not.toBeDisabled();
+    // The current pick shows selected (purple outline via aria-pressed)…
+    expect(screen.getByTestId('hub-move-rock').getAttribute('aria-pressed')).toBe('true');
+    // …and re-tapping a different throw changes the selection (mutable) and re-sends it.
+    fireEvent.click(screen.getByTestId('hub-move-paper'));
+    expect(onMakeMove).toHaveBeenCalledWith('paper');
+    expect(screen.getByTestId('hub-move-paper').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId('hub-move-rock').getAttribute('aria-pressed')).toBe('false');
   });
 
   it('Result: ending a match shows the overlay with the ¢ delta and the both-choices reveal', async () => {
