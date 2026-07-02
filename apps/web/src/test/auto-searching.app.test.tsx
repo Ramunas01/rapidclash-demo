@@ -83,7 +83,8 @@ describe('#152 — hubs never auto-enter Searching…', () => {
     fireEvent.click(screen.getByTestId('hub-bet-10'));
     fireEvent.click(screen.getByTestId('hub-play'));
     deliver('queue.waiting', { gameId: 'coinflip', matchId: 'm1', since: Date.now(), expiresAt: Date.now() + 30_000 });
-    await waitFor(() => expect(screen.getByTestId('hub-waiting')).toBeInTheDocument());
+    // Searching is now in place: the active Cancel control appears (WaitingBlock retired, #154).
+    await waitFor(() => expect(screen.getByTestId('hub-cancel')).toBeInTheDocument());
 
     // Navigate Home WITHOUT cancelling, then re-open the hub.
     fireEvent.click(screen.getByTestId('hub-nav-games'));
@@ -91,9 +92,9 @@ describe('#152 — hubs never auto-enter Searching…', () => {
     fireEvent.click(screen.getByTestId('home-tile-coinflip'));
     await waitFor(() => expect(screen.getByTestId('hub-play')).toBeInTheDocument());
 
-    // The hub is back at Idle — NOT stranded in "Searching…".
-    expect(screen.queryByTestId('hub-waiting')).toBeNull();
+    // The hub is back at Idle — NOT stranded in "Searching…": idle PLAY, no Cancel control.
     expect(screen.queryByTestId('hub-cancel')).toBeNull();
+    expect(screen.getByTestId('hub-play')).toBeEnabled();
   });
 
   it('a stray server queue.waiting (no user PLAY this session) does not strand the hub in searching', async () => {
@@ -104,8 +105,9 @@ describe('#152 — hubs never auto-enter Searching…', () => {
     // No PLAY pressed — a server queue.waiting arrives out of nowhere.
     deliver('queue.waiting', { gameId: 'coinflip', matchId: 'm1', since: Date.now(), expiresAt: Date.now() + 30_000 });
 
-    // The hub must stay at Idle (PLAY visible), never auto-enter Searching with no armed stake.
+    // The hub must stay at Idle (PLAY tappable), never auto-enter Searching with no armed stake.
     await waitFor(() => expect(screen.getByTestId('hub-play')).toBeInTheDocument());
-    expect(screen.queryByTestId('hub-waiting')).toBeNull();
+    expect(screen.getByTestId('hub-play')).toBeEnabled(); // idle PLAY, not the disabled waiting label
+    expect(screen.queryByTestId('hub-cancel')).toBeNull();
   });
 });

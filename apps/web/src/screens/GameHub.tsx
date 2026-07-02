@@ -169,7 +169,7 @@ export function GameHub(props: GameHubProps) {
     gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, suppressResultOverlay, holdResultMs, ownBarResult,
     token, playerId, username, opponentId, opponentName, serverClockOffset = 0, balance, currentMatchId, gameState, legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
-    onPlay, onCancel, onRepost, onTakeChallenge, onMakeMove, onForfeit, onTrackChallenges,
+    onPlay, onCancel, onTakeChallenge, onMakeMove, onForfeit, onTrackChallenges,
     onUntrackChallenges, onSelectGame, onOpenWallet, onOpenGameList, onResultDismiss,
     loggedIn = true, initialStake,
   } = props;
@@ -275,6 +275,14 @@ export function GameHub(props: GameHubProps) {
     if (waitingExpiresAt != null) setWaiting(true);
   }, [waitingExpiresAt]);
 
+  // #154: the search timed out with no opponent (lobbyExpired). Revert to idle IN PLACE — drop
+  // out of the waiting phase so the opponent pill + arena show their idle cues again and the play
+  // panel returns to idle PLAY. The armed stake is kept (armedStake state persists), so pressing
+  // PLAY simply re-posts (App resets lobbyExpired on the new join → the "No opponent" note clears).
+  useEffect(() => {
+    if (lobbyExpired) { setWaiting(false); searchStartRef.current = null; }
+  }, [lobbyExpired]);
+
   // While the dwell floor holds, a live match still reads as "waiting" (the opponent slot keeps
   // scanning) so the in-match board reveals a beat later instead of snapping in.
   // `resultPending` keeps the phase in-match (board mounted, "Playing…") through the reveal hold,
@@ -330,6 +338,14 @@ export function GameHub(props: GameHubProps) {
   const matchForming = phase === 'waiting' && currentMatchId != null;
   const playFrozen = phase === 'in-match' || matchForming;
 
+  // #154: pure search — a posted bet with no match yet (and not expired). Drives the in-place
+  // transform of the ALWAYS-mounted play panel: PLAY → a non-tappable "Waiting for an opponent ·
+  // m:ss", Play-a-Friend → an active Cancel, bet row frozen — no separate WaitingBlock, no
+  // mount/unmount (the in-match model, applied to waiting). The countdown ticks off `waitingExpiresAt`.
+  const searching = phase === 'waiting' && !currentMatchId && !lobbyExpired;
+  const searchNow = useNow(searching);
+  const waitingRemaining = waitingExpiresAt != null ? waitingExpiresAt - searchNow : 0;
+
   // Built once and fed to the game area, the per-game slot asides (chess clocks) and the play action.
   const timeControlBaseMs = timeControl?.options.find((o) => o.id === selectedControl)?.baseMs;
   const areaArgs: GameAreaArgs = { phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, playerId, opponentId, username, serverClockOffset, timeControlBaseMs, outcome: overlay?.outcome ?? null };
@@ -365,31 +381,39 @@ export function GameHub(props: GameHubProps) {
             />
           </section>
 
-          {/* 3 — Unified play panel. Genuinely waiting on your own resting bet → countdown+cancel.
-              Otherwise the SAME panel: Idle/Result → live PLAY (an opt-out game's Result phase
-              starts a new game from here); a forming match (search dwell) or In-match → frozen,
-              "Playing…" (bet + Play-a-Friend greyed but visible). The searching→matched transition
-              shows NO separate "found" block — the opponent pill is the only search cue. */}
-          {phase === 'waiting' && !currentMatchId ? (
-            <div className="px-4">
-              <div className="rounded-2xl border border-border bg-card p-4">
-                <WaitingBlock expiresAt={waitingExpiresAt} expired={lobbyExpired} onCancel={handleCancel} onRepost={onRepost} />
-              </div>
-            </div>
-          ) : (
-            <div className="px-4">
-              <PlayPanel
-                playing={playFrozen}
-                armedStake={armedStake}
-                onArm={setArmedStake}
-                onPlay={handlePlay}
-                actionSlot={renderPrimaryAction?.(areaArgs) ?? null}
-                timeControl={timeControl}
-                selectedControl={selectedControl}
-                onSelectControl={setSelectedControl}
-              />
-            </div>
-          )}
+          {/* 3 — Unified play panel — ALWAYS mounted; the controls transform in place (#154), so
+              idle→waiting→in-match never mounts/unmounts a panel or shifts layout. Idle/Result →
+              live PLAY + Play-a-Friend. Searching → PLAY becomes a non-tappable "Waiting for an
+              opponent · m:ss" (the actionSlot seam, same slot Crash uses for EJECT) and Play-a-
+              Friend becomes the one active Cancel; the bet row freezes. Forming/In-match → frozen,
+              "Playing…". Expiry reverts to idle + a polite "No opponent found" note. The opponent
+              pill's "Searching…" and each hub's arena "Finding a rival…" remain the state cues. */}
+          <div className="px-4">
+            <PlayPanel
+              playing={playFrozen}
+              searching={searching}
+              noOpponent={lobbyExpired && !currentMatchId}
+              armedStake={armedStake}
+              onArm={setArmedStake}
+              onPlay={handlePlay}
+              onCancel={handleCancel}
+              actionSlot={
+                searching ? (
+                  <button
+                    type="button"
+                    disabled
+                    data-testid="hub-play"
+                    className="w-full cursor-default rounded-xl bg-brand py-4 text-base font-black uppercase tracking-wider text-white opacity-80"
+                  >
+                    Waiting for an opponent · <span className="tabular-nums" data-testid="hub-waiting-countdown">{formatClock(waitingRemaining)}</span>
+                  </button>
+                ) : (renderPrimaryAction?.(areaArgs) ?? null)
+              }
+              timeControl={timeControl}
+              selectedControl={selectedControl}
+              onSelectControl={setSelectedControl}
+            />
+          </div>
 
           {/* 4 — Open Games (cross-game, all hubs). Authed → the live aggregate; logged out → a
               sign-in teaser (the WS feed is auth-only). JOIN a non-matching game → routed by the
@@ -532,23 +556,37 @@ function OwnSlot({ label, isOwn, aside, barVerdict }: { label: string; isOwn: bo
   );
 }
 
-/** The unified play panel (PLAY + bet grid + optional time control + Play-a-Friend). `playing`
- *  freezes it during a match (item 7): PLAY reads "Playing…" and every control greys but stays. */
+/** The unified play panel (PLAY + bet grid + optional time control + Play-a-Friend). It is ALWAYS
+ *  mounted and transforms in place across states (#154), never swapped for a separate block:
+ *  `playing` freezes it during a match (PLAY reads "Playing…", controls grey but stay); `searching`
+ *  is the pure-search state (the hub supplies the "Waiting for an opponent · m:ss" actionSlot and
+ *  Play-a-Friend becomes the active Cancel, while the bet row freezes with the SAME visuals — but
+ *  NO "Playing…" label); `noOpponent` shows the polite "No opponent found" note after expiry. */
 function PlayPanel({
-  playing, armedStake, onArm, onPlay, actionSlot, timeControl, selectedControl, onSelectControl,
+  playing, searching, noOpponent, armedStake, onArm, onPlay, onCancel, actionSlot, timeControl, selectedControl, onSelectControl,
 }: {
   playing: boolean;
+  /** Pure search: freeze the bet row (no "Playing…") and turn Play-a-Friend into the active Cancel. */
+  searching: boolean;
+  /** Search expired with no opponent → show the polite "No opponent found — try again" note. */
+  noOpponent: boolean;
   armedStake: number | null;
   onArm(v: number): void;
   onPlay(): void;
+  /** Cancel the in-flight search (the hardened leaveQueue path, #153). */
+  onCancel(): void;
   /** When provided, replaces the PLAY button in place — the game's transforming primary action
-   *  (e.g. Crash's EJECT during flight). Null → the default PLAY button (the #1-bug fix: ONE
-   *  button that transforms, never a second control). */
+   *  (e.g. Crash's EJECT during flight, or the hub's waiting label during search). Null → the
+   *  default PLAY button (the #1-bug fix: ONE button that transforms, never a second control). */
   actionSlot?: ReactNode;
   timeControl?: GameMeta['timeControl'];
   selectedControl?: string;
   onSelectControl(id: string): void;
 }) {
+  // Both a live match and a pure search freeze the bet controls with the identical greyed/inert
+  // treatment — the ONLY difference is the primary label (search shows the waiting slot, not
+  // "Playing…") and that Play-a-Friend becomes Cancel during search.
+  const frozen = playing || searching;
   // "PLAY needs a bet" guided affordance (#143). PLAY stays enabled with no stake armed; pressing
   // it then GUIDES the user to the bet panel (smooth-scroll + red frame + a11y hint) instead of
   // dead-ending — it never starts a match. The cue clears the instant a bet is armed (no auto-play).
@@ -559,7 +597,7 @@ function PlayPanel({
   // whenever the panel freezes for a live match. Arming only clears the guide — it never presses
   // PLAY; the user does that themselves on their next tap.
   useEffect(() => { if (armedStake != null) setNeedsBet(false); }, [armedStake]);
-  useEffect(() => { if (playing) setNeedsBet(false); }, [playing]);
+  useEffect(() => { if (frozen) setNeedsBet(false); }, [frozen]);
 
   // The shared guard. Scroll the BET panel into view (centered → clears the fixed top ribbon and
   // bottom nav; the scroll-margins below add explicit nav + safe-area clearance, robust to the
@@ -600,10 +638,22 @@ function PlayPanel({
         </button>
       )}
 
-      {/* Bet amount — stays visible during a match, greyed + inert. The needs-bet frame (#143) rings
-          it red when PLAY was pressed with no stake. scroll-mt clears the fixed top ribbon (~6rem);
-          scroll-mb clears the fixed bottom nav (~7rem) + safe-area so a scrolled-in panel lands
-          ABOVE the nav, never behind it (robust to the #142 body-scroll change). */}
+      {/* Expiry note (#154): the search timed out with no opponent. Polite live region (same
+          pattern as the #143 needs-bet hint) — sr-only until it fires, cleared on the next PLAY
+          (App resets lobbyExpired on re-post). Does NOT claim a refund (already auto-refunded). */}
+      <p
+        role="status"
+        aria-live="polite"
+        data-testid="hub-no-opponent"
+        className={cn('-mt-1 text-center text-xs font-semibold text-muted-foreground', !noOpponent && 'sr-only')}
+      >
+        {noOpponent ? 'No opponent found — try again' : ''}
+      </p>
+
+      {/* Bet amount — stays visible during a match OR a search, greyed + inert (same treatment).
+          The needs-bet frame (#143) rings it red when PLAY was pressed with no stake. scroll-mt
+          clears the fixed top ribbon (~6rem); scroll-mb clears the fixed bottom nav (~7rem) +
+          safe-area so a scrolled-in panel lands ABOVE the nav (robust to the #142 body-scroll). */}
       <div
         ref={betRef}
         data-testid="hub-section-bet"
@@ -611,7 +661,7 @@ function PlayPanel({
         className={cn(
           'scroll-mt-24 scroll-mb-[calc(7rem_+_env(safe-area-inset-bottom))] rounded-xl transition-shadow',
           needsBet && 'ring-2 ring-destructive',
-          playing && 'pointer-events-none opacity-50',
+          frozen && 'pointer-events-none opacity-50',
         )}
       >
         <div className="mb-2.5 flex items-center justify-between">
@@ -625,7 +675,7 @@ function PlayPanel({
             <button
               key={v}
               type="button"
-              disabled={playing}
+              disabled={frozen}
               data-testid={`hub-bet-${v}`}
               onClick={() => onArm(v)}
               className={cn(
@@ -662,7 +712,7 @@ function PlayPanel({
                   <button
                     key={o.id}
                     type="button"
-                    disabled={playing}
+                    disabled={frozen}
                     data-testid={`hub-tc-${o.id}`}
                     aria-pressed={selected}
                     aria-label={o.label}
@@ -684,59 +734,23 @@ function PlayPanel({
         )}
       </div>
 
-      {/* Play a Friend — purple, inert/visual-only (owner D1); greys with the panel during a match.
-          The #143 needs-bet guard is pre-wired (handlePlayFriend): no friend flow yet, so an armed
-          press is a no-op as before; an unarmed press guides to the bet panel. */}
+      {/* Play a Friend transforms IN PLACE into the one active Cancel during a search (#154) — same
+          button node, so no remount. Searching → "Cancel", active, wired to the hardened leaveQueue
+          (#153). Otherwise → purple, inert/visual-only (owner D1); greys with the panel in-match.
+          The #143 needs-bet guard stays pre-wired for the idle Play-a-Friend path. */}
       <button
         type="button"
-        aria-disabled="true"
-        data-testid="hub-play-friend"
-        onClick={handlePlayFriend}
-        className={cn('w-full cursor-default rounded-xl bg-brand py-3.5 text-[15px] font-bold text-white', playing && 'opacity-50')}
+        {...(searching ? {} : { 'aria-disabled': 'true' as const })}
+        data-testid={searching ? 'hub-cancel' : 'hub-play-friend'}
+        onClick={searching ? onCancel : handlePlayFriend}
+        className={cn(
+          'w-full rounded-xl py-3.5 text-[15px] font-bold transition-colors',
+          searching ? 'bg-surface text-foreground hover:brightness-110' : 'cursor-default bg-brand text-white',
+          playing && 'opacity-50',
+        )}
       >
-        Play a Friend
+        {searching ? 'Cancel' : 'Play a Friend'}
       </button>
-    </div>
-  );
-}
-
-/** Waiting on your own resting bet: countdown + cancel; re-post when it expires. */
-function WaitingBlock({
-  expiresAt, expired, onCancel, onRepost,
-}: {
-  expiresAt: number | null;
-  expired: boolean;
-  onCancel(): void;
-  onRepost(): void;
-}) {
-  const now = useNow(true);
-  const remaining = expiresAt != null ? expiresAt - now : 0;
-  return (
-    <div className="flex flex-col items-center gap-3 py-2" data-testid="hub-waiting">
-      {expired ? (
-        <>
-          <p className="text-sm font-semibold text-foreground/80">Challenge expired</p>
-          <p className="text-xs text-muted-foreground">Your stake was refunded automatically.</p>
-          <div className="flex w-full gap-2">
-            <button type="button" onClick={onRepost} data-testid="hub-repost" className="flex-1 rounded-xl bg-brand py-2.5 text-sm font-semibold text-white">
-              Re-post
-            </button>
-            <button type="button" onClick={onCancel} className="flex-1 rounded-xl bg-surface py-2.5 text-sm font-semibold text-foreground/80">
-              Back
-            </button>
-          </div>
-        </>
-      ) : (
-        <>
-          <span className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" /> Waiting for an opponent
-          </span>
-          <p className="text-2xl font-bold tabular-nums text-foreground" data-testid="hub-waiting-countdown">{formatClock(remaining)}</p>
-          <button type="button" onClick={onCancel} data-testid="hub-cancel" className="w-full rounded-xl bg-surface py-2.5 text-sm font-semibold text-foreground/80 transition-colors hover:brightness-110">
-            Cancel
-          </button>
-        </>
-      )}
     </div>
   );
 }

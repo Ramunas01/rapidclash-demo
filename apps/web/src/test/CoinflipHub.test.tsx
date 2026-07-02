@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import { CoinflipHubScreen } from '../screens/CoinflipHub.js';
 import type { CoinflipView } from '../App.js';
 
@@ -82,18 +82,39 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     expect(onPlay).not.toHaveBeenCalled(); // …with NO auto-play
   });
 
-  it('Waiting: a confirmed rest shows the countdown + cancel and hides the bet/PLAY block', async () => {
+  it('Waiting (#154): PLAY transforms in place to a non-tappable "WAITING FOR AN OPPONENT · m:ss"; no separate WaitingBlock', async () => {
+    const onPlay = vi.fn();
+    render(<CoinflipHubScreen {...baseProps({ waitingExpiresAt: Date.now() + 30_000, onPlay })} />);
+    // No separate waiting block ever renders.
+    expect(screen.queryByTestId('hub-waiting')).toBeNull();
+    // The primary button is the waiting label with a live m:ss countdown, and is non-tappable.
+    const play = await screen.findByTestId('hub-play');
+    expect(play.textContent).toMatch(/waiting for an opponent/i);
+    expect(within(play).getByTestId('hub-waiting-countdown').textContent).toMatch(/^\d:\d\d$/);
+    expect(play).toBeDisabled();
+    fireEvent.click(play);
+    expect(onPlay).not.toHaveBeenCalled(); // non-tappable → posts nothing
+  });
+
+  it('Waiting (#154): Play-a-Friend becomes the active "Cancel" and the bet row is greyed/inert', async () => {
     const onCancel = vi.fn();
     render(<CoinflipHubScreen {...baseProps({ waitingExpiresAt: Date.now() + 30_000, onCancel })} />);
-    await waitFor(() => expect(screen.getByTestId('hub-waiting')).toBeInTheDocument());
-    expect(screen.queryByTestId('hub-play')).toBeNull();
-    fireEvent.click(screen.getByTestId('hub-cancel'));
+    // Play-a-Friend transformed → Cancel (active), Play-a-Friend testid gone.
+    const cancel = await screen.findByTestId('hub-cancel');
+    expect(cancel.textContent).toMatch(/cancel/i);
+    expect(screen.queryByTestId('hub-play-friend')).toBeNull();
+    // Bet row is dimmed + inert (same freeze as in-match) and its presets disabled.
+    expect(screen.getByTestId('hub-section-bet').className).toMatch(/opacity-50/);
+    expect(screen.getByTestId('hub-bet-10')).toBeDisabled();
+    // Cancel fires the hardened leaveQueue path.
+    fireEvent.click(cancel);
     expect(onCancel).toHaveBeenCalled();
   });
 
   it('Waiting: JOIN on other challenges is disabled (one commitment at a time)', async () => {
     render(<CoinflipHubScreen {...baseProps({ waitingExpiresAt: Date.now() + 30_000, challengesByGame: { coinflip: [CHALLENGE] } })} />);
-    await waitFor(() => expect(screen.getByTestId('hub-waiting')).toBeInTheDocument());
+    // Waiting is now signalled in place by the Cancel control (no WaitingBlock).
+    await waitFor(() => expect(screen.getByTestId('hub-cancel')).toBeInTheDocument());
     expect(screen.getByTestId('home-join-c1')).toBeDisabled();
   });
 
@@ -237,6 +258,85 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     expect(play.className).not.toContain('cursor-not-allowed');
     fireEvent.click(play);
     expect(onPlay).not.toHaveBeenCalled(); // pressing without a bet guides to the bet panel, never starts
+  });
+});
+
+describe('CoinflipHubScreen — waiting transforms in place (#154)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/games') || u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
+      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+    }));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('the countdown ticks down live off waitingExpiresAt', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_000_000);
+      render(<CoinflipHubScreen {...baseProps({ waitingExpiresAt: 1_000_000 + 30_000 })} />);
+      expect(screen.getByTestId('hub-waiting-countdown').textContent).toBe('0:30');
+      // Advancing the fake timers moves the mocked clock; the 1s tick recomputes the remaining.
+      act(() => { vi.advanceTimersByTime(5_000); });
+      expect(screen.getByTestId('hub-waiting-countdown').textContent).toBe('0:25');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('Cancel restores idle: PLAY / Play a Friend return and the bet row re-enables', async () => {
+    render(<CoinflipHubScreen {...baseProps({ waitingExpiresAt: Date.now() + 30_000 })} />);
+    const cancel = await screen.findByTestId('hub-cancel');
+    fireEvent.click(cancel);
+    // Back to idle in place: PLAY tappable, Play a Friend back, Cancel gone, bet re-enabled.
+    const play = screen.getByTestId('hub-play');
+    expect(play.textContent).toMatch(/^play$/i);
+    expect(play).toBeEnabled();
+    expect(screen.getByTestId('hub-play-friend')).toBeInTheDocument();
+    expect(screen.queryByTestId('hub-cancel')).toBeNull();
+    expect(screen.getByTestId('hub-bet-10')).toBeEnabled();
+    expect(screen.getByTestId('hub-section-bet').className).not.toMatch(/opacity-50/);
+  });
+
+  it('Expiry (lobbyExpired) → idle PLAY + bet enabled + "No opponent found" note; armed stake kept', async () => {
+    // Search with an armed stake, then the search expires. Keep waitingExpiresAt STABLE so only
+    // the lobbyExpired change drives the transition.
+    const exp = Date.now() + 30_000;
+    const { rerender } = render(
+      <CoinflipHubScreen {...baseProps({ initialStake: 10, waitingExpiresAt: exp })} />,
+    );
+    await screen.findByTestId('hub-cancel'); // searching
+    rerender(<CoinflipHubScreen {...baseProps({ initialStake: 10, waitingExpiresAt: exp, lobbyExpired: true })} />);
+
+    // Reverted to idle in place: PLAY tappable, bet re-enabled, the polite note shown.
+    const play = screen.getByTestId('hub-play');
+    expect(play.textContent).toMatch(/^play$/i);
+    expect(play).toBeEnabled();
+    expect(screen.getByTestId('hub-bet-10')).toBeEnabled();
+    const note = screen.getByTestId('hub-no-opponent');
+    expect(note.textContent).toMatch(/no opponent found/i);
+    expect(note.textContent).not.toMatch(/refund/i); // must NOT claim a second refund
+    // The armed stake is retained (10 still selected) so pressing PLAY simply re-posts.
+    expect(screen.getByTestId('hub-bet-10').className).toMatch(/bg-brand/);
+  });
+
+  it('structural stability: the play panel + bet row are the SAME nodes across idle→waiting→in-match (no remount)', async () => {
+    const { rerender } = render(<CoinflipHubScreen {...baseProps()} />);
+    const panelIdle = await screen.findByTestId('hub-section-play');
+    const betIdle = screen.getByTestId('hub-section-bet');
+
+    // → waiting
+    rerender(<CoinflipHubScreen {...baseProps({ waitingExpiresAt: Date.now() + 30_000 })} />);
+    await screen.findByTestId('hub-cancel');
+    expect(screen.getByTestId('hub-section-play')).toBe(panelIdle);
+    expect(screen.getByTestId('hub-section-bet')).toBe(betIdle);
+
+    // → in-match
+    const gameState: CoinflipView = { players: ['pid', 'bob'], choices: {} };
+    rerender(<CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['heads', 'tails'] })} />);
+    expect(screen.getByTestId('hub-section-play')).toBe(panelIdle);
+    expect(screen.getByTestId('hub-section-bet')).toBe(betIdle);
   });
 });
 
