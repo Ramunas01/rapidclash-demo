@@ -21,6 +21,25 @@ export function outlineForOutcome(outcome: Outcome | null | undefined, playerId:
   return outcome.winner === playerId ? 'win' : 'lose';
 }
 
+/**
+ * The generic "round drawn, replay incoming" signal (#161). Every PICK-BASED tie-replay game
+ * (Coinflip, RPS, Keno, Limbo, Roulette) resolves a same-result round by bumping a PUBLIC `replays`
+ * counter and re-dealing a fresh round in the SAME escrow (the universal tie rule, CHARTER.md) —
+ * the module's `resolve()` does `s.replays += 1; s.round += 1` and returns a NON-terminal state.
+ * So a rise in `replays` while a match is live is the one game-agnostic tell that a push just
+ * happened. Reading it structurally here lets the shared hub drive the draw→rematch beat off ONE
+ * convention, never a per-gameId branch. Returns null for states without the counter (e.g. Dice/
+ * Baccarat resolve ties internally and never surface a mid-match replay; Crash's view omits it) —
+ * those simply get no beat. Purely a reader: no contract/protocol/module change to consume it.
+ */
+export function replaysOf(state: unknown): number | null {
+  if (state && typeof state === 'object') {
+    const r = (state as { replays?: unknown }).replays;
+    if (typeof r === 'number' && Number.isFinite(r)) return r;
+  }
+  return null;
+}
+
 /** Win/lose/draw ring classes for a slot pill, shared across the hidden-commit reveals. */
 export function outlineClasses(outline: Verdict | null | undefined): string {
   return cn(

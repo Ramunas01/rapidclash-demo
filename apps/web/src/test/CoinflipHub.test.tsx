@@ -278,6 +278,27 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     expect(container.textContent ?? '').not.toMatch(/\$/);
   });
 
+  it('#161: a same-side draw runs the SHARED beat here too — orange on both bars, then clears (generic replays signal, no CoinflipHub change)', async () => {
+    vi.useFakeTimers();
+    try {
+      Element.prototype.scrollIntoView = vi.fn();
+      // Coinflip's module keeps `round`/`replays` public over the wire (the client view type omits
+      // them; the shared hub reads them structurally). A same-side push bumps replays 0 → 1 and
+      // re-deals a fresh (empty) pick round in the same escrow — a NON-terminal state.
+      const round0 = { players: ['pid', 'bob'], choices: {}, replays: 0 } as unknown as CoinflipView;
+      const drawn = { players: ['pid', 'bob'], choices: {}, replays: 1 } as unknown as CoinflipView;
+      const { rerender } = render(<CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState: round0, legalMoves: [] })} />);
+      rerender(<CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState: drawn, legalMoves: ['heads', 'tails'] })} />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+      expect(screen.getByTestId('hub-slot-own').className).toContain('ring-amber-400');
+      expect(screen.getByTestId('hub-slot-opponent').className).toContain('ring-amber-400');
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000 + 50); });
+      expect(screen.getByTestId('hub-slot-own').className).not.toContain('ring-amber-400');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // ── Frame revision: shared template structure (items 1, 3) ──────────────────
   it('Arena slot pills: neutral opponent (no alias) above, own username below', () => {
     render(<CoinflipHubScreen {...baseProps({ username: 'neo' })} />);
