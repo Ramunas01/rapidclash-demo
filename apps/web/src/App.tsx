@@ -379,6 +379,12 @@ export function App() {
   // to that Game hub with the stake pre-armed, instead of erroring.
   const joinFallbackRef = useRef<{ gameId: string; stake: number } | null>(null);
   const [prearmStake, setPrearmStake] = useState<number | undefined>(undefined);
+  // #152: true only between an explicit user PLAY this session and the match forming / cancel.
+  // Gates onQueueWaiting so a stray/leaked queue.waiting can never auto-enter "Searching…", and
+  // marks a search as in-flight so navigating away abandons it. searchGameRef records which game
+  // to leave (a ref, so nav callbacks read it without stale closures).
+  const searchingRef = useRef(false);
+  const searchGameRef = useRef<string | null>(null);
 
   const handleLogin = useCallback((tok: string, pid: string, bal: number, name: string) => {
     localStorage.setItem('rc_token', tok);
@@ -405,6 +411,37 @@ export function App() {
     setAuthOpen(false);
     pendingResumeRef.current = null; // cancelled → drop the captured intent
   }, []);
+
+  // #152: abandon any in-flight, user-initiated search and clear all "searching" carry-over so it
+  // can never leak into the next hub. Called on plain navigation away from a hub. If a search is
+  // live it leaves the server queue (which refunds the escrow — never stranded), then clears the
+  // local waiting state plus the captured resume/pre-arm intents. Idempotent; a no-op if not
+  // searching. The explicit Cancel (handleLeaveQueue) keeps its own path unchanged.
+  const clearHubSearch = useCallback(() => {
+    if (searchingRef.current && searchGameRef.current) {
+      wsRef.current?.leaveQueue(searchGameRef.current); // server refunds the escrowed stake
+    }
+    searchingRef.current = false;
+    searchGameRef.current = null;
+    setWaitingExpiresAt(null);
+    setLobbyExpired(false);
+    pendingResumeRef.current = null;
+    setPrearmStake(undefined);
+  }, []);
+
+  // #152: leaving a game hub (to Home / Profile / Wallet / another hub) abandons an in-flight
+  // user search so it can't resurface as "Searching…" on the next hub — and so no surprise match
+  // forms on the still-open socket after you walked away. Fires only when a search was actually in
+  // flight (searchingRef); a match that just formed clears searchingRef first, so this never
+  // leaves a live match's queue.
+  const prevScreenRef = useRef(screen);
+  useEffect(() => {
+    const prev = prevScreenRef.current;
+    prevScreenRef.current = screen;
+    if (prev !== screen && isGameHubScreen(prev) && searchingRef.current) {
+      clearHubSearch();
+    }
+  }, [screen, clearHubSearch]);
 
   // Register/login from the modal: store the token + connect the WS (as handleLogin), keep the
   // captured intent, and stay on the current hub. The actual replay fires on 'connected' (the
@@ -457,6 +494,10 @@ export function App() {
     const onHub = isGameHubScreen(screen);
     ws.setHandlers({
       onMatchStart(payload, matchId) {
+        // The search resolved into a match — it's no longer "in flight", so leaving the hub
+        // now must NOT try to leave a queue we're no longer in (#152).
+        searchingRef.current = false;
+        searchGameRef.current = null;
         setCurrentMatchId(matchId);
         setOpponentId(payload.opponent);
         // Server-authoritative opponent alias — the real name on BOTH the PLAY and JOIN paths
@@ -507,6 +548,10 @@ export function App() {
         if (!onHub) setScreen('result');
       },
       onQueueWaiting(payload) {
+        // #152: enter "Searching…" ONLY off an explicit user PLAY this session. A queue.waiting
+        // that arrives without a live user-initiated search (leaked/stray/duplicated) is ignored
+        // — the invariant's exact complement of "PLAY requires an armed stake" (#146).
+        if (!searchingRef.current) return;
         // OC7: surface the owner's server-authoritative expiry for the lobby countdown.
         setWaitingExpiresAt(payload.expiresAt);
         setLobbyExpired(false);
@@ -556,6 +601,9 @@ export function App() {
           if (resume && wsRef.current) {
             pendingResumeRef.current = null;
             if (resume.action === 'play') {
+              // A user PLAY captured pre-auth and now replayed → a genuine session search (#152).
+              searchingRef.current = true;
+              searchGameRef.current = resume.gameId;
               setWaitingExpiresAt(null);
               setLobbyExpired(false);
               wsRef.current.joinQueue(resume.gameId, resume.stake, resume.timeControlId);
@@ -680,6 +728,10 @@ export function App() {
       setActionNotice(RECONNECT_NOTICE);
       return;
     }
+    // #152: an explicit user PLAY this session — mark the search in flight so the ensuing
+    // queue.waiting is honoured (and so leaving the hub abandons it). Records the game to leave.
+    searchingRef.current = true;
+    searchGameRef.current = pendingGameId;
     // Reset lobby countdown state; queue.waiting will deliver the fresh expiresAt.
     setWaitingExpiresAt(null);
     setLobbyExpired(false);
@@ -691,6 +743,9 @@ export function App() {
   const handleLeaveQueue = useCallback(() => {
     if (!pendingGameId || !wsRef.current) return;
     wsRef.current.leaveQueue(pendingGameId); // best-effort; leaving the UI is a local nav
+    // #152: the search is over — clear the in-flight markers so a later nav can't double-leave.
+    searchingRef.current = false;
+    searchGameRef.current = null;
     setWaitingExpiresAt(null);
     setOpponentName(null);
     // On a Game hub, cancelling returns to Idle in place; the standalone lobby exits to the wallet.
