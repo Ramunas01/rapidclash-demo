@@ -225,27 +225,35 @@ Four targeted in-play fixes against the live build:
 
 ### Result reveal — acts on the WHOLE player bar, not the side capsule (copy 1:1)
 The outcome treatment is applied to the **entire player pill bar** (the whole "player … HEADS/TAILS"
-row), **not** the small side capsule — see `Result_reveal_when_you_win.png` and
-`Result_reveal_when_defeat.png` (and the right-hand panel of the bar ref). The win is the only
-celebratory state; loss and draw are deliberately quiet and identical except for colour:
+row), **not** the small side capsule. All three verdicts **end in the same minimal outline
+language**; the win adds a timed celebratory fill on top before settling.
 
-- **Win — full green *fill* + text.** The whole bar animates to a **solid green fill** and shows
-  **"You Win"** across it (the ref art reads "You won" — confirm the exact copy with the designer).
-  This is a colour-fill transform of the entire bar, **not** an outline.
+- **Win — timed green fill, then settle to a green outline.** The bar layout **stays intact** —
+  avatar + username on the left exactly as normal — with **"You Win"** shown *alongside*; the green
+  fill sits **behind** the existing content and must **not** replace or hide the username (today's
+  bug: the win swaps the username out for "You Win"). Phases: **(1) fill ~3 s** — solid green fill +
+  "You Win", held; **(2) 0.5 s ease-out** — the fill fades, the bar returns to its dark background
+  and "You Win" goes away with it; **(3) end state** — normal bar (avatar + username, dark bg) with
+  a **green outline** that persists until the next round / controls reset. Timings tunable.
 - **Loss — red *outline* only.** The whole bar gets a **red outline**, no fill, no text. Minimal.
 - **Draw — orange *outline* only.** Same minimal treatment as loss, just **orange**; no fill, no
   text. Draw (same side chosen) → **instant replay** (the universal tie rule).
 
+*(Copy: the ref art reads "You won"; the note says "You Win" — confirm the exact string with the
+designer.)*
+
 ### Two reconciliations for the PM (the only non-trivial points)
 
 1. **This result treatment supersedes the earlier "own-pill outline" note _and_ §1's self-dismissing
-   overlay.** It is **bar-level and asymmetric** (green fill + text for win; red/orange outline-only
-   for loss/draw) — deliberately **not** the symmetric green/red/orange used by Blackjack cards and
-   the Crash reveal. Follow the Coinflip design 1:1; just note for later that **cross-game result
-   styling now has two variants** (Coinflip bar-fill vs Blackjack/Crash outline) — a possible future
-   consistency pass, not a blocker. **Keep the scroll-safety the overlay solved (Q2):** a match can
-   resolve while the player is scrolled down at Open Games, so still guarantee the result reaches
-   them (a brief settlement cue, or auto-scroll the bar into view on `match.end`).
+   overlay.** It is **bar-level**: all three verdicts **settle to the same outline** (green/red/orange
+   ring — the shared `outlineClasses` in `slotReveal.tsx` already defines all three, including
+   `win → ring-success`), and the **win adds a ~3 s green fill + "You Win" on top** before fading to
+   its outline. So the earlier "win is a permanent fill, not an outline" divergence is **largely
+   resolved** — the persistent end-state now matches Blackjack/Crash's outline language; the only
+   Coinflip-specific extra is the transient win-fill celebration (fine to keep). **Keep the
+   scroll-safety the overlay solved (Q2):** a match can resolve while the player is scrolled down at
+   Open Games, so still guarantee the result reaches them (a brief settlement cue, or auto-scroll the
+   bar into view on `match.end`).
 
 2. **Reveal-after-lock is staged client-side from the `match.end` payload — no `viewFor` change.**
    Redaction requires each pick stay hidden until **both are locked**; revealing locked picks before
