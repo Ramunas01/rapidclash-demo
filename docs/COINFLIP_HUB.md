@@ -242,6 +242,16 @@ auto-pick), and the round can start before the timer.
   never on "both chosen". At 0, both current selections lock simultaneously (any un-picked player
   gets the existing seeded `timeoutMove`) → opponent reveals → flip. **No early-start path at all**,
   even if both picked in the first second.
+- **Same-side is never special before the result — and a pick is NEVER rewritten (money integrity).**
+  There must be **no code path that compares the two picks before the deadline**, and **none that
+  alters a player's pick**. The reported draw bugs are this early-resolve made visible: when both
+  happen to pick the same side mid-window, `resolve()` fires at once → silently starts a replay
+  (`choices = {}`) *mid-timer*; the players don't re-pick that phantom round, so at the deadline the
+  seeded `timeoutMove` auto-picks for **both** — which can differ → a **winner is declared and money
+  settled on picks the players never made**. Timer-only resolve deletes this: same-side and
+  opposite-side rounds are identical through lock → reveal → flip, and the **only** branch is at
+  result evaluation (decisive winner vs draw). The seeded auto-pick applies **only** to a player who
+  genuinely made no pick by the deadline — never as a by-product of a replay.
 - **Why timer-only matters beyond feel — redaction extends to *timing*.** Early-resolve-on-both-picked
   **leaks information**: a player who picked and sees the round start early learns the opponent had
   also picked, and mid-window starts form a timing side-channel. A fixed full-length window makes

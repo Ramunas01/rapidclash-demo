@@ -45,6 +45,17 @@ function pickWindowMs(): number {
  *  escrow. */
 const REPLAY_CAP = 10;
 
+/** A just-resolved round's PUBLIC reveal — both locked picks + the flip + the winner (`null` = a
+ *  same-side draw). Set on every `resolve()`. It is how the client animates reveal → flip during the
+ *  shared draw beat: the round is over and fully revealed, so exposing it leaks nothing about the
+ *  fresh replay round (whose choices/result/seed stay redacted). */
+interface RoundResult {
+  round: number;
+  result: Side;
+  choices: Record<PlayerId, Side>;
+  winner: PlayerId | null;
+}
+
 interface CoinflipState {
   players: [PlayerId, PlayerId];
   /** Each player's chosen side. Mutable for the whole window (a replacement pick is accepted); it
@@ -74,6 +85,9 @@ interface CoinflipState {
   winner?: PlayerId;
   /** Present when the match ended via forfeit, or voided at the replay cap. */
   forcedOutcome?: Outcome;
+  /** The most recently resolved round (public — see RoundResult). Drives the client's flip-on-draw
+   *  reveal during the shared draw beat; overwritten each resolve. */
+  lastResult?: RoundResult;
 }
 
 function cast(state: GameState): CoinflipState {
@@ -132,9 +146,13 @@ function resolve(s: CoinflipState, now: number): GameEvent[] {
   const [p1, p2] = s.players;
   const c1 = s.choices[p1]!;
   const c2 = s.choices[p2]!;
-  if (c1 !== c2) {
-    s.winner = c1 === s.result ? p1 : p2;
-    return [{ type: 'match_decided', payload: { winner: s.winner } }];
+  const winner = c1 !== c2 ? (c1 === s.result ? p1 : p2) : null;
+  // Snapshot the just-resolved round (public) BEFORE a draw's replay clears the choices — the client
+  // animates reveal → flip from it during the draw beat. The flip STILL plays on a same-side draw.
+  s.lastResult = { round: s.round, result: s.result, choices: { [p1]: c1, [p2]: c2 }, winner };
+  if (winner !== null) {
+    s.winner = winner;
+    return [{ type: 'match_decided', payload: { winner } }];
   }
   s.replays += 1;
   if (s.replays >= REPLAY_CAP) {
@@ -244,9 +262,11 @@ export const coinflipModule: GameModule = {
     // At terminal: reveal both choices AND the flip result.
     if (terminal(s)) return s;
     // Pre-terminal (incl. a replay's fresh pick phase): strip the OPPONENT's choice (keep only the
-    // viewer's own), the flip, the seed (it would let either player precompute the flip / the
+    // viewer's own), the CURRENT flip, the seed (it would let either player precompute the flip / the
     // opponent's timeout auto-pick), AND the `locked` map (timing information). `windowEndsAt`/
     // round/replays stay public (the fixed-length window is identical for both players — no leak).
+    // `lastResult` (via ...rest) stays public on purpose: it's the PREVIOUS, fully-resolved round, so
+    // it reveals nothing about the fresh round — it's what animates the flip during the draw beat.
     const redacted: Partial<Record<PlayerId, Side>> = {};
     const own = s.choices[playerId];
     if (own !== undefined) redacted[playerId] = own;

@@ -43,6 +43,8 @@ type CoinflipView = {
   seed?: number;
   round?: number;
   replays?: number;
+  winner?: string;
+  lastResult?: { round: number; result: Side; choices: Partial<Record<string, Side>>; winner: string | null };
   forcedOutcome?: unknown;
 };
 function view(state: unknown): CoinflipView {
@@ -274,6 +276,90 @@ describe('coinflipModule — tie → instant replay (universal tie rule)', () =>
     expect(coinflipModule.isTerminal(s)).toBe(true);
     expect(coinflipModule.outcome(s)).toEqual({ type: 'void' });
     expect(view(s).replays).toBe(10);
+  });
+});
+
+// The Advisor's money-integrity invariants (#164): the timer is the ONLY resolve trigger, no code
+// path compares the two picks before the deadline, and a player's chosen side is never rewritten —
+// so money is never settled on a pick a player did not make. The old draw bug was resolve() firing
+// on "both chosen" → a silent mid-timer replay → both auto-picked a phantom round → a winner settled
+// on unmade picks. These assert that path is gone.
+describe('coinflipModule — money integrity (#164)', () => {
+  it('both pick the same side mid-window → NOTHING resolves before the deadline (no compare, no replay)', () => {
+    const s0 = launched(fixedRng(0));
+    const r1 = pick(s0, P1, 'heads', 1_000); // t=1s, well inside the 10s window
+    const r2 = pick(r1.state, P2, 'heads', 1_000); // both same side
+    expect(r1.events).toEqual([]);
+    expect(r2.events).toEqual([]); // no early lock / replay / resolve signal
+    const v = view(r2.state);
+    expect(coinflipModule.isTerminal(r2.state)).toBe(false);
+    expect(v.replays ?? 0).toBe(0); // no phantom replay mid-timer
+    expect(v.round).toBe(0);
+    expect(v.choices).toEqual({ [P1]: 'heads', [P2]: 'heads' }); // picks intact, unlocked
+    expect(v.locked ?? {}).toEqual({});
+    expect(v.lastResult).toBeUndefined(); // no round has resolved yet
+  });
+
+  it('a same-side round NEVER declares a winner or settles — it always replays, whatever the flip', () => {
+    for (const seed of [HEADS_SEED, TAILS_SEED]) {
+      const s = playWindow(seededRng(seed), 'heads', 'heads'); // same side, both flip outcomes
+      expect(coinflipModule.isTerminal(s)).toBe(false); // never terminal on one same-side round
+      expect(view(s).winner).toBeUndefined(); // no winner declared
+      expect(view(s).forcedOutcome).toBeUndefined(); // not settled/void (single round)
+      expect(view(s).replays).toBe(1); // replayed instead
+      expect(view(s).lastResult!.winner).toBeNull(); // recorded as a draw
+    }
+  });
+
+  it('the deadline auto-pick applies ONLY to a genuinely-absent pick — a chosen side is never rewritten', () => {
+    // P1 picks tails and never re-picks; P2 never picks.
+    const s = pick(launched(seededRng(HEADS_SEED)), P1, 'tails', 1_000).state;
+    expect(coinflipModule.timeoutMove!(s, P1, fixedRng(0))).toBe('tails'); // P1's own side, not an auto-pick
+    expect(['heads', 'tails']).toContain(coinflipModule.timeoutMove!(s, P2, fixedRng(0))); // P2 → seeded auto
+    // Lock both at the deadline: P1's recorded side is EXACTLY their pick, never rewritten by the
+    // auto/replay path — whether the round ends decisively or replays.
+    const l2 = lock(lock(s, P1).state, P2);
+    const recorded = coinflipModule.isTerminal(l2.state)
+      ? view(l2.state).choices
+      : view(l2.state).lastResult!.choices;
+    expect(recorded[P1]).toBe('tails');
+  });
+});
+
+// Flip-on-draw (#164): a same-side draw is not terminal, but the coin MUST still flip. The module
+// records the just-resolved round in a public `lastResult` so the client can animate reveal → flip
+// during the shared draw beat, before the fresh round takes over.
+describe('coinflipModule — flip-on-draw', () => {
+  it('a same-side draw records lastResult (the flip + both picks, winner=null) and replays', () => {
+    const s = playWindow(seededRng(HEADS_SEED), 'heads', 'heads');
+    const v = view(s);
+    expect(coinflipModule.isTerminal(s)).toBe(false);
+    expect(v.lastResult).toBeDefined();
+    expect(v.lastResult!.winner).toBeNull(); // draw
+    expect(v.lastResult!.choices).toEqual({ [P1]: 'heads', [P2]: 'heads' });
+    expect(v.lastResult!.result).toBe('heads'); // HEADS_SEED → the flip that played is heads
+    expect(v.round).toBe(1); // fresh round is live
+  });
+
+  it('viewFor exposes lastResult (the finished round) but still redacts the FRESH round', () => {
+    const drawn = playWindow(seededRng(HEADS_SEED), 'heads', 'heads'); // round 0 draw → round 1 live
+    const s = pick(drawn, P2, 'tails', view(drawn).windowEndsAt! - 1).state; // P2 picks in the fresh round
+    const asP1 = view(coinflipModule.viewFor(s, P1));
+    // The previous round is public + fully revealed…
+    expect(asP1.lastResult!.choices).toEqual({ [P1]: 'heads', [P2]: 'heads' });
+    expect(asP1.lastResult!.result).toBe('heads');
+    // …but the fresh round stays redacted: opponent's new pick, the new flip, and the seed are hidden.
+    expect(asP1.choices?.[P2]).toBeUndefined();
+    expect(asP1.result).toBeUndefined();
+    expect(asP1.seed).toBe(0);
+  });
+
+  it('a DECISIVE round also records lastResult with the winner', () => {
+    const s = playWindow(seededRng(HEADS_SEED), 'heads', 'tails'); // different sides → decisive
+    const v = view(s);
+    expect(coinflipModule.isTerminal(s)).toBe(true);
+    expect(v.lastResult!.winner).toBe(P1); // heads matches the HEADS_SEED flip → P1
+    expect(v.lastResult!.result).toBe('heads');
   });
 });
 

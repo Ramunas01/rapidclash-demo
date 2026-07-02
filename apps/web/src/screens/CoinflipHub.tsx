@@ -94,10 +94,16 @@ function CoinflipIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
  * server-side); the client only choreographs the reveal beats. Scroll-safety: when the round
  * resolves the board scrolls itself into view (replacing the old self-dismissing overlay's reach).
  */
-function CoinflipBoard({ gameState, serverClockOffset = 0 }: GameAreaArgs) {
+function CoinflipBoard({ gameState, serverClockOffset = 0, drawBeat }: GameAreaArgs) {
   const view = gameState as CoinflipView | null;
   const terminal = isTerminal(view);
   const result = (view?.result as 'heads' | 'tails' | undefined) ?? null;
+  // Flip-on-draw: a same-side draw is NOT terminal (it replays), but the coin must STILL flip. During
+  // the shared draw beat, animate the just-drawn flip from the public `lastResult` snapshot. Once the
+  // beat ends the fresh pick window takes over (countdown returns).
+  const drawFlip = drawBeat ? ((view?.lastResult?.result as 'heads' | 'tails' | undefined) ?? null) : null;
+  const revealing = terminal || drawFlip != null;
+  const coinFace = terminal ? result : drawFlip;
 
   // Cosmetic countdown, driven by the server's authoritative window close (`windowEndsAt`) when
   // present — so it is accurate and RESTARTS automatically on each tie-replay round (windowEndsAt is
@@ -119,21 +125,21 @@ function CoinflipBoard({ gameState, serverClockOffset = 0 }: GameAreaArgs) {
     return () => clearInterval(id);
   }, [terminal, windowEndsAt, serverClockOffset]);
 
-  // Scroll-safety: a match can resolve while the player is scrolled down at Open Games. Bring the
-  // board into view on resolution so the reveal/outline reaches them (no-op if already in view).
+  // Scroll-safety: a round can resolve (win/lose OR draw) while the player is scrolled down at Open
+  // Games. Bring the board into view on any reveal so the flip/outline reaches them (no-op if in view).
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (terminal) ref.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [terminal]);
+    if (revealing) ref.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [revealing]);
 
   return (
     <div ref={ref} className="relative flex min-h-[200px] items-center justify-center py-3" data-testid="hub-board">
-      {!terminal && (
+      {!revealing && (
         <div className="absolute left-3 top-1/2 -translate-y-1/2">
           <CountdownRing seconds={seconds} />
         </div>
       )}
-      <Coin face={terminal ? result : null} />
+      <Coin face={coinFace} />
     </div>
   );
 }
@@ -243,14 +249,20 @@ function OwnPills({ args }: { args: GameAreaArgs }) {
  *  renderSlotAside callback always returns a React element so the GameHub fallback never fires;
  *  we render the tag explicitly). At terminal, the opponent's pick is staged from match.end. */
 function OpponentPill({ args }: { args: GameAreaArgs }) {
-  const { gameState, opponentId, phase } = args;
+  const { gameState, opponentId, phase, drawBeat } = args;
   const view = gameState as CoinflipView | null;
-  if (!isTerminal(view)) {
+  const terminal = isTerminal(view);
+  // The opponent's pick reveals at terminal AND during the draw beat (from the public lastResult —
+  // that round is over, so it no longer hides anything). Otherwise it stays "PLAYING…".
+  const oppChoice = terminal
+    ? (opponentId ? (view?.choices?.[opponentId] as 'heads' | 'tails' | undefined) : undefined)
+    : drawBeat && opponentId
+      ? (view?.lastResult?.choices?.[opponentId] as 'heads' | 'tails' | undefined)
+      : undefined;
+  if (!terminal && !drawBeat) {
     if (phase !== 'in-match') return null;
     return <span className="shrink-0 text-xs font-black uppercase tracking-wide text-foreground/70">PLAYING…</span>;
   }
-  if (!opponentId) return null;
-  const oppChoice = view?.choices?.[opponentId] as 'heads' | 'tails' | undefined;
   const side = SIDES.find((s) => s.id === oppChoice);
   if (!side) return null;
   return <SidePill side={side} testid="coin-opp-pick" />;

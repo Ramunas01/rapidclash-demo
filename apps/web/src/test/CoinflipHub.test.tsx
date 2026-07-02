@@ -545,4 +545,32 @@ describe('CoinflipHubScreen — choice controls: optimistic purple pick (#160)',
     expect(screen.getByTestId('coin-own-pick').textContent).toMatch(/heads/i);
     expect(screen.getByTestId('coin-opp-pick').textContent).toMatch(/heads/i); // same side accepted
   });
+
+  it('flip-on-draw (#164): the coin STILL flips and the opponent pick reveals during the draw beat', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    // Round 0 live pick window — the live view has NO result (redacted mid-round), so no reveal yet.
+    const r0: CoinflipView = { players: ['pid', 'bob'], choices: { pid: 'heads' }, round: 0, replays: 0 };
+    const { rerender } = render(
+      <CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState: r0, legalMoves: ['heads', 'tails'] })} />,
+    );
+    expect(screen.queryByTestId('coin-face')).toBeNull(); // pick window — coin has no face
+
+    // A same-side draw resolves round 0 → replays rises to 1, a fresh round 1 opens (its result still
+    // redacted), and lastResult carries the drawn flip + both picks. GameHub runs the shared draw beat.
+    const r1: CoinflipView = {
+      players: ['pid', 'bob'],
+      choices: {},
+      round: 1,
+      replays: 1,
+      lastResult: { round: 0, result: 'tails', choices: { pid: 'heads', bob: 'heads' }, winner: null },
+    };
+    rerender(<CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState: r1, legalMoves: ['heads', 'tails'] })} />);
+
+    // During the beat the coin flips to the drawn face and the opponent's drawn pick reveals — the
+    // flip is NOT skipped on a draw (the whole point of #164's flip-on-draw).
+    await waitFor(() => {
+      expect(screen.getByTestId('coin-face').textContent).toBe('tails');
+      expect(screen.getByTestId('coin-opp-pick').textContent).toMatch(/heads/i);
+    });
+  });
 });
