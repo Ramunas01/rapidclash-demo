@@ -31,10 +31,17 @@ export interface BotConfig {
   timeControlId?: string;
 }
 
-/** Stakes a rester picks from (matches the UI bet presets). Each rester is assigned ONE random
- *  stake at startup — varied bets across games, without needing two bots per game. */
+/** The 100-credit tier is RESERVED for human-vs-human. Testers use it to line up people-against-
+ *  people matches without a bot swooping in: takers never claim a 100-stake challenge (a human's
+ *  100 bet waits for another human — see `tryTake` in bot.ts), and resters never post at 100 (so
+ *  every 100 challenge in the lobby is human-owned). Change this one value to move the reserved tier. */
+export const HUMAN_RESERVED_STAKE = 100;
+
+/** Stakes a rester picks from (the UI bet presets, minus the human-reserved tier). Each rester is
+ *  assigned ONE random stake at startup — varied bets across games, without needing two bots per game. */
 export const STAKE_SET = [1, 5, 10, 25, 50, 100] as const;
-const randStake = (): number => STAKE_SET[Math.floor(Math.random() * STAKE_SET.length)];
+const RESTER_STAKES = STAKE_SET.filter((s) => s !== HUMAN_RESERVED_STAKE);
+const randStake = (): number => RESTER_STAKES[Math.floor(Math.random() * RESTER_STAKES.length)];
 
 /**
  * Roster: 26 bots, all 🤖-prefixed — per live game (coinflip, rps, chess, blackjack, mines, crash, roulette, ships-battle, dice, baccarat, keno, limbo, hilo):
