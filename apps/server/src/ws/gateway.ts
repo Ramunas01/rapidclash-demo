@@ -265,6 +265,28 @@ export function registerWsGateway(
         if (connections.get(playerId) !== socket) return;
         connections.delete(playerId);
 
+        // #152: an interrupted search still resting in the queue is abandoned on a genuine
+        // socket close — dequeue it and REFUND the escrow (never strand a stake). This sits
+        // AFTER the stale-close guard above, so a fast reconnect (a newer socket already the
+        // live connection) skips it and the in-flight search survives on the new socket.
+        // queuedGameId/queuedStake track THIS socket's own join and are cleared once a match
+        // forms; if the player was matched via the other side's socket they're stale here, but
+        // leaveQueue then throws (player not queued) BEFORE any refund — caught, no double-spend.
+        if (queuedGameId !== null && queuedStake !== null) {
+          const g = queuedGameId;
+          const s = queuedStake;
+          queuedGameId = null;
+          queuedStake = null;
+          try {
+            const refund = matchmaking.leaveQueue(playerId, g, s);
+            if (refund.matchId) {
+              pushChallengesUpdate(g, { gameId: g, removed: { matchId: refund.matchId, reason: 'cancelled' } });
+            }
+          } catch {
+            // Already dequeued (matched / cancelled / TTL-swept) — nothing to refund.
+          }
+        }
+
         const matchId = playerMatch.get(playerId);
         if (!matchId) return;
         const closedMatch = matchmaking.getActiveMatch(matchId);
