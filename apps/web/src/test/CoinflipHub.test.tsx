@@ -137,10 +137,13 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     expect(onMakeMove).toHaveBeenCalledWith('heads');
   });
 
-  it('In-match: the pick pills are disabled when not actionable (no legalMoves)', () => {
+  it('In-match: once chosen the pick locks (#160) — the recorded side shows selected, the other disables', () => {
+    // The server has echoed my pick (choices.pid = heads) and legalMoves emptied (one-shot). The
+    // outline reconciles from the server pick too (not only an optimistic tap): heads reads selected,
+    // tails locks out.
     const gameState: CoinflipView = { players: ['pid', 'bob'], choices: { pid: 'heads' } };
     render(<CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
-    expect(screen.getByTestId('hub-move-heads')).toBeDisabled();
+    expect(screen.getByTestId('hub-move-heads')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByTestId('hub-move-tails')).toBeDisabled();
   });
 
@@ -433,5 +436,84 @@ describe('CoinflipHubScreen — related rail (item 5: all games, coming-soon inc
     expect(baccarat.tagName).not.toBe('BUTTON');
     // The current game is excluded from its own related rail.
     expect(screen.queryByTestId('hub-related-coinflip')).toBeNull();
+  });
+});
+
+describe('CoinflipHubScreen — choice controls: optimistic purple pick (#160)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/games') || u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
+      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+    }));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** A live pick window: matched, my pick not yet echoed into view.choices (still empty). */
+  function pickWindow(over: Partial<Props> = {}) {
+    const gameState: CoinflipView = { players: ['pid', 'bob'], choices: {} };
+    return baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['heads', 'tails'], ...over });
+  }
+
+  it('tapping a side shows the purple outline IMMEDIATELY — no dependency on view.choices', () => {
+    const onMakeMove = vi.fn();
+    const props = pickWindow({ onMakeMove });
+    render(<CoinflipHubScreen {...props} />);
+
+    // Pre-tap: neither pill is selected.
+    expect(screen.getByTestId('hub-move-heads')).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(screen.getByTestId('hub-move-heads'));
+
+    // Instant optimistic selection — the server pick is still un-echoed (choices stayed {}).
+    expect((props.gameState as CoinflipView).choices).toEqual({});
+    const heads = screen.getByTestId('hub-move-heads');
+    expect(heads).toHaveAttribute('aria-pressed', 'true');
+    expect(heads).toHaveAttribute('data-selected', 'true');
+    expect(onMakeMove).toHaveBeenCalledWith('heads'); // onMove stays authoritative
+  });
+
+  it('purple = SELECTION: the outline is the brand ring, never the green/red/orange result rings', () => {
+    render(<CoinflipHubScreen {...pickWindow()} />);
+    fireEvent.click(screen.getByTestId('hub-move-heads'));
+    const cls = screen.getByTestId('hub-move-heads').className;
+    expect(cls).toMatch(/ring-brand/);
+    expect(cls).not.toMatch(/ring-success|ring-destructive|ring-amber/);
+  });
+
+  it('only one pill is outlined at a time; the outline reflects OWN pick only, never the opponent', () => {
+    render(<CoinflipHubScreen {...pickWindow()} />);
+    fireEvent.click(screen.getByTestId('hub-move-heads'));
+    // One at a time: heads selected, tails not.
+    expect(screen.getByTestId('hub-move-heads')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('hub-move-tails')).toHaveAttribute('aria-pressed', 'false');
+    // Redaction: the opponent's pick is never rendered pre-reveal (only "PLAYING…").
+    expect(screen.queryByTestId('coin-opp-pick')).toBeNull();
+    expect(screen.getByTestId('hub-slot-opponent').textContent).toMatch(/playing/i);
+  });
+
+  it('the pick is one-shot (server-authoritative): first tap commits; a later tap does not re-fire onMove or move the outline', () => {
+    // Coinflip's module is one-shot — applyMove throws once a side is chosen. The client mirrors
+    // that: the first tap commits; the outline can never drift from the recorded pick. (Pre-lock
+    // re-picking would need a module change — flagged on the PR as a doc/module conflict.)
+    const onMakeMove = vi.fn();
+    render(<CoinflipHubScreen {...pickWindow({ onMakeMove })} />);
+    fireEvent.click(screen.getByTestId('hub-move-heads'));
+    fireEvent.click(screen.getByTestId('hub-move-tails')); // ignored — already committed
+    expect(onMakeMove).toHaveBeenCalledTimes(1);
+    expect(onMakeMove).toHaveBeenCalledWith('heads');
+    expect(screen.getByTestId('hub-move-heads')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('hub-move-tails')).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByTestId('hub-move-tails')).toBeDisabled(); // the un-picked side locks out
+  });
+
+  it('BOTH players can lock the SAME side (no same-side restriction) — the draw path stays reachable', () => {
+    // A same-side round: both chose HEADS, the coin flipped tails → a DRAW (→ auto-replay). The hub
+    // renders both picks as HEADS with no block anywhere. A "taken side" block must NEVER be added:
+    // it would leak the opponent's hidden pick (a side that won't select = you infer they took it).
+    const gameState: CoinflipView = { players: ['pid', 'bob'], choices: { pid: 'heads', bob: 'heads' }, result: 'tails' };
+    render(<CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState })} />);
+    expect(screen.getByTestId('coin-own-pick').textContent).toMatch(/heads/i);
+    expect(screen.getByTestId('coin-opp-pick').textContent).toMatch(/heads/i); // same side accepted
   });
 });
