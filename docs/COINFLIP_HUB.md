@@ -223,6 +223,24 @@ Four targeted in-play fixes against the live build:
    grey for TAILS** — and **remove the coloured icons** next to them (today they're bare icon +
    text). These map to the existing HEADS-gold / TAILS-silver semantic colours.
 
+#### Choice controls — selected-state + the "laggy pick" fix
+- **Purple selected-outline, rendered optimistically (this is the lag fix).** Tapping HEADS/TAILS
+  must show a **purple (brand) outline on the tapped pill immediately, client-side** — do **not**
+  wait for the server to echo the choice back into `view.choices[playerId]` (today the pill only
+  reflects the pick after that round-trip and shows no interim feedback, so a tap looks like it did
+  nothing → the player taps again). Optimistic highlight is safe: picks are hidden and the server
+  stays authoritative for the recorded choice. Only one pill outlined at a time; tapping the other
+  before lock **moves** the outline; the outline reflects **your own** pick only (never the
+  opponent's — redaction); at lock, the outlined pill is the locked choice. **Purple = selection;
+  green/red/orange stay reserved for results** so the two languages don't collide.
+- **No same-side restriction — and never add one.** Both players may pick the **same** side
+  (same-side → draw → replay is a *required*, tested outcome) or opposite sides; the server accepts
+  any combination, no seat/side exclusivity client or server. (There is no such restriction today —
+  this is a guard, not a change.) Blocking a "taken" side would **leak the opponent's pick** (if a
+  side won't select, you'd infer they took it), breaking the hidden-pick rule — so it must never be
+  introduced. *(The designer's report that same-side is blocked was a mis-diagnosis of the pick lag
+  above; the real cause is the missing optimistic feedback.)*
+
 ### Result reveal — acts on the WHOLE player bar, not the side capsule (copy 1:1)
 The outcome treatment is applied to the **entire player pill bar** (the whole "player … HEADS/TAILS"
 row), **not** the small side capsule. All three verdicts **end in the same minimal outline
@@ -236,8 +254,22 @@ language**; the win adds a timed celebratory fill on top before settling.
   and "You Win" goes away with it; **(3) end state** — normal bar (avatar + username, dark bg) with
   a **green outline** that persists until the next round / controls reset. Timings tunable.
 - **Loss — red *outline* only.** The whole bar gets a **red outline**, no fill, no text. Minimal.
-- **Draw — orange *outline* only.** Same minimal treatment as loss, just **orange**; no fill, no
-  text. Draw (same side chosen) → **instant replay** (the universal tie rule).
+- **Draw — orange *outline* only, then auto-rematch.** Same minimal treatment as loss, just
+  **orange**; no fill, no text. Full draw beat (same side chosen): both lock the same side → the
+  opponent's pick reveals as normal → **the coin still flips** (the flip is *not* skipped on a draw)
+  → after it resolves, **both** player bars get the orange outline → **~2 s hold** → an **automatic
+  rematch** starts against the **same opponent, same bet**, no confirmation: bars reset (outlines
+  clear), the pick timer restarts, both choose again. This is the **universal tie rule** (draw →
+  instant replay), subject to the **10-replay safety cap** (then void/refund — no infinite loop) and
+  **escrow carryover** (stakes stay escrowed across rematches; settle once, when the round is
+  decisive — never re-collect each replay).
+
+> **System-level (shared mechanic, not Coinflip-only):** the draw beat above — *draw resolves →
+> orange outline on both bars → ~2 s hold → automatic rematch, same opponent, same bet* — is the
+> **same for every game** (Crash, Dice, Keno, … all push → auto-replay). Build it **once** as a
+> shared flow and reuse it; the only game-specific part is the resolution animation that *precedes*
+> the orange outline (Coinflip's flip, Crash's crash, Dice's rolls). The shared part is the orange
+> draw outline + 2 s + auto-rematch + escrow-carryover + 10-cap.
 
 *(Copy: the ref art reads "You won"; the note says "You Win" — confirm the exact string with the
 designer.)*
