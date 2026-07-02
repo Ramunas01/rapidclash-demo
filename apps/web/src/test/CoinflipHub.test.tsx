@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act, cleanup } from '@testing-library/react';
 import { CoinflipHubScreen } from '../screens/CoinflipHub.js';
 import type { CoinflipView } from '../App.js';
 
@@ -176,12 +176,76 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
       expect(screen.getByTestId('coin-opp-pick').textContent).toMatch(/tails/i);
     });
     expect(scrollSpy).toHaveBeenCalled(); // brought into view on resolve
-    // After the hold the own bar goes green + "You Win" (bar-level result, supersedes own-pill outline).
+    // After the reveal the own bar plays the green win fill: the username stays put, "You Win" shows
+    // ALONGSIDE it, and the green sits behind as a background layer (#156 — the name is not swapped out).
     await waitFor(() => {
       const ownBar = screen.getByTestId('hub-slot-own');
-      expect(ownBar.className).toContain('bg-success');
       expect(ownBar.textContent).toMatch(/you win/i);
+      expect(ownBar.textContent).toContain('me'); // username is NOT replaced by "You Win"
+      expect(ownBar.querySelector('.bg-success')).not.toBeNull(); // green fill = a background layer
     }, { timeout: 3000 });
+  });
+
+  // #156 — the bar-level win reveal: keep the username, play the timed green fill, settle to the ring.
+  // These drive the phase timing with fake timers. HOLD_RESULT_MS=1500, BAR_VERDICT_BEAT_MS=250,
+  // WIN_FILL_HOLD_MS=3000, WIN_FILL_FADE_MS=500 (constants live in CoinflipHub/GameHub).
+  function renderToTerminal(outcome: Props['lastOutcome']) {
+    Element.prototype.scrollIntoView = vi.fn();
+    const gameState: CoinflipView = { players: ['pid', 'bob'], choices: { pid: 'heads', bob: 'tails' }, result: 'heads' };
+    const { rerender } = render(<CoinflipHubScreen {...baseProps({ username: 'neo', currentMatchId: 'm1', gameState, legalMoves: [] })} />);
+    rerender(
+      <CoinflipHubScreen
+        {...baseProps({ username: 'neo', currentMatchId: null, gameState, lastOutcome: outcome, lastSettlement: { delta: 90, newBalance: 1090 } })}
+      />,
+    );
+  }
+
+  it('Result win (#156): keeps the username, shows "You Win" alongside, then settles fill → green outline', async () => {
+    vi.useFakeTimers();
+    try {
+      renderToTerminal({ type: 'win', winner: 'pid' });
+      // Advance in stages: HOLD_RESULT_MS → result phase, then BAR_VERDICT_BEAT_MS → verdict lights
+      // (each transition schedules its next timer on re-render, so a single big jump can skip it).
+      await act(async () => { await vi.advanceTimersByTimeAsync(1500 + 50); }); // → result phase
+      await act(async () => { await vi.advanceTimersByTimeAsync(250 + 50); }); // → win fill phase
+      const ownBar = screen.getByTestId('hub-slot-own');
+      expect(ownBar.textContent).toContain('neo'); // username stays put (not swapped out)
+      expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you win/i); // alongside
+      expect(ownBar.querySelector('.bg-success')).not.toBeNull(); // green as a background layer
+      expect(ownBar.className).not.toContain('ring-success'); // not yet settled to the outline
+
+      // The 3s hold elapses → settles to the green outline (username persists); then the 0.5s
+      // ease-out completes → "You Win" leaves with the fill and unmounts.
+      await act(async () => { await vi.advanceTimersByTimeAsync(3000 + 50); }); // hold → settle
+      expect(ownBar.className).toContain('ring-success'); // shared outlineClasses('win')
+      expect(ownBar.textContent).toContain('neo'); // username persists into the end state
+      await act(async () => { await vi.advanceTimersByTimeAsync(500 + 50); }); // ease-out completes
+      expect(screen.queryByTestId('hub-slot-own-verdict')).toBeNull(); // "You Win" left with the fill
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('Result loss/draw (#156): outline only — no green fill, no "You Win" (regression guard)', async () => {
+    for (const [outcome, ring] of [
+      [{ type: 'win', winner: 'bob' } as const, 'ring-destructive'], // a loss (opponent won)
+      [{ type: 'draw' } as const, 'ring-amber-400'],
+    ] as const) {
+      vi.useFakeTimers();
+      try {
+        renderToTerminal(outcome);
+        await act(async () => { await vi.advanceTimersByTimeAsync(1500 + 50); }); // → result phase
+        await act(async () => { await vi.advanceTimersByTimeAsync(250 + 50); }); // → verdict lights
+        const ownBar = screen.getByTestId('hub-slot-own');
+        expect(ownBar.className).toContain(ring);
+        expect(ownBar.querySelector('.bg-success')).toBeNull(); // no fill layer
+        expect(screen.queryByTestId('hub-slot-own-verdict')).toBeNull(); // no "You Win"
+        expect(ownBar.textContent).toContain('neo'); // username present as always
+      } finally {
+        vi.useRealTimers();
+        cleanup(); // unmount before the next verdict iteration (afterEach only runs between tests)
+      }
+    }
   });
 
   it('JOIN balance-check: refuses clearly when the owner stake is uncovered, without taking', () => {
