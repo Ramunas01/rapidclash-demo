@@ -223,23 +223,58 @@ Four targeted in-play fixes against the live build:
    grey for TAILS** — and **remove the coloured icons** next to them (today they're bare icon +
    text). These map to the existing HEADS-gold / TAILS-silver semantic colours.
 
-#### Choice controls — selected-state + the "laggy pick" fix
-- **Purple selected-outline, rendered optimistically (this is the lag fix).** Tapping HEADS/TAILS
-  must show a **purple (brand) outline on the tapped pill immediately, client-side** — do **not**
-  wait for the server to echo the choice back into `view.choices[playerId]` (today the pill only
-  reflects the pick after that round-trip and shows no interim feedback, so a tap looks like it did
-  nothing → the player taps again). Optimistic highlight is safe: picks are hidden and the server
-  stays authoritative for the recorded choice. Only one pill outlined at a time; tapping the other
-  before lock **moves** the outline; the outline reflects **your own** pick only (never the
-  opponent's — redaction); at lock, the outlined pill is the locked choice. **Purple = selection;
-  green/red/orange stay reserved for results** so the two languages don't collide.
+#### Choice controls & pick timing — the confirmed model (fixes "laggy pick", early-start, and the timing leak)
+The owner's experiment + the code confirm the root cause is **"first tap = commit" on a turn-based
+transport**: `coinflipModule.resolve()` fires **as soon as both have chosen** (early start),
+`applyMove` **finalizes** the first pick (`legalMoves → []` after it), and the client gates the pills
+on `canMove = legalMoves.length > 0` fed by `match.your_turn` — which the server **resends on
+opponent activity** (the bot harness carries a `movePending` guard to "dedupe roulette's concurrent
+your_turn resends"). Net effect: taps land on momentarily-disabled pills and drop (→ timeout
+auto-pick), and the round can start before the timer.
+
+**One model change fixes all of it — the 10 s window is the *sole* lock-and-proceed trigger:**
+- **Picks are mutable for the whole window.** Tapping HEADS/TAILS sets a *provisional* choice with an
+  **instant purple outline** (client-local — never gated by the `legalMoves`/`your_turn` churn);
+  tapping the other side just **moves** the outline. `applyMove` **accepts a replacement** pick (no
+  finalize-on-first), and `legalMoves` returns `['heads','tails']` for a player **throughout** the
+  window (never `[]` mid-window) so the pills never disable.
+- **The timer is the only lock event.** The module resolves **only at `moveTimeoutMs` expiry** —
+  never on "both chosen". At 0, both current selections lock simultaneously (any un-picked player
+  gets the existing seeded `timeoutMove`) → opponent reveals → flip. **No early-start path at all**,
+  even if both picked in the first second.
+- **Same-side is never special before the result — and a pick is NEVER rewritten (money integrity).**
+  There must be **no code path that compares the two picks before the deadline**, and **none that
+  alters a player's pick**. The reported draw bugs are this early-resolve made visible: when both
+  happen to pick the same side mid-window, `resolve()` fires at once → silently starts a replay
+  (`choices = {}`) *mid-timer*; the players don't re-pick that phantom round, so at the deadline the
+  seeded `timeoutMove` auto-picks for **both** — which can differ → a **winner is declared and money
+  settled on picks the players never made**. Timer-only resolve deletes this: same-side and
+  opposite-side rounds are identical through lock → reveal → flip, and the **only** branch is at
+  result evaluation (decisive winner vs draw). The seeded auto-pick applies **only** to a player who
+  genuinely made no pick by the deadline — never as a by-product of a replay.
+- **Why timer-only matters beyond feel — redaction extends to *timing*.** Early-resolve-on-both-picked
+  **leaks information**: a player who picked and sees the round start early learns the opponent had
+  also picked, and mid-window starts form a timing side-channel. A fixed full-length window makes
+  every round identical in duration, so nothing about the opponent's behaviour is observable until
+  the reveal — the hidden-pick invariant applied to the time dimension.
+
+The designer's two "bugs" (first-tap-commits; early-start) are one root cause and one fix — the
+**client-local-until-lock** model flagged earlier. **Purple = selection; green/red/orange stay
+reserved for results.** Only your own outline shows (never the opponent's — redaction); at lock, the
+outlined pill is your locked pick.
+
+**Generalize:** "full window · mutable picks · timer-is-the-sole-resolve · no early start" is the
+shared contract for **every hidden-simultaneous-pick game** — RPS, Keno, Limbo carry the same
+early-resolve timing leak (verify each; Dice/Baccarat have no pick window). Build it once at the
+simultaneous-pick layer, not coinflip-only.
+
 - **No same-side restriction — and never add one.** Both players may pick the **same** side
   (same-side → draw → replay is a *required*, tested outcome) or opposite sides; the server accepts
   any combination, no seat/side exclusivity client or server. (There is no such restriction today —
   this is a guard, not a change.) Blocking a "taken" side would **leak the opponent's pick** (if a
   side won't select, you'd infer they took it), breaking the hidden-pick rule — so it must never be
-  introduced. *(The designer's report that same-side is blocked was a mis-diagnosis of the pick lag
-  above; the real cause is the missing optimistic feedback.)*
+  introduced. *(The designer's earlier "same-side is blocked" report was a mis-diagnosis of this
+  pick bug.)*
 
 ### Result reveal — acts on the WHOLE player bar, not the side capsule (copy 1:1)
 The outcome treatment is applied to the **entire player pill bar** (the whole "player … HEADS/TAILS"

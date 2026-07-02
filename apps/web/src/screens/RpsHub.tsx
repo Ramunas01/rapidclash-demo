@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import type { Outcome } from '@rapidclash/shared';
 import type { RpsView, GameView } from '../App.js';
@@ -36,11 +37,29 @@ function RpsIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
  * The live in-match board (lifts Play.tsx's choice UI). Pre-terminal only — your pick shows,
  * the opponent stays hidden (🤫); the terminal reveal happens in the result overlay at
  * match.end, so this never leaks the opponent's choice.
+ *
+ * Timer-only-resolve model (#164): the pick is CLIENT-LOCAL and FREELY CHANGEABLE for the whole
+ * window — tapping a throw rings it PURPLE immediately (no wait for the server echo) and re-tapping
+ * moves the selection. Buttons are NEVER gated by `legalMoves`/`your_turn` (all three stay legal all
+ * window; the client ignores that churn). Every tap sends the replacement throw; the server locks
+ * both at window expiry. No same-side/"taken-throw" restriction (it would leak the opponent's pick).
  */
-function RpsBoard({ playerId, gameState, legalMoves, onMove, onForfeit, username }: GameAreaArgs) {
+function RpsBoard({ playerId, gameState, onMove, onForfeit, username }: GameAreaArgs) {
   const view = gameState as RpsView | null;
-  const canMove = legalMoves.length > 0;
-  const myChoice = playerId ? view?.choices?.[playerId] : undefined;
+  // Own throw is not redacted, but it trails the tap by a round-trip — the optimistic pick bridges it.
+  const serverChoice = playerId ? view?.choices?.[playerId] : undefined;
+  const [optimisticPick, setOptimisticPick] = useState<string | null>(null);
+  // Clear the local pick when the round closes (round bumps on replay; choices clears) so the next
+  // window opens blank.
+  const round = view?.round;
+  useEffect(() => {
+    setOptimisticPick(null);
+  }, [round]);
+  const myChoice = optimisticPick ?? serverChoice;
+  function handlePick(id: string) {
+    setOptimisticPick(id);
+    onMove(id);
+  }
   return (
     <div className="flex flex-col items-center gap-4" data-testid="hub-board">
       {/* You — VS — Opponent (opponent hidden until the result overlay). */}
@@ -63,17 +82,22 @@ function RpsBoard({ playerId, gameState, legalMoves, onMove, onForfeit, username
         </div>
       </div>
 
-      {/* Choice buttons — gated by server-issued legalMoves. */}
+      {/* Choice buttons — client-local, freely changeable for the whole window (never gated by
+          legalMoves/your_turn). The selected throw rings PURPLE (the selection language). */}
       <div className="grid w-full grid-cols-3 gap-3" role="group" aria-label="RPS choices">
         {RPS_CHOICES.map(({ id, emoji, label }) => (
           <button
             key={id}
             type="button"
-            onClick={() => onMove(id)}
-            disabled={!canMove}
+            onClick={() => handlePick(id)}
             aria-label={label}
+            aria-pressed={myChoice === id}
             data-testid={`hub-move-${id}`}
-            className="flex flex-col items-center gap-1 rounded-xl bg-surface py-4 transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+            data-selected={myChoice === id || undefined}
+            className={cn(
+              'flex flex-col items-center gap-1 rounded-xl bg-surface py-4 transition-all hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand',
+              myChoice === id && 'ring-2 ring-brand ring-offset-2 ring-offset-card',
+            )}
           >
             <span className="text-3xl">{emoji}</span>
             <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{label}</span>
@@ -82,7 +106,7 @@ function RpsBoard({ playerId, gameState, legalMoves, onMove, onForfeit, username
       </div>
 
       {myChoice && (
-        <p className="text-center text-sm text-muted-foreground" data-testid="hub-locked">Locked in — waiting for opponent…</p>
+        <p className="text-center text-sm text-muted-foreground" data-testid="hub-locked">Picked {myChoice} — tap another to change, or wait for the timer</p>
       )}
       <button type="button" onClick={onForfeit} className="pt-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
         Forfeit

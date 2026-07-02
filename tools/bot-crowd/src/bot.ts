@@ -12,7 +12,7 @@ import type {
   OpenChallenge,
   QueueWaitingPayload,
 } from '@rapidclash/shared';
-import { config, BOT_PREFIX, type BotConfig } from './config.js';
+import { config, BOT_PREFIX, HUMAN_RESERVED_STAKE, type BotConfig } from './config.js';
 import { HttpError, type Api } from './http.js';
 import { BotWsClient } from './ws-client.js';
 
@@ -203,13 +203,15 @@ export class Bot {
     this.tryTake();
   }
 
-  /** Claim a HUMAN-posted open challenge in this bot's game (any stake) — never another
-   *  bot's (an owner whose name starts with BOT_PREFIX). This is the ONLY way a taker
-   *  starts a match, so bots never battle bots; only a human who posts gets an opponent. */
+  /** Claim a HUMAN-posted open challenge in this bot's game — never another bot's (an owner whose
+   *  name starts with BOT_PREFIX), and never a HUMAN_RESERVED_STAKE (100) challenge: that tier is
+   *  reserved for human-vs-human, so a human's 100 bet is left resting for another human to JOIN.
+   *  This is the ONLY way a taker starts a match, so bots never battle bots; only a human who posts
+   *  a non-reserved stake gets a bot opponent. */
   private tryTake(): void {
     if (this.cfg.policy !== 'taker' || this.state !== 'idle') return;
     const target = [...this.openChallenges.values()].find(
-      (c) => !c.ownerName.startsWith(BOT_PREFIX),
+      (c) => !c.ownerName.startsWith(BOT_PREFIX) && c.stake !== HUMAN_RESERVED_STAKE,
     );
     if (!target) return;
     this.state = 'taking';

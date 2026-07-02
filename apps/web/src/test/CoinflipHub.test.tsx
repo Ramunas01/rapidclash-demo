@@ -137,14 +137,21 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     expect(onMakeMove).toHaveBeenCalledWith('heads');
   });
 
-  it('In-match: once chosen the pick locks (#160) — the recorded side shows selected, the other disables', () => {
-    // The server has echoed my pick (choices.pid = heads) and legalMoves emptied (one-shot). The
-    // outline reconciles from the server pick too (not only an optimistic tap): heads reads selected,
-    // tails locks out.
+  it('In-match: the outline reconciles from the server-recorded pick, and both sides stay mutable (#164)', () => {
+    // The server has echoed my pick (choices.pid = heads). The outline reconciles from that server
+    // pick (not only an optimistic tap): heads reads selected. Under the timer-only-resolve model the
+    // other side is NOT locked out — both stay tappable all window, so the pick can still change.
+    const onMakeMove = vi.fn();
     const gameState: CoinflipView = { players: ['pid', 'bob'], choices: { pid: 'heads' } };
-    render(<CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
+    render(<CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [], onMakeMove })} />);
     expect(screen.getByTestId('hub-move-heads')).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByTestId('hub-move-tails')).toBeDisabled();
+    expect(screen.getByTestId('hub-move-tails')).not.toBeDisabled();
+    expect(screen.getByTestId('hub-move-tails')).toHaveAttribute('aria-pressed', 'false');
+    // Re-tapping the other side moves the outline (mutable) and sends the replacement pick.
+    fireEvent.click(screen.getByTestId('hub-move-tails'));
+    expect(onMakeMove).toHaveBeenCalledWith('tails');
+    expect(screen.getByTestId('hub-move-tails')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('hub-move-heads')).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('Idle: no H/T pills on the tile or in the slot (selection only happens in-play)', () => {
@@ -513,19 +520,20 @@ describe('CoinflipHubScreen — choice controls: optimistic purple pick (#160)',
     expect(screen.getByTestId('hub-slot-opponent').textContent).toMatch(/playing/i);
   });
 
-  it('the pick is one-shot (server-authoritative): first tap commits; a later tap does not re-fire onMove or move the outline', () => {
-    // Coinflip's module is one-shot — applyMove throws once a side is chosen. The client mirrors
-    // that: the first tap commits; the outline can never drift from the recorded pick. (Pre-lock
-    // re-picking would need a module change — flagged on the PR as a doc/module conflict.)
+  it('the pick is mutable (timer-only-resolve #164): a later tap moves the outline and re-sends the replacement', () => {
+    // Coinflip's module now accepts a replacement pick for the whole window (no finalize-on-first) —
+    // the round resolves ONLY at the timer. The client mirrors that: re-tapping the other side moves
+    // the purple outline and re-fires onMove with the new side; both pills stay tappable all window.
     const onMakeMove = vi.fn();
     render(<CoinflipHubScreen {...pickWindow({ onMakeMove })} />);
     fireEvent.click(screen.getByTestId('hub-move-heads'));
-    fireEvent.click(screen.getByTestId('hub-move-tails')); // ignored — already committed
-    expect(onMakeMove).toHaveBeenCalledTimes(1);
-    expect(onMakeMove).toHaveBeenCalledWith('heads');
-    expect(screen.getByTestId('hub-move-heads')).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByTestId('hub-move-tails')).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByTestId('hub-move-tails')).toBeDisabled(); // the un-picked side locks out
+    fireEvent.click(screen.getByTestId('hub-move-tails')); // re-pick — accepted, not ignored
+    expect(onMakeMove).toHaveBeenCalledTimes(2);
+    expect(onMakeMove).toHaveBeenNthCalledWith(1, 'heads');
+    expect(onMakeMove).toHaveBeenNthCalledWith(2, 'tails');
+    expect(screen.getByTestId('hub-move-tails')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('hub-move-heads')).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByTestId('hub-move-heads')).not.toBeDisabled(); // both stay tappable all window
   });
 
   it('BOTH players can lock the SAME side (no same-side restriction) — the draw path stays reachable', () => {
@@ -536,5 +544,33 @@ describe('CoinflipHubScreen — choice controls: optimistic purple pick (#160)',
     render(<CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState })} />);
     expect(screen.getByTestId('coin-own-pick').textContent).toMatch(/heads/i);
     expect(screen.getByTestId('coin-opp-pick').textContent).toMatch(/heads/i); // same side accepted
+  });
+
+  it('flip-on-draw (#164): the coin STILL flips and the opponent pick reveals during the draw beat', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    // Round 0 live pick window — the live view has NO result (redacted mid-round), so no reveal yet.
+    const r0: CoinflipView = { players: ['pid', 'bob'], choices: { pid: 'heads' }, round: 0, replays: 0 };
+    const { rerender } = render(
+      <CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState: r0, legalMoves: ['heads', 'tails'] })} />,
+    );
+    expect(screen.queryByTestId('coin-face')).toBeNull(); // pick window — coin has no face
+
+    // A same-side draw resolves round 0 → replays rises to 1, a fresh round 1 opens (its result still
+    // redacted), and lastResult carries the drawn flip + both picks. GameHub runs the shared draw beat.
+    const r1: CoinflipView = {
+      players: ['pid', 'bob'],
+      choices: {},
+      round: 1,
+      replays: 1,
+      lastResult: { round: 0, result: 'tails', choices: { pid: 'heads', bob: 'heads' }, winner: null },
+    };
+    rerender(<CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState: r1, legalMoves: ['heads', 'tails'] })} />);
+
+    // During the beat the coin flips to the drawn face and the opponent's drawn pick reveals — the
+    // flip is NOT skipped on a draw (the whole point of #164's flip-on-draw).
+    await waitFor(() => {
+      expect(screen.getByTestId('coin-face').textContent).toBe('tails');
+      expect(screen.getByTestId('coin-opp-pick').textContent).toMatch(/heads/i);
+    });
   });
 });

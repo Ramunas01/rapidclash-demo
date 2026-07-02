@@ -1,7 +1,7 @@
 import { describe, beforeEach, afterEach, it, expect } from 'vitest';
 import Database from 'better-sqlite3';
 import type { FastifyInstance } from 'fastify';
-import { rpsModule } from '@rapidclash/game-rps';
+import { rpsModule, PICK_WINDOW_MS } from '@rapidclash/game-rps';
 import { createServices, buildApp } from '../server.js';
 
 interface MatchDetailBody {
@@ -80,9 +80,13 @@ describe('GET /matches/:id', () => {
   });
 
   it('completed: returns the terminal outcome and the viewer settlement', async () => {
+    // Timer-only-resolve (#164): both provisional throws land inside the window (mutable, no early
+    // resolve); the round locks + resolves ONLY when the window closes. The generic move-timer sweep
+    // past `windowEndsAt` locks both current throws, resolves (rock beats scissors → p1), and settles
+    // internally (rake sourced from rps module meta, 2.5%) — so no separate settleMatch call.
     services.matchmaking.applyMove(matchId, p1.id, 'rock', Date.now());
     services.matchmaking.applyMove(matchId, p2.id, 'scissors', Date.now());
-    services.matchmaking.settleMatch(matchId); // rake sourced from rps module meta (2.5%)
+    services.matchmaking.sweepTimedOutMoves(Date.now() + PICK_WINDOW_MS + 1);
 
     const res = await app.inject({
       method: 'GET',
