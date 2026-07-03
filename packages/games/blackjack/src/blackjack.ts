@@ -27,6 +27,19 @@ interface Hand {
 }
 
 /**
+ * A just-resolved round's PUBLIC snapshot — both hands fully revealed (safe: the round is over, and
+ * a fresh round uses new decks) plus the result. Set on every resolve and carried across an internal
+ * replay so the client can HOLD the pushed hands on screen during the shared draw beat, with the
+ * red (both-bust) / orange (equal-total) card outlines — the "Draws → visible push" fix (BLACKJACK.md).
+ */
+interface RoundResult {
+  round: number;
+  result: 'win' | 'draw';
+  winner?: PlayerId;
+  hands: Record<PlayerId, { cards: Card[]; total: number }>;
+}
+
+/**
  * JSON-serializable Blackjack state.
  *
  * Concurrent (not turn-based): both players act on their own hand. A round resolves
@@ -52,6 +65,14 @@ interface BlackjackState {
   winner?: PlayerId;
   /** Set on void (draw cap, or a disconnect resolve that drew) → the match is terminal. */
   forcedOutcome?: Outcome;
+  /** The most-recently-resolved round (both hands revealed) — drives the client's push hold during
+   *  the shared draw beat. Set on every resolve; safe to expose (a finished round leaks nothing
+   *  about the fresh replay round, whose decks differ). */
+  lastResult?: RoundResult;
+  /** Public MIRROR of `draws`, surfaced ONLY by `viewFor` so the shared hub draw-beat reader
+   *  (`replaysOf`, keyed on `replays`) fires for Blackjack exactly as it does for Coinflip/Keno.
+   *  Never set on the stored state — only on the view. */
+  replays?: number;
 }
 
 function cast(state: GameState): BlackjackState {
@@ -118,6 +139,18 @@ function revealEvent(s: BlackjackState, result: PlayerId | 'draw'): GameEvent {
  */
 function resolveRound(s: BlackjackState): GameEvent[] {
   const result = roundWinner(s);
+  const [rp1, rp2] = s.players;
+  // Snapshot the just-resolved round (both hands) BEFORE a draw re-deals — the client holds it on
+  // screen during the shared draw beat so a push is a visible result, never a silent re-deal.
+  s.lastResult = {
+    round: s.round,
+    result: result === 'draw' ? 'draw' : 'win',
+    winner: result === 'draw' ? undefined : result,
+    hands: {
+      [rp1]: { cards: [...s.hands[rp1].cards], total: handValue(s.hands[rp1].cards) },
+      [rp2]: { cards: [...s.hands[rp2].cards], total: handValue(s.hands[rp2].cards) },
+    },
+  };
   const events: GameEvent[] = [revealEvent(s, result)];
 
   if (result !== 'draw') {
@@ -238,8 +271,9 @@ export const blackjackModule: GameModule = {
 
   viewFor(state: GameState, playerId: PlayerId): GameState {
     const s = cast(state);
-    // Terminal → full reveal (both hands + the seed, for verifiability).
-    if (terminal(s)) return s;
+    // Terminal → full reveal (both hands + the seed, for verifiability). `replays` mirrors `draws`
+    // so the shared draw-beat reader sees the same field it reads on every other tie-replay game.
+    if (terminal(s)) return { ...s, replays: s.draws };
 
     // In play → own hand in full; opponent shows EXACTLY ONE card, with hit count and
     // stand/bust status hidden; the seed is stripped (it would reveal the hidden cards).
@@ -255,7 +289,12 @@ export const blackjackModule: GameModule = {
       players: s.players,
       round: s.round,
       draws: s.draws,
+      // Public mirror driving the shared draw beat (replaysOf); a rise = a push just happened.
+      replays: s.draws,
       hands: redactedHands,
+      // The just-resolved (pushed) round — both hands, fully revealed. Redaction-safe: the round is
+      // over and the fresh round's decks differ, so it leaks nothing about the current hidden hands.
+      ...(s.lastResult ? { lastResult: s.lastResult } : {}),
     } as BlackjackState;
   },
 

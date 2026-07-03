@@ -25,20 +25,29 @@ const DEAL_STAGGER_S = 0.22;
  *  per the designer ("~0.5s after all cards are revealed"). Covers the ~0.55s flip + a short hold. */
 const FRAME_DELAY_MS = 1000;
 
-/** Item 5 — hand-total label above a hand. With an ace, show BOTH interpretations while both
- *  are ≤ 21 (e.g. A+3 → "4, 14"); collapse to a single value when there is no ace or the high
- *  reading would bust. Computed from the VISIBLE cards only — redaction-safe for the opponent. */
-function totalLabel(cards: BlackjackCard[]): string {
-  let low = 0;
+/** Item 5 — the CONVENTIONAL Blackjack hand-value label (soft/hard), never the raw ace combination
+ *  ("11, 21" was the bug). Computed from the VISIBLE cards only, so the opponent's total stays
+ *  redaction-safe. `final` collapses the ambiguity once the hand is resolved (stand / bust / terminal
+ *  reveal). See docs/BLACKJACK.md for the worked examples this implements.
+ *
+ *  hard = every ace as 1; a soft total exists iff an ace is present and hard + 10 ≤ 21 (only one ace
+ *  can ever be 11, so soft is exactly hard + 10); best = soft if it exists, else hard. */
+function totalLabel(cards: BlackjackCard[], final = false): string {
+  let hard = 0;
   let aces = 0;
   for (const c of cards) {
-    if (c.rank === 'A') { aces++; low += 1; }
-    else if (c.rank === 'K' || c.rank === 'Q' || c.rank === 'J' || c.rank === '10') low += 10;
-    else low += Number(c.rank);
+    if (c.rank === 'A') { aces++; hard += 1; }
+    else if (c.rank === 'K' || c.rank === 'Q' || c.rank === 'J' || c.rank === '10') hard += 10;
+    else hard += Number(c.rank);
   }
-  const high = low + 10; // promoting exactly one ace from 1 → 11
-  if (aces > 0 && high <= 21) return `${low}, ${high}`;
-  return String(low);
+  const soft = aces > 0 && hard + 10 <= 21 ? hard + 10 : null;
+  const best = soft ?? hard;
+  // Soft 21: a two-card 21 is a natural Blackjack; a 3+ card 21 is just "21".
+  if (soft === 21) return cards.length === 2 ? 'Blackjack' : '21';
+  // Dual "hard / soft" ONLY while the hand is live and the ace could still land either way (soft < 21).
+  if (!final && soft !== null && soft < 21) return `${hard} / ${soft}`;
+  // No live ambiguity (no ace, or the high reading would bust), or the hand is final → single best.
+  return String(best);
 }
 
 const isRed = (suit: string) => suit === '♥' || suit === '♦';
@@ -49,7 +58,8 @@ const isRed = (suit: string) => suit === '♥' || suit === '♦';
  *  terminal. Only newly-dealt indices mount (the earlier cards keep their keys), so just the
  *  freshly-drawn card makes the trip. At terminal a `frame` rings the player's own cards green
  *  (won) or red (lost) — driven strictly by the server outcome. */
-function PlayingCard({ card, index, delay = 0, frame = null }: { card: BlackjackCard; index: number; delay?: number; frame?: 'win' | 'lose' | null }) {
+type CardFrame = 'win' | 'lose' | 'bust' | 'draw' | null;
+function PlayingCard({ card, index, delay = 0, frame = null }: { card: BlackjackCard; index: number; delay?: number; frame?: CardFrame }) {
   return (
     <motion.div
       data-testid="card"
@@ -61,7 +71,9 @@ function PlayingCard({ card, index, delay = 0, frame = null }: { card: Blackjack
         'relative flex h-20 w-14 flex-col items-center justify-center rounded-lg border border-black/10 bg-white font-bold shadow-lg transition-shadow duration-300',
         isRed(card.suit) ? 'text-red-600' : 'text-gray-900',
         frame === 'win' && 'ring-[3px] ring-success shadow-[0_0_14px_rgba(34,197,94,0.55)]',
-        frame === 'lose' && 'ring-[3px] ring-destructive shadow-[0_0_14px_rgba(239,68,68,0.5)]',
+        // A loss and a bust both read red; a push tie reads orange (the shared draw colour).
+        (frame === 'lose' || frame === 'bust') && 'ring-[3px] ring-destructive shadow-[0_0_14px_rgba(239,68,68,0.5)]',
+        frame === 'draw' && 'ring-[3px] ring-amber-400 shadow-[0_0_14px_rgba(251,191,36,0.5)]',
       )}
     >
       <span className="text-lg leading-none">{card.rank}</span>
@@ -207,7 +219,7 @@ function useDelayedFlag(active: boolean, delayMs: number): boolean {
  * the decisive end the cards stay on the table and a green/red frame (server outcome only) rings
  * the player's own cards a beat after the reveal; it persists until a new game starts.
  */
-function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, phase, outcome }: GameAreaArgs) {
+function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, phase, outcome, drawBeat }: GameAreaArgs) {
   // Pace the server's frames so the terminal reveal doesn't snap in instantly (presentation only —
   // the live gameState/legalMoves still drive turn state; this only spaces the displayed cards).
   const view = usePacedView(gameState as BlackjackView | null, TERMINAL_HOLD_MS);
@@ -224,20 +236,50 @@ function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, phase, ou
     return () => clearInterval(id);
   }, [isMyTurn]);
 
-  const ownCards = (playerId && view?.hands[playerId]?.cards) || [];
-  const oppCards = (opponentId && view?.hands[opponentId]?.cards) || [];
   const isTerminal = Boolean(view?.winner ?? view?.forcedOutcome);
-  const waitingOnOpponent = !isMyTurn && !isTerminal && ownCards.length > 0;
+
+  // Draws → visible push (BLACKJACK.md). A push is NOT terminal — the server re-deals a fresh round
+  // in the same match, so by the time this frame arrives `view.hands` is already the NEW deal. During
+  // the shared draw beat (#161) we instead HOLD the just-pushed hands from `lastResult` (both fully
+  // revealed) so the push is a visible result, never a silent re-deal. The bars go orange via the
+  // shared mechanic (GameHub feeds drawBeat to both slot pills); here we add the red/orange CARDS.
+  const lastResult = view?.lastResult;
+  const showPush = Boolean(drawBeat && lastResult);
+  const ownCards = showPush
+    ? (playerId ? lastResult!.hands[playerId]?.cards ?? [] : [])
+    : ((playerId && view?.hands[playerId]?.cards) || []);
+  const oppCards = showPush
+    ? (opponentId ? lastResult!.hands[opponentId]?.cards ?? [] : [])
+    : ((opponentId && view?.hands[opponentId]?.cards) || []);
+
+  // A push is exhaustively both-bust (Case 1 → red cards) or equal non-bust totals (Case 2 → orange
+  // cards); both hands take the SAME outline. The red card outline keeps its bust meaning even in a
+  // push (BLACKJACK.md), so the card-level story stays truthful. Totals are server-authoritative.
+  const isBust = (total?: number) => (total ?? 0) > 21;
+  const pushFrame: CardFrame = showPush
+    ? (isBust(lastResult!.hands[playerId ?? '']?.total) && isBust(lastResult!.hands[opponentId ?? '']?.total) ? 'bust' : 'draw')
+    : null;
+
+  const waitingOnOpponent = !isMyTurn && !isTerminal && !showPush && ownCards.length > 0;
   const round = view?.round ?? 0;
   const draws = view?.draws ?? 0;
+  // Own hand is "final" (label collapses to a single best value) once it is done, or at the terminal
+  // reveal, or while the pushed hands are held; the opponent's is final only when fully revealed.
+  const ownDone = Boolean(playerId && view?.hands[playerId]?.done);
+  const ownFinal = isTerminal || showPush || ownDone;
+  const oppFinal = isTerminal || showPush;
 
   // Opening deal (item 4): the four initial cards arrive one-by-one — own[0], opp[0], own[1],
   // opp-hidden — via a per-card stagger. Only the opening frame staggers; a later Hit / the
-  // terminal reveal mount alone with no delay (deal order is meaningless then).
-  const opening = !isTerminal && ownCards.length === 2 && oppCards.length === 1;
+  // terminal reveal / a held push mount alone with no delay (deal order is meaningless then).
+  const opening = !isTerminal && !showPush && ownCards.length === 2 && oppCards.length === 1;
   const ownDeal = (i: number) => (opening && i < 2 ? (i === 0 ? 0 : 2) * DEAL_STAGGER_S : 0);
   const oppDeal = (i: number) => (opening && i === 0 ? 1 * DEAL_STAGGER_S : 0);
   const backDeal = opening ? 3 * DEAL_STAGGER_S : 0;
+  // Distinct keys for the held-push cards so they mount/unmount as their own set — the fresh round's
+  // cards then re-mount and play their deal animation once the beat ends (no stale in-place swap).
+  const ownKey = (i: number) => (showPush ? `push-own-${i}` : `own-${round}-${i}`);
+  const oppKey = (i: number) => (showPush ? `push-opp-${i}` : `opp-${round}-${i}`);
 
   // Win/lose card frame (item: result on the board, no pop-up). Driven strictly by the server's
   // match.end outcome; non win/lose terminals (draw/void) get no frame. Held a beat after reveal.
@@ -265,20 +307,22 @@ function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, phase, ou
       )}
 
       {/* Opponent hand — centred; exactly one card is ever revealed in play (viewFor redaction).
-          Keys carry the round so a re-deal re-mounts (re-animates) the opening deal. */}
+          On a push BOTH hands are fully revealed (no face-down) with the red/orange outline; keys
+          carry the round so a re-deal re-mounts (re-animates) the opening deal. */}
       <section data-testid="opp-hand" className="relative z-[1] flex flex-1 flex-col items-center justify-center gap-2">
-        <HandTotalPill label={totalLabel(oppCards)} testid="opp-total" />
+        <HandTotalPill label={totalLabel(oppCards, oppFinal)} testid="opp-total" />
         <div className="flex items-end justify-center">
-          {oppCards.map((c, i) => <PlayingCard key={`opp-${round}-${i}`} card={c} index={i} delay={oppDeal(i)} />)}
-          {!isTerminal && <CardBack index={oppCards.length} active={waitingOnOpponent} delay={backDeal} />}
+          {oppCards.map((c, i) => <PlayingCard key={oppKey(i)} card={c} index={i} delay={oppDeal(i)} frame={pushFrame} />)}
+          {!isTerminal && !showPush && <CardBack index={oppCards.length} active={waitingOnOpponent} delay={backDeal} />}
         </div>
       </section>
 
-      {/* Own hand — centred, full. At the decisive end each card is ringed by the win/lose frame. */}
+      {/* Own hand — centred, full. At the decisive end each card is ringed by the win/lose frame;
+          during a push both hands share the red (bust) / orange (tie) outline. */}
       <section data-testid="own-hand" className="relative z-[1] flex flex-1 flex-col items-center justify-center gap-2">
-        <HandTotalPill label={totalLabel(ownCards)} testid="own-total" />
+        <HandTotalPill label={totalLabel(ownCards, ownFinal)} testid="own-total" />
         <div className="flex items-end justify-center">
-          {ownCards.map((c, i) => <PlayingCard key={`own-${round}-${i}`} card={c} index={i} delay={ownDeal(i)} frame={ownFrame} />)}
+          {ownCards.map((c, i) => <PlayingCard key={ownKey(i)} card={c} index={i} delay={ownDeal(i)} frame={pushFrame ?? ownFrame} />)}
         </div>
       </section>
     </TableSurface>

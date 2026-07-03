@@ -16,13 +16,28 @@ The confirmed head-to-head, no-house Blackjack. This **supersedes** the provisio
 
 **Actions & timer.** Hit or Stand only (no double, split, or insurance). On the deal a **10-second timer** starts for both players simultaneously; each Hit resets that player's timer; expiry → auto-stand on current total. Bust (>21) locks the hand. Ace is 1 or 11, auto-downgraded to avoid a needless bust. Nothing about the opponent is surfaced during play — not drawn cards, not stand status.
 
+**Hand-value display (soft/hard).** The label shows the *conventional* total, never raw ace combinations ("11, 21" is the current bug). Compute: **hard** = sum with every ace as 1; a **soft** total exists iff the hand has an ace and `hard + 10 ≤ 21` (soft = hard + 10 — only one ace can be 11, so it's always exactly +10, however many aces are held); **best** = soft if it exists, else hard. Label rules:
+- Show **both** as `hard / soft` (e.g. "7 / 17") **only** while the hand is **live** (player can still act), an ace is present, a soft total exists, and **soft < 21** — the one case where the ace genuinely could land either way.
+- Soft **= 21** → show just **"21"**; on the initial two-card hand that is **Blackjack** (show the Blackjack flag alongside/instead of 21).
+- No valid soft (soft would exceed 21) → show the **hard** total only (A+6+9 → "16", never "16 / 26"); a value above 21 is never offered as an option.
+- Hand **final** (stand / bust / round resolved) → collapse to the single **best** value (A+6 standing → "17", not "7 / 17"); the ambiguity is resolved, so the display resolves with it.
+- **Bust** (hard > 21, no ace relief) → show the hard total (e.g. "23") in the bust state.
+
+Computed from **visible cards only**, so the opponent's label stays redaction-safe pre-terminal. (Server `handValue` already computes the best value for resolution — this is the display layer only.) Test examples: A+J → 21 / Blackjack · A+6 → 7 / 17 (live) · A+6+4 → 21 · A+6+9 → 16 · A+A → 2 / 12 · A+A+9 → 21 · 9+9 → 18 · stand on A+7 → 18 · 10+9+5 → 24 (bust).
+
 **Reveal & win matrix.** Hands are revealed once both players have stood, busted, or timed out:
 - one busts, the other doesn't → the non-buster wins;
 - both stand ≤21 with different totals → higher total wins;
 - equal totals (21 = 21; a natural counts as plain 21, no bonus) → draw;
 - both bust → draw.
 
-**Draws → replay.** Any draw triggers an **instant replay**, repeating until one player wins. Each replay round uses two fresh decks with a *new* commit-reveal (new seed + hash published at the round's start, revealed at its end), so every round is independently verifiable and decks never run low on a long chain. The pot carries over untouched; rake is still only applied at the eventual decisive result.
+**Draws → visible push, then replay.** A push is a **full result state**, shown as long and as clearly as a win/loss — **never skipped** (today it silently deals new cards, so players don't realise a push happened). On a push, all cards of **both** hands stay fully visible (no removal, reset, or new deal yet), and the outlines tell a two-level story:
+- **Both bust (Case 1):** each hand's **card outlines turn red** (red = bust, and both busted) + **both player bars turn orange** (orange = the round result is a draw). Red cards say *why* each hand ended; orange bars say *the round result*.
+- **Equal totals, no bust (Case 2):** each hand's **card outlines turn orange** (neither lost individually — the hands tied) + **both player bars turn orange**. Orange cards + orange bars — everything says draw.
+
+The push view **holds ~2 s** (the same weight as a win/loss reveal) so both players register it; **only then** does the next round deal — the **universal draw mechanic** (orange bars → 2 s → auto-rematch, same opponent, same escrow/bet; see `SCREENS.md`). The card-outline layer (red = bust, orange = tie) is Blackjack's game-specific resolution animation that *precedes* the shared orange-bar treatment; the red card outline keeps its existing bust meaning even in a push, so the card-level story stays truthful. A player must never have to infer a push from cards suddenly changing.
+
+Any draw thus repeats until one player wins. Each replay round uses two fresh decks with a *new* commit-reveal (new seed + hash published at the round's start, revealed at its end), so every round is independently verifiable and decks never run low on a long chain. The pot carries over untouched; rake is applied only at the eventual decisive result; 10-draw cap → void/refund.
 
 **Disconnect.** A dropped player is treated as **auto-stand on their current total** at timeout (not an instant forfeit); the reveal then proceeds normally.
 

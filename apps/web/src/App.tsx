@@ -109,9 +109,20 @@ export interface BlackjackView {
   players: [string, string];
   round: number;
   draws: number;
+  /** Public mirror of `draws` — a rise drives the shared draw beat (#161), same as every other
+   *  tie-replay game's `replays`. */
+  replays?: number;
   /** Redacted by viewFor: own hand is full; the opponent shows exactly ONE card in play.
    *  At terminal both hands are revealed (but the app navigates to the result screen then). */
   hands: Record<string, BlackjackHand>;
+  /** The just-resolved round (both hands fully revealed), carried across an internal replay so the
+   *  client can HOLD the pushed hands on the board during the draw beat (red = bust, orange = tie). */
+  lastResult?: {
+    round: number;
+    result: 'win' | 'draw';
+    winner?: string;
+    hands: Record<string, { cards: BlackjackCard[]; total: number }>;
+  };
   /** Present only at terminal (revealed for verifiability). */
   seed?: number;
   winner?: string;

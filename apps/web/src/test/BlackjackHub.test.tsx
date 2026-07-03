@@ -22,9 +22,10 @@ function baseProps(over: Partial<Props> = {}): Props {
   };
 }
 
-/** In-play view: own hand full (2 cards), opponent redacted to exactly ONE card. */
+/** In-play view: own hand full (2 cards), opponent redacted to exactly ONE card. `replays` mirrors
+ *  `draws` (as the real viewFor does) so the shared draw-beat reader sees the same field. */
 function inPlayView(over: Partial<BlackjackView> = {}): BlackjackView {
-  return {
+  const merged: BlackjackView = {
     players: ['pid', 'bob'],
     round: 0,
     draws: 0,
@@ -34,7 +35,10 @@ function inPlayView(over: Partial<BlackjackView> = {}): BlackjackView {
     },
     ...over,
   };
+  return { replays: merged.draws, ...merged };
 }
+
+const c = (rank: string, suit = '♠'): { rank: string; suit: string } => ({ rank, suit });
 
 describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
   beforeEach(() => {
@@ -288,5 +292,126 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
   it('is sanitized: no $ anywhere on the hub', () => {
     const { container } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: ['hit', 'stand'] })} />);
     expect(container.textContent ?? '').not.toMatch(/\$/);
+  });
+
+  // ── Part 1: hand-value label (soft/hard) — the docs/BLACKJACK.md worked examples ──
+  describe('Part 1: hand-value label (soft/hard)', () => {
+    /** Render an in-play view with the given OWN hand, read the own-total label. `done` marks a
+     *  final (stood/bust) hand → the label collapses to a single best value. */
+    function ownLabel(cards: { rank: string; suit: string }[], done = false): string {
+      render(
+        <BlackjackHubScreen
+          {...baseProps({
+            currentMatchId: 'm1',
+            legalMoves: done ? [] : ['hit', 'stand'],
+            gameState: inPlayView({ hands: { pid: { cards, done }, bob: { cards: [c('K', '♣')], done: false } } }),
+          })}
+        />,
+      );
+      return screen.getByTestId('own-total').textContent ?? '';
+    }
+
+    it('A+J (two-card soft 21) → Blackjack', () => {
+      expect(ownLabel([c('A'), c('J')])).toBe('Blackjack');
+    });
+    it('A+6 live → 7 / 17 (the ace could still land either way)', () => {
+      expect(ownLabel([c('A'), c('6')])).toBe('7 / 17');
+    });
+    it('A+6+4 (three-card soft 21) → 21 (not Blackjack)', () => {
+      expect(ownLabel([c('A'), c('6'), c('4')])).toBe('21');
+    });
+    it('A+6+9 (soft would bust) → 16 only, never 16 / 26', () => {
+      expect(ownLabel([c('A'), c('6'), c('9')])).toBe('16');
+    });
+    it('A+A → 2 / 12 (only one ace can be 11)', () => {
+      expect(ownLabel([c('A'), c('A', '♥')])).toBe('2 / 12');
+    });
+    it('A+A+9 → 21', () => {
+      expect(ownLabel([c('A'), c('A', '♥'), c('9')])).toBe('21');
+    });
+    it('9+9 (no ace) → 18', () => {
+      expect(ownLabel([c('9'), c('9', '♥')])).toBe('18');
+    });
+    it('stand on A+7 (final) → 18, not 7 / 17', () => {
+      expect(ownLabel([c('A'), c('7')], true)).toBe('18');
+    });
+    it('10+9+5 → 24 (bust, hard total)', () => {
+      expect(ownLabel([c('10'), c('9'), c('5')], true)).toBe('24');
+    });
+  });
+
+  // ── Part 2: draws → visible push (the shared universal-draw mechanic) ──
+  describe('Part 2: push = visible result (shared draw flow, never a silent skip)', () => {
+    /** Drive a live match into a push: an initial round (replays 0), then the re-dealt round that
+     *  carries `lastResult` (the pushed hands) + a `replays` rise — which fires the shared draw beat. */
+    function toPush(pushed: BlackjackView) {
+      const { rerender } = render(
+        <BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: ['hit', 'stand'] })} />,
+      );
+      rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: pushed, legalMoves: [] })} />);
+    }
+
+    it('Case 1 — both bust: red card outlines on both hands + orange bars, held (no re-deal, no overlay)', async () => {
+      const pushed = inPlayView({
+        round: 1, draws: 1, replays: 1,
+        // Fresh (round 1) hands — these must NOT be what shows during the beat.
+        hands: { pid: { cards: [c('2'), c('3')], done: false }, bob: { cards: [c('4')], done: false } },
+        lastResult: {
+          round: 0, result: 'draw',
+          hands: {
+            pid: { cards: [c('K'), c('Q'), c('5')], total: 25 }, // busts
+            bob: { cards: [c('10'), c('9'), c('8')], total: 27 }, // busts
+          },
+        },
+      });
+      toPush(pushed);
+
+      await waitFor(() => {
+        // The PUSHED hands are held (3 cards each), not the fresh round's re-deal (2 / 1).
+        expect(within(screen.getByTestId('own-hand')).getAllByTestId('card')).toHaveLength(3);
+        expect(within(screen.getByTestId('opp-hand')).getAllByTestId('card')).toHaveLength(3);
+      });
+      // Both hands fully revealed — no face-down during a push.
+      expect(screen.queryByTestId('card-back')).toBeNull();
+      // Both-bust → red (destructive) card outlines on every card, both hands.
+      for (const c2 of within(screen.getByTestId('own-hand')).getAllByTestId('card')) expect(c2.className).toMatch(/ring-destructive/);
+      for (const c2 of within(screen.getByTestId('opp-hand')).getAllByTestId('card')) expect(c2.className).toMatch(/ring-destructive/);
+      // Both player bars go orange via the SHARED draw mechanic (amber ring).
+      expect(screen.getByTestId('hub-slot-own').className).toMatch(/ring-amber-400/);
+      expect(screen.getByTestId('hub-slot-opponent').className).toMatch(/ring-amber-400/);
+      // A push is NOT a match end — never the result overlay.
+      expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
+    });
+
+    it('Case 2 — equal totals: orange card outlines on both hands + orange bars', async () => {
+      const pushed = inPlayView({
+        round: 1, draws: 1, replays: 1,
+        hands: { pid: { cards: [c('2'), c('3')], done: false }, bob: { cards: [c('4')], done: false } },
+        lastResult: {
+          round: 0, result: 'draw',
+          hands: {
+            pid: { cards: [c('K'), c('Q')], total: 20 },
+            bob: { cards: [c('J'), c('10', '♦')], total: 20 },
+          },
+        },
+      });
+      toPush(pushed);
+
+      await waitFor(() => {
+        expect(within(screen.getByTestId('own-hand')).getAllByTestId('card')).toHaveLength(2);
+      });
+      // Equal non-bust totals → orange (amber) card outlines, NOT red — both hands.
+      for (const c2 of within(screen.getByTestId('own-hand')).getAllByTestId('card')) {
+        expect(c2.className).toMatch(/ring-amber-400/);
+        expect(c2.className).not.toMatch(/ring-destructive/);
+      }
+      for (const c2 of within(screen.getByTestId('opp-hand')).getAllByTestId('card')) {
+        expect(c2.className).toMatch(/ring-amber-400/);
+      }
+      // Both bars orange (shared mechanic); no overlay.
+      expect(screen.getByTestId('hub-slot-own').className).toMatch(/ring-amber-400/);
+      expect(screen.getByTestId('hub-slot-opponent').className).toMatch(/ring-amber-400/);
+      expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
+    });
   });
 });
