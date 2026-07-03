@@ -262,7 +262,6 @@ function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, phase, ou
 
   const waitingOnOpponent = !isMyTurn && !isTerminal && !showPush && ownCards.length > 0;
   const round = view?.round ?? 0;
-  const draws = view?.draws ?? 0;
   // Own hand is "final" (label collapses to a single best value) once it is done, or at the terminal
   // reveal, or while the pushed hands are held; the opponent's is final only when fully revealed.
   const ownDone = Boolean(playerId && view?.hands[playerId]?.done);
@@ -291,12 +290,17 @@ function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, phase, ou
 
   return (
     <TableSurface>
-      {/* Round / replay note: a draw re-deals within the SAME match (no result yet). */}
-      {(round > 0 || draws > 0) && (
-        <p data-testid="round-note" className="relative z-[1] text-center text-xs text-muted-foreground">
-          Round {round + 1}
-          {draws > 0 && ` · ${draws} push${draws === 1 ? '' : 'es'} — replaying`}
-        </p>
+      {/* "Push" label: a non-displacing overlay on the RIGHT of the panel, vertically between the two
+          hands (BLACKJACK.md). Replaces the old top status line, which reflowed the hands toward the
+          middle — nothing about the result may move the card layout. Shows with the push, holds the
+          ~2 s draw beat, and is gone the moment the new hands deal (showPush → false). */}
+      {showPush && (
+        <span
+          data-testid="push-label"
+          className="pointer-events-none absolute right-5 top-1/2 z-[3] -translate-y-1/2 text-lg font-black uppercase tracking-wider text-amber-400"
+        >
+          Push
+        </span>
       )}
 
       {/* Left-edge move timer (only on this player's turn). */}
@@ -400,6 +404,12 @@ export function BlackjackHubScreen(props: GameHubScreenProps) {
       renderGameArea={BlackjackPanel}
       renderSlotAside={(args, side) => (side === 'own' && args.phase === 'in-match' ? <BlackjackSlotControls {...args} /> : null)}
       suppressResultOverlay
+      // The bar speaks ONLY on decided rounds: a win plays the shared win animation, a loss shows a
+      // red outline (BLACKJACK.md). ownBarResult drives that at the result phase.
+      ownBarResult
+      // …and a push shows NOTHING on the bars — the cards + orange "Push" label carry the draw. Opt out
+      // of the shared orange draw-bar (the board still gets drawBeat via areaArgs).
+      suppressDrawBar
       {...props}
     />
   );

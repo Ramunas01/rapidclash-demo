@@ -284,9 +284,11 @@ language**; the win adds a timed celebratory fill on top before settling.
 - **Win — timed green fill, then settle to a green outline.** The bar layout **stays intact** —
   avatar + username on the left exactly as normal — with **"You Win"** shown *alongside*; the green
   fill sits **behind** the existing content and must **not** replace or hide the username (today's
-  bug: the win swaps the username out for "You Win"). Phases: **(1) fill ~3 s** — solid green fill +
-  "You Win", held; **(2) 0.5 s ease-out** — the fill fades, the bar returns to its dark background
-  and "You Win" goes away with it; **(3) end state** — normal bar (avatar + username, dark bg) with
+  bug: the win swaps the username out for "You Win"). Phases (the **shared win-animation component**,
+  reused by Blackjack — same timing everywhere): **(1) 0.5 s fill-in** — the bar fills solid green
+  with "You Win" (username stays visible); **(2) 2 s hold**; **(3) 0.5 s fade-out** — the fill fades,
+  the bar returns to its dark background and "You Win" goes away with it; **(4) end state** — normal
+  bar (avatar + username, dark bg) with
   a **green outline** that persists until the next round / controls reset. Timings tunable.
 - **Loss — red *outline* only.** The whole bar gets a **red outline**, no fill, no text. Minimal.
 - **Draw — orange *outline* only, then auto-rematch.** Same minimal treatment as loss, just

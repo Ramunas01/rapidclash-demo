@@ -64,6 +64,35 @@ export function useDelayedFlag(active: boolean, ms: number): boolean {
 }
 
 /**
+ * The SHARED win-bar animation timing (COINFLIP_HUB.md / BLACKJACK.md) — identical everywhere, so it
+ * is defined ONCE here and never forked: 0.5 s fill-in → 2 s hold → 0.5 s fade-out → a persistent
+ * green outline. Fill-in and fade-out are the same 0.5 s, so a single transition duration drives both
+ * the 0→1 (fill-in) and 1→0 (fade-out) of the green layer.
+ */
+export const WIN_FILL_IN_MS = 500;
+export const WIN_HOLD_MS = 2000;
+export const WIN_FADE_OUT_MS = 500;
+
+export interface WinReveal {
+  /** The green fill + "You Win" are mounted (through the fade-out); unmount once settled. */
+  contentVisible: boolean;
+  /** Target opacity of the green fill: 1 during fill-in + hold, 0 during fade-out. */
+  fillShown: boolean;
+  /** Fade-out complete → the bar settles to its persistent green outline and the text unmounts. */
+  settled: boolean;
+}
+
+/** Drive the shared win animation from a single `win` flag. Both Coinflip and Blackjack consume this
+ *  through GameHub's own-slot, so the timing is single-sourced (Advisor: "build it once"). The two
+ *  phase boundaries are absolute offsets from `win` (independent timers, not chained), so they fire
+ *  reliably. The fill-in itself is the green layer's mount animation (0→1 over WIN_FILL_IN_MS). */
+export function useWinReveal(win: boolean): WinReveal {
+  const holdDone = useDelayedFlag(win, WIN_FILL_IN_MS + WIN_HOLD_MS); // fill-in + hold done → fade-out
+  const settled = useDelayedFlag(win, WIN_FILL_IN_MS + WIN_HOLD_MS + WIN_FADE_OUT_MS); // fade done → outline
+  return { contentVisible: win && !settled, fillShown: win && !holdDone, settled: win && settled };
+}
+
+/**
  * A generic slot-pill: locked content + the win/lose/draw outline. The shared shape behind the
  * Crash ("Locked 345m" / "Crashed") and Coinflip (HEADS/TAILS) reveals — the content is the game's,
  * the pill chrome + outline convention are shared.
