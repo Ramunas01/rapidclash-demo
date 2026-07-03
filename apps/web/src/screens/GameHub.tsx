@@ -14,7 +14,7 @@ import { TILE_ART, COMING_SOON, titleCase } from '../components/hub-shared/tiles
 import { OpenGamesTicker } from '../components/hub-shared/OpenGames.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
-import { outlineClasses, outlineForOutcome, replaysOf, useDelayedFlag, type Verdict } from './hub-shared/slotReveal.js';
+import { outlineClasses, outlineForOutcome, replaysOf, useDelayedFlag, useWinReveal, WIN_FILL_IN_MS, type Verdict } from './hub-shared/slotReveal.js';
 
 /** How long after the result phase starts before the own-bar verdict lights (ms). */
 const BAR_VERDICT_BEAT_MS = 250;
@@ -23,12 +23,6 @@ const BAR_VERDICT_BEAT_MS = 250;
  *  after a tie before the fresh round shows and the pick timer restarts. Tunable; shared by every
  *  tie-replay game (the universal tie rule is game-agnostic). */
 const DRAW_REMATCH_HOLD_MS = 2000;
-
-/** Coinflip win-reveal timing (bar-level, #156). Phase 1: the solid green fill + "You Win" holds
- *  for WIN_FILL_HOLD_MS; phase 2: it eases out over WIN_FILL_FADE_MS, settling to the persistent
- *  green outline (outlineClasses('win')). Loss/draw are outline-only and use neither. Tunable. */
-const WIN_FILL_HOLD_MS = 3000;
-const WIN_FILL_FADE_MS = 500;
 
 /** Bet presets within the shared 1–100 demo range (every demo game's BetRules). Rendered ¢. */
 const BET_PRESETS = [1, 5, 10, 25, 50, 100];
@@ -146,6 +140,12 @@ interface GameHubProps extends GameHubScreenProps {
    *  board itself, persisting until a new game starts or the player leaves. Other games omit it →
    *  the overlay shows as before (the regression guard). */
   suppressResultOverlay?: boolean;
+  /** Opt OUT of the shared orange draw-bar (Blackjack's reversal). The draw→rematch beat still fires
+   *  and `areaArgs.drawBeat` still reaches the game area (Blackjack paints the push on the CARDS + an
+   *  orange "Push" label) — this only stops the orange outline from being painted on the two slot
+   *  bars, because "the bar speaks only on decided rounds" (BLACKJACK.md / SCREENS.md reconciliation).
+   *  Other games omit it → the bars still go orange on a draw (the universal treatment). */
+  suppressDrawBar?: boolean;
   /** Opt in to bar-level result coloring on the own slot (Coinflip-style): all three verdicts settle
    *  to the shared ring outline (win → ring-success, loss → ring-destructive, draw → ring-amber-400);
    *  on a win the bar first plays a transient green fill + "You Win" alongside the username (which is
@@ -183,7 +183,7 @@ function useNow(active: boolean): number {
  */
 export function GameHub(props: GameHubProps) {
   const {
-    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, suppressResultOverlay, holdResultMs, ownBarResult,
+    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, suppressResultOverlay, holdResultMs, ownBarResult, suppressDrawBar,
     token, playerId, username, opponentId, opponentName, serverClockOffset = 0, balance, currentMatchId, gameState, legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
     onPlay, onCancel, onTakeChallenge, onMakeMove, onForfeit, onTrackChallenges,
@@ -394,6 +394,9 @@ export function GameHub(props: GameHubProps) {
   // Built once and fed to the game area, the per-game slot asides (chess clocks) and the play action.
   const timeControlBaseMs = timeControl?.options.find((o) => o.id === selectedControl)?.baseMs;
   const areaArgs: GameAreaArgs = { phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, playerId, opponentId, username, serverClockOffset, timeControlBaseMs, outcome: overlay?.outcome ?? null, drawBeat };
+  // The bar-level draw outline: on for every game EXCEPT the ones that carry the draw on their own
+  // surface (Blackjack → cards + "Push" label). The board still gets the full `drawBeat` via areaArgs.
+  const barDrawBeat = suppressDrawBar ? false : drawBeat;
 
   // Bar-level result (opt-in, Coinflip-style). Fires BAR_VERDICT_BEAT_MS after the result phase
   // starts so the board's flip/reveal animation plays first. Generic derivation from server outcome.
@@ -416,14 +419,14 @@ export function GameHub(props: GameHubProps) {
               No grey card frame here — each panel owns its surface (Blackjack's greyish table
               fills the section; the other arenas wrap themselves in a card). */}
           <section data-testid="hub-section-game" aria-label={gameName} className="flex flex-col gap-3 px-4">
-            <OpponentSlot phase={phase} opponentName={opponentName} scanNames={scanNames} aside={renderSlotAside?.(areaArgs, 'opponent')} drawBeat={drawBeat} />
+            <OpponentSlot phase={phase} opponentName={opponentName} scanNames={scanNames} aside={renderSlotAside?.(areaArgs, 'opponent')} drawBeat={barDrawBeat} />
             {renderGameArea(areaArgs)}
             <OwnSlot
               label={loggedIn ? (username || 'You') : 'Sign in'}
               isOwn={loggedIn}
               aside={renderSlotAside?.(areaArgs, 'own')}
               barVerdict={ownBarVerdict}
-              drawBeat={drawBeat}
+              drawBeat={barDrawBeat}
             />
           </section>
 
@@ -579,20 +582,14 @@ function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat }: { pha
 
 /** Item 1/6 — the player's own slot below the board: their name, with an optional per-game aside
  *  (Blackjack's Hit/Stand in-match, Chess's clock) rendered beside it.
- *  When `barVerdict` is set (Coinflip opt-in, #156): all three verdicts settle to the shared ring
- *  outline (win → ring-success, loss → ring-destructive, draw → ring-amber-400). A win first plays a
- *  timed green fill + "You Win" — kept ALONGSIDE the username (never swapped out), the green sitting
- *  behind the content as a background layer — for WIN_FILL_HOLD_MS, then eases out over
- *  WIN_FILL_FADE_MS into the persistent green outline. Loss/draw are outline-only (no fill/text).
- *  Coinflip-specific — does not affect any other game hub. */
+ *  When `barVerdict` is set (Coinflip + Blackjack opt-in): all three verdicts settle to the shared
+ *  ring outline (win → ring-success, loss → ring-destructive, draw → ring-amber-400). A win first
+ *  plays the SHARED win animation (`useWinReveal`): a green fill + "You Win" kept ALONGSIDE the
+ *  username (never swapped out), the green a background layer — 0.5 s fill-in → 2 s hold → 0.5 s
+ *  fade-out → the persistent green outline. Loss/draw are outline-only (no fill/text). */
 function OwnSlot({ label, isOwn, aside, barVerdict, drawBeat }: { label: string; isOwn: boolean; aside?: ReactNode; barVerdict?: Verdict | null; drawBeat?: boolean }) {
   const win = barVerdict === 'win';
-  // Win reveal phases: `filling` is the held green fill; once WIN_FILL_HOLD_MS elapses it settles to
-  // the outline (fill + "You Win" ease out over WIN_FILL_FADE_MS, then the label unmounts).
-  const winSettled = useDelayedFlag(win, WIN_FILL_HOLD_MS);
-  const winTextGone = useDelayedFlag(winSettled, WIN_FILL_FADE_MS);
-  const filling = win && !winSettled;
-  const fillActive = win && !winTextGone; // green layer / white label present (opaque, then fading)
+  const { contentVisible, fillShown, settled } = useWinReveal(win);
 
   return (
     <div
@@ -602,18 +599,20 @@ function OwnSlot({ label, isOwn, aside, barVerdict, drawBeat }: { label: string;
         // All three settle to the shared ring; the win ring only lands once the fill has run.
         barVerdict === 'lose' && 'ring-[3px] ring-destructive',
         barVerdict === 'draw' && 'ring-[3px] ring-amber-400',
-        win && winSettled && outlineClasses('win'),
+        win && settled && outlineClasses('win'),
         // In-match draw→rematch beat (#161): the same orange push outline as the opponent bar.
         drawBeat && outlineClasses('draw'),
       )}
     >
       {/* Green celebration fill — a background LAYER behind the content (never replaces the username).
-          Opaque during the hold, then eased out to reveal the dark surface + the settled outline. */}
-      {win && (
-        <span
+          Fades in over 0.5 s, holds 2 s, fades out over 0.5 s (same duration both ways), then unmounts. */}
+      {contentVisible && (
+        <motion.span
           aria-hidden="true"
-          className={cn('pointer-events-none absolute inset-0 rounded-full bg-success transition-opacity ease-out', filling ? 'opacity-100' : 'opacity-0')}
-          style={{ transitionDuration: `${WIN_FILL_FADE_MS}ms` }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: fillShown ? 1 : 0 }}
+          transition={{ duration: WIN_FILL_IN_MS / 1000, ease: 'easeOut' }}
+          className="pointer-events-none absolute inset-0 rounded-full bg-success"
         />
       )}
       <span className={cn('relative z-10 grid h-8 w-8 shrink-0 place-items-center rounded-full', isOwn ? 'bg-brand text-white' : 'bg-[#2a2a4a] text-muted-foreground')}>
@@ -621,20 +620,21 @@ function OwnSlot({ label, isOwn, aside, barVerdict, drawBeat }: { label: string;
       </span>
       {/* Username stays put in every state; white over the green fill, back to normal once it fades. */}
       <span
-        className={cn('relative z-10 min-w-0 flex-1 truncate text-sm font-bold transition-colors', fillActive ? 'text-white' : isOwn ? 'text-foreground' : 'text-muted-foreground')}
-        style={fillActive ? { transitionDuration: `${WIN_FILL_FADE_MS}ms` } : undefined}
+        className={cn('relative z-10 min-w-0 flex-1 truncate text-sm font-bold transition-colors duration-300', contentVisible ? 'text-white' : isOwn ? 'text-foreground' : 'text-muted-foreground')}
       >
         {label}
       </span>
-      {/* "You Win" alongside the username during the win fill; eases out with the fill, then unmounts. */}
-      {fillActive && (
-        <span
+      {/* "You Win" alongside the username during the win fill; fades in/out with the green, then unmounts. */}
+      {contentVisible && (
+        <motion.span
           data-testid="hub-slot-own-verdict"
-          className={cn('relative z-10 shrink-0 text-sm font-extrabold uppercase tracking-wide text-white transition-opacity ease-out', filling ? 'opacity-100' : 'opacity-0')}
-          style={{ transitionDuration: `${WIN_FILL_FADE_MS}ms` }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: fillShown ? 1 : 0 }}
+          transition={{ duration: WIN_FILL_IN_MS / 1000, ease: 'easeOut' }}
+          className="relative z-10 shrink-0 text-sm font-extrabold uppercase tracking-wide text-white"
         >
           You Win
-        </span>
+        </motion.span>
       )}
       {aside && <span className="relative z-10 flex shrink-0 items-center gap-2">{aside}</span>}
     </div>

@@ -196,9 +196,10 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     }, { timeout: 3000 });
   });
 
-  // #156 — the bar-level win reveal: keep the username, play the timed green fill, settle to the ring.
+  // The bar-level win reveal: keep the username, play the SHARED win animation, settle to the ring.
   // These drive the phase timing with fake timers. HOLD_RESULT_MS=1500, BAR_VERDICT_BEAT_MS=250,
-  // WIN_FILL_HOLD_MS=3000, WIN_FILL_FADE_MS=500 (constants live in CoinflipHub/GameHub).
+  // then the shared component: 0.5s fill-in + 2s hold + 0.5s fade-out = 3000ms to settle (constants
+  // WIN_FILL_IN_MS/WIN_HOLD_MS/WIN_FADE_OUT_MS live in hub-shared/slotReveal; reused by Blackjack).
   function renderToTerminal(outcome: Props['lastOutcome']) {
     Element.prototype.scrollIntoView = vi.fn();
     const gameState: CoinflipView = { players: ['pid', 'bob'], choices: { pid: 'heads', bob: 'tails' }, result: 'heads' };
@@ -210,26 +211,25 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     );
   }
 
-  it('Result win (#156): keeps the username, shows "You Win" alongside, then settles fill → green outline', async () => {
+  it('Result win: shared 0.5/2/0.5 animation — keeps the username, "You Win" alongside, then green outline', async () => {
     vi.useFakeTimers();
     try {
       renderToTerminal({ type: 'win', winner: 'pid' });
       // Advance in stages: HOLD_RESULT_MS → result phase, then BAR_VERDICT_BEAT_MS → verdict lights
       // (each transition schedules its next timer on re-render, so a single big jump can skip it).
       await act(async () => { await vi.advanceTimersByTimeAsync(1500 + 50); }); // → result phase
-      await act(async () => { await vi.advanceTimersByTimeAsync(250 + 50); }); // → win fill phase
+      await act(async () => { await vi.advanceTimersByTimeAsync(250 + 50); }); // → win animation (fill-in)
       const ownBar = screen.getByTestId('hub-slot-own');
       expect(ownBar.textContent).toContain('neo'); // username stays put (not swapped out)
       expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you win/i); // alongside
       expect(ownBar.querySelector('.bg-success')).not.toBeNull(); // green as a background layer
       expect(ownBar.className).not.toContain('ring-success'); // not yet settled to the outline
 
-      // The 3s hold elapses → settles to the green outline (username persists); then the 0.5s
-      // ease-out completes → "You Win" leaves with the fill and unmounts.
-      await act(async () => { await vi.advanceTimersByTimeAsync(3000 + 50); }); // hold → settle
+      // 0.5s fill-in + 2s hold + 0.5s fade-out = 3s → settles to the persistent green outline and the
+      // "You Win"/fill leave together (the shared component unmounts the content on settle).
+      await act(async () => { await vi.advanceTimersByTimeAsync(3000 + 50); });
       expect(ownBar.className).toContain('ring-success'); // shared outlineClasses('win')
       expect(ownBar.textContent).toContain('neo'); // username persists into the end state
-      await act(async () => { await vi.advanceTimersByTimeAsync(500 + 50); }); // ease-out completes
       expect(screen.queryByTestId('hub-slot-own-verdict')).toBeNull(); // "You Win" left with the fill
     } finally {
       vi.useRealTimers();

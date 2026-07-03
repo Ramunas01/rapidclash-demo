@@ -111,7 +111,7 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
     expect(screen.getByTestId('stand-btn')).toBeDisabled();
   });
 
-  it('Internal replay: a re-dealt round keeps the board (NOT the result overlay)', () => {
+  it('Internal replay: a re-dealt round keeps the board (NOT the result overlay); no reflowing status line', () => {
     const replay = inPlayView({
       round: 1,
       draws: 1,
@@ -123,8 +123,11 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
     render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: replay, legalMoves: ['hit', 'stand'] })} />);
     expect(screen.getByTestId('hub-board')).toBeInTheDocument();
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull(); // a draw re-deal is NOT a match end
-    expect(screen.getByTestId('round-note').textContent).toContain('Round 2');
-    expect(screen.getByTestId('round-note').textContent).toContain('push');
+    // The old "Round 2 · 1 push — replaying" status line is gone — it reflowed the hand toward the
+    // middle (layout invariant: no outcome may move the card display). "Push" shows only during the
+    // ~2 s push beat (an overlay), never on a settled fresh round.
+    expect(screen.queryByTestId('round-note')).toBeNull();
+    expect(screen.queryByTestId('push-label')).toBeNull();
   });
 
   it('Item 2: match.end shows NO pop-up — the final cards persist on the board (both hands revealed)', async () => {
@@ -351,7 +354,7 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: pushed, legalMoves: [] })} />);
     }
 
-    it('Case 1 — both bust: red card outlines on both hands + orange bars, held (no re-deal, no overlay)', async () => {
+    it('Case 1 — both bust: red card outlines on both hands; an orange "Push" overlay; bars show NOTHING', async () => {
       const pushed = inPlayView({
         round: 1, draws: 1, replays: 1,
         // Fresh (round 1) hands — these must NOT be what shows during the beat.
@@ -376,14 +379,18 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       // Both-bust → red (destructive) card outlines on every card, both hands.
       for (const c2 of within(screen.getByTestId('own-hand')).getAllByTestId('card')) expect(c2.className).toMatch(/ring-destructive/);
       for (const c2 of within(screen.getByTestId('opp-hand')).getAllByTestId('card')) expect(c2.className).toMatch(/ring-destructive/);
-      // Both player bars go orange via the SHARED draw mechanic (amber ring).
-      expect(screen.getByTestId('hub-slot-own').className).toMatch(/ring-amber-400/);
-      expect(screen.getByTestId('hub-slot-opponent').className).toMatch(/ring-amber-400/);
+      // The reversal: Blackjack's draw surface is CARDS + an orange "Push" label — NOT an orange bar.
+      const push = screen.getByTestId('push-label');
+      expect(push.textContent).toMatch(/push/i);
+      expect(push.className).toMatch(/text-amber-400/); // orange
+      // Neither player bar shows anything on a push (bars speak only on decided rounds).
+      expect(screen.getByTestId('hub-slot-own').className).not.toMatch(/ring-amber-400|ring-destructive|ring-success/);
+      expect(screen.getByTestId('hub-slot-opponent').className).not.toMatch(/ring-amber-400|ring-destructive|ring-success/);
       // A push is NOT a match end — never the result overlay.
       expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
     });
 
-    it('Case 2 — equal totals: orange card outlines on both hands + orange bars', async () => {
+    it('Case 2 — equal totals: orange card outlines on both hands; orange "Push" overlay; bars show NOTHING', async () => {
       const pushed = inPlayView({
         round: 1, draws: 1, replays: 1,
         hands: { pid: { cards: [c('2'), c('3')], done: false }, bob: { cards: [c('4')], done: false } },
@@ -408,10 +415,76 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       for (const c2 of within(screen.getByTestId('opp-hand')).getAllByTestId('card')) {
         expect(c2.className).toMatch(/ring-amber-400/);
       }
-      // Both bars orange (shared mechanic); no overlay.
-      expect(screen.getByTestId('hub-slot-own').className).toMatch(/ring-amber-400/);
-      expect(screen.getByTestId('hub-slot-opponent').className).toMatch(/ring-amber-400/);
+      // Orange "Push" overlay; bars show nothing (the reversal).
+      expect(screen.getByTestId('push-label').textContent).toMatch(/push/i);
+      expect(screen.getByTestId('hub-slot-own').className).not.toMatch(/ring-amber-400|ring-destructive|ring-success/);
+      expect(screen.getByTestId('hub-slot-opponent').className).not.toMatch(/ring-amber-400|ring-destructive|ring-success/);
       expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
+    });
+
+    it('layout invariant: the "Push" overlay does not shift the cards (same positions with and without it)', async () => {
+      const lastResult = {
+        round: 0, result: 'draw' as const,
+        hands: { pid: { cards: [c('K'), c('Q')], total: 20 }, bob: { cards: [c('J'), c('10', '♦')], total: 20 } },
+      };
+      // Baseline: a live round with the SAME two-card hands, no push overlay.
+      const live = inPlayView({ hands: { pid: { cards: [c('K'), c('Q')], done: false }, bob: { cards: [c('J'), c('10', '♦')], done: false } } });
+      const { unmount } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: live, legalMoves: [] })} />);
+      const ownCount = within(screen.getByTestId('own-hand')).getAllByTestId('card').length;
+      expect(screen.queryByTestId('push-label')).toBeNull(); // no overlay when not a push
+      unmount();
+
+      // Push: the overlay is absolutely positioned (non-displacing) — the hands keep their structure.
+      toPush(inPlayView({ round: 1, draws: 1, replays: 1, hands: { pid: { cards: [c('2'), c('3')], done: false }, bob: { cards: [c('4')], done: false } }, lastResult }));
+      await waitFor(() => expect(screen.getByTestId('push-label')).toBeInTheDocument());
+      expect(within(screen.getByTestId('own-hand')).getAllByTestId('card').length).toBe(ownCount); // unchanged
+      // The overlay lives OUTSIDE the hand sections (it can't reflow a hand it isn't inside).
+      expect(within(screen.getByTestId('own-hand')).queryByTestId('push-label')).toBeNull();
+      expect(within(screen.getByTestId('opp-hand')).queryByTestId('push-label')).toBeNull();
+    });
+
+    it('Win: cards green + the bar plays the shared win animation (username stays visible)', async () => {
+      const terminal = inPlayView({
+        hands: {
+          pid: { cards: [c('K'), c('Q', '♥')], done: true }, // 20
+          bob: { cards: [c('9', '♣'), c('8', '♦')], done: true }, // 17
+        },
+        winner: 'pid',
+      });
+      const { rerender } = render(<BlackjackHubScreen {...baseProps({ username: 'me', currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
+      rerender(<BlackjackHubScreen {...baseProps({ username: 'me', currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
+
+      // The bar runs the SAME shared component as Coinflip: green fill + "You Win" alongside the
+      // username (never swapped out), settling to the green outline.
+      await waitFor(() => {
+        expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you win/i);
+      }, { timeout: 2000 });
+      const ownBar = screen.getByTestId('hub-slot-own');
+      expect(ownBar.querySelector('.bg-success')).not.toBeNull(); // green fill layer
+      expect(ownBar.textContent).toContain('me'); // username stays visible
+      // Cards also get the green frame (own hand).
+      await waitFor(() => {
+        for (const c2 of within(screen.getByTestId('own-hand')).getAllByTestId('card')) expect(c2.className).toMatch(/ring-success/);
+      }, { timeout: 2000 });
+    });
+
+    it('Loss: cards red + the bar shows a red outline only (no fill, no text)', async () => {
+      const terminal = inPlayView({
+        hands: {
+          pid: { cards: [c('9', '♠'), c('8', '♥')], done: true }, // 17
+          bob: { cards: [c('K', '♣'), c('Q', '♦')], done: true }, // 20
+        },
+        winner: 'bob',
+      });
+      const { rerender } = render(<BlackjackHubScreen {...baseProps({ username: 'me', currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
+      rerender(<BlackjackHubScreen {...baseProps({ username: 'me', currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'bob' }, lastSettlement: { delta: -10, newBalance: 990 } })} />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('hub-slot-own').className).toMatch(/ring-destructive/);
+      }, { timeout: 2000 });
+      const ownBar = screen.getByTestId('hub-slot-own');
+      expect(ownBar.querySelector('.bg-success')).toBeNull(); // no green fill
+      expect(within(ownBar).queryByTestId('hub-slot-own-verdict')).toBeNull(); // no "You Win"
     });
   });
 });

@@ -31,11 +31,18 @@ Computed from **visible cards only**, so the opponent's label stays redaction-sa
 - equal totals (21 = 21; a natural counts as plain 21, no bonus) → draw;
 - both bust → draw.
 
-**Draws → visible push, then replay.** A push is a **full result state**, shown as long and as clearly as a win/loss — **never skipped** (today it silently deals new cards, so players don't realise a push happened). On a push, all cards of **both** hands stay fully visible (no removal, reset, or new deal yet), and the outlines tell a two-level story:
-- **Both bust (Case 1):** each hand's **card outlines turn red** (red = bust, and both busted) + **both player bars turn orange** (orange = the round result is a draw). Red cards say *why* each hand ended; orange bars say *the round result*.
-- **Equal totals, no bust (Case 2):** each hand's **card outlines turn orange** (neither lost individually — the hands tied) + **both player bars turn orange**. Orange cards + orange bars — everything says draw.
+**Result display (final).** Every outcome shows a **full result state** — all cards stay visible, outlined, and **in place**; nothing skips, moves, or reflows the card layout. Two layers: **card outlines** tell each hand's fate; the **player bar speaks *only on decided rounds*.**
 
-The push view **holds ~2 s** (the same weight as a win/loss reveal) so both players register it; **only then** does the next round deal — the **universal draw mechanic** (orange bars → 2 s → auto-rematch, same opponent, same escrow/bet; see `SCREENS.md`). The card-outline layer (red = bust, orange = tie) is Blackjack's game-specific resolution animation that *precedes* the shared orange-bar treatment; the red card outline keeps its existing bust meaning even in a push, so the card-level story stays truthful. A player must never have to infer a push from cards suddenly changing.
+- **Win.** Your cards get a **green** outline; your **bar plays the shared win animation** — 0.5 s fill-in (green, "You Win", username stays visible) → 2 s hold → 0.5 s fade-out to a **persistent green outline**. Same component as Coinflip (`COINFLIP_HUB.md`).
+- **Loss.** Your cards get a **red** outline; your **bar shows a red outline only** — minimal, no fill, no text.
+- **Push — equal totals (no bust).** Both players' cards get an **orange** outline; **neither bar shows anything.**
+- **Push — both busted.** Both players' cards get a **red** outline (bust); **neither bar shows anything.**
+
+**The "Push" label.** Remove the old status line ("Round 2 · 1 push — replaying") above the opponent's cards — it reflows the hand toward the middle, and **nothing about the result may move the card layout.** Instead, on any push, show the single word **"Push" in orange** as an **overlay** on the **right of the panel, vertically between the two hands** (the empty area right of the cards); it must not displace any element. It appears with the result state, holds for the ~2 s, and disappears when the new hands begin dealing.
+
+**One-line rule:** *bars speak only on decided rounds (green win animation / red loss outline); a push shows only on the cards + the orange "Push" label on the right, and the round auto-replays after ~2 s.*
+
+The push holds ~2 s (same weight as a win/loss reveal), then the next round deals via the **universal draw mechanic** (2 s hold → auto-rematch, same opponent, same escrow/bet). **Blackjack's draw surface is cards + "Push" label, NOT an orange bar** — a deliberate deviation from the bar-based draw treatment (Coinflip/Crash), because Blackjack's cards already carry the outcome; see the reconciliation in `SCREENS.md`. Bust totals display **as-is** (e.g. "28"); the over-21 display prohibition applies only to soft-total *options* on live ace hands, never to a final bust total. A player must never have to infer a push from cards suddenly changing.
 
 Any draw thus repeats until one player wins. Each replay round uses two fresh decks with a *new* commit-reveal (new seed + hash published at the round's start, revealed at its end), so every round is independently verifiable and decks never run low on a long chain. The pot carries over untouched; rake is applied only at the eventual decisive result; 10-draw cap → void/refund.
 
