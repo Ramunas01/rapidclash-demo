@@ -28,6 +28,7 @@ Equal streaks — both reaching the same count, or both busting at the same coun
 - **isTerminal:** both busted, OR clock = 0, OR sequence exhausted.
 - **outcome:** higher streak `win`; equal → `draw` (→ replay).
 - **viewFor:** own card + own streak only; opponent's progress hidden until terminal; unrevealed future cards never sent.
+- **Event redaction (required):** per-move events (`player_advanced` / `player_busted` / `player_frozen`) carry **`{playerId}` only** — **never the streak**. Events broadcast to both players unredacted (see `GAME_MODULE_INTERFACE.md`), so shipping the streak leaks the opponent's live count (the number to beat). The recipient reads their *own* streak from their `viewFor` state; both streaks appear only at terminal (`round_resolved`, which is broadcast-safe).
 - **Timer:** the shared 30 s match clock reuses the generic timer capability (here as a single match deadline rather than a per-move timer).
 - **Determinism:** sequence is a pure function of the seed → replays are exact.
 

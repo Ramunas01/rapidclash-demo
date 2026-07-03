@@ -283,7 +283,9 @@ export const rouletteModule: GameModule = {
         autoSpread(me);
         me.locked = true;
         me.autoSpread = true;
-        events.push({ type: 'player_locked', payload: { playerId, auto: true } });
+        // Broadcast `{ playerId }` ONLY — never the auto/timeout flag (events reach both players
+        // unredacted; viewFor hides the opponent's `autoSpread`). The owner reads their own from state.
+        events.push({ type: 'player_locked', payload: { playerId } });
         break;
       }
       default:

@@ -55,7 +55,7 @@ export interface MoveContext {
 
 export interface GameEvent {
   type: string;               // e.g. "move_made", "round_revealed"
-  payload: unknown;           // already safe to broadcast to both players
+  payload: unknown;           // MUST be safe to broadcast to BOTH players (see rule below)
 }
 
 export interface ApplyResult {
@@ -106,6 +106,10 @@ export interface GameModule {
 1. Two players are matched and both stakes are escrowed (core).
 2. `init(players, rng)` → starting state. The seed is stored with the match.
 3. Loop: client sends a move → core checks it is in `legalMoves` → `applyMove` → broadcast `events` and the per-player `viewFor` states → check `isTerminal`.
+
+> **Redaction rule — events are broadcast UNREDACTED; only *state* is per-player.** The core relays each move's `events` array to **both** players verbatim; per-player redaction (`viewFor`) is applied to **state only, never to events**. Therefore a module's event payloads **must not carry any information `viewFor` conceals** — hidden values (a chosen side, a target, a live streak, a pick) live in **state** (which `viewFor` redacts), and events carry only **public signals** ("`playerId` moved" — *that* a move happened, not *what*). Coinflip follows this (`move_made` = `{playerId}` only). **Hilo violated it** (per-move `player_advanced`/`player_busted`/`player_frozen` shipped `{playerId, streak}`, leaking the opponent's live streak — the exact number you must beat — despite `viewFor` hiding it): a redaction bug fixed by dropping the streak from the broadcast (the recipient reads their *own* streak from their `viewFor` state). If a future case ever needs hidden info in an event, redact events per-recipient at the gateway — but the default and simpler discipline is: **nothing secret in an event.**
+
+The precise test is *concealed **at the moment the event fires***: an event MAY carry a value that `viewFor` reveals to the recipient at that same instant (e.g. Mines' `player_locked {score}` — `viewFor` exposes the opponent's score on lock, so it isn't concealed; that's fine). The violation is carrying a value `viewFor` **still hides** at that instant — Hilo's mid-round streak, and the timeout flag (`auto`/`autoFilled`/`autoSpread`) that Keno/Limbo/Roulette emit on `player_locked` while `viewFor` hardcodes it `false`. Non-actionable today (picks/targets stay hidden until reveal, and the flag only fires at the shared deadline), but a strict violation — so it is stripped too, keeping the rule a **bright line** (nothing `viewFor` conceals) rather than a per-case "is this actionable?" judgment.
 4. On terminal: `outcome(state)` → core settles the pot (winner credit minus fee, or split, or refund) as one idempotent ledger transaction → core updates the leaderboard using `meta.ranking`.
 5. On disconnect/timeout: `forfeit(state, quitter)` → settle as above.
 

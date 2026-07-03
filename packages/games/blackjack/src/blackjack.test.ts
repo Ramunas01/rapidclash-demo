@@ -282,6 +282,61 @@ describe('blackjackModule.viewFor — redaction', () => {
   });
 });
 
+// ── lastResult snapshot + replays mirror (drives the client's visible push) ──
+
+interface BjResult extends Bj {
+  replays?: number;
+  lastResult?: {
+    round: number;
+    result: 'win' | 'draw';
+    winner?: string;
+    hands: Record<string, { cards: Card[]; total: number }>;
+  };
+}
+const asR = (s: GameState): BjResult => s as BjResult;
+
+describe('blackjackModule — lastResult snapshot + replays mirror', () => {
+  it('records the pushed round (both hands, result=draw) on an equal-totals draw', () => {
+    const r = asR(bothStand(state([card('K'), card('K')], [card('Q'), card('Q')]))); // 20 vs 20 → push
+    expect(r.round).toBe(1); // re-dealt
+    const lr = r.lastResult!;
+    expect(lr.result).toBe('draw');
+    expect(lr.winner).toBeUndefined();
+    expect(lr.round).toBe(0); // the round that just pushed
+    expect(lr.hands[A].total).toBe(20);
+    expect(lr.hands[B].total).toBe(20);
+    expect(lr.hands[A].cards).toHaveLength(2);
+    expect(lr.hands[B].cards).toHaveLength(2);
+  });
+
+  it('records both totals > 21 on a both-bust draw (client reads this as the red-outline case)', () => {
+    const r = asR(bothStand(state([card('K'), card('Q'), card('5')], [card('10'), card('9'), card('8')]))); // 25 vs 27
+    const lr = r.lastResult!;
+    expect(lr.result).toBe('draw');
+    expect(lr.hands[A].total).toBeGreaterThan(21);
+    expect(lr.hands[B].total).toBeGreaterThan(21);
+  });
+
+  it('records the winner on a decisive round', () => {
+    const r = asR(bothStand(state([card('K'), card('9')], [card('K'), card('8')]))); // 19 vs 18 → A
+    const lr = r.lastResult!;
+    expect(lr.result).toBe('win');
+    expect(lr.winner).toBe(A);
+  });
+
+  it('viewFor surfaces `replays` (mirrors draws) and the pushed hands, while STILL redacting the fresh round', () => {
+    const drawn = bothStand(state([card('K'), card('K')], [card('Q'), card('Q')], { seed: 999 }));
+    const view = asR(bj.viewFor(drawn, A));
+    expect(view.replays).toBe(1); // mirror of draws → the shared draw-beat reader fires
+    // The just-pushed round is fully revealed (both hands)…
+    expect(view.lastResult!.hands[A].cards).toHaveLength(2);
+    expect(view.lastResult!.hands[B].cards).toHaveLength(2);
+    // …but the FRESH round is still redacted: the opponent shows exactly one card, seed stripped.
+    expect(view.hands[B].cards).toHaveLength(1);
+    expect(view.seed).toBeUndefined();
+  });
+});
+
 // ── forfeit / disconnect → auto-stand (not void, unless it draws) ───────────
 
 describe('blackjackModule.forfeit — disconnect = auto-stand on current total', () => {

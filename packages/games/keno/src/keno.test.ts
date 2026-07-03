@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { GameState, Move, PlayerId, Rng } from '@rapidclash/shared';
+import type { GameEvent, GameState, Move, PlayerId, Rng } from '@rapidclash/shared';
 import { IllegalMove } from '@rapidclash/shared';
 import { kenoModule as keno } from './keno.js';
 import { DRAW_COUNT, PICK_COUNT, POOL_SIZE, REPLAY_CAP, autofillPicks, countMatches, drawFor } from './draw.js';
@@ -233,5 +233,19 @@ describe('immutability', () => {
   });
   it('countMatches counts intersection', () => {
     expect(countMatches([1, 2, 3], [2, 3, 4])).toBe(2);
+  });
+});
+
+describe('event redaction — player_locked carries no auto/timeout flag (GAME_MODULE_INTERFACE.md)', () => {
+  it('the broadcast player_locked is `{ playerId }` only, even on the autofill/timeout path', () => {
+    // Events reach BOTH players unredacted, so an `auto` flag would leak that the OPPONENT timed out
+    // (their autoFilled is concealed by viewFor). autofill is both the explicit auto-complete and the
+    // move the core injects on a pick-clock timeout.
+    const { events } = keno.applyMove(newGame(), { t: 'autofill' }, ctx(A));
+    const locked = events.filter((e: GameEvent) => e.type === 'player_locked');
+    expect(locked).toHaveLength(1);
+    expect(locked[0].payload).toEqual({ playerId: A });
+    // The flag never appears on ANY broadcast event.
+    expect(events.some((e: GameEvent) => JSON.stringify(e.payload).includes('auto'))).toBe(false);
   });
 });

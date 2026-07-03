@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { GameState, Move, PlayerId, Rng } from '@rapidclash/shared';
+import type { GameEvent, GameState, Move, PlayerId, Rng } from '@rapidclash/shared';
 import { IllegalMove } from '@rapidclash/shared';
 import { rouletteModule as roulette } from './roulette.js';
 import {
@@ -354,5 +354,17 @@ describe('immutability + determinism guards', () => {
   it('CHIP_UNIT divides CHIP_TOTAL (100 placeable units)', () => {
     expect(CHIP_TOTAL % CHIP_UNIT).toBe(0);
     expect(CHIP_TOTAL / CHIP_UNIT).toBe(100);
+  });
+});
+
+describe('event redaction — player_locked carries no auto/timeout flag (GAME_MODULE_INTERFACE.md)', () => {
+  it('the broadcast player_locked is `{ playerId }` only, even on the spread/timeout path', () => {
+    // `auto` would leak that the OPPONENT timed out (viewFor conceals their `autoSpread`). spread is
+    // both the explicit auto-complete and the move the core injects on a betting-clock timeout.
+    const { events } = roulette.applyMove(roulette.init([A, B], rngWith(4242)), { t: 'spread' }, ctx(A));
+    const locked = events.filter((e: GameEvent) => e.type === 'player_locked');
+    expect(locked).toHaveLength(1);
+    expect(locked[0].payload).toEqual({ playerId: A });
+    expect(events.some((e: GameEvent) => JSON.stringify(e.payload).includes('auto'))).toBe(false);
   });
 });
