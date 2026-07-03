@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { GameState, Move, PlayerId, Rng } from '@rapidclash/shared';
+import type { GameEvent, GameState, Move, PlayerId, Rng } from '@rapidclash/shared';
 import { IllegalMove } from '@rapidclash/shared';
 import { hiloModule as hilo } from './hilo.js';
 import { MATCH_CAP_MS, REPLAY_CAP, SEQ_LEN, callCorrect, cardFor } from './deck.js';
@@ -88,6 +88,42 @@ describe('hilo launch + calls', () => {
     expect(view(s).progress[A].position).toBe(1);
     s = bust(s, A);
     expect(view(s).progress[A].busted).toBe(true);
+  });
+});
+
+describe('event redaction — never leak the streak over the wire (GAME_MODULE_INTERFACE.md)', () => {
+  it('per-move events carry {playerId} only; both streaks surface ONLY at terminal round_resolved', () => {
+    const wire: GameEvent[] = []; // every event the gateway would broadcast to BOTH players
+    let s = newGame();
+
+    // A advances to a real, non-zero hidden streak (the number the opponent must not learn early).
+    {
+      const st = view(s);
+      const call = callCorrect('hi', cardFor(st.seed, st.round, 0), cardFor(st.seed, st.round, 1)) ? 'hi' : 'lo';
+      const r = hilo.applyMove(s, { t: call }, { playerId: A, now: T0 + 1 });
+      wire.push(...r.events);
+      s = r.state;
+    }
+    expect(view(s).progress[A].position).toBe(1);
+
+    // Freeze A, then B → both finished → the round resolves (A wins 1 > 0).
+    const rA = hilo.applyMove(s, { t: 'timeout' }, { playerId: A, now: T0 + 1 });
+    wire.push(...rA.events);
+    const rB = hilo.applyMove(rA.state, { t: 'timeout' }, { playerId: B, now: T0 + 1 });
+    wire.push(...rB.events);
+    expect(hilo.isTerminal(rB.state)).toBe(true);
+
+    // Every per-move progress event is `{ playerId }` ONLY — no streak/position on the wire.
+    const perMove = wire.filter((e) => ['player_advanced', 'player_busted', 'player_frozen'].includes(e.type));
+    expect(perMove.length).toBeGreaterThanOrEqual(3); // 1 advance + 2 freezes
+    for (const e of perMove) expect(e.payload).toEqual({ playerId: expect.any(String) });
+
+    // The ONLY event that ever carries a streak is the terminal round_resolved (broadcast-safe:
+    // the round is over, so revealing both final streaks leaks nothing about a live round).
+    const streakBearing = wire.filter((e) => JSON.stringify(e.payload).includes('streak'));
+    expect(streakBearing.map((e) => e.type)).toEqual(['round_resolved']);
+    expect((wire.find((e) => e.type === 'round_resolved')!.payload as { streaks: Record<string, number> }).streaks)
+      .toEqual({ [A]: 1, [B]: 0 });
   });
 });
 

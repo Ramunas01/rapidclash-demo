@@ -176,7 +176,11 @@ export const hiloModule: GameModule = {
     if (m.t === 'timeout') {
       // The shared cap auto-freeze (also enforces the cap on a late human call below).
       me.frozen = true;
-      events.push({ type: 'player_frozen', payload: { playerId, streak: me.position } });
+      // Event payload is `{ playerId }` ONLY — never the streak. Events broadcast to BOTH players
+      // unredacted (GAME_MODULE_INTERFACE.md), so shipping `streak` would leak the opponent's live
+      // count (the number to beat). The recipient reads their OWN streak from their viewFor state;
+      // both streaks surface only at terminal via round_resolved.
+      events.push({ type: 'player_frozen', payload: { playerId } });
     } else if (m.t === 'hi' || m.t === 'lo') {
       // The cap is authoritative from ctx.now: a call at/after the deadline is rejected (the sweep
       // will freeze the player). Guard only once the clock has actually started.
@@ -187,11 +191,13 @@ export const hiloModule: GameModule = {
       const upcoming = cardFor(next.seed, next.round, me.position + 1);
       if (callCorrect(m.t, current, upcoming)) {
         me.position += 1; // correct (or equal rank) → advance, streak++
-        events.push({ type: 'player_advanced', payload: { playerId, streak: me.position } });
+        // `{ playerId }` only — the streak is hidden state (see the player_frozen note above).
+        events.push({ type: 'player_advanced', payload: { playerId } });
       } else {
         me.busted = true;
         me.bustCard = upcoming;
-        events.push({ type: 'player_busted', payload: { playerId, streak: me.position } });
+        // `{ playerId }` only — never the bust streak (leaks the number to beat).
+        events.push({ type: 'player_busted', payload: { playerId } });
       }
     } else {
       throw new IllegalMove(`"${String((m as { t: unknown }).t)}" is not a hilo move`);
