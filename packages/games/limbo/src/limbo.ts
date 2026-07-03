@@ -179,7 +179,9 @@ export const limboModule: GameModule = {
         me.target = autoTargetFor(next.seed, next.round, next.players.indexOf(playerId));
         me.locked = true;
         me.auto = true;
-        events.push({ type: 'player_locked', payload: { playerId, auto: true } });
+        // Broadcast `{ playerId }` ONLY — never the auto/timeout flag (events reach both players
+        // unredacted; viewFor hides the opponent's `auto`). The owner reads their own flag from state.
+        events.push({ type: 'player_locked', payload: { playerId } });
         break;
       }
       default:

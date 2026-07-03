@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { GameState, Move, PlayerId, Rng } from '@rapidclash/shared';
+import type { GameEvent, GameState, Move, PlayerId, Rng } from '@rapidclash/shared';
 import { IllegalMove } from '@rapidclash/shared';
 import { limboModule as limbo } from './limbo.js';
 import { MIN_TARGET, REPLAY_CAP, TARGET_LADDER, autoTargetFor, decideRoll, rollFor } from './roll.js';
@@ -170,5 +170,17 @@ describe('determinism + timeout/forfeit', () => {
     const snap = JSON.stringify(s0);
     apply(s0, A, { t: 'pick', target: 10 });
     expect(JSON.stringify(s0)).toBe(snap);
+  });
+});
+
+describe('event redaction — player_locked carries no auto/timeout flag (GAME_MODULE_INTERFACE.md)', () => {
+  it('the broadcast player_locked is `{ playerId }` only, even on the auto/timeout path', () => {
+    // `auto` would leak that the OPPONENT timed out (viewFor conceals their `auto`); the auto-target
+    // distribution could even make it actionable. auto is both the explicit and the timeout-injected move.
+    const { events } = limbo.applyMove(newGame(), { t: 'auto' }, ctx(A));
+    const locked = events.filter((e: GameEvent) => e.type === 'player_locked');
+    expect(locked).toHaveLength(1);
+    expect(locked[0].payload).toEqual({ playerId: A });
+    expect(events.some((e: GameEvent) => JSON.stringify(e.payload).includes('auto'))).toBe(false);
   });
 });

@@ -216,7 +216,11 @@ export const kenoModule: GameModule = {
         me.picks = autofillPicks(next.seed, next.round, next.players.indexOf(playerId), me.picks);
         me.locked = true;
         me.autoFilled = true;
-        events.push({ type: 'player_locked', payload: { playerId, auto: true } });
+        // Broadcast `{ playerId }` ONLY — never the auto/timeout flag. Events reach BOTH players
+        // unredacted (GAME_MODULE_INTERFACE.md); viewFor conceals the opponent's autoFilled (hardcodes
+        // false), so shipping it would leak that they timed out. The owner reads their own flag from
+        // their (self-unredacted) viewFor state.
+        events.push({ type: 'player_locked', payload: { playerId } });
         break;
       }
       default:
