@@ -17,7 +17,7 @@ const SOCIALS: { label: string; icon: ReactNode }[] = [
  */
 export function HubFooter() {
   return (
-    <footer data-testid="home-footer" className="mt-4 border-t border-border bg-[#0b0b0b] px-4 pb-6 pt-6">
+    <footer data-testid="home-footer" className="mt-4 bg-background px-4 pb-6 pt-6">
       {/* Social row — 1:1 with the frame but INERT: no follower/member counts, no fabricated
           numbers; visibly non-interactive (the demo has no public channels to link). */}
       <div data-testid="home-footer-social" className="mb-5 flex gap-2.5">

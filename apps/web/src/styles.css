@@ -19,7 +19,7 @@
 .ws-banner-error { background: var(--accent); top: auto; bottom: 0; padding: 6px 12px calc(6px + env(safe-area-inset-bottom)); } /* action drop: red, bottom */
 
 :root {
-  --bg: #0d0d0d;
+  --bg: #0b0b0b;
   --surface: #16213e;
   --accent: #e94560;
   --text: #eaeaea;
@@ -28,15 +28,15 @@
   --min-touch: 44px;
 }
 
-/* #0D0D0D to the true edges: with viewport-fit=cover this fills behind the status bar and
-   home indicator (matching --background: 0 0% 5% in index.css), and the rubber-band
-   overscroll on iOS shows #0D0D0D rather than white. */
+/* The canonical page surface to the true edges: routed through --background (index.css, #0B0B0B)
+   so it is one continuous colour. With viewport-fit=cover this fills behind the status bar and
+   home indicator, and the rubber-band overscroll on iOS shows #0B0B0B rather than white/a step. */
 html {
-  background: #0d0d0d;
+  background: hsl(var(--background));
 }
 
 body {
-  background: #0d0d0d;
+  background: hsl(var(--background));
   color: var(--text);
   /* Inter is the v2 app font (loaded in main.tsx); falls back to the system stack. */
   font-family: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;

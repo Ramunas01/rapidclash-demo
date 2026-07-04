@@ -20,7 +20,7 @@ interface Props {
  * it reserves the wordmark band at the top, then sticks as the page scrolls so content slides
  * behind it (the bar stays transparent over the scroll surface). `pt-[safe-area-inset-top]`
  * keeps the wordmark below the status bar under viewport-fit=cover; the safe-area strip above
- * it shows the #0D0D0D shell behind the transparent header.
+ * it shows the #0B0B0B shell behind the transparent header.
  */
 export function HubRibbon({ balance, onLogo, onWallet, loggedIn = true }: Props) {
   return (

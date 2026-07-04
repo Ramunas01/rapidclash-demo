@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { App } from '../App.js';
 
 // jsdom has no WebSocket; WsClient.connect()/disconnect() need a minimal stand-in.
@@ -387,5 +387,121 @@ describe('App — hubs no longer auto-enter Searching on entry after another gam
     );
     expect(screen.queryByTestId('hub-waiting-countdown')).toBeNull();
     expect(sent(sock, 'queue.leave').some((m) => m.payload.gameId === 'coinflip')).toBe(true);
+  });
+});
+
+describe('App — round-scoped state wiped as one unit on the destroy events (PLAY / leave / enter)', () => {
+  type MockSock = {
+    url: string; readyState: number;
+    onopen: (() => void) | null; onmessage: ((ev: { data: string }) => void) | null; onclose: (() => void) | null;
+    send: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn>;
+  };
+  let sockets: MockSock[];
+  const meta = (id: string, displayName: string) => ({
+    id, displayName, minPlayers: 2, maxPlayers: 2,
+    ranking: { kind: 'net_winnings' }, bet: { minStake: 1, maxStake: 100, symmetricStake: true },
+    averageDurationSec: 5, rakeRate: 0.025,
+  });
+  const ROSTER = [meta('coinflip', 'Coinflip'), meta('rps', 'Rock Paper Scissors'), meta('blackjack', 'Blackjack')];
+
+  // A finished Coinflip round: both picks revealed + the flip (drives the own/opponent pick pills).
+  const COINFLIP_DONE = { players: ['pid', 'bob-id'], choices: { pid: 'heads', 'bob-id': 'tails' }, result: 'heads' };
+  // A finished Blackjack hand: both hands revealed (drives the persistent on-board cards).
+  const BLACKJACK_DONE = {
+    players: ['pid', 'bob-id'], round: 0, draws: 0, winner: 'pid',
+    hands: {
+      pid: { cards: [{ rank: 'K', suit: '♠' }, { rank: 'Q', suit: '♥' }], done: true },
+      'bob-id': { cards: [{ rank: '9', suit: '♣' }, { rank: '8', suit: '♦' }], done: true },
+    },
+  };
+
+  beforeEach(() => {
+    sockets = [];
+    const ctor = vi.fn((url: string) => {
+      const s: MockSock = { url, readyState: 0, onopen: null, onmessage: null, onclose: null, send: vi.fn(), close: vi.fn() };
+      sockets.push(s);
+      return s;
+    });
+    vi.stubGlobal('WebSocket', Object.assign(ctor, { OPEN: 1, CONNECTING: 0, CLOSING: 2, CLOSED: 3 }));
+    localStorage.setItem('rc_token', 'tok');
+    localStorage.setItem('rc_playerId', 'pid');
+    localStorage.setItem('rc_username', 'alice');
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/games')) return { ok: true, json: async () => ROSTER } as Response;
+      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+    }));
+    // jsdom has no layout — the Coinflip board scrolls itself into view on a reveal.
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+  afterEach(() => { localStorage.clear(); sessionStorage.clear(); vi.unstubAllGlobals(); });
+
+  function deliver(sock: MockSock, type: string, payload: unknown) {
+    act(() => { sock.onmessage?.({ data: JSON.stringify({ type, payload }) }); });
+  }
+
+  /** Enter a hub, PLAY, then resolve into a match and END it → the finished-round result view. */
+  async function enterAndFinish(gameId: string, state: unknown): Promise<MockSock> {
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
+    const sock = sockets[0];
+    act(() => { sock.readyState = 1; sock.onopen?.(); });
+    fireEvent.click(await screen.findByTestId(`home-tile-${gameId}`));
+    fireEvent.click(await screen.findByTestId('hub-bet-10'));
+    fireEvent.click(screen.getByTestId('hub-play'));
+    deliver(sock, 'match.start', { matchId: 'm1', opponent: 'bob-id', gameId, state });
+    deliver(sock, 'match.end', { outcome: { type: 'win', winner: 'pid' }, settlement: { delta: 19, newBalance: 1019 } });
+    // Settle into the RESULT phase (PLAY re-enabled). Coinflip holds a ~1.5s "Playing…" reveal beat
+    // after match.end (holdResultMs) before the result phase; wait it out so PLAY is pressable.
+    await waitFor(() => expect(screen.getByTestId('hub-play')).not.toBeDisabled(), { timeout: 2500 });
+    return sock;
+  }
+
+  it('pressing PLAY after a finished Coinflip round wipes the pills as one unit — coin back to searching', async () => {
+    const sock = await enterAndFinish('coinflip', COINFLIP_DONE);
+    // The finished round shows both pick pills (own highlight + opponent's revealed pick).
+    expect(await screen.findByTestId('coin-own-pick')).toBeInTheDocument();
+    expect(screen.getByTestId('coin-opp-pick')).toBeInTheDocument();
+
+    // PLAY again → the whole round view is wiped (not just the opponent name).
+    fireEvent.click(screen.getByTestId('hub-play'));
+    expect(screen.queryByTestId('coin-own-pick')).toBeNull();
+    expect(screen.queryByTestId('coin-opp-pick')).toBeNull();
+
+    // …and the coin panel is back to searching.
+    deliver(sock, 'queue.waiting', { gameId: 'coinflip', matchId: 'q2', since: 0, expiresAt: Date.now() + 90_000 });
+    await waitFor(() => expect(screen.getByTestId('hub-waiting-countdown')).toBeInTheDocument());
+  });
+
+  it('leaving and re-entering the hub loads a clean idle page (no leftover pills)', async () => {
+    await enterAndFinish('coinflip', COINFLIP_DONE);
+    expect(await screen.findByTestId('coin-own-pick')).toBeInTheDocument();
+
+    // Leave to the RPS hub, then back to Coinflip (both via the related rail).
+    fireEvent.click(await screen.findByTestId('hub-related-rps'));
+    fireEvent.click(await screen.findByTestId('hub-related-coinflip'));
+
+    expect(screen.queryByTestId('coin-own-pick')).toBeNull();
+    expect(screen.queryByTestId('coin-opp-pick')).toBeNull();
+    expect(screen.getByTestId('hub-board').textContent).toMatch(/place your bet/i); // idle prompt
+  });
+
+  it('the idle post-round result view PERSISTS between a finished round and the next PLAY/leave', async () => {
+    await enterAndFinish('coinflip', COINFLIP_DONE);
+    expect(await screen.findByTestId('coin-own-pick')).toBeInTheDocument();
+    // Coinflip suppresses the overlay, so nothing auto-dismisses/wipes while the player sits there.
+    await new Promise((r) => setTimeout(r, 150));
+    expect(screen.getByTestId('coin-own-pick')).toBeInTheDocument();
+    expect(screen.getByTestId('coin-opp-pick')).toBeInTheDocument();
+  });
+
+  it('the same wipe clears another game’s board remnants (Blackjack cards) on PLAY', async () => {
+    await enterAndFinish('blackjack', BLACKJACK_DONE);
+    // The finished hand persists on the board (Blackjack also suppresses the overlay).
+    await waitFor(() => expect(within(screen.getByTestId('own-hand')).getAllByTestId('card').length).toBeGreaterThan(0));
+    // PLAY again → the shared gameState wipe empties the board (back to the idle table, no cards).
+    fireEvent.click(screen.getByTestId('hub-play'));
+    expect(screen.queryAllByTestId('card')).toHaveLength(0);
+    expect(screen.queryByTestId('own-hand')).toBeNull();
   });
 });

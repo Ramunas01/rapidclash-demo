@@ -15,7 +15,7 @@
  */
 @layer base {
   :root {
-    --background: 0 0% 5%; /* #0d0d0d */
+    --background: 0 0% 4.3%; /* #0b0b0b — one continuous page surface (edges → footer) */
     --foreground: 240 5% 96%; /* #f4f4f5 */
     --card: 0 0% 8%; /* #151515 */
     --card-foreground: 240 5% 96%; /* #f4f4f5 */
@@ -59,7 +59,7 @@
 
   /* Mirror of :root so the palette stays on-brand if `.dark` is ever toggled. */
   .dark {
-    --background: 0 0% 5%;
+    --background: 0 0% 4.3%; /* #0b0b0b — mirror of :root */
     --foreground: 240 5% 96%;
     --card: 0 0% 8%;
     --card-foreground: 240 5% 96%;

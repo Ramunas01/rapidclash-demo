@@ -11,7 +11,7 @@ The export is **one ~994-line `src/app/App.tsx`**, almost entirely inline-styled
 - **Account** — username + logout (minimal).
 - **Menu / Rewards / Chat** — nav stubs, no content.
 
-**Theme:** `theme.css` is a clean dark/purple token set — `--primary #8140e2`, `--background #0d0d0d`, `--card #151515`, `--foreground #f4f4f5`, `--destructive #e0556c`, plus inline accents (win `#2bb673`, play-green `#3ddc84`). **But the export applies color via inline hex, not the tokens** — so the lift must re-point inline hex → tokens.
+**Theme:** `theme.css` is a clean dark/purple token set — `--primary #8140e2`, `--background #0d0d0d` (**now unified site-wide to `#0b0b0b`** — the single canonical page background; the `theme-color` meta matches it), `--card #151515`, `--foreground #f4f4f5`, `--destructive #e0556c`, plus inline accents (win `#2bb673`, play-green `#3ddc84`). **But the export applies color via inline hex, not the tokens** — so the lift must re-point inline hex → tokens. *(The "lighter main area" seam is exactly such an inline-hex holdout that never adopted `--background`.)*
 
 ## 2. Screen → hub mapping (refined; data source + v1 reuse)
 

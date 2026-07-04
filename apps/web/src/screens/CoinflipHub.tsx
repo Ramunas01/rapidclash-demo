@@ -211,12 +211,13 @@ function OwnPills({ args }: { args: GameAreaArgs }) {
   const myChoice = playerId ? (view?.choices?.[playerId] as 'heads' | 'tails' | undefined) : undefined;
 
   const [optimisticPick, setOptimisticPick] = useState<'heads' | 'tails' | null>(null);
-  // A resolved round (a decisive result OR a draw before its auto-replay) closes the pick window;
-  // clear the optimistic pick so the next window opens blank. The terminal frame reads the
-  // server-recorded choice, so the outline never flickers during the reveal.
+  // Clear the optimistic pick when the round resolves (terminal — a decisive result OR a draw before
+  // its auto-replay closes the pick window) OR when the round state is wiped (`gameState` → null on
+  // PLAY / hub leave-enter), so a new round always opens blank with no stale highlight. The terminal
+  // frame reads the server-recorded choice, so the outline never flickers during the reveal.
   useEffect(() => {
-    if (terminal) setOptimisticPick(null);
-  }, [terminal]);
+    if (terminal || view == null) setOptimisticPick(null);
+  }, [terminal, view]);
 
   if (terminal) {
     // Locked result frame: show the chosen side flat — the bar carries the outcome signal.
