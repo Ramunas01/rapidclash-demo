@@ -536,6 +536,23 @@ describe('CoinflipHubScreen — choice controls: optimistic purple pick (#160)',
     expect(screen.getByTestId('hub-move-heads')).not.toBeDisabled(); // both stay tappable all window
   });
 
+  it('the optimistic pick DESELECTS when the round state is wiped (gameState → null on PLAY/leave)', () => {
+    // App's resetRoundState wipes gameState on PLAY / hub leave-enter. The hub's local optimisticPick
+    // must clear with it, so the NEXT round opens with no stale highlight (the "pills survive" bug).
+    const { rerender } = render(<CoinflipHubScreen {...pickWindow()} />);
+    fireEvent.click(screen.getByTestId('hub-move-heads'));
+    expect(screen.getByTestId('hub-move-heads')).toHaveAttribute('aria-pressed', 'true');
+
+    // The round is wiped → idle: the picker is gone.
+    rerender(<CoinflipHubScreen {...baseProps({ currentMatchId: null, gameState: null, legalMoves: [] })} />);
+    expect(screen.queryByTestId('hub-move-heads')).toBeNull();
+
+    // A fresh pick window opens with nothing pre-selected (the optimistic pick was cleared).
+    rerender(<CoinflipHubScreen {...pickWindow()} />);
+    expect(screen.getByTestId('hub-move-heads')).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByTestId('hub-move-tails')).toHaveAttribute('aria-pressed', 'false');
+  });
+
   it('BOTH players can lock the SAME side (no same-side restriction) — the draw path stays reachable', () => {
     // A same-side round: both chose HEADS, the coin flipped tails → a DRAW (→ auto-replay). The hub
     // renders both picks as HEADS with no block anywhere. A "taken side" block must NEVER be added:

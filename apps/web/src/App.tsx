@@ -454,6 +454,20 @@ export function App() {
     setPrearmStake(undefined);
   }, []);
 
+  // The round-scoped VIEW state — the finished board (opponent + both pick pills / choices + the
+  // verdict all read off `gameState`) — wiped as ONE unit. Fired only on the DESTROY events: PLAY /
+  // new search (handleJoinQueue), and leaving/entering a hub (the nav effect below + handleSelectGame)
+  // — so a new game or a fresh visit always starts clean ("name goes, pills survive" bug). Deliberately
+  // NOT fired on the result overlay's auto-dismiss: the idle post-round result view must persist while
+  // the player sits on the finished round, until they PLAY or navigate.
+  const resetRoundState = useCallback(() => {
+    setLastOutcome(null);
+    setLastSettlement(null);
+    setGameState(null);
+    setOpponentId(null);
+    setOpponentName(null);
+  }, []);
+
   // #152: leaving a game hub (to Home / Profile / Wallet / another hub) abandons an in-flight
   // user search so it can't resurface as "Searching…" on the next hub — and so no surprise match
   // forms on the still-open socket after you walked away. Fires only when a search was actually in
@@ -463,10 +477,13 @@ export function App() {
   useEffect(() => {
     const prev = prevScreenRef.current;
     prevScreenRef.current = screen;
-    if (prev !== screen && isGameHubScreen(prev) && searchingRef.current) {
+    if (prev !== screen && isGameHubScreen(prev)) {
+      // Leaving a hub → wipe the finished-round view (so re-entering is a clean idle page) and abandon
+      // any in-flight search (clearHubSearch guards its own leaveQueue, so it's a no-op if not searching).
+      resetRoundState();
       clearHubSearch();
     }
-  }, [screen, clearHubSearch]);
+  }, [screen, clearHubSearch, resetRoundState]);
 
   // #152 follow-up: the lobby countdown is a display timer off the owner's server `expiresAt`. If
   // it passes with no match forming — and no server `challenge.expired` arrives to flip lobbyExpired
@@ -750,13 +767,14 @@ export function App() {
     // previous game). The prevScreen nav-away effect covers hub→Home→hub, but a direct hub→hub
     // switch (or any residual waiting state) needs this explicit clear.
     clearHubSearch();
+    resetRoundState(); // entering a hub via selection is always a clean slate — no prior round remnants
     setPendingGameId(meta.id);
     setPendingGameMeta(meta);
     setPendingStake(meta.bet.minStake);
     setPrearmStake(undefined); // normal selection: no pre-armed bet (only the join-fallback sets it)
     // Coinflip + RPS get the one-screen Game hub; other games keep the multi-screen flow.
     setScreen(hubScreenFor(meta.id) ?? 'stake-entry');
-  }, [clearHubSearch]);
+  }, [clearHubSearch, resetRoundState]);
 
   // A Game hub resumes/enters its context even without going through handleSelectGame (e.g. a
   // mid-match reload or a take-challenge), so the shared join/subscribe handlers (which key off
@@ -791,13 +809,16 @@ export function App() {
     // queue.waiting is honoured (and so leaving the hub abandons it). Records the game to leave.
     searchingRef.current = true;
     searchGameRef.current = pendingGameId;
+    // New search → wipe the previous finished round's view (opponent + both pick pills + verdict) as
+    // one unit, so the board returns to searching with no stale pill/highlight ("pills survive" bug).
+    resetRoundState();
     // Reset lobby countdown state; queue.waiting will deliver the fresh expiresAt.
     setWaitingExpiresAt(null);
     setLobbyExpired(false);
     setActionNotice(null);
     // On a Game hub the "Waiting" state renders in place; the standalone flow uses the lobby screen.
     if (!isGameHubScreen(screen)) setScreen('lobby');
-  }, [pendingGameId, screen, token, openAuth]);
+  }, [pendingGameId, screen, token, openAuth, resetRoundState]);
 
   const handleLeaveQueue = useCallback(() => {
     if (!pendingGameId || !wsRef.current) return;
@@ -879,13 +900,12 @@ export function App() {
     if (!wsRef.current.forfeit(currentMatchId)) setActionNotice(RECONNECT_NOTICE);
   }, [currentMatchId]);
 
-  // Hub result overlay dismissed → wipe the match remnants so it returns to a clean Idle.
+  // Hub result overlay dismissed (auto after ~4s, or the manual X) → drop the payload that drove the
+  // overlay, but PRESERVE the finished-round board view (gameState/opponent) so the idle post-round
+  // result persists until the player PLAYs or leaves (the wipe now fires only there — resetRoundState).
   const handleHubResultDismiss = useCallback(() => {
     setLastOutcome(null);
     setLastSettlement(null);
-    setGameState(null);
-    setOpponentId(null);
-    setOpponentName(null);
   }, []);
 
   // Wallet chip / Account tab: the profile when signed in, the sign-in modal when logged out.
