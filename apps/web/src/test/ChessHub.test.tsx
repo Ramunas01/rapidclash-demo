@@ -8,6 +8,20 @@ import type { PlayerClocks, GameMeta } from '@rapidclash/shared';
 // canvas-confetti needs a real <canvas> (absent in jsdom) — mock it (matches the other hub tests).
 vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
 
+// Web Audio is absent in jsdom — mock the sound module so we can assert the move-thump wiring
+// (play('move') on fen change) without touching real AudioContext. (Same idea as canvas-confetti.)
+const { playMock } = vi.hoisted(() => ({ playMock: vi.fn() }));
+vi.mock('../lib/sound.js', () => ({
+  play: playMock,
+  unlock: vi.fn(),
+  installUnlockOnFirstGesture: vi.fn(),
+  isMuted: () => false,
+  toggleMute: vi.fn(),
+  setMuted: vi.fn(),
+  subscribe: () => () => {},
+  preloadSounds: vi.fn(),
+}));
+
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
 /** The chess meta the picker is data-driven from (mirrors the module's declared timeControl). */
@@ -57,6 +71,29 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
     }));
   });
   afterEach(() => vi.unstubAllGlobals());
+  beforeEach(() => playMock.mockClear());
+
+  it('plays the move thump when the position (fen) changes — own OR opponent move — but not on the initial board render', () => {
+    const AFTER_E4 = 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1';
+    const AFTER_C5 = 'rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2';
+    const { rerender } = render(
+      <ChessHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({}), legalMoves: asLegal([]) })} />,
+    );
+    expect(playMock).not.toHaveBeenCalled(); // no thump on the first (initial) fen
+
+    // A server position update (any player's move updates view.fen) → one thump.
+    rerender(<ChessHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ fen: AFTER_E4 }), legalMoves: asLegal([]) })} />);
+    expect(playMock).toHaveBeenCalledWith('move');
+    expect(playMock).toHaveBeenCalledTimes(1);
+
+    // A further position change (the opponent's reply) thumps again.
+    rerender(<ChessHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ fen: AFTER_C5 }), legalMoves: asLegal([]) })} />);
+    expect(playMock).toHaveBeenCalledTimes(2);
+
+    // A re-render with an UNCHANGED fen must NOT thump.
+    rerender(<ChessHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ fen: AFTER_C5 }), legalMoves: asLegal([]) })} />);
+    expect(playMock).toHaveBeenCalledTimes(2);
+  });
 
   it('#143: PLAY with no bet armed guides to the bet panel (no match starts); arming clears the cue, no auto-play', () => {
     const scrollSpy = vi.fn();

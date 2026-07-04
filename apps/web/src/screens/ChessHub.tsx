@@ -3,6 +3,7 @@ import { Chessboard } from 'react-chessboard';
 import type { Square } from 'react-chessboard/dist/chessboard/types';
 import { Chess } from 'chess.js';
 import { cn } from '@/lib/utils';
+import { play, installUnlockOnFirstGesture } from '../lib/sound.js';
 import { formatClock } from '../format.js';
 import type { ChessView, ChessMove } from '../App.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
@@ -139,6 +140,17 @@ function ChessBoard({ playerId, gameState, legalMoves, onMove }: GameAreaArgs) {
     if (!isMyTurn) { setSelected(null); setPendingPromotion(null); }
   }, [isMyTurn]);
 
+  // Move "thump": play when the server-authoritative position changes — covers BOTH players'
+  // moves (fen updates on every server position change). Skip the first fen (initial mount /
+  // re-mount with an unchanged position) so we don't thump on the opening board. Presentation
+  // only — no game-logic/redaction impact.
+  const prevFenRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!fen) return;
+    if (prevFenRef.current !== null && prevFenRef.current !== fen) play('move');
+    prevFenRef.current = fen;
+  }, [fen]);
+
   const movesFrom = useMemo(() => {
     const map = new Map<string, ChessMove[]>();
     for (const m of moves) { const list = map.get(m.from) ?? []; list.push(m); map.set(m.from, list); }
@@ -244,5 +256,8 @@ function ChessPanel(args: GameAreaArgs) {
  * panel. Mechanic / WS flow / server-authoritative clock are unchanged — presentation only.
  */
 export function ChessHubScreen(props: GameHubScreenProps) {
+  // Unlock audio on the first user gesture (idempotent) — the demo's first sound is the chess
+  // move thump, so this hub is an acceptable early mount point (App.tsx is off-limits here).
+  useEffect(() => { installUnlockOnFirstGesture(); }, []);
   return <GameHub gameId="chess" gameName="Chess" renderGameArea={ChessPanel} renderSlotAside={ChessSlotAside} {...props} />;
 }
