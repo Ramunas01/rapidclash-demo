@@ -468,6 +468,32 @@ export function App() {
     }
   }, [screen, clearHubSearch]);
 
+  // #152 follow-up: the lobby countdown is a display timer off the owner's server `expiresAt`. If
+  // it passes with no match forming — and no server `challenge.expired` arrives to flip lobbyExpired
+  // — the hub must NOT dead-end stuck at "0:00" (only Cancel would clear it). Arm a client timer at
+  // the deadline that auto-resolves: leave the queue (best-effort refund), drop the in-flight
+  // markers, and land on the "No opponent found — try again" state (bet re-enabled). Idempotent
+  // with the server event; a formed match (currentMatchId) or a cleared expiry disarms it.
+  useEffect(() => {
+    if (waitingExpiresAt == null || currentMatchId) return;
+    const resolveExpiry = () => {
+      if (searchingRef.current && searchGameRef.current) {
+        wsRef.current?.leaveQueue(searchGameRef.current); // server refunds the escrowed stake
+      }
+      searchingRef.current = false;
+      searchGameRef.current = null;
+      setLobbyExpired(true);
+      setWaitingExpiresAt(null);
+    };
+    const ms = waitingExpiresAt - Date.now();
+    if (ms <= 0) {
+      resolveExpiry();
+      return;
+    }
+    const t = setTimeout(resolveExpiry, ms);
+    return () => clearTimeout(t);
+  }, [waitingExpiresAt, currentMatchId]);
+
   // Register/login from the modal: store the token + connect the WS (as handleLogin), keep the
   // captured intent, and stay on the current hub. The actual replay fires on 'connected' (the
   // WS must be open before joinQueue/takeChallenge) — see onStatus below.
@@ -577,6 +603,9 @@ export function App() {
         // that arrives without a live user-initiated search (leaked/stray/duplicated) is ignored
         // — the invariant's exact complement of "PLAY requires an armed stake" (#146).
         if (!searchingRef.current) return;
+        // #152 follow-up: game-scope it too — a leftover queue.waiting for game A must never drive
+        // game B's countdown. Mirror onChallengesList's pendingGameId scoping.
+        if (payload.gameId !== pendingGameId) return;
         // OC7: surface the owner's server-authoritative expiry for the lobby countdown.
         setWaitingExpiresAt(payload.expiresAt);
         setLobbyExpired(false);
@@ -716,13 +745,18 @@ export function App() {
   const goToGameListFromResult = useCallback(() => setScreen('game-list'), []);
 
   const handleSelectGame = useCallback((meta: GameMeta) => {
+    // #152 follow-up: switching games must abandon any leftover/in-flight search first, so the
+    // new hub never opens on a stale "Searching…" (leftover waitingExpiresAt/searchingRef from the
+    // previous game). The prevScreen nav-away effect covers hub→Home→hub, but a direct hub→hub
+    // switch (or any residual waiting state) needs this explicit clear.
+    clearHubSearch();
     setPendingGameId(meta.id);
     setPendingGameMeta(meta);
     setPendingStake(meta.bet.minStake);
     setPrearmStake(undefined); // normal selection: no pre-armed bet (only the join-fallback sets it)
     // Coinflip + RPS get the one-screen Game hub; other games keep the multi-screen flow.
     setScreen(hubScreenFor(meta.id) ?? 'stake-entry');
-  }, []);
+  }, [clearHubSearch]);
 
   // A Game hub resumes/enters its context even without going through handleSelectGame (e.g. a
   // mid-match reload or a take-challenge), so the shared join/subscribe handlers (which key off

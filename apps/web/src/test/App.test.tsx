@@ -299,3 +299,93 @@ describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
     expect(screen.queryByTestId('auth-modal')).toBeNull(); // modal dismissed on success
   });
 });
+
+describe('App — hubs no longer auto-enter Searching on entry after another game (#152 follow-up)', () => {
+  type MockSock = {
+    url: string; readyState: number;
+    onopen: (() => void) | null; onmessage: ((ev: { data: string }) => void) | null; onclose: (() => void) | null;
+    send: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn>;
+  };
+  let sockets: MockSock[];
+  const meta = (id: string, displayName: string) => ({
+    id, displayName, minPlayers: 2, maxPlayers: 2,
+    ranking: { kind: 'net_winnings' }, bet: { minStake: 1, maxStake: 100, symmetricStake: true },
+    averageDurationSec: 5, rakeRate: 0.025,
+  });
+  const COINFLIP = meta('coinflip', 'Coinflip');
+  const RPS = meta('rps', 'Rock Paper Scissors');
+
+  beforeEach(() => {
+    sockets = [];
+    const ctor = vi.fn((url: string) => {
+      const s: MockSock = { url, readyState: 0, onopen: null, onmessage: null, onclose: null, send: vi.fn(), close: vi.fn() };
+      sockets.push(s);
+      return s;
+    });
+    vi.stubGlobal('WebSocket', Object.assign(ctor, { OPEN: 1, CONNECTING: 0, CLOSING: 2, CLOSED: 3 }));
+    // Logged-in reload session with a two-game roster (so the related rail can switch hubs).
+    localStorage.setItem('rc_token', 'tok');
+    localStorage.setItem('rc_playerId', 'pid');
+    localStorage.setItem('rc_username', 'alice');
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/games')) return { ok: true, json: async () => [COINFLIP, RPS] } as Response;
+      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+    }));
+  });
+  afterEach(() => { localStorage.clear(); sessionStorage.clear(); vi.unstubAllGlobals(); });
+
+  /** Deliver one server envelope over the open socket. */
+  function deliver(sock: MockSock, type: string, payload: unknown) {
+    act(() => { sock.onmessage?.({ data: JSON.stringify({ type, payload }) }); });
+  }
+
+  /** Render logged-in, open the socket, enter the Coinflip hub, arm a bet and press PLAY. */
+  async function playCoinflip() {
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
+    const sock = sockets[0];
+    act(() => { sock.readyState = 1; sock.onopen?.(); });
+    fireEvent.click(await screen.findByTestId('home-tile-coinflip'));
+    fireEvent.click(await screen.findByTestId('hub-bet-10'));
+    fireEvent.click(screen.getByTestId('hub-play'));
+    return sock;
+  }
+
+  const sent = (sock: MockSock, type: string) =>
+    sock.send.mock.calls.map((c) => JSON.parse(String(c[0]))).filter((m: { type: string }) => m.type === type);
+
+  it('switching hubs abandons a leftover search — the next hub opens idle, not Searching', async () => {
+    const sock = await playCoinflip();
+    deliver(sock, 'queue.waiting', { gameId: 'coinflip', matchId: 'q1', since: 0, expiresAt: Date.now() + 90_000 });
+    await waitFor(() => expect(screen.getByTestId('hub-waiting-countdown')).toBeInTheDocument());
+
+    // Switch to the RPS hub via the related rail (handleSelectGame) while a search is in flight.
+    fireEvent.click(await screen.findByTestId('hub-related-rps'));
+
+    // The RPS hub opens clean: no leftover countdown, and the Coinflip queue was left (refund).
+    await waitFor(() => expect(screen.queryByTestId('hub-waiting-countdown')).toBeNull());
+    expect(sent(sock, 'queue.leave').some((m) => m.payload.gameId === 'coinflip')).toBe(true);
+  });
+
+  it('a queue.waiting for a DIFFERENT game is ignored (no cross-game countdown)', async () => {
+    const sock = await playCoinflip();
+    // A leftover/stray waiting for another game must NOT drive this hub's countdown.
+    deliver(sock, 'queue.waiting', { gameId: 'chess', matchId: 'x', since: 0, expiresAt: Date.now() + 90_000 });
+    expect(screen.queryByTestId('hub-waiting-countdown')).toBeNull();
+    // The active game's own waiting DOES start it.
+    deliver(sock, 'queue.waiting', { gameId: 'coinflip', matchId: 'q1', since: 0, expiresAt: Date.now() + 90_000 });
+    await waitFor(() => expect(screen.getByTestId('hub-waiting-countdown')).toBeInTheDocument());
+  });
+
+  it('the countdown reaching expiry auto-reverts (no stuck 0:00) — lands on "No opponent found"', async () => {
+    const sock = await playCoinflip();
+    // A waiting whose server deadline has already passed → auto-resolve, never dead-end at 0:00.
+    deliver(sock, 'queue.waiting', { gameId: 'coinflip', matchId: 'q1', since: 0, expiresAt: Date.now() - 1 });
+    await waitFor(() =>
+      expect(screen.getByTestId('hub-no-opponent').textContent).toContain('No opponent found'),
+    );
+    expect(screen.queryByTestId('hub-waiting-countdown')).toBeNull();
+    expect(sent(sock, 'queue.leave').some((m) => m.payload.gameId === 'coinflip')).toBe(true);
+  });
+});
