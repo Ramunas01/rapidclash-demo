@@ -1,5 +1,6 @@
 import { formatCredits } from '../../format.js';
 import logoUrl from '../../assets/brand/rapidclash-wordmark.webp';
+import { MuteToggle } from './MuteToggle.js';
 
 interface Props {
   /** Live balance in integer credits, or null while it's still loading. */
@@ -28,45 +29,48 @@ export function HubRibbon({ balance, onLogo, onWallet, loggedIn = true }: Props)
         <img src={logoUrl} alt="RapidClash" className="h-24 w-auto object-contain" />
       </button>
 
-      {loggedIn ? (
-        <button
-          type="button"
-          onClick={onWallet}
-          aria-label="Open wallet"
-          data-testid="hub-wallet-chip"
-          className="flex items-center gap-2 rounded-full bg-surface py-1.5 pl-3.5 pr-1.5 transition-colors hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-        >
-          <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />
-          <span className="text-sm font-bold tabular-nums text-foreground" data-testid="hub-balance">
-            {balance === null ? '—' : formatCredits(balance)}
-          </span>
-          <span className="flex items-center gap-1.5 rounded-full bg-brand px-3.5 py-2 text-xs font-extrabold uppercase tracking-wide text-white">
-            <WalletGlyph />
-            Wallet
-          </span>
-        </button>
-      ) : (
-        <div className="flex items-center gap-1 rounded-full bg-surface py-1.5 pl-4 pr-1.5">
+      <div className="flex items-center gap-2">
+        <MuteToggle />
+        {loggedIn ? (
           <button
             type="button"
             onClick={onWallet}
-            aria-label="Log in"
-            data-testid="hub-login-chip"
-            className="whitespace-nowrap px-2 py-1.5 text-[13px] font-bold tracking-wide text-foreground focus:outline-none"
+            aria-label="Open wallet"
+            data-testid="hub-wallet-chip"
+            className="flex items-center gap-2 rounded-full bg-surface py-1.5 pl-3.5 pr-1.5 transition-colors hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
           >
-            LOG IN
+            <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />
+            <span className="text-sm font-bold tabular-nums text-foreground" data-testid="hub-balance">
+              {balance === null ? '—' : formatCredits(balance)}
+            </span>
+            <span className="flex items-center gap-1.5 rounded-full bg-brand px-3.5 py-2 text-xs font-extrabold uppercase tracking-wide text-white">
+              <WalletGlyph />
+              Wallet
+            </span>
           </button>
-          <button
-            type="button"
-            onClick={onWallet}
-            aria-label="Sign up"
-            data-testid="hub-signin-chip"
-            className="whitespace-nowrap rounded-full bg-brand px-5 py-2.5 text-[13px] font-extrabold tracking-wide text-white transition-colors hover:brightness-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-          >
-            SIGN UP
-          </button>
-        </div>
-      )}
+        ) : (
+          <div className="flex items-center gap-1 rounded-full bg-surface py-1.5 pl-4 pr-1.5">
+            <button
+              type="button"
+              onClick={onWallet}
+              aria-label="Log in"
+              data-testid="hub-login-chip"
+              className="whitespace-nowrap px-2 py-1.5 text-[13px] font-bold tracking-wide text-foreground focus:outline-none"
+            >
+              LOG IN
+            </button>
+            <button
+              type="button"
+              onClick={onWallet}
+              aria-label="Sign up"
+              data-testid="hub-signin-chip"
+              className="whitespace-nowrap rounded-full bg-brand px-5 py-2.5 text-[13px] font-extrabold tracking-wide text-white transition-colors hover:brightness-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+            >
+              SIGN UP
+            </button>
+          </div>
+        )}
+      </div>
     </header>
   );
 }
