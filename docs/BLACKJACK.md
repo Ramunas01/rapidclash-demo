@@ -18,12 +18,12 @@ The confirmed head-to-head, no-house Blackjack. This **supersedes** the provisio
 
 **Hand-value display (soft/hard).** The label shows the *conventional* total, never raw ace combinations ("11, 21" is the current bug). Compute: **hard** = sum with every ace as 1; a **soft** total exists iff the hand has an ace and `hard + 10 ≤ 21` (soft = hard + 10 — only one ace can be 11, so it's always exactly +10, however many aces are held); **best** = soft if it exists, else hard. Label rules:
 - Show **both** as `hard / soft` (e.g. "7 / 17") **only** while the hand is **live** (player can still act), an ace is present, a soft total exists, and **soft < 21** — the one case where the ace genuinely could land either way.
-- Soft **= 21** → show just **"21"**; on the initial two-card hand that is **Blackjack** (show the Blackjack flag alongside/instead of 21).
+- Soft **= 21** → show just **"21"**; on the initial two-card hand that is **Blackjack** → show **"BJ"** — the short form, in the **same score-bubble style as the numeric totals** (never the full word "Blackjack", which renders as a wide pill).
 - No valid soft (soft would exceed 21) → show the **hard** total only (A+6+9 → "16", never "16 / 26"); a value above 21 is never offered as an option.
 - Hand **final** (stand / bust / round resolved) → collapse to the single **best** value (A+6 standing → "17", not "7 / 17"); the ambiguity is resolved, so the display resolves with it.
 - **Bust** (hard > 21, no ace relief) → show the hard total (e.g. "23") in the bust state.
 
-Computed from **visible cards only**, so the opponent's label stays redaction-safe pre-terminal. (Server `handValue` already computes the best value for resolution — this is the display layer only.) Test examples: A+J → 21 / Blackjack · A+6 → 7 / 17 (live) · A+6+4 → 21 · A+6+9 → 16 · A+A → 2 / 12 · A+A+9 → 21 · 9+9 → 18 · stand on A+7 → 18 · 10+9+5 → 24 (bust).
+Computed from **visible cards only**, so the opponent's label stays redaction-safe pre-terminal. (Server `handValue` already computes the best value for resolution — this is the display layer only.) Test examples: A+J → BJ · A+6 → 7 / 17 (live) · A+6+4 → 21 · A+6+9 → 16 · A+A → 2 / 12 · A+A+9 → 21 · 9+9 → 18 · stand on A+7 → 18 · 10+9+5 → 24 (bust).
 
 **Reveal & win matrix.** Hands are revealed once both players have stood, busted, or timed out:
 - one busts, the other doesn't → the non-buster wins;
@@ -32,6 +32,8 @@ Computed from **visible cards only**, so the opponent's label stays redaction-sa
 - both bust → draw.
 
 **Result display (final).** Every outcome shows a **full result state** — all cards stay visible, outlined, and **in place**; nothing skips, moves, or reflows the card layout. Two layers: **card outlines** tell each hand's fate; the **player bar speaks *only on decided rounds*.**
+
+**Reveal choreography (continuous, in place — never a re-render).** The reveal is one continuous scene; **no card ever leaves the screen** (no unmount, blink, or reflow of the existing cards). Sequence: round ends → the opponent's **hidden hole card flips over in place** (a back→face flip at its existing position — not an unmount-and-remount) → the opponent's **hit cards deal in one-by-one from the deck** (the same sliding deal animation used during the round, in sequence, never all at once) → **totals update** → the **result state** shows (outlines / win animation / "Push" label, below). The player should read it as a dealer turning over a hand, not a screen refresh. *(Card stacking: a card's final z-order is set **before** its deal animation begins — the opponent's hole card travels and lands **underneath** the first card throughout, never on top then snapping under.)*
 
 - **Win.** Your cards get a **green** outline; your **bar plays the shared win animation** — 0.5 s fill-in (green, "You Win", username stays visible) → 2 s hold → 0.5 s fade-out to a **persistent green outline**. Same component as Coinflip (`COINFLIP_HUB.md`).
 - **Loss.** Your cards get a **red** outline; your **bar shows a red outline only** — minimal, no fill, no text.

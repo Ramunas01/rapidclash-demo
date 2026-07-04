@@ -25,6 +25,15 @@ const DEAL_STAGGER_S = 0.22;
  *  per the designer ("~0.5s after all cards are revealed"). Covers the ~0.55s flip + a short hold. */
 const FRAME_DELAY_MS = 1000;
 
+/** Cards fan with the LEFT (earlier) card on top; each card's z-order is fixed BEFORE its deal
+ *  animation (descending with index) so the opponent's hole card travels and lands UNDERNEATH the
+ *  first card throughout, never on top then snapping under. */
+const CARD_Z_BASE = 40;
+
+/** At the terminal reveal the opponent's HIT cards deal in AFTER the hole-card flip (a continuous
+ *  scene, not all at once) — the first hit starts at this offset (s); each next one is staggered. */
+const HIT_DEAL_START_S = 0.45;
+
 /** Item 5 — the CONVENTIONAL Blackjack hand-value label (soft/hard), never the raw ace combination
  *  ("11, 21" was the bug). Computed from the VISIBLE cards only, so the opponent's total stays
  *  redaction-safe. `final` collapses the ambiguity once the hand is resolved (stand / bust / terminal
@@ -42,8 +51,9 @@ function totalLabel(cards: BlackjackCard[], final = false): string {
   }
   const soft = aces > 0 && hard + 10 <= 21 ? hard + 10 : null;
   const best = soft ?? hard;
-  // Soft 21: a two-card 21 is a natural Blackjack; a 3+ card 21 is just "21".
-  if (soft === 21) return cards.length === 2 ? 'Blackjack' : '21';
+  // Soft 21: a two-card 21 is a natural Blackjack → "BJ" (short form, same score-bubble style as the
+  // numeric totals; never the wide word "Blackjack"). A 3+ card 21 is just "21".
+  if (soft === 21) return cards.length === 2 ? 'BJ' : '21';
   // Dual "hard / soft" ONLY while the hand is live and the ace could still land either way (soft < 21).
   if (!final && soft !== null && soft < 21) return `${hard} / ${soft}`;
   // No live ambiguity (no ace, or the high reading would bust), or the hand is final → single best.
@@ -66,7 +76,7 @@ function PlayingCard({ card, index, delay = 0, frame = null }: { card: Blackjack
       initial={{ x: CARD_TRAVEL_PX, y: -12, opacity: 0, rotateY: 90 }}
       animate={{ x: 0, y: 0, opacity: 1, rotateY: 0 }}
       transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1], delay }}
-      style={{ marginLeft: index === 0 ? 0 : -22 }}
+      style={{ marginLeft: index === 0 ? 0 : -22, zIndex: CARD_Z_BASE - index }}
       className={cn(
         'relative flex h-20 w-14 flex-col items-center justify-center rounded-lg border border-black/10 bg-white font-bold shadow-lg transition-shadow duration-300',
         isRed(card.suit) ? 'text-red-600' : 'text-gray-900',
@@ -82,22 +92,57 @@ function PlayingCard({ card, index, delay = 0, frame = null }: { card: Blackjack
   );
 }
 
-/** A face-down card — the hidden remainder of the opponent's hand (viewFor redaction). When the
- *  opponent is acting it pulses gently to signal activity (no value ever revealed pre-terminal). */
-function CardBack({ index = 0, active = false, delay = 0 }: { index?: number; active?: boolean; delay?: number }) {
+/** The opponent's hole card — ONE persistent element that stands in for their hidden card during
+ *  play (a face-down back, gently pulsing while they act) and FLIPS in place to its value at the
+ *  terminal reveal (a back→face rotateY at its existing position — never an unmount-and-remount, so
+ *  the reveal reads as a dealer turning it over, not a screen refresh). Redaction-safe: `card` is
+ *  undefined until the server's terminal frame, and the front face is backface-hidden until the flip.
+ *  Its testid is `card-back` while hidden and `card` once revealed, so counts stay truthful. */
+function OppHoleCard({ card, revealed, index, delay = 0, active = false }: { card?: BlackjackCard; revealed: boolean; index: number; delay?: number; active?: boolean }) {
+  const pulsing = active && !revealed;
   return (
     <motion.div
-      data-testid="card-back"
-      aria-label="Hidden card"
+      data-testid={revealed ? 'card' : 'card-back'}
+      aria-label={revealed ? undefined : 'Hidden card'}
       initial={{ x: CARD_TRAVEL_PX, opacity: 0 }}
-      animate={active ? { x: 0, opacity: 1, y: [0, -4, 0] } : { x: 0, opacity: 1 }}
-      transition={active
+      animate={pulsing ? { x: 0, opacity: 1, y: [0, -4, 0] } : { x: 0, opacity: 1, y: 0 }}
+      transition={pulsing
         ? { x: { duration: 0.5, ease: [0.22, 1, 0.36, 1], delay }, opacity: { duration: 0.5, delay }, y: { duration: 1.1, repeat: Infinity, ease: 'easeInOut', delay: delay + 0.5 } }
         : { duration: 0.5, ease: [0.22, 1, 0.36, 1], delay }}
-      style={{ marginLeft: index === 0 ? 0 : -22 }}
-      className="flex h-20 w-14 items-center justify-center rounded-lg border border-white/15 bg-gradient-to-br from-purple-600 to-indigo-900 text-2xl text-white/30 shadow-lg"
+      style={{ marginLeft: index === 0 ? 0 : -22, zIndex: CARD_Z_BASE - index, perspective: 600 }}
+      className="relative h-20 w-14"
     >
-      ✦
+      {/* The flip: rotateY 180 (back faces out) → 0 (face faces out) in place at the reveal. */}
+      <motion.div
+        className="relative h-full w-full"
+        style={{ transformStyle: 'preserve-3d' }}
+        animate={{ rotateY: revealed ? 0 : 180 }}
+        transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+      >
+        {/* Front — the revealed card value (hidden by backface-visibility until the flip lands). */}
+        <div
+          className={cn(
+            'absolute inset-0 flex flex-col items-center justify-center rounded-lg border border-black/10 bg-white font-bold shadow-lg',
+            card && isRed(card.suit) ? 'text-red-600' : 'text-gray-900',
+          )}
+          style={{ backfaceVisibility: 'hidden' }}
+        >
+          {card && (
+            <>
+              <span className="text-lg leading-none">{card.rank}</span>
+              <span className="text-2xl leading-none">{card.suit}</span>
+            </>
+          )}
+        </div>
+        {/* Back — the face-down design, pre-rotated so it faces out until the flip. */}
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 flex items-center justify-center rounded-lg border border-white/15 bg-gradient-to-br from-purple-600 to-indigo-900 text-2xl text-white/30 shadow-lg"
+          style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
+        >
+          ✦
+        </div>
+      </motion.div>
     </motion.div>
   );
 }
@@ -310,14 +355,26 @@ function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, phase, ou
         </div>
       )}
 
-      {/* Opponent hand — centred; exactly one card is ever revealed in play (viewFor redaction).
-          On a push BOTH hands are fully revealed (no face-down) with the red/orange outline; keys
-          carry the round so a re-deal re-mounts (re-animates) the opening deal. */}
+      {/* Opponent hand — centred; exactly one card is revealed in play (viewFor redaction). The
+          reveal is CONTINUOUS (no card ever unmounts/blinks): the first card stays, the persistent
+          hole card FLIPS in place to its value, then any hit cards deal in one-by-one. On a push both
+          hands are held fully-revealed (its own beat). Keys carry the round so a re-deal re-animates. */}
       <section data-testid="opp-hand" className="relative z-[1] flex flex-1 flex-col items-center justify-center gap-2">
         <HandTotalPill label={totalLabel(oppCards, oppFinal)} testid="opp-total" />
         <div className="flex items-end justify-center">
-          {oppCards.map((c, i) => <PlayingCard key={oppKey(i)} card={c} index={i} delay={oppDeal(i)} frame={pushFrame} />)}
-          {!isTerminal && !showPush && <CardBack index={oppCards.length} active={waitingOnOpponent} delay={backDeal} />}
+          {showPush ? (
+            oppCards.map((c, i) => <PlayingCard key={oppKey(i)} card={c} index={i} delay={oppDeal(i)} frame={pushFrame} />)
+          ) : (
+            <>
+              {oppCards[0] && <PlayingCard key={`opp-${round}-0`} card={oppCards[0]} index={0} delay={oppDeal(0)} />}
+              {/* Persistent hole card: face-down in play, flips in place to its value at the reveal. */}
+              <OppHoleCard key={`opp-hole-${round}`} index={1} revealed={isTerminal} card={oppCards[1]} active={waitingOnOpponent} delay={backDeal} />
+              {/* Opponent hits reveal only at terminal — deal in one-by-one AFTER the hole-card flip. */}
+              {isTerminal && oppCards.slice(2).map((c, j) => (
+                <PlayingCard key={`opp-hit-${round}-${j}`} card={c} index={j + 2} delay={HIT_DEAL_START_S + j * DEAL_STAGGER_S} />
+              ))}
+            </>
+          )}
         </div>
       </section>
 

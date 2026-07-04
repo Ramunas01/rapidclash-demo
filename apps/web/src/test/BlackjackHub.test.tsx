@@ -314,8 +314,8 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       return screen.getByTestId('own-total').textContent ?? '';
     }
 
-    it('A+J (two-card soft 21) → Blackjack', () => {
-      expect(ownLabel([c('A'), c('J')])).toBe('Blackjack');
+    it('A+J (two-card soft 21) → "BJ" (short form, compact bubble — never the wide word)', () => {
+      expect(ownLabel([c('A'), c('J')])).toBe('BJ');
     });
     it('A+6 live → 7 / 17 (the ace could still land either way)', () => {
       expect(ownLabel([c('A'), c('6')])).toBe('7 / 17');
@@ -485,6 +485,40 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       const ownBar = screen.getByTestId('hub-slot-own');
       expect(ownBar.querySelector('.bg-success')).toBeNull(); // no green fill
       expect(within(ownBar).queryByTestId('hub-slot-own-verdict')).toBeNull(); // no "You Win"
+    });
+  });
+
+  // ── Reveal choreography (continuous, in place) ──
+  describe('Reveal choreography: hole card flips in place, z-order, no unmount', () => {
+    it('the face-down hole card sits UNDER the first opponent card (z-order fixed before the deal)', () => {
+      render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: [] })} />);
+      const opp = within(screen.getByTestId('opp-hand'));
+      const firstCard = opp.getByTestId('card'); // the one revealed face-up card
+      const hole = opp.getByTestId('card-back'); // the persistent hole card (face-down)
+      // Lower z-index = underneath. The hole must never sit on top of the first card.
+      expect(Number(hole.style.zIndex)).toBeLessThan(Number(firstCard.style.zIndex));
+    });
+
+    it('reveal is continuous: in play the hole is face-down; at terminal it reveals IN PLACE (the same slot becomes a card, no card-back), and opponent hits deal in', async () => {
+      const terminal = inPlayView({
+        hands: {
+          pid: { cards: [c('K'), c('Q', '♥')], done: true }, // 20
+          bob: { cards: [c('9', '♣'), c('8', '♦'), c('4')], done: true }, // c0 + hole + one hit → 3 cards
+        },
+        winner: 'pid',
+      });
+      const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: [] })} />);
+      // In play: exactly one face-up opponent card + the face-down hole (the hidden remainder).
+      expect(within(screen.getByTestId('opp-hand')).getAllByTestId('card')).toHaveLength(1);
+      expect(within(screen.getByTestId('opp-hand')).getByTestId('card-back')).toBeInTheDocument();
+
+      // Terminal: the paced reveal lands (TERMINAL_HOLD_MS) → the hole flips in place (now a card, no
+      // card-back) and the hit card is dealt in → the full opponent hand is shown.
+      rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
+      await waitFor(() => {
+        expect(within(screen.getByTestId('opp-hand')).getAllByTestId('card')).toHaveLength(3);
+      }, { timeout: 2000 });
+      expect(screen.queryByTestId('card-back')).toBeNull(); // no lingering face-down card at the reveal
     });
   });
 });
