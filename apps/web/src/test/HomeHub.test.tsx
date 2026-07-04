@@ -128,6 +128,11 @@ describe('HomeHubScreen', () => {
     expect(discord).toHaveAttribute('aria-disabled', 'true');
     expect(footer).not.toHaveTextContent(/affiliate/i); // owner: Affiliate stays OUT
     expect(footer).toHaveTextContent(/18\+/); // responsibility section stays
+    // Background unification (#0B0B0B): no divider line where the footer begins, and it paints the
+    // shared page-background token — one continuous surface, no seam/band, no hardcoded hex.
+    expect(footer.className).not.toMatch(/border-t/);
+    expect(footer.className).toContain('bg-background');
+    expect(footer.className).not.toMatch(/\[#0/); // no inline-hex bg literal
     expect(footer.textContent ?? '').not.toMatch(/\$/);
   });
 });
