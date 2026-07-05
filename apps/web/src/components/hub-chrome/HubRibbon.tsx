@@ -1,6 +1,5 @@
 import { formatCredits } from '../../format.js';
 import logoUrl from '../../assets/brand/rapidclash-wordmark.webp';
-import { MuteToggle } from './MuteToggle.js';
 
 interface Props {
   /** Live balance in integer credits, or null while it's still loading. */
@@ -30,7 +29,6 @@ export function HubRibbon({ balance, onLogo, onWallet, loggedIn = true }: Props)
       </button>
 
       <div className="flex items-center gap-2">
-        <MuteToggle />
         {loggedIn ? (
           <button
             type="button"
