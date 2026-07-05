@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { ProfileHubScreen } from '../screens/ProfileHub.js';
+import { setMuted, isMuted } from '../lib/sound.js';
 import type { GameMeta, LedgerEntry, LeaderboardEntry } from '@rapidclash/shared';
 
 type Props = Parameters<typeof ProfileHubScreen>[0];
@@ -58,6 +59,26 @@ describe('ProfileHubScreen', () => {
     expect(screen.getByTestId('profile-username').textContent).toBe('alice');
     fireEvent.click(screen.getByTestId('profile-logout'));
     expect(onLogout).toHaveBeenCalled();
+  });
+
+  it('has the sound mute toggle in the header section beside Log out (moved off the ribbon), and toggling flips + persists global mute', () => {
+    setMuted(false); // known baseline: sound ON
+    const { container } = render(<ProfileHubScreen {...baseProps()} />);
+
+    // It lives in the profile-header section, next to Log out — NOT in the ribbon header.
+    const section = within(screen.getByTestId('profile-header'));
+    const toggle = section.getByTestId('hub-mute-toggle');
+    expect(section.getByTestId('profile-logout')).toBeInTheDocument();
+    const ribbon = container.querySelector('header')!;
+    expect(within(ribbon).queryByTestId('hub-mute-toggle')).toBeNull(); // gone from the header
+
+    // Toggling flips the global, persisted mute (no behaviour change — same module/localStorage).
+    expect(toggle.getAttribute('aria-pressed')).toBe('false'); // sound ON
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-pressed')).toBe('true'); // muted
+    expect(window.localStorage.getItem('rc:sound:muted')).toBe('1'); // persisted
+    expect(isMuted()).toBe(true); // global module state
+    setMuted(false); // cleanup for other tests / files
   });
 
   it('shows the wallet balance in ¢ and the recent ledger entries (signed amounts)', async () => {

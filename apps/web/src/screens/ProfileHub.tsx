@@ -18,6 +18,7 @@ import { formatStat } from './Leaderboard.js';
 import { cn } from '@/lib/utils';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
+import { MuteToggle } from '../components/hub-chrome/MuteToggle.js';
 import { HUB_SHELL, HUB_BODY } from '../components/hub-chrome/layout.js';
 
 interface Props {
@@ -122,6 +123,8 @@ export function ProfileHubScreen({ token, username, balance, onLogout, onHome, o
                 Play-money account
               </span>
             </div>
+            {/* Sound mute toggle — relocated from the header; global + persisted, self-contained. */}
+            <MuteToggle />
             <button
               type="button"
               onClick={onLogout}
