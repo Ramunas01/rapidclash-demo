@@ -520,5 +520,74 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       }, { timeout: 2000 });
       expect(screen.queryByTestId('card-back')).toBeNull(); // no lingering face-down card at the reveal
     });
+
+    it('newest card renders ON TOP: a multi-card hand stacks ASCENDING (A over 10 over 8)', () => {
+      const view = inPlayView({
+        hands: {
+          pid: { cards: [c('8'), c('10', '♥'), c('A')], done: false }, // dealt 8, then 10, then A
+          bob: { cards: [c('K', '♣')], done: false },
+        },
+      });
+      render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view, legalMoves: ['hit', 'stand'] })} />);
+      const z = within(screen.getByTestId('own-hand')).getAllByTestId('card').map((el) => Number(el.style.zIndex));
+      expect(z).toHaveLength(3);
+      // Each later (newer) card sits OVER the previous — the standard overlapping fan.
+      expect(z[0]).toBeLessThan(z[1]);
+      expect(z[1]).toBeLessThan(z[2]);
+    });
+
+    it('key continuity: an already-visible card is NOT remounted from the last in-play frame through the push hold (no blink)', async () => {
+      const inPlay = inPlayView({
+        hands: {
+          pid: { cards: [c('10'), c('7', '♥')], done: true }, // my final hand (17)
+          bob: { cards: [c('K', '♣')], done: false }, // c0 visible; the hole is hidden
+        },
+      });
+      // The draw re-deals a fresh round 1 (draws/replays rise) + carries lastResult = the resolved
+      // round 0. The push must HOLD round 0's cards under their ORIGINAL keys — not remount them.
+      const pushed = inPlayView({
+        round: 1, draws: 1, replays: 1,
+        hands: { pid: { cards: [c('2'), c('3')], done: false }, bob: { cards: [c('4')], done: false } },
+        lastResult: {
+          round: 0, result: 'draw',
+          hands: {
+            pid: { cards: [c('10'), c('7', '♥')], total: 17 },
+            bob: { cards: [c('K', '♣'), c('7', '♦')], total: 17 }, // equal totals → orange push
+          },
+        },
+      });
+      const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlay, legalMoves: [] })} />);
+      // Capture the already-visible cards BEFORE the push: my first card + the opponent's first card.
+      const ownFirstBefore = within(screen.getByTestId('own-hand')).getAllByTestId('card')[0];
+      const oppFirstBefore = within(screen.getByTestId('opp-hand')).getAllByTestId('card')[0];
+
+      // Resolve into the push (drawBeat fires on the replays rise).
+      rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: pushed, legalMoves: [] })} />);
+      await waitFor(() => expect(screen.getByTestId('push-label')).toBeInTheDocument());
+
+      // The SAME DOM nodes persist — no unmount/remount across reveal → push, so no blink.
+      expect(within(screen.getByTestId('own-hand')).getAllByTestId('card')[0]).toBe(ownFirstBefore);
+      expect(within(screen.getByTestId('opp-hand')).getAllByTestId('card')[0]).toBe(oppFirstBefore);
+    });
+
+    it('after the reveal flip the (face-up) hole card sits OVER the first card, and hits stack over in deal order', async () => {
+      const terminal = inPlayView({
+        hands: {
+          pid: { cards: [c('K'), c('Q', '♥')], done: true },
+          bob: { cards: [c('9', '♣'), c('8', '♦'), c('4')], done: true }, // first + hole + one hit
+        },
+        winner: 'pid',
+      });
+      const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: [] })} />);
+      rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
+      await waitFor(() => {
+        expect(within(screen.getByTestId('opp-hand')).getAllByTestId('card')).toHaveLength(3);
+      }, { timeout: 2000 });
+      // DOM order = deal order: first card, the revealed hole, the hit. Ascending z → hole OVER first,
+      // hit OVER hole (the face-down "underneath" exception ends the moment it flips).
+      const z = within(screen.getByTestId('opp-hand')).getAllByTestId('card').map((el) => Number(el.style.zIndex));
+      expect(z[0]).toBeLessThan(z[1]); // revealed hole over the first card
+      expect(z[1]).toBeLessThan(z[2]); // hit over the hole, in deal order
+    });
   });
 });

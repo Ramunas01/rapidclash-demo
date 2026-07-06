@@ -25,9 +25,10 @@ const DEAL_STAGGER_S = 0.22;
  *  per the designer ("~0.5s after all cards are revealed"). Covers the ~0.55s flip + a short hold. */
 const FRAME_DELAY_MS = 1000;
 
-/** Cards fan with the LEFT (earlier) card on top; each card's z-order is fixed BEFORE its deal
- *  animation (descending with index) so the opponent's hole card travels and lands UNDERNEATH the
- *  first card throughout, never on top then snapping under. */
+/** Cards fan with the NEWEST card ON TOP (standard overlapping fan): each card's z-order is fixed
+ *  BEFORE its deal animation, ASCENDING with index (`CARD_Z_BASE + index`). The ONE exception is the
+ *  opponent's hole card WHILE face-down — it sits UNDER the first card (`CARD_Z_BASE - 1`) so nothing
+ *  peeks through; the moment it flips face-up it rejoins the ascending OVER pattern. */
 const CARD_Z_BASE = 40;
 
 /** At the terminal reveal the opponent's HIT cards deal in AFTER the hole-card flip (a continuous
@@ -69,6 +70,18 @@ const isRed = (suit: string) => suit === '♥' || suit === '♦';
  *  freshly-drawn card makes the trip. At terminal a `frame` rings the player's own cards green
  *  (won) or red (lost) — driven strictly by the server outcome. */
 type CardFrame = 'win' | 'lose' | 'bust' | 'draw' | null;
+
+/** The result outline ring for a card — green (win), red (loss/bust), orange (push tie). Shared by
+ *  PlayingCard and the (revealed) hole card so a push frames every card the same way. */
+function cardFrameClass(frame: CardFrame): string {
+  return cn(
+    frame === 'win' && 'ring-[3px] ring-success shadow-[0_0_14px_rgba(34,197,94,0.55)]',
+    // A loss and a bust both read red; a push tie reads orange (the shared draw colour).
+    (frame === 'lose' || frame === 'bust') && 'ring-[3px] ring-destructive shadow-[0_0_14px_rgba(239,68,68,0.5)]',
+    frame === 'draw' && 'ring-[3px] ring-amber-400 shadow-[0_0_14px_rgba(251,191,36,0.5)]',
+  );
+}
+
 function PlayingCard({ card, index, delay = 0, frame = null }: { card: BlackjackCard; index: number; delay?: number; frame?: CardFrame }) {
   return (
     <motion.div
@@ -76,14 +89,11 @@ function PlayingCard({ card, index, delay = 0, frame = null }: { card: Blackjack
       initial={{ x: CARD_TRAVEL_PX, y: -12, opacity: 0, rotateY: 90 }}
       animate={{ x: 0, y: 0, opacity: 1, rotateY: 0 }}
       transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1], delay }}
-      style={{ marginLeft: index === 0 ? 0 : -22, zIndex: CARD_Z_BASE - index }}
+      style={{ marginLeft: index === 0 ? 0 : -22, zIndex: CARD_Z_BASE + index }}
       className={cn(
         'relative flex h-20 w-14 flex-col items-center justify-center rounded-lg border border-black/10 bg-white font-bold shadow-lg transition-shadow duration-300',
         isRed(card.suit) ? 'text-red-600' : 'text-gray-900',
-        frame === 'win' && 'ring-[3px] ring-success shadow-[0_0_14px_rgba(34,197,94,0.55)]',
-        // A loss and a bust both read red; a push tie reads orange (the shared draw colour).
-        (frame === 'lose' || frame === 'bust') && 'ring-[3px] ring-destructive shadow-[0_0_14px_rgba(239,68,68,0.5)]',
-        frame === 'draw' && 'ring-[3px] ring-amber-400 shadow-[0_0_14px_rgba(251,191,36,0.5)]',
+        cardFrameClass(frame),
       )}
     >
       <span className="text-lg leading-none">{card.rank}</span>
@@ -98,7 +108,7 @@ function PlayingCard({ card, index, delay = 0, frame = null }: { card: Blackjack
  *  the reveal reads as a dealer turning it over, not a screen refresh). Redaction-safe: `card` is
  *  undefined until the server's terminal frame, and the front face is backface-hidden until the flip.
  *  Its testid is `card-back` while hidden and `card` once revealed, so counts stay truthful. */
-function OppHoleCard({ card, revealed, index, delay = 0, active = false }: { card?: BlackjackCard; revealed: boolean; index: number; delay?: number; active?: boolean }) {
+function OppHoleCard({ card, revealed, index, delay = 0, active = false, frame = null }: { card?: BlackjackCard; revealed: boolean; index: number; delay?: number; active?: boolean; frame?: CardFrame }) {
   const pulsing = active && !revealed;
   return (
     <motion.div
@@ -109,8 +119,11 @@ function OppHoleCard({ card, revealed, index, delay = 0, active = false }: { car
       transition={pulsing
         ? { x: { duration: 0.5, ease: [0.22, 1, 0.36, 1], delay }, opacity: { duration: 0.5, delay }, y: { duration: 1.1, repeat: Infinity, ease: 'easeInOut', delay: delay + 0.5 } }
         : { duration: 0.5, ease: [0.22, 1, 0.36, 1], delay }}
-      style={{ marginLeft: index === 0 ? 0 : -22, zIndex: CARD_Z_BASE - index, perspective: 600 }}
-      className="relative h-20 w-14"
+      // Under the first card WHILE face-down (CARD_Z_BASE - 1, below index 0 — set from the start of
+      // the deal, no snap); once revealed it rejoins the ascending OVER fan (CARD_Z_BASE + index).
+      style={{ marginLeft: index === 0 ? 0 : -22, zIndex: revealed ? CARD_Z_BASE + index : CARD_Z_BASE - 1, perspective: 600 }}
+      // The push result outline rings the whole card (on the testid element, like PlayingCard).
+      className={cn('relative h-20 w-14 rounded-lg', cardFrameClass(frame))}
     >
       {/* The flip: rotateY 180 (back faces out) → 0 (face faces out) in place at the reveal. */}
       <motion.div
@@ -307,6 +320,14 @@ function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, phase, ou
 
   const waitingOnOpponent = !isMyTurn && !isTerminal && !showPush && ownCards.length > 0;
   const round = view?.round ?? 0;
+  // The reveal is CONTINUOUS: the push holds the JUST-RESOLVED round's cards, so they must keep the
+  // exact keys those cards had in the last in-play frame — key by the RESOLVED round (lastResult.round),
+  // not the fresh replay round (view.round, already bumped) — so nothing unmounts/remounts across the
+  // reveal → push. Only the next genuine deal (round+1, when the beat ends and showPush drops) gets
+  // fresh keys and remounts to animate. The opponent's hole card + hits reveal (flip / deal-in) at a
+  // terminal decisive result OR during the push hold; both are one continuous scene, never two subtrees.
+  const keyRound = showPush && lastResult ? lastResult.round : round;
+  const revealed = isTerminal || showPush;
   // Own hand is "final" (label collapses to a single best value) once it is done, or at the terminal
   // reveal, or while the pushed hands are held; the opponent's is final only when fully revealed.
   const ownDone = Boolean(playerId && view?.hands[playerId]?.done);
@@ -320,10 +341,6 @@ function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, phase, ou
   const ownDeal = (i: number) => (opening && i < 2 ? (i === 0 ? 0 : 2) * DEAL_STAGGER_S : 0);
   const oppDeal = (i: number) => (opening && i === 0 ? 1 * DEAL_STAGGER_S : 0);
   const backDeal = opening ? 3 * DEAL_STAGGER_S : 0;
-  // Distinct keys for the held-push cards so they mount/unmount as their own set — the fresh round's
-  // cards then re-mount and play their deal animation once the beat ends (no stale in-place swap).
-  const ownKey = (i: number) => (showPush ? `push-own-${i}` : `own-${round}-${i}`);
-  const oppKey = (i: number) => (showPush ? `push-opp-${i}` : `opp-${round}-${i}`);
 
   // Win/lose card frame (item: result on the board, no pop-up). Driven strictly by the server's
   // match.end outcome; non win/lose terminals (draw/void) get no frame. Held a beat after reveal.
@@ -355,35 +372,31 @@ function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, phase, ou
         </div>
       )}
 
-      {/* Opponent hand — centred; exactly one card is revealed in play (viewFor redaction). The
-          reveal is CONTINUOUS (no card ever unmounts/blinks): the first card stays, the persistent
-          hole card FLIPS in place to its value, then any hit cards deal in one-by-one. On a push both
-          hands are held fully-revealed (its own beat). Keys carry the round so a re-deal re-animates. */}
+      {/* Opponent hand — ONE continuous structure for play, the decisive reveal, AND the push hold
+          (no separate subtree, no re-mount): the first card stays, the persistent hole card FLIPS in
+          place to its value when `revealed`, then hit cards deal in one-by-one. During a push it is
+          the SAME resolved cards in a held/framed state (red/orange outline) — keyed by the resolved
+          round so they carry their identities straight from the last in-play frame. */}
       <section data-testid="opp-hand" className="relative z-[1] flex flex-1 flex-col items-center justify-center gap-2">
         <HandTotalPill label={totalLabel(oppCards, oppFinal)} testid="opp-total" />
         <div className="flex items-end justify-center">
-          {showPush ? (
-            oppCards.map((c, i) => <PlayingCard key={oppKey(i)} card={c} index={i} delay={oppDeal(i)} frame={pushFrame} />)
-          ) : (
-            <>
-              {oppCards[0] && <PlayingCard key={`opp-${round}-0`} card={oppCards[0]} index={0} delay={oppDeal(0)} />}
-              {/* Persistent hole card: face-down in play, flips in place to its value at the reveal. */}
-              <OppHoleCard key={`opp-hole-${round}`} index={1} revealed={isTerminal} card={oppCards[1]} active={waitingOnOpponent} delay={backDeal} />
-              {/* Opponent hits reveal only at terminal — deal in one-by-one AFTER the hole-card flip. */}
-              {isTerminal && oppCards.slice(2).map((c, j) => (
-                <PlayingCard key={`opp-hit-${round}-${j}`} card={c} index={j + 2} delay={HIT_DEAL_START_S + j * DEAL_STAGGER_S} />
-              ))}
-            </>
-          )}
+          {oppCards[0] && <PlayingCard key={`opp-${keyRound}-0`} card={oppCards[0]} index={0} delay={oppDeal(0)} frame={pushFrame} />}
+          {/* Persistent hole card: face-down in play, flips in place to its value at the reveal/push. */}
+          <OppHoleCard key={`opp-hole-${keyRound}`} index={1} revealed={revealed} card={oppCards[1]} active={waitingOnOpponent} delay={backDeal} frame={pushFrame} />
+          {/* Opponent hits reveal only once revealed (decisive terminal or push) — deal in one-by-one. */}
+          {revealed && oppCards.slice(2).map((c, j) => (
+            <PlayingCard key={`opp-hit-${keyRound}-${j}`} card={c} index={j + 2} delay={HIT_DEAL_START_S + j * DEAL_STAGGER_S} frame={pushFrame} />
+          ))}
         </div>
       </section>
 
       {/* Own hand — centred, full. At the decisive end each card is ringed by the win/lose frame;
-          during a push both hands share the red (bust) / orange (tie) outline. */}
+          during a push both hands share the red (bust) / orange (tie) outline. Keyed by the resolved
+          round during the push so the already-visible cards persist continuously (no blink). */}
       <section data-testid="own-hand" className="relative z-[1] flex flex-1 flex-col items-center justify-center gap-2">
         <HandTotalPill label={totalLabel(ownCards, ownFinal)} testid="own-total" />
         <div className="flex items-end justify-center">
-          {ownCards.map((c, i) => <PlayingCard key={ownKey(i)} card={c} index={i} delay={ownDeal(i)} frame={pushFrame ?? ownFrame} />)}
+          {ownCards.map((c, i) => <PlayingCard key={`own-${keyRound}-${i}`} card={c} index={i} delay={ownDeal(i)} frame={pushFrame ?? ownFrame} />)}
         </div>
       </section>
     </TableSurface>
