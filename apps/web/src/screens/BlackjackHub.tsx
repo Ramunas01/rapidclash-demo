@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import type { BlackjackView, BlackjackCard } from '../App.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
+import { CardBack, DeckPile } from '../components/cards/CardBack.js';
 
 /** Per-player move budget (mirrors the module's meta.moveTimeoutMs). Display only —
  *  the server runs the authoritative timer and auto-stands on expiry. */
@@ -147,28 +148,13 @@ function OppHoleCard({ card, revealed, index, delay = 0, active = false, frame =
             </>
           )}
         </div>
-        {/* Back — the face-down design, pre-rotated so it faces out until the flip. */}
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 flex items-center justify-center rounded-lg border border-white/15 bg-gradient-to-br from-purple-600 to-indigo-900 text-2xl text-white/30 shadow-lg"
+        {/* Back — the shared card back, pre-rotated so it faces out until the flip. */}
+        <CardBack
+          className="absolute inset-0"
           style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
-        >
-          ✦
-        </div>
+        />
       </motion.div>
     </motion.div>
-  );
-}
-
-/** Item 1 — a partially-visible card deck on the table's right edge (one per player; mirrors the
- *  two independent decks). A blue back peeks out behind a white card, clipped by the table edge —
- *  "ready to be drawn" to the centre. Decorative (no `card` testid). */
-function DeckStack({ className }: { className?: string }) {
-  return (
-    <div className={cn('pointer-events-none absolute flex', className)} aria-hidden="true">
-      <div className="h-[68px] w-12 rounded-lg border border-white/10 bg-gradient-to-br from-purple-600 to-indigo-900 shadow-lg" />
-      <div className="-ml-7 h-[68px] w-12 rounded-lg border border-black/10 bg-white shadow-lg" />
-    </div>
   );
 }
 
@@ -194,8 +180,9 @@ function TableSurface({ children }: { children: ReactNode }) {
       data-testid="hub-board"
       className="relative flex min-h-[280px] flex-col items-stretch justify-between overflow-hidden rounded-2xl bg-surface p-[18px]"
     >
-      <DeckStack className="right-[-26px] top-7" />
-      <DeckStack className="bottom-7 right-[-26px]" />
+      {/* One shared deck pile per player, parked (and clipped) at the table's right edge. */}
+      <DeckPile className="pointer-events-none absolute right-[-26px] top-7 h-[68px] w-12" />
+      <DeckPile className="pointer-events-none absolute bottom-7 right-[-26px] h-[68px] w-12" />
       {children}
     </div>
   );

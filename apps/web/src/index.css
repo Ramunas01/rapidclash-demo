@@ -55,6 +55,9 @@
     --rc-success: 151 62% 44%; /* #2bb673 — win / success green */
     --rc-play: 147 69% 55%; /* #3ddc84 — PLAY-button green */
     --rc-surface: 240 28% 14%; /* #1a1a2e — elevated surface */
+    /* Shared card back (SVG/CSS component) — one source of truth (raw hex, used directly). */
+    --card-back: #5956f6; /* flat blue-violet inset panel */
+    --card-back-mark: #5351e2; /* the bolt watermark — tone-on-tone, a few shades darker */
   }
 
   /* Mirror of :root so the palette stays on-brand if `.dark` is ever toggled. */
@@ -94,6 +97,8 @@
     --rc-success: 151 62% 44%;
     --rc-play: 147 69% 55%;
     --rc-surface: 240 28% 14%;
+    --card-back: #5956f6;
+    --card-back-mark: #5351e2;
   }
 }
 
