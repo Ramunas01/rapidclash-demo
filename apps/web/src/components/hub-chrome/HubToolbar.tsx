@@ -20,7 +20,22 @@ interface Props {
  */
 export function HubToolbar({ onGames, onAccount, active = 'games' }: Props) {
   return (
-    <nav aria-label="Primary" className="fixed bottom-0 left-1/2 z-20 w-full max-w-md -translate-x-1/2 bg-transparent px-3 pb-[calc(0.5rem_+_env(safe-area-inset-bottom))] pt-1">
+    <>
+      {/* Solid base behind & below the nav: a FULL-viewport-width #0B0B0B block (the canonical
+          `bg-background` token — never a fresh literal, or we recreate the drift the unification
+          removed) so scrolled content can't peek through the pill's rounded-corner notches or the
+          strip below it, and Safari's bottom bar samples a constant colour instead of moving content.
+          Purely visual (`pointer-events-none`) and BELOW the nav (z-[15] < the nav's z-20) so the pill
+          still floats over it and its buttons still tap through. It rises to ~half the pill's height
+          (so the pill's lower rounded corners have solid behind them — tuned blind, adjust vs the
+          running UI) and reaches bottom:0 including the home-indicator safe-area (matching the nav's
+          own pb). Full width, not max-w-md, so nothing peeks past its sides on wider screens. */}
+      <div
+        aria-hidden="true"
+        data-testid="hub-nav-fill"
+        className="pointer-events-none fixed bottom-0 left-0 right-0 z-[15] h-[calc(2.75rem_+_env(safe-area-inset-bottom))] bg-background"
+      />
+      <nav aria-label="Primary" className="fixed bottom-0 left-1/2 z-20 w-full max-w-md -translate-x-1/2 bg-transparent px-3 pb-[calc(0.5rem_+_env(safe-area-inset-bottom))] pt-1">
       <div className="flex items-center justify-between rounded-[26px] bg-surface px-1.5 py-2.5">
         <ToolbarItem label="Menu" active={active === 'menu'} onClick={onGames} icon={ICON_MENU} />
         <ToolbarItem label="Games" active={active === 'games'} onClick={onGames} icon={ICON_GAMES} />
@@ -29,6 +44,7 @@ export function HubToolbar({ onGames, onAccount, active = 'games' }: Props) {
         <ToolbarItem label="Chat" comingSoon icon={ICON_CHAT} />
       </div>
     </nav>
+    </>
   );
 }
 
