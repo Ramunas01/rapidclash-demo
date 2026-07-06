@@ -520,5 +520,40 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       }, { timeout: 2000 });
       expect(screen.queryByTestId('card-back')).toBeNull(); // no lingering face-down card at the reveal
     });
+
+    it('newest card renders ON TOP: a multi-card hand stacks ASCENDING (A over 10 over 8)', () => {
+      const view = inPlayView({
+        hands: {
+          pid: { cards: [c('8'), c('10', '♥'), c('A')], done: false }, // dealt 8, then 10, then A
+          bob: { cards: [c('K', '♣')], done: false },
+        },
+      });
+      render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view, legalMoves: ['hit', 'stand'] })} />);
+      const z = within(screen.getByTestId('own-hand')).getAllByTestId('card').map((el) => Number(el.style.zIndex));
+      expect(z).toHaveLength(3);
+      // Each later (newer) card sits OVER the previous — the standard overlapping fan.
+      expect(z[0]).toBeLessThan(z[1]);
+      expect(z[1]).toBeLessThan(z[2]);
+    });
+
+    it('after the reveal flip the (face-up) hole card sits OVER the first card, and hits stack over in deal order', async () => {
+      const terminal = inPlayView({
+        hands: {
+          pid: { cards: [c('K'), c('Q', '♥')], done: true },
+          bob: { cards: [c('9', '♣'), c('8', '♦'), c('4')], done: true }, // first + hole + one hit
+        },
+        winner: 'pid',
+      });
+      const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: [] })} />);
+      rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
+      await waitFor(() => {
+        expect(within(screen.getByTestId('opp-hand')).getAllByTestId('card')).toHaveLength(3);
+      }, { timeout: 2000 });
+      // DOM order = deal order: first card, the revealed hole, the hit. Ascending z → hole OVER first,
+      // hit OVER hole (the face-down "underneath" exception ends the moment it flips).
+      const z = within(screen.getByTestId('opp-hand')).getAllByTestId('card').map((el) => Number(el.style.zIndex));
+      expect(z[0]).toBeLessThan(z[1]); // revealed hole over the first card
+      expect(z[1]).toBeLessThan(z[2]); // hit over the hole, in deal order
+    });
   });
 });
