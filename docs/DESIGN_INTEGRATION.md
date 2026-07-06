@@ -10,6 +10,18 @@ How to bring the design team's Base44 export into `apps/web` for the investor de
 - **Server stays authoritative:** game state arrives already redacted (`viewFor`). UI must reveal an opponent's hidden move/result only at `match.end` — never assume it holds that data earlier.
 - **Convert JSX → TSX:** type props against `@rapidclash/shared`; no `any` for wire data.
 
+## Mobile chrome (background, safe-area, browser bars)
+
+One continuous dark surface, edge to edge, with the browser bars blending in. These landed as separate fixes — keep them together so seams don't return:
+
+- **One canonical background — `#0B0B0B`.** The single page background is the `--background` token (`0 0% 4.3%` = `#0B0B0B`), applied via `bg-background` to `html`/`body`, page containers, and every lobby/game section. **Never hardcode a near-black page-background hex** — one token, so it can't drift. Floating panels/cards use `--rc-surface` (`#1a1a2e`) and their own styles; only the page-level background behind everything is `#0B0B0B`.
+- **No seams.** The page scrolls as one uninterrupted `#0B0B0B` surface top → footer — no divider lines or shade steps between sections (e.g. no `border-top` on the footer).
+- **`theme-color: #0B0B0B`** in the viewport meta, matching `--background`, so the browser chrome tints to our background.
+- **`viewport-fit=cover`** in the viewport meta so the background fills the notch/home-indicator zones; pad fixed chrome with `env(safe-area-inset-*)` so content isn't hidden under them.
+- **Body scrolls (no fixed-height shell).** `html`/`body`/root aren't locked to the viewport; full-height sections use `min-height: 100dvh` (not `100vh`) and the header is `position: sticky` — so mobile browsers collapse/restore their toolbars on scroll.
+- **Bottom-nav solid fill.** The fixed bottom nav (`HubToolbar`) is a transparent bar around a floating `bg-surface` pill; behind/below it sits a **full-viewport-width `bg-background` fill**, `pointer-events-none`, z-ordered **content < fill < pill**, its top at the pill's **midline** (so the rounded corners have solid behind them) and its bottom reaching the safe-area inset. Stops content peeking through the gap/corners and gives Safari's bottom bar a constant colour to sample.
+- **Safari expectation.** `theme-color` + a constant `#0B0B0B` bottom edge make Safari *blend to* our colour (its translucency stays on top) — steady and matching, **not** pixel-identical. That's as close as a browser tab allows; don't log it as a bug.
+
 ## Foundation (do first, one PR)
 
 Before any screen is touched, stand up the design system in `apps/web` (which currently has no Tailwind/shadcn):
