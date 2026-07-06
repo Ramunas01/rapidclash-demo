@@ -490,6 +490,18 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
 
   // ── Reveal choreography (continuous, in place) ──
   describe('Reveal choreography: hole card flips in place, z-order, no unmount', () => {
+    it('the face-down hole card and both deck piles use the shared card-back / deck component (vector)', () => {
+      render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: [] })} />);
+      // The hole card's face-down side is the shared CardBack (bolt watermark), not an inline gradient.
+      const hole = within(screen.getByTestId('opp-hand')).getByTestId('card-back');
+      expect(within(hole).getByTestId('card-back-art')).toBeInTheDocument();
+      expect(within(hole).getByTestId('card-back-bolt')).toBeInTheDocument();
+      // One shared deck pile per player.
+      expect(screen.getAllByTestId('deck-pile')).toHaveLength(2);
+      // No raster in the card visuals — SVG/CSS only, so it stays crisp through the flip/deal.
+      expect(screen.getByTestId('hub-board').querySelector('img')).toBeNull();
+    });
+
     it('the face-down hole card sits UNDER the first opponent card (z-order fixed before the deal)', () => {
       render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: [] })} />);
       const opp = within(screen.getByTestId('opp-hand'));
