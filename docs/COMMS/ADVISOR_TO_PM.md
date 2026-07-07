@@ -1,6 +1,38 @@
 # Advisor → PM (append-only; newest on top)
 
-### 2026-07-07#2 — Open Games list restyle (recessed navy panel)            [OPEN]
+### 2026-07-07#3 — Footer + Bring-a-Rival restyle (Designer)            [OPEN]
+From: Advisor   Re: Designer request — footer area + Bring a Rival
+
+Essence: cosmetic-only restyle — four small changes making the footer/Bring-a-Rival match the site's borderless-navy + white-text + brand-purple-accent theme. No logic, no wire/redaction/money surface touched. Two shared files (`BringARival.tsx`, `HubFooter.tsx`) + one test. Independent of the Open Games ticket (#2) — different files — so this can run on the second agent concurrently, or queue behind it.
+
+Sanity check: all four claims verified against code. Three notes:
+
+1. Use `text-foreground` for every "→ white" (it's #f4f4f5, the exact token the "Bring a Rival" heading already uses) — keeps it tokenized and pixel-matched to the heading, not a raw `text-white`.
+2. Part of claim #3 is already done: "See how it works" is already `text-brand` (purple) — no change needed there; flagging so it doesn't look like the ticket missed it.
+3. The X→"Twitter" relabel is a deliberate logo/label mismatch (keep the X glyph, label reads "Twitter") — implement as asked, don't "correct" it back. It also moves a test-id (see below).
+
+Changes — `apps/web/src/components/hub-shared/BringARival.tsx`:
+1. Line 10: delete `border border-border` (keep `bg-surface` — it's already the navy panel). Borderless.
+2. Line 15: description `text-muted-foreground` → `text-foreground` (white). Heading and button unchanged.
+
+Changes — `apps/web/src/components/hub-shared/HubFooter.tsx`:
+3. Line 9 (SOCIALS): `label: 'X'` → `label: 'Twitter'`; keep the X-logo icon as-is. ⚠ The test-id is derived from the label (`home-social-${label.toLowerCase()}`), so this becomes `home-social-twitter` — update `apps/web/src/test/HomeHub.test.tsx:123` (`home-social-x` → `home-social-twitter`).
+4. Line 42 `<b>`: `text-foreground` → `text-brand` (purple lead-in "Provably fair, by design.").
+5. Line 41 `<p>` base class: `text-muted-foreground` → `text-foreground` (the body sentence goes white; the `<b>` and the link keep their own colors). Line 43 link span stays `text-brand` — no change.
+6. Line 49 footer links: `text-muted-foreground` → `text-foreground` (all seven white).
+
+Out of scope (leave as-is): the 18+ and copyright lines (`text-[#5b5b63]`, lines 55/60) — Designer didn't ask to touch them. (Separately, they're hardcoded hex that should someday be tokens — not this ticket.)
+
+Done when:
+- Bring a Rival has no rim; description is white and matches the heading; button unchanged.
+- Middle social button reads [X logo] Twitter; Discord/Telegram unchanged; HomeHub.test.tsx updated to `home-social-twitter` and green.
+- Provably-fair lead-in is brand purple, the body sentence is white, "See how it works" stays purple.
+- All seven footer links are white.
+- Only token classes used (`text-foreground`, `text-brand`); no new hardcoded hex; navy panels stay `bg-surface`. Full test suite passes.
+
+Ask: ticket to an agent as an independent unit (safe to parallel with #2). No decision needed from Owner/Designer — purely cosmetic.
+
+### 2026-07-07#2 — Open Games list restyle (recessed navy panel)            [ANSWERED]
 From: Advisor   Re: Designer request — Open Games list
 
 Sanity-check result: all three claims verified against the code, premise is correct. The one file to touch is `apps/web/src/components/hub-shared/OpenGames.tsx` — specifically the shared `TickerBody`, `EmptyTicker`, and `TickerRow`. Because both `OpenGamesTicker` (signed-in) and `PublicOpenGamesTicker` (logged-out) render through these, one edit covers the Home hub and every game hub, both states. No doc pins this styling — no spec edit needed. Self-contained file, not the App.tsx collision zone → good for a standalone/second agent.
