@@ -376,4 +376,23 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
     expect(screen.getByTestId('chess-board')).toBeInTheDocument(); // stays on the frozen final position
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull(); // no heavy overlay, no auto-rematch UI
   });
+
+  // ── Bug 1: JOIN gating — Open Games allows JOIN in the settled result view (match already deleted) ──
+  const CHALLENGE = { matchId: 'j1', ownerName: 'rival', stake: 10, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'blitz5' };
+
+  it('Bug 1: the settled post-game result view still allows JOIN on Open Games (no "one match at a time")', async () => {
+    // The match is settled/deleted server-side once ended, so idling on the result board must NOT
+    // block joining another open game — JOIN stays open exactly as it is in plain idle.
+    renderToChessResult({ type: 'win', winner: 'alice' }, { challengesByGame: { chess: [CHALLENGE] }, opponentName: 'rival' });
+    await waitFor(() => expect(screen.getByTestId('home-join-j1')).toBeInTheDocument());
+    expect(screen.getByTestId('home-join-j1')).not.toBeDisabled();
+    expect(screen.queryByText(/one match at a time/i)).toBeNull();
+  });
+
+  it('Bug 1: JOIN is still correctly blocked while actually in a match', async () => {
+    render(<ChessHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({}), legalMoves: asLegal([]), challengesByGame: { chess: [CHALLENGE] } })} />);
+    await waitFor(() => expect(screen.getByTestId('home-join-j1')).toBeInTheDocument());
+    expect(screen.getByTestId('home-join-j1')).toBeDisabled(); // in-match → one commitment at a time
+    expect(screen.getByText(/one match at a time/i)).toBeInTheDocument();
+  });
 });

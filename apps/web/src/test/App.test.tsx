@@ -504,4 +504,26 @@ describe('App — round-scoped state wiped as one unit on the destroy events (PL
     expect(screen.queryAllByTestId('card')).toHaveLength(0);
     expect(screen.queryByTestId('own-hand')).toBeNull();
   });
+
+  // Bug 2: the search deadline is search-scoped — it must not outlive the match it resolved into and
+  // re-arm the expiry effect, flashing "No opponent found" while the player idles on the finished round.
+  it('a search deadline never survives its match: search → match → end → idle shows no "No opponent found"', async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
+    const sock = sockets[0];
+    act(() => { sock.readyState = 1; sock.onopen?.(); });
+    fireEvent.click(await screen.findByTestId('home-tile-coinflip'));
+    fireEvent.click(await screen.findByTestId('hub-bet-10'));
+    fireEvent.click(screen.getByTestId('hub-play'));
+    // A real in-flight search with a SHORT server deadline…
+    deliver(sock, 'queue.waiting', { gameId: 'coinflip', matchId: 'q1', since: 0, expiresAt: Date.now() + 150 });
+    await waitFor(() => expect(screen.getByTestId('hub-waiting-countdown')).toBeInTheDocument());
+    // …that resolves into a match, which then ENDS (match-start clears the stale deadline).
+    deliver(sock, 'match.start', { matchId: 'm1', opponent: 'bob-id', gameId: 'coinflip', state: COINFLIP_DONE });
+    deliver(sock, 'match.end', { outcome: { type: 'win', winner: 'pid' }, settlement: { delta: 19, newBalance: 1019 } });
+    await waitFor(() => expect(screen.getByTestId('hub-play')).not.toBeDisabled(), { timeout: 2500 });
+    // Idle PAST the original 150 ms search deadline — the stale value must not re-arm the expiry.
+    await new Promise((r) => setTimeout(r, 300));
+    expect(screen.getByTestId('hub-no-opponent').textContent ?? '').not.toContain('No opponent found');
+  });
 });

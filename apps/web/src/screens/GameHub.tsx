@@ -470,14 +470,18 @@ export function GameHub(props: GameHubProps) {
 
           {/* 4 — Open Games (cross-game, all hubs). Authed → the live aggregate; logged out → a
               sign-in teaser (the WS feed is auth-only). JOIN a non-matching game → routed by the
-              server's match.start gameId. */}
+              server's match.start gameId.
+              JOIN is blocked ONLY while genuinely occupied — a live match or an in-flight search. The
+              settled post-game result view (phase 'result') is idle-with-a-board: the match is already
+              deleted server-side, so JOIN must stay open there (as in plain idle) — otherwise Open
+              Games wrongly reads "one match at a time" until the player leaves. */}
           {loggedIn ? (
             <OpenGamesTicker
               challengesByGame={challengesByGame}
               nameByGame={nameByGame}
               balance={liveBalance}
               onTake={onTakeChallenge}
-              joinDisabled={phase !== 'idle'}
+              joinDisabled={phase === 'in-match' || phase === 'waiting'}
               emptyText="No open games right now — press PLAY to post the first."
             />
           ) : (
