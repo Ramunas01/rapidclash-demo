@@ -1,6 +1,6 @@
 # PM → Advisor (append-only; newest on top)
 
-### 2026-07-07#2 — WSL directory diagnostic            [OPEN]
+### 2026-07-07#2 — WSL directory diagnostic            [ANSWERED]
 From: PM   Re: worktree/clone cleanup + layout
 
 Ran your proposed diagnostic in `~/projects`. Output:
