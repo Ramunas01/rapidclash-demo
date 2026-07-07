@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { motion } from 'framer-motion';
 import { Chessboard } from 'react-chessboard';
 import type { Square } from 'react-chessboard/dist/chessboard/types';
 import { Chess } from 'chess.js';
+import type { Outcome } from '@rapidclash/shared';
 import { cn } from '@/lib/utils';
 import { play, installUnlockOnFirstGesture } from '../lib/sound.js';
 import { formatClock } from '../format.js';
 import type { ChessView, ChessMove } from '../App.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
+import { outlineForOutcome, outlineClasses, useDelayedFlag } from './hub-shared/slotReveal.js';
 
 /** Board palette tuned to the lavender/purple design system (frame: white + light-purple). */
 const LIGHT_SQUARE = '#ffffff';
@@ -239,12 +242,85 @@ function ChessBoard({ playerId, gameState, legalMoves, onMove }: GameAreaArgs) {
   );
 }
 
+// ── Lightweight chess result popup (replaces the shared heavy overlay) ─────────────────────────
+// Chess opts OUT of GameHub's ResultOverlay (suppressResultOverlay) — no blur, no confetti, no
+// wallet/balance/trophy/X, board behind stays sharp. Instead a small native navy panel (same
+// surface as the play panel) fades in over the frozen board with ONE line + the outcome outline,
+// then auto-dismisses on its own animation. The lasting indicator is the own bar outline
+// (ownBarResult) — this popup is the transient announcement. Timing is chess-specific: 6.0 s total.
+//
+// All outcomes: 0.5 s in → … → 0.5 s out, 6.0 s end to end (absolute-offset timers, so fake-timer
+// tests fire reliably). Win is the two-phase bar pattern applied to the panel: it fills GREEN for the
+// first beat, then the green fades back to navy leaving the "You Won" text + green outline.
+const POPUP_IN_S = 0.5;
+const POPUP_OUT_S = 0.5;
+const POPUP_TOTAL_MS = 6000; // fully gone (unmount) at 6.0 s
+const POPUP_FADE_OUT_AT_MS = 5500; // start the 0.5 s fade-out → gone at 6000
+const WIN_FILL_FADE_AT_MS = 3000; // in (500) + green hold (2500) → green fill fades to navy
+const WIN_FILL_GONE_AT_MS = 3500; // green fade (500) complete → unmount the fill layer
+
+/** The one-line result text: Win → "You Won"; Loss → "[opponent] Won"; Draw → "Draw". Driven
+ *  strictly by the server outcome + this player's id (never a client-side winner recompute). */
+function chessResultLine(verdict: 'win' | 'lose' | 'draw', opponentName?: string | null): string {
+  if (verdict === 'win') return 'You Won';
+  if (verdict === 'draw') return 'Draw';
+  return `${opponentName || 'Opponent'} Won`;
+}
+
+function ChessResultPopup({ outcome, playerId, opponentName }: { outcome: Outcome; playerId: string | null; opponentName?: string | null }) {
+  const verdict = outlineForOutcome(outcome, playerId); // win | lose | draw | null (void → no popup)
+  const gone = useDelayedFlag(true, POPUP_TOTAL_MS);
+  const fadingOut = useDelayedFlag(true, POPUP_FADE_OUT_AT_MS);
+  const winFillFading = useDelayedFlag(true, WIN_FILL_FADE_AT_MS);
+  const winFillGone = useDelayedFlag(true, WIN_FILL_GONE_AT_MS);
+  if (!verdict || gone) return null;
+  const isWin = verdict === 'win';
+  return (
+    // Not a modal: no backdrop, pointer-events-none, so the frozen board behind stays sharp + visible.
+    <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
+      <motion.div
+        data-testid="chess-result-popup"
+        data-outcome={verdict}
+        initial={{ opacity: 0, scale: 0.96 }}
+        animate={{ opacity: fadingOut ? 0 : 1, scale: 1 }}
+        transition={{ duration: fadingOut ? POPUP_OUT_S : POPUP_IN_S, ease: 'easeOut' }}
+        className={cn('relative overflow-hidden rounded-[18px] bg-surface px-8 py-4 shadow-xl', outlineClasses(verdict))}
+      >
+        {/* Win: a GREEN fill layer over the navy panel (same as the own-bar win fill), held then faded
+            back to navy — leaving the "You Won" text + the green outline. Loss/draw: navy the whole way. */}
+        {isWin && !winFillGone && (
+          <motion.span
+            aria-hidden="true"
+            data-testid="chess-result-fill"
+            initial={{ opacity: 1 }}
+            animate={{ opacity: winFillFading ? 0 : 1 }}
+            transition={{ duration: POPUP_OUT_S, ease: 'easeOut' }}
+            className="pointer-events-none absolute inset-0 bg-success"
+          />
+        )}
+        <span data-testid="chess-result-text" className={cn('relative z-10 text-lg font-black uppercase tracking-wide', isWin ? 'text-white' : 'text-foreground')}>
+          {chessResultLine(verdict, opponentName)}
+        </span>
+      </motion.div>
+    </div>
+  );
+}
+
 /** The Chess game-area slot: ONE full-bleed board in every phase (never empty). Idle/searching →
  *  the starting-position preview; in-match → the live board; post-game → the frozen final. The
  *  board itself gates interactivity on legalMoves, so the preview and frozen states are static.
+ *  On match end the lightweight result popup fades in OVER the frozen final position (the board
+ *  stays sharp — no modal); the lasting green/red/orange indicator is the own bar (ownBarResult).
  *  The arena owns its surface (no grey table card). */
 function ChessPanel(args: GameAreaArgs) {
-  return <ChessBoard {...args} />;
+  return (
+    <div className="relative">
+      <ChessBoard {...args} />
+      {args.phase === 'result' && args.outcome && (
+        <ChessResultPopup outcome={args.outcome} playerId={args.playerId} opponentName={args.opponentName} />
+      )}
+    </div>
+  );
 }
 
 /**
@@ -257,5 +333,9 @@ export function ChessHubScreen(props: GameHubScreenProps) {
   // Unlock audio on the first user gesture (idempotent) — the demo's first sound is the chess
   // move thump, so this hub is an acceptable early mount point (App.tsx is off-limits here).
   useEffect(() => { installUnlockOnFirstGesture(); }, []);
-  return <GameHub gameId="chess" gameName="Chess" renderGameArea={ChessPanel} renderSlotAside={ChessSlotAside} {...props} />;
+  // Chess opts OUT of the shared heavy result overlay (no blur/confetti/wallet/balance/trophy/X) —
+  // it shows the lightweight in-hub popup over the frozen board instead (ChessPanel) — and opts IN
+  // to the shared own-bar outline (ownBarResult), the persistent green/red/orange indicator that
+  // lives past the popup and clears only on PLAY/leave (round-scoped-state rule).
+  return <GameHub gameId="chess" gameName="Chess" renderGameArea={ChessPanel} renderSlotAside={ChessSlotAside} suppressResultOverlay ownBarResult {...props} />;
 }
