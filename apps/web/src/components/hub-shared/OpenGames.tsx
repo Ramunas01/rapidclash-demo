@@ -24,7 +24,7 @@ function TickerRow({ gameId, c, nameByGame, onJoin, joinDisabled = false, clone 
   return (
     <div
       data-testid={clone ? undefined : `home-row-${c.matchId}`}
-      className="flex items-center gap-3 border-t border-[#1e1e1e] px-3.5 py-2.5 first:border-t-0"
+      className="flex items-center gap-3 border-t border-brand/40 px-3.5 py-2.5 first:border-t-0"
     >
       <div className="h-[54px] w-10 shrink-0 overflow-hidden rounded-lg bg-background">
         {art && <img src={art} alt="" aria-hidden="true" className="h-full w-full object-cover" />}
@@ -57,7 +57,7 @@ function TickerRow({ gameId, c, nameByGame, onJoin, joinDisabled = false, clone 
 function TickerBody({ count, rows, clones }: { count: number; rows: ReactNode; clones: ReactNode }) {
   const animate = count > SCROLL_THRESHOLD;
   return (
-    <div className="overflow-hidden rounded-[14px] border border-border bg-card" style={{ maxHeight: 320 }}>
+    <div data-testid="home-ticker-body" className="overflow-hidden rounded-[14px] bg-surface shadow-[inset_0_0_24px_8px_hsl(var(--background))]" style={{ maxHeight: 320 }}>
       <div className={animate ? 'rc-ticker-anim' : undefined}>
         {rows}
         {animate && <div aria-hidden="true">{clones}</div>}
@@ -79,7 +79,7 @@ function TickerHeader() {
 
 function EmptyTicker({ text }: { text: string }) {
   return (
-    <div className="rounded-[14px] border border-border bg-card px-4 py-6">
+    <div data-testid="home-ticker-empty" className="rounded-[14px] bg-surface px-4 py-6 shadow-[inset_0_0_24px_8px_hsl(var(--background))]">
       <p className="text-center text-xs text-muted-foreground">{text}</p>
     </div>
   );
