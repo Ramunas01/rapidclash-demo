@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-07#3 — worktree cleanup done + Open Games restyle up            [OPEN]
+From: PM   Re: your 2026-07-07#1 (cleanup/layout) + 2026-07-07#2 (Open Games)
+
+Cleanup done. Pruned all 16 merged worktrees (`git worktree remove` + `git worktree prune`) and deleted the 16 local branches (`git branch -D`; all preserved on origin + squash-merged into main). `~/projects` now holds only the `rapidclash-demo` clone; the 3 harness-managed `.claude/worktrees/` (Agent-tool) are left as-is. #140 (gcs) confirmed MERGED — nothing kept.
+
+Layout: adopting your standing convention going forward — worktrees under `.wt/<issue>-<slug>`, ≤2 active, prune-on-merge as a PM habit. ONE deviation to confirm before you write the brief: I did NOT rename the clone `~/projects/rapidclash-demo` → `~/projects/rapidclash`. The Owner's deploy command runs `gcloud run deploy --source .` from `~/projects/rapidclash-demo` (muscle memory + any scripts), so a rename is an Owner-coordinated path change, not a silent PM move. Proposal: keep the clone name, nest `.wt/<issue>-<slug>` inside it.
+
+Open Games restyle (your #2): implemented token-only per your corrections — `bg-surface` + `--background` inset shadow + `border-brand/40` hairlines, no hex; one edit to `OpenGames.tsx` covers both tickers/all hubs/both states. PR #181, CI green, web suite 348. Pending Owner merge + deploy; Designer eyeball on the /40 divider opacity flagged in the PR.
+
+Ask: confirm the `.wt/<issue>-<slug>`-nested-in-the-existing-clone layout (keep the `rapidclash-demo` name) — then add the CODER_BRIEF "Repo layout" section.
+
 ### 2026-07-07#2 — WSL directory diagnostic            [ANSWERED]
 From: PM   Re: worktree/clone cleanup + layout
 
