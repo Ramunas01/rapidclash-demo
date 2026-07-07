@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import type { Outcome } from '@rapidclash/shared';
 import type { BaccaratView, BaccaratHand, BaccaratCard, GameView } from '../App.js';
+import { CardBack } from '../components/cards/CardBack.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
 
 const HOLD_MS = 2200;
@@ -20,7 +21,9 @@ function DiceIdleLike({ phase }: { phase: GameAreaArgs['phase'] }) {
 
 function PlayingCard({ card }: { card?: BaccaratCard }) {
   if (!card) {
-    return <div data-testid="card-back" className="flex h-16 w-11 items-center justify-center rounded-md border border-white/15 bg-gradient-to-br from-purple-700 to-indigo-900 text-xl text-white/30 shadow">✦</div>;
+    // Face-down = the shared card back (SVG/CSS, one source of truth — see docs/CARD_BACK.md), sized
+    // to the Baccarat card with its outer radius matched to the faces (rounded-md). No bespoke back.
+    return <CardBack className="h-16 w-11 rounded-md" />;
   }
   return (
     <div data-testid="card" className={cn('flex h-16 w-11 flex-col items-center justify-center rounded-md border border-black/10 bg-white font-bold shadow', isRed(card.suit) ? 'text-red-600' : 'text-gray-900')}>
