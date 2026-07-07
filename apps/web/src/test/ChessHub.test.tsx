@@ -182,14 +182,66 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
     expect(opp.getAttribute('data-low-time')).toBe('true');
   });
 
-  it('Pre-game: the board is empty (no pieces) and carries no instructional text', async () => {
-    const { container } = render(<ChessHubScreen {...baseProps()} />);
+  // The visual order of the rendered squares tells us the orientation: react-chessboard renders
+  // rows top→bottom, so white-orientation's first square is a8 (top-left) and last is h1; black
+  // flips it (first h1, last a8). No layout needed — pure DOM order.
+  const squareOrder = (c: HTMLElement): string[] =>
+    Array.from(c.querySelectorAll('[data-square]')).map((el) => el.getAttribute('data-square')!);
+
+  it('Fresh idle: the board is NEVER empty — the full starting position, white at the bottom, static (no interaction, no on-board text)', async () => {
+    const onMakeMove = vi.fn();
+    const { container } = render(<ChessHubScreen {...baseProps({ onMakeMove })} />);
     await screen.findByTestId('hub-tc-rapid10'); // wait for /games
-    // No pieces and no on-board helper copy before the match starts.
-    expect(container.querySelector('[data-piece]')).toBeNull();
+
+    // The starting position is shown (all 32 pieces), not an empty grid.
+    expect(container.querySelectorAll('[data-piece]').length).toBe(32);
+    // White at the bottom: a8 first (top-left), h1 last (bottom-right).
+    const order = squareOrder(container);
+    expect(order[0]).toBe('a8');
+    expect(order[order.length - 1]).toBe('h1');
+
+    // Static: no legalMoves (no live game) → a click never produces a move, no selection highlight.
+    fireEvent.click(sq(container, 'e2'));
+    fireEvent.click(sq(container, 'e4'));
+    expect(onMakeMove).not.toHaveBeenCalled();
+
+    // No on-board helper copy.
     expect(container.textContent ?? '').not.toMatch(/tap a piece/i);
     expect(container.textContent ?? '').not.toMatch(/pick a bet/i);
     expect(container.textContent ?? '').not.toMatch(/waiting for an opponent…/i);
+  });
+
+  it('Live as black: a game where the player is black flips the board (black at the bottom) and unlocks interaction', () => {
+    const onMakeMove = vi.fn();
+    const { container } = render(
+      // players[0] is bob → alice (playerId) is black; her legal opening replies drive interaction.
+      <ChessHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ players: ['bob', 'alice'] }), legalMoves: asLegal(OPENING), onMakeMove })} />,
+    );
+    // Black at the bottom: the square order is flipped (h1 first, a8 last).
+    const order = squareOrder(container);
+    expect(order[0]).toBe('h1');
+    expect(order[order.length - 1]).toBe('a8');
+    // Interactive: a server-issued legal move sends {from,to}.
+    fireEvent.click(sq(container, 'e2'));
+    fireEvent.click(sq(container, 'e4'));
+    expect(onMakeMove).toHaveBeenCalledWith({ from: 'e2', to: 'e4' });
+  });
+
+  it('Post-game idle: the finished position stays frozen and static (gameState retained, no live match, no legalMoves)', () => {
+    // The round-scoped-state rule retains gameState after the match ends until PLAY/leave, so an
+    // idle hub with a retained view shows that final position — kept on the played orientation, static.
+    const FINAL_FEN = 'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2';
+    const onMakeMove = vi.fn();
+    const { container } = render(
+      <ChessHubScreen {...baseProps({ currentMatchId: null, gameState: view({ fen: FINAL_FEN }), legalMoves: asLegal([]), onMakeMove })} />,
+    );
+    // The board renders the retained final position (pieces present), not the empty/starting grid.
+    expect(screen.getByTestId('chess-board')).toBeInTheDocument();
+    expect(container.querySelector('[data-square="e4"] [data-piece]')).not.toBeNull(); // the played e4 pawn
+    // Static: no legalMoves → a click sends nothing (frozen final).
+    fireEvent.click(sq(container, 'e2'));
+    fireEvent.click(sq(container, 'e4'));
+    expect(onMakeMove).not.toHaveBeenCalled();
   });
 
   it('not-your-turn: no legalMoves → a click never produces a move (pieces inert)', () => {

@@ -13,6 +13,11 @@ const LIGHT_SQUARE = '#ffffff';
 const DARK_SQUARE = '#b0a3e6';
 const LOW_TIME_MS = 10_000; // warn under ~10s (spec: "Client (display only)")
 
+/** The standard chess opening position. The board is NEVER empty: with no live game the board falls
+ *  back to this so idle/searching shows the starting position (white at the bottom, static). A live
+ *  game overrides it with the server FEN; a finished game keeps its retained final FEN. */
+const STANDARD_START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
 const PROMOTION_PIECES: { piece: 'q' | 'r' | 'b' | 'n'; label: string; glyph: string }[] = [
   { piece: 'q', label: 'Queen', glyph: '♛' },
   { piece: 'r', label: 'Rook', glyph: '♜' },
@@ -83,26 +88,14 @@ function ChessSlotAside(args: GameAreaArgs, side: 'opponent' | 'own'): ReactNode
   return null;
 }
 
-/** Pre-game / searching board (owner decision): just the empty full-bleed board — no pieces, no
- *  table, no helper text. Real pieces render on match.start. */
-function ChessEmptyBoard() {
-  return (
-    <div className="-mx-4" data-testid="chess-board">
-      <div aria-hidden className="grid grid-cols-8">
-        {Array.from({ length: 64 }, (_, i) => {
-          const dark = (Math.floor(i / 8) + i) % 2 === 1;
-          return <div key={i} className="aspect-square" style={{ backgroundColor: dark ? DARK_SQUARE : LIGHT_SQUARE }} />;
-        })}
-      </div>
-    </div>
-  );
-}
-
 /**
- * The live in-match chess board (full-bleed). Position is server-authoritative (perfect info, no
- * redaction); interaction (click + drag + promotion) is gated by the server-issued legalMoves.
- * No on-board text — clocks live in the slot pills, the picker in the play panel. The slot types
- * legalMoves/onMove as string for the generic games — narrow them back to ChessMove.
+ * The chess board (full-bleed) — never empty. Position is server-authoritative (perfect info, no
+ * redaction); when there is no live game it falls back to the standard opening position so the hub
+ * always shows pieces (idle/searching → starting preview; finished game → its retained final FEN).
+ * Interaction (click + drag + promotion) is gated by the server-issued legalMoves, so it is
+ * automatically STATIC in the preview and the frozen-final states (no moves → nothing draggable,
+ * no selection, no hints). No on-board text — clocks live in the slot pills, the picker in the play
+ * panel. The slot types legalMoves/onMove as string for the generic games — narrow them to ChessMove.
  */
 function ChessBoard({ playerId, gameState, legalMoves, onMove }: GameAreaArgs) {
   const view = gameState as ChessView | null;
@@ -113,9 +106,15 @@ function ChessBoard({ playerId, gameState, legalMoves, onMove }: GameAreaArgs) {
   const [selected, setSelected] = useState<Square | null>(null);
   const [pendingPromotion, setPendingPromotion] = useState<{ from: Square; to: Square } | null>(null);
 
-  const fen = view?.fen ?? null;
+  // FEN fallback → the board is never empty: no game → the opening position; live game → the live
+  // position; finished game (gameState retained) → its final position.
+  const fen = view?.fen ?? STANDARD_START_FEN;
+  // Orientation: a present view → the player's colour (a live/finished game keeps the side it was
+  // played on, flipping for black); no game → white at the player's bottom for the fresh preview.
   const isWhite = view && playerId ? view.players[0] === playerId : true;
   const orientation = isWhite ? 'white' : 'black';
+  // Interactivity ONLY during a live game: no legalMoves (preview / frozen-final) → not my turn →
+  // pieces static, click guards inert, no selection/hints. Nothing extra needed for the static states.
   const isMyTurn = moves.length > 0;
 
   // chess.js is used ONLY for display facts derivable from the FEN (check + the king's square).
@@ -201,24 +200,21 @@ function ChessBoard({ playerId, gameState, legalMoves, onMove }: GameAreaArgs) {
 
   return (
     <div className="relative -mx-4" data-testid="chess-board" style={{ width: boardWidth }}>
-      {fen ? (
-        <Chessboard
-          id="rapidclash-chess-hub"
-          position={fen}
-          boardWidth={boardWidth}
-          boardOrientation={orientation}
-          arePiecesDraggable={isMyTurn}
-          onSquareClick={handleSquareClick}
-          onPieceDrop={handlePieceDrop}
-          customSquareStyles={customSquareStyles}
-          customDarkSquareStyle={{ backgroundColor: DARK_SQUARE }}
-          customLightSquareStyle={{ backgroundColor: LIGHT_SQUARE }}
-          customBoardStyle={{ borderRadius: 0 }}
-          animationDuration={200}
-        />
-      ) : (
-        <div className="aspect-square w-full animate-pulse bg-surface" />
-      )}
+      <Chessboard
+        id="rapidclash-chess-hub"
+        position={fen}
+        boardWidth={boardWidth}
+        boardOrientation={orientation}
+        arePiecesDraggable={isMyTurn}
+        onSquareClick={handleSquareClick}
+        onPieceDrop={handlePieceDrop}
+        customSquareStyles={customSquareStyles}
+        customDarkSquareStyle={{ backgroundColor: DARK_SQUARE }}
+        customLightSquareStyle={{ backgroundColor: LIGHT_SQUARE }}
+        customBoardStyle={{ borderRadius: 0 }}
+        animationDuration={200}
+      />
+
 
       {pendingPromotion && (
         <div data-testid="promotion-picker" className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/70 backdrop-blur-sm">
@@ -243,10 +239,12 @@ function ChessBoard({ playerId, gameState, legalMoves, onMove }: GameAreaArgs) {
   );
 }
 
-/** The Chess game-area slot: an empty full-bleed board pre-match, the live board in-match. The
- *  arena owns its surface (no grey table card). */
+/** The Chess game-area slot: ONE full-bleed board in every phase (never empty). Idle/searching →
+ *  the starting-position preview; in-match → the live board; post-game → the frozen final. The
+ *  board itself gates interactivity on legalMoves, so the preview and frozen states are static.
+ *  The arena owns its surface (no grey table card). */
 function ChessPanel(args: GameAreaArgs) {
-  return args.phase === 'idle' || args.phase === 'waiting' ? <ChessEmptyBoard /> : <ChessBoard {...args} />;
+  return <ChessBoard {...args} />;
 }
 
 /**
