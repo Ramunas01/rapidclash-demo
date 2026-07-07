@@ -11,6 +11,10 @@ import { BringARival } from '../components/hub-shared/BringARival.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
 import hero1 from '../assets/banners/hero-1.webp';
 import hero2 from '../assets/banners/hero-2.webp';
+// Owner test banner (Designer #4 asset), added live to evaluate — carries the money-framing concern
+// the Advisor flagged ("WIN REAL … STAKES" + gold jackpot). Kept LAST so the on-thesis heroes stay
+// the default view. Revert = remove this import + its HERO_SLIDES entry (one line each).
+import heroFront from '../assets/banners/hero-front.webp';
 import boltMark from '../assets/brand/bolt-mark.webp';
 import boltDecor from '../assets/brand/bolt-decor.webp';
 
@@ -192,10 +196,11 @@ const CAT_TITLE: Record<Cat, string> = {
 
 /* ── Hero carousel ─────────────────────────────────────────────────────────── */
 
-const HERO_SLIDES = [hero1, hero2];
+const HERO_SLIDES = [hero1, hero2, heroFront];
 
 /** Promo hero — a swipeable carousel of static play-money banners with the frame's dot
- *  indicator. Two slides ship (the designer allows up to 5), so the indicator is real. */
+ *  indicator. Three slides ship (the designer allows up to 5), so the indicator is real; the
+ *  third is the Owner's test banner (see the heroFront import note). */
 function HeroCarousel() {
   const [index, setIndex] = useState(0);
   const trackRef = useRef<HTMLDivElement>(null);
