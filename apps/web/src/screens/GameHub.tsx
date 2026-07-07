@@ -50,6 +50,10 @@ export interface GameAreaArgs {
   playerId: string | null;
   opponentId: string | null;
   username: string | null;
+  /** The real opponent's display name when known (JOIN path), else null → a neutral "Opponent".
+   *  Lets a game area name the opponent in its own reveal (Chess's "[name] Won" result line).
+   *  Same public alias the slot pill shows — never a hidden identity. */
+  opponentName?: string | null;
   /** Client→server clock offset (ms): add to `Date.now()` to align a display-only animation with
    *  server-authoritative timers — Crash's live altitude must match the altitude the server banks.
    *  Defaults to 0 (no skew) when the payload didn't carry the server clock. */
@@ -393,7 +397,7 @@ export function GameHub(props: GameHubProps) {
 
   // Built once and fed to the game area, the per-game slot asides (chess clocks) and the play action.
   const timeControlBaseMs = timeControl?.options.find((o) => o.id === selectedControl)?.baseMs;
-  const areaArgs: GameAreaArgs = { phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, playerId, opponentId, username, serverClockOffset, timeControlBaseMs, outcome: overlay?.outcome ?? null, drawBeat };
+  const areaArgs: GameAreaArgs = { phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, playerId, opponentId, username, opponentName, serverClockOffset, timeControlBaseMs, outcome: overlay?.outcome ?? null, drawBeat };
   // The bar-level draw outline: on for every game EXCEPT the ones that carry the draw on their own
   // surface (Blackjack → cards + "Push" label). The board still gets the full `drawBeat` via areaArgs.
   const barDrawBeat = suppressDrawBar ? false : drawBeat;

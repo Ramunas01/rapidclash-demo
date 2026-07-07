@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
+import confetti from 'canvas-confetti';
 import { ChessHubScreen } from '../screens/ChessHub.js';
 import type { ChessView, ChessMove, GameView } from '../App.js';
 import type { PlayerClocks, GameMeta } from '@rapidclash/shared';
@@ -265,5 +266,114 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
     await waitFor(() => expect(screen.getByTestId('home-row-c1')).toBeInTheDocument());
     expect(screen.getByTestId('home-stake-c1').textContent).toBe('10¢');
     expect(screen.getByTestId('home-row-game-c1').textContent).toBe('Chess');
+  });
+
+  // ── Chess result: lightweight in-hub popup + persistent bar outline (replaces the heavy overlay) ──
+  type Outcome = NonNullable<Props['lastOutcome']>;
+  // Drive the hub from in-match to the terminal result: render live, then rerender with the match
+  // ended (currentMatchId cleared + the server outcome/settlement present) — chess has no holdResultMs
+  // so the result phase is entered immediately.
+  function renderToChessResult(outcome: Outcome, over: Partial<Props> = {}) {
+    Element.prototype.scrollIntoView = vi.fn();
+    const gameState = view({ fen: START_FEN });
+    const { rerender } = render(<ChessHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: asLegal([]), ...over })} />);
+    rerender(
+      <ChessHubScreen {...baseProps({ currentMatchId: null, gameState, lastOutcome: outcome, lastSettlement: { delta: 0, newBalance: 1000 }, ...over })} />,
+    );
+    return { rerender, gameState };
+  }
+
+  it('Result: NO heavy overlay — no blur/confetti/wallet/balance/trophy/X; the frozen board stays sharp behind', () => {
+    renderToChessResult({ type: 'win', winner: 'alice' });
+    // The shared heavy overlay is suppressed for chess.
+    expect(screen.queryByTestId('hub-result-overlay')).toBeNull(); // no modal/blur backdrop
+    expect(screen.queryByTestId('hub-result-delta')).toBeNull(); // no wallet-change line
+    expect(screen.queryByTestId('hub-result-text')).toBeNull(); // no trophy/heavy result text
+    expect(confetti).not.toHaveBeenCalled(); // no confetti
+    // The frozen board is still mounted and sharp (no blur/darkening).
+    expect(screen.getByTestId('chess-board')).toBeInTheDocument();
+    // The lightweight in-hub popup shows instead.
+    expect(screen.getByTestId('chess-result-popup')).toBeInTheDocument();
+  });
+
+  it.each([
+    [{ type: 'win', winner: 'alice' } as Outcome, /you won/i, 'ring-success'],
+    [{ type: 'win', winner: 'bob' } as Outcome, /rival won/i, 'ring-destructive'], // a loss → opponent's name
+    [{ type: 'draw' } as Outcome, /^draw$/i, 'ring-amber-400'],
+  ])('Result popup: a small native navy panel with the one-line text + the outcome outline (%o)', (outcome, textRe, ringClass) => {
+    renderToChessResult(outcome, { opponentName: 'rival' });
+    const popup = screen.getByTestId('chess-result-popup');
+    expect(popup.className).toContain('bg-surface'); // same navy surface as the play panel — not a modal
+    expect(popup.className).toContain(ringClass); // green / red / orange outcome outline
+    expect(screen.getByTestId('chess-result-text').textContent).toMatch(textRe);
+    expect(popup.getAttribute('data-outcome')).toBe(outcome.type === 'win' ? (outcome.winner === 'alice' ? 'win' : 'lose') : 'draw');
+  });
+
+  it('Result popup: every outcome dismisses on its own animation at 6.0 s', async () => {
+    vi.useFakeTimers();
+    try {
+      renderToChessResult({ type: 'draw' });
+      expect(screen.getByTestId('chess-result-popup')).toBeInTheDocument();
+      await act(async () => { await vi.advanceTimersByTimeAsync(5900); });
+      expect(screen.getByTestId('chess-result-popup')).toBeInTheDocument(); // still there just before 6 s (fading out)
+      await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+      expect(screen.queryByTestId('chess-result-popup')).toBeNull(); // gone at 6.0 s
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('Result popup — win: two-phase green flash (green fill, then fades to navy leaving the text + green outline)', async () => {
+    vi.useFakeTimers();
+    try {
+      renderToChessResult({ type: 'win', winner: 'alice' });
+      // Phase 1 (first beat): the panel is green-filled, "You Won".
+      await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+      expect(screen.getByTestId('chess-result-fill')).toBeInTheDocument();
+      expect(screen.getByTestId('chess-result-text').textContent).toMatch(/you won/i);
+      // Phase 2 (after ~3.5 s): the green fill is gone, the navy panel + green outline + text remain.
+      await act(async () => { await vi.advanceTimersByTimeAsync(3400); });
+      expect(screen.queryByTestId('chess-result-fill')).toBeNull();
+      expect(screen.getByTestId('chess-result-popup').className).toContain('ring-success');
+      expect(screen.getByTestId('chess-result-text').textContent).toMatch(/you won/i);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('Persistent own-bar outline: outlives the 6 s popup and clears on PLAY (round-scoped-state rule)', async () => {
+    vi.useFakeTimers();
+    try {
+      renderToChessResult({ type: 'win', winner: 'alice' });
+      // Settle the bar win-reveal (beat 250 + shared 0.5/2/0.5 = 3000) — staged so each timer's
+      // re-render schedules the next (chained fake timers don't cascade in one big advance).
+      await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(3200); });
+      expect(screen.getByTestId('hub-slot-own').className).toContain('ring-success'); // bar settled to its outline
+      // Run past the popup's 6 s dismissal.
+      await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+      expect(screen.queryByTestId('chess-result-popup')).toBeNull(); // popup gone…
+      expect(screen.getByTestId('hub-slot-own').className).toContain('ring-success'); // …but the own-bar outline persists
+
+      // PLAY (a new game) clears it: arm a bet, then press PLAY.
+      fireEvent.click(screen.getByTestId('hub-bet-10'));
+      fireEvent.click(screen.getByTestId('hub-play'));
+      await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+      expect(screen.getByTestId('hub-slot-own').className).not.toContain('ring-success'); // outline cleared on PLAY
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('Chess draw: the orange "Draw" result on the frozen board — terminal, no auto-rematch', () => {
+    // A chess draw is a TERMINAL result (the popup only shows on match.end), never a mid-match replay:
+    // chess carries no `replays`, so the shared draw→auto-rematch beat (fast/chance games only) never
+    // fires. Refund-both / no-rake is server-authoritative (outcome {type:'draw'}, no winner → core
+    // rakes 0 and refunds; covered in packages/games/chess + core settlement). Here: the presentation.
+    renderToChessResult({ type: 'draw' }, { opponentName: 'rival' });
+    expect(screen.getByTestId('chess-result-text').textContent).toMatch(/^draw$/i);
+    expect(screen.getByTestId('chess-result-popup').className).toContain('ring-amber-400'); // orange
+    expect(screen.getByTestId('chess-board')).toBeInTheDocument(); // stays on the frozen final position
+    expect(screen.queryByTestId('hub-result-overlay')).toBeNull(); // no heavy overlay, no auto-rematch UI
   });
 });
