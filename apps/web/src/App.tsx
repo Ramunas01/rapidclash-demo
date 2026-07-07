@@ -8,7 +8,6 @@ import { GameListScreen } from './screens/GameList.js';
 import { StakeEntryScreen } from './screens/StakeEntry.js';
 import { LobbyScreen } from './screens/Lobby.js';
 import { PlayScreen } from './screens/Play.js';
-import { CoinflipPlayScreen } from './screens/CoinflipPlay.js';
 import { ChessPlayScreen } from './screens/ChessPlay.js';
 import { BlackjackPlayScreen } from './screens/BlackjackPlay.js';
 import { MinesPlayScreen } from './screens/MinesPlay.js';
@@ -1049,9 +1048,10 @@ export function App() {
           return <BlackjackPlayScreen playerId={playerId!} username={username} opponentId={opponentId!} gameState={gameState as BlackjackView | null} legalMoves={legalMoves as string[]} onMove={handleMakeMove} onForfeit={handleForfeit} />;
         if (activeGameId === 'mines')
           return <MinesPlayScreen playerId={playerId!} username={username} opponentId={opponentId!} gameState={gameState as MinesView | null} legalMoves={legalMoves as number[]} onMove={handleMakeMove} onForfeit={handleForfeit} />;
-        return activeGameId === 'coinflip'
-          ? <CoinflipPlayScreen playerId={playerId!} username={username} opponentId={opponentId!} gameState={gameState as CoinflipView | null} legalMoves={legalMoves as string[]} onMove={handleMakeMove} onForfeit={handleForfeit} />
-          : <PlayScreen playerId={playerId!} username={username} opponentId={opponentId!} gameState={gameState as RpsView | null} legalMoves={legalMoves as string[]} onMove={handleMakeMove} onForfeit={handleForfeit} />;
+        // Coinflip is a hub game (coinflip ∈ HUB_GAMES → routes to 'coinflip-hub', never 'play'),
+        // so the old CoinflipPlayScreen was dead — removed. The 'play' route now only serves the RPS
+        // fallback play screen (also only reachable for a non-HUB_GAMES game).
+        return <PlayScreen playerId={playerId!} username={username} opponentId={opponentId!} gameState={gameState as RpsView | null} legalMoves={legalMoves as string[]} onMove={handleMakeMove} onForfeit={handleForfeit} />;
       case 'result':
         return <ResultScreen outcome={lastOutcome!} settlement={lastSettlement!} playerId={playerId ?? undefined} onPlayAgain={goToGameListFromResult} onLeaderboard={goToLeaderboard} />;
       case 'leaderboard':

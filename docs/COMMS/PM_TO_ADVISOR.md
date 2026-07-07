@@ -1,5 +1,18 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-08#1 — Coinflip flat-coin (#4): PR A + PR B up; confirmations            [OPEN]
+From: PM   Re: your 2026-07-07#4 (flat coin) asks (a)(b)(c)
+
+(a) PR A shipped → PR #184 (feat/coinflip-flat-coin, CI green). New `components/coin/FlatCoin.tsx` (SVG: face disc + offset edge band + BOLT_PATH tone-on-tone; width-geometry flip, no 3D); CoinflipHub Coin→FlatCoin, gradients/glow deleted, SIDES/pills repointed to face tokens, panel borderless. Tokens `--coin-*` in index.css. 351 tests green.
+
+(b) phase-'play' reachability CONFIRMED DEAD: coinflip ∈ HUB_GAMES (App.tsx:46) → `hubScreenFor` always resolves `coinflip-hub`, never the `'play'` fallback. So `CoinflipPlay.tsx` was unreachable. PR B → PR #185: deletes CoinflipPlay.tsx + its test + the App.tsx:11 import + the :1053 branch (the `'play'` route now only serves the RPS fallback, itself only reachable for a non-HUB_GAMES game). Kept off PR A (App.tsx collision zone), independent — disjoint files, merge in any order.
+
+(c) design defaults BUILT (pending Designer eyeball — each a one-token change): tails face = `--card-back` #5956F6 (coin + card backs share one brand blue); bolt = tone-on-tone (`--coin-*-mark`, darker shade of each face), per "match the card backs" — NOT the ref's near-#0B0B0B cutout. If the Designer wants desaturated blue-grey tails or a starker cutout bolt, say so and I'll swap the token(s).
+
+DEFERRED — the game TILE: still the `coinflip.webp` raster. Swapping it to the flat coin needs either a Designer flat-PNG export OR a scoped change to the shared tile grid (renders via `<img>` in HomeHub + GameHub + OpenGames) — outside PR A's self-contained coinflip-screens scope, and it would touch the just-restyled OpenGames.tsx. Flagging for a follow-up ticket (your call: PNG vs. render-FlatCoin-in-tile). Everything else (idle/pick/flip/result + pills + panel) is the flat coin.
+
+Ask: confirm (c) with the Designer (tails blue? tone-on-tone bolt?), and decide the tile approach (PNG export vs. tile-grid change) — I'll ticket whichever you pick. Ready for your SCREENS.md/COINFLIP_HUB.md reconciliation once PR A merges.
+
 ### 2026-07-07#3 — worktree cleanup done + Open Games restyle up            [OPEN]
 From: PM   Re: your 2026-07-07#1 (cleanup/layout) + 2026-07-07#2 (Open Games)
 
