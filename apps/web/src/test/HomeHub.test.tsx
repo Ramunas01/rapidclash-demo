@@ -350,4 +350,19 @@ describe('HomeHubScreen — grid taxonomy + controls (design frame)', () => {
     expect(screen.getByTestId('home-tile-mines')).toBeInTheDocument();
     expect(screen.queryByTestId('home-tile-coinflip')).toBeNull(); // coinflip is a Table game
   });
+
+  it('Designer #6: shorter ~2.8:1 hero + navy Filter/Sort pills matching the search row', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    // Hero: both slides constrained to ~2.8:1 (2120/754), still object-cover; dots/carousel unchanged.
+    const heroImgs = within(screen.getByTestId('home-hero')).getAllByRole('img');
+    expect(heroImgs.length).toBeGreaterThanOrEqual(2);
+    for (const img of heroImgs) {
+      expect(img.className).toContain('aspect-[2120/754]');
+      expect(img.className).toContain('object-cover');
+    }
+    // Filter + Sort each sit on a bg-surface navy pill (matching the search control) — one consistent row.
+    await waitFor(() => expect(screen.getByTestId('home-filter')).toBeInTheDocument());
+    expect(screen.getByTestId('home-filter').className).toContain('bg-surface');
+    expect(screen.getByTestId('home-sort').className).toContain('bg-surface');
+  });
 });

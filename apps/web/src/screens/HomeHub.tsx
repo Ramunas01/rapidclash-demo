@@ -214,7 +214,9 @@ function HeroCarousel() {
             key={i}
             src={src}
             alt="RapidClash — Players vs Players, Never the House"
-            className="w-full shrink-0 snap-center object-cover"
+            // Shorter hero (Designer #6): constrain to ~2.8:1 (2120/754) so the content below moves up.
+            // object-cover crops the current ~2:1 hero-*.webp top/bottom until they're re-cropped to 2.8:1.
+            className="aspect-[2120/754] w-full shrink-0 snap-center object-cover"
           />
         ))}
       </div>
@@ -352,7 +354,7 @@ function ControlMenu({
         type="button"
         data-testid={testid}
         onClick={() => setOpen((o) => !o)}
-        className="flex h-11 items-center gap-1.5 rounded-[22px] px-3.5 text-[13px] font-semibold text-muted-foreground transition-colors hover:text-foreground focus:outline-none"
+        className="flex h-11 items-center gap-1.5 rounded-[22px] bg-surface px-3.5 text-[13px] font-semibold text-muted-foreground transition-colors hover:text-foreground focus:outline-none"
       >
         {icon}
         {label}
