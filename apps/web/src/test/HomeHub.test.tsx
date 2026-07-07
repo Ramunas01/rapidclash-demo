@@ -114,13 +114,16 @@ describe('HomeHubScreen', () => {
     expect(container.textContent ?? '').not.toMatch(/\$/);
   });
 
-  it('footer: inert Discord/X/Telegram social row, 18+ kept, Affiliate out, no fake counts', async () => {
+  it('footer: inert Discord/Twitter/Telegram social row, 18+ kept, Affiliate out, no fake counts', async () => {
     render(<HomeHubScreen {...baseProps()} />);
     const footer = await screen.findByTestId('home-footer');
-    // Social row restored (frame 1:1).
+    // Social row restored (frame 1:1). The middle button is a deliberate logo/label mismatch:
+    // the X glyph kept, but the label (and thus the testid) reads "Twitter".
     const discord = within(footer).getByTestId('home-social-discord');
     expect(discord).toBeInTheDocument();
-    expect(within(footer).getByTestId('home-social-x')).toBeInTheDocument();
+    const twitter = within(footer).getByTestId('home-social-twitter');
+    expect(twitter.textContent).toContain('Twitter');
+    expect(within(footer).queryByTestId('home-social-x')).toBeNull(); // old testid gone
     expect(within(footer).getByTestId('home-social-telegram')).toBeInTheDocument();
     // Inert — not a real link/button, marked aria-disabled (no fabricated reach).
     expect(discord.tagName).not.toBe('A');
@@ -134,6 +137,31 @@ describe('HomeHubScreen', () => {
     expect(footer.className).toContain('bg-background');
     expect(footer.className).not.toMatch(/\[#0/); // no inline-hex bg literal
     expect(footer.textContent ?? '').not.toMatch(/\$/);
+  });
+
+  it('footer/Bring-a-Rival restyle (Designer #3): tokens only — purple lead-in, white body + links, borderless rival', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    const footer = await screen.findByTestId('home-footer');
+    // Provably-fair: brand-purple lead-in, white body sentence, "See how it works" stays purple.
+    const lead = within(footer).getByText('Provably fair, by design.');
+    expect(lead.className).toContain('text-brand'); // purple lead-in
+    expect(lead.parentElement?.className).toContain('text-foreground'); // white body sentence
+    expect(within(footer).getByText('See how it works').className).toContain('text-brand');
+    // All seven footer links are white (token), never muted grey.
+    for (const label of ['How it works', 'Provably fair', 'Fees & rake', 'Tournaments', 'Help center', 'Responsible gaming', 'Terms']) {
+      expect(within(footer).getByText(label).className).toContain('text-foreground');
+      expect(within(footer).getByText(label).className).not.toContain('text-muted-foreground');
+    }
+    // Bring a Rival: borderless navy panel, white description matching the heading (no muted grey).
+    const rival = screen.getByTestId('home-rival');
+    const panel = rival.querySelector('div');
+    expect(panel?.className).toContain('bg-surface');
+    expect(panel?.className).not.toMatch(/\bborder\b/); // rim removed
+    const desc = within(rival).getByText(/send a match link/i);
+    expect(desc.className).toContain('text-foreground');
+    expect(desc.className).not.toContain('text-muted-foreground');
+    // No new hardcoded hex introduced by the restyle (tokens only).
+    expect(rival.querySelector('div')?.getAttribute('class') ?? '').not.toMatch(/#[0-9a-f]{6}/i);
   });
 });
 

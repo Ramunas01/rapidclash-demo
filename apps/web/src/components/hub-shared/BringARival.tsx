@@ -7,12 +7,12 @@ import boltDecor from '../../assets/brand/bolt-decor.webp';
 export function BringARival() {
   return (
     <section data-testid="home-rival" aria-label="Bring a rival" className="px-4">
-      <div className="relative overflow-hidden rounded-[14px] border border-border bg-surface px-5 pb-5 pt-[18px]">
+      <div className="relative overflow-hidden rounded-[14px] bg-surface px-5 pb-5 pt-[18px]">
         <div className="pointer-events-none absolute -bottom-[18px] -right-[10px] h-[120px] w-[120px]">
           <img src={boltDecor} alt="" aria-hidden="true" className="h-full w-full object-contain" />
         </div>
         <h3 className="relative text-[17px] font-extrabold">Bring a Rival</h3>
-        <p className="relative mt-1.5 max-w-[74%] text-[12.5px] leading-relaxed text-muted-foreground">
+        <p className="relative mt-1.5 max-w-[74%] text-[12.5px] leading-relaxed text-foreground">
           Send a match link. They join, you both stake, the winner takes the pot.
         </p>
         <button
