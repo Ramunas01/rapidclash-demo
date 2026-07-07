@@ -1,14 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import type { CoinflipView } from '../App.js';
+import { FlatCoin, COIN_FACE_TOKENS } from '../components/coin/FlatCoin.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
-
-/** Coin-face material gradients lifted from the export — gold (heads) / silver (tails). The resting
- *  and pick-phase coin is solid gold with a glow; it only flips to a face at the reveal. */
-const COIN_GOLD = 'linear-gradient(135deg, #c89b3c 0%, #f0c85a 50%, #a07020 100%)';
-const COIN_SILVER = 'linear-gradient(135deg, #9aa0ad 0%, #c8ced8 50%, #7a8090 100%)';
-const COIN_GLOW = '0 0 55px 8px rgba(240,200,90,0.32)';
 
 // Cosmetic pick countdown (seconds). Mirrors the coinflip module's `moveTimeoutMs` (10s) — the
 // SERVER runs the authoritative clock + seeded auto-pick; this is display-only (the Keno/Limbo
@@ -18,43 +12,16 @@ const PICK_SECONDS = 10;
  *  reveal) plays during the hold, then `outcome` arrives at the result phase and lights the outline. */
 const HOLD_RESULT_MS = 1500;
 
+// The H/T pick pills mirror the flat coin's face colours one-to-one (orange heads / card-back-blue
+// tails) — the fill IS the identity cue. Token-driven, shared with FlatCoin (no hardcoded hex).
 const SIDES = [
-  { id: 'heads', label: 'Heads', face: COIN_GOLD },
-  { id: 'tails', label: 'Tails', face: COIN_SILVER },
+  { id: 'heads', label: 'Heads', face: COIN_FACE_TOKENS.heads.face },
+  { id: 'tails', label: 'Tails', face: COIN_FACE_TOKENS.tails.face },
 ] as const;
 
 /** The server's terminal frame carries the flip `result` (stripped pre-terminal by viewFor). */
 function isTerminal(view: CoinflipView | null): boolean {
   return Boolean(view?.result);
-}
-
-/**
- * The coin — solid gold with a soft glow while resting / during the pick window; at the reveal it
- * flips (one-shot spin, re-keyed by the result) and settles on the real face (gold heads / silver
- * tails). It never shows a face pre-terminal — the flip only exists in the match.end payload.
- */
-function Coin({ face }: { face?: 'heads' | 'tails' | null }) {
-  const flipping = face != null;
-  const surface = face === 'tails' ? COIN_SILVER : COIN_GOLD; // resting + heads = gold
-  return (
-    <div className="relative h-32 w-32" style={{ perspective: '900px' }}>
-      <motion.div
-        key={flipping ? `flip-${face}` : 'rest'}
-        aria-hidden
-        initial={flipping ? { rotateY: 0 } : false}
-        animate={flipping ? { rotateY: 1440 } : { rotateY: 0 }}
-        transition={flipping ? { duration: 1.1, ease: [0.2, 0.8, 0.25, 1] } : { duration: 0.3 }}
-        className="flex h-32 w-32 items-center justify-center rounded-full"
-        style={{ background: surface, boxShadow: COIN_GLOW }}
-      >
-        <div className="flex h-[78%] w-[78%] items-center justify-center rounded-full border-[3px] border-white/20">
-          {face && (
-            <span data-testid="coin-face" className="text-sm font-extrabold uppercase tracking-wider text-white/85">{face}</span>
-          )}
-        </div>
-      </motion.div>
-    </div>
-  );
 }
 
 /** Circular pick-deadline countdown (cosmetic — the server runs the authoritative `moveTimeoutMs`
@@ -75,11 +42,11 @@ function CountdownRing({ seconds }: { seconds: number }) {
   );
 }
 
-/** Greyed hero shown in Idle/Waiting — the gold coin, a soft glow, one line. Nothing else. */
+/** Hero shown in Idle/Waiting — the flat heads coin (no glow), one line. Nothing else. */
 function CoinflipIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
   return (
     <div className="flex min-h-[200px] flex-col items-center justify-center gap-4 py-3" data-testid="hub-board">
-      <Coin />
+      <FlatCoin />
       <p className="text-xs font-semibold text-muted-foreground">
         {phase === 'waiting' ? 'Finding a rival…' : 'Place your bet and play.'}
       </p>
@@ -88,7 +55,7 @@ function CoinflipIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
 }
 
 /**
- * The live coin area. Pick window: the gold coin + the circular countdown (H/T selection lives in
+ * The live coin area. Pick window: the flat coin + the circular countdown (H/T selection lives in
  * the player's own slot pill — see renderSlotAside). At terminal the coin flips to the revealed
  * face. The opponent's pick and the flip never exist on the client before match.end (redaction is
  * server-side); the client only choreographs the reveal beats. Scroll-safety: when the round
@@ -139,23 +106,23 @@ function CoinflipBoard({ gameState, serverClockOffset = 0, drawBeat }: GameAreaA
           <CountdownRing seconds={seconds} />
         </div>
       )}
-      <Coin face={coinFace} />
+      <FlatCoin face={coinFace} />
     </div>
   );
 }
 
-/** The Coinflip game-area slot: gold-coin hero in idle/waiting, the live coin board in-match and at
- *  the held result frame (so the flip animates before the board returns to PLAY). */
+/** The Coinflip game-area slot: flat-coin hero in idle/waiting, the live coin board in-match and at
+ *  the held result frame (so the flip animates before the board returns to PLAY). Borderless navy. */
 function CoinflipPanel(args: GameAreaArgs) {
   const live = args.phase === 'in-match' || args.phase === 'result';
   return (
-    <div className="rounded-2xl border border-border bg-surface p-4">
+    <div className="rounded-2xl bg-surface p-4">
       {live ? <CoinflipBoard {...args} /> : <CoinflipIdle phase={args.phase} />}
     </div>
   );
 }
 
-/** A filled side capsule: gold HEADS / grey TAILS. Always shows the face colour. Tappable in the
+/** A filled side capsule: orange HEADS / blue TAILS (mirrors the flat coin). Always shows the face colour. Tappable in the
  *  pick window; static (locked) at the reveal. No dot icon — the fill IS the identity cue.
  *  `selected` rings the capsule in brand PURPLE — the selection language, kept distinct from the
  *  green/red/orange result rings (which act on the whole player bar, not the capsule). */
@@ -270,7 +237,7 @@ function OpponentPill({ args }: { args: GameAreaArgs }) {
 }
 
 /**
- * Coinflip Hub = the shared GameHub + the gold-coin arena. Pick window: a circular countdown + H/T
+ * Coinflip Hub = the shared GameHub + the flat-coin arena. Pick window: a circular countdown + H/T
  * in the player's own slot pill, picks hidden. Reveal staged client-side from match.end (opponent's
  * pick → coin flip → own-pill outline). No server/protocol/viewFor change beyond the module's opt-in
  * per-player pick timer + seeded auto-pick. See docs/COINFLIP_HUB.md.

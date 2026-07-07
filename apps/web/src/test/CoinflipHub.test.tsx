@@ -180,9 +180,10 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
       />,
     );
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
-    // During the hold: the coin flips to the revealed face and the opponent's pick reveals.
+    // During the hold: the coin flips to the revealed face (flat coin — the face is data-coded, not
+    // text) and the opponent's pick reveals.
     await waitFor(() => {
-      expect(screen.getByTestId('coin-face').textContent).toBe('heads');
+      expect(screen.getByTestId('coin-face').getAttribute('data-face')).toBe('heads');
       expect(screen.getByTestId('coin-opp-pick').textContent).toMatch(/tails/i);
     });
     expect(scrollSpy).toHaveBeenCalled(); // brought into view on resolve
@@ -570,7 +571,9 @@ describe('CoinflipHubScreen — choice controls: optimistic purple pick (#160)',
     const { rerender } = render(
       <CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState: r0, legalMoves: ['heads', 'tails'] })} />,
     );
-    expect(screen.queryByTestId('coin-face')).toBeNull(); // pick window — coin has no face
+    // Pick window: the flat coin rests on HEADS (its fixed default — reveals nothing; the round
+    // result is redacted mid-round). It only flips to the real face at the terminal/draw reveal.
+    expect(screen.getByTestId('coin-face').getAttribute('data-face')).toBe('heads');
 
     // A same-side draw resolves round 0 → replays rises to 1, a fresh round 1 opens (its result still
     // redacted), and lastResult carries the drawn flip + both picks. GameHub runs the shared draw beat.
@@ -586,7 +589,7 @@ describe('CoinflipHubScreen — choice controls: optimistic purple pick (#160)',
     // During the beat the coin flips to the drawn face and the opponent's drawn pick reveals — the
     // flip is NOT skipped on a draw (the whole point of #164's flip-on-draw).
     await waitFor(() => {
-      expect(screen.getByTestId('coin-face').textContent).toBe('tails');
+      expect(screen.getByTestId('coin-face').getAttribute('data-face')).toBe('tails');
       expect(screen.getByTestId('coin-opp-pick').textContent).toMatch(/heads/i);
     });
   });
