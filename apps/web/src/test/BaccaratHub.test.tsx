@@ -74,9 +74,9 @@ describe('BaccaratHubScreen', () => {
     render(<BaccaratHubScreen {...baseProps({ currentMatchId: 'm1', gameState: preDeal(), legalMoves: ['reveal'], onMakeMove })} />);
     expect(onMakeMove).toHaveBeenCalledWith('reveal'); // auto-fired
     expect(screen.getByTestId('bac-status').textContent).toMatch(/dealing/i);
-    // own hand face-up (rank visible); opponent face-down placeholders
+    // own hand face-up (rank visible); opponent face-down placeholders (shared CardBack).
     expect(screen.getAllByTestId('card').length).toBe(2);
-    expect(screen.getAllByTestId('card-back').length).toBeGreaterThan(0);
+    expect(screen.getAllByTestId('card-back-art').length).toBeGreaterThan(0);
     expect(screen.getByTestId('hub-board').textContent).toContain('7');
   });
 
@@ -86,7 +86,7 @@ describe('BaccaratHubScreen', () => {
     expect(board).toContain('9'); // my total
     expect(board).toContain('5'); // opponent total
     expect(screen.getByTestId('bac-status').textContent).toMatch(/closer to 9/i);
-    expect(screen.queryByTestId('card-back')).toBeNull(); // nothing hidden anymore
+    expect(screen.queryByTestId('card-back-art')).toBeNull(); // nothing hidden anymore
   });
 
   it('is sanitized: no $ anywhere on the hub', () => {
