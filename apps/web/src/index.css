@@ -58,6 +58,14 @@
     /* Shared card back (SVG/CSS component) — one source of truth (raw hex, used directly). */
     --card-back: #5956f6; /* flat blue-violet inset panel */
     --card-back-mark: #5351e2; /* the bolt watermark — tone-on-tone, a few shades darker */
+    /* Flat coin (SVG component) — face / offset edge-band / tone-on-tone bolt, per side. Heads =
+     * orange; tails = the card-back brand blue so the coin + card backs share one blue. */
+    --coin-heads-face: #f2a63b;
+    --coin-heads-edge: #ed742f; /* darker/burnt orange — the depth band */
+    --coin-heads-mark: #c8761f; /* darker-orange bolt, tone-on-tone */
+    --coin-tails-face: #5956f6; /* = --card-back */
+    --coin-tails-edge: #5351e2; /* = --card-back-mark, darker blue-violet */
+    --coin-tails-mark: #4340c0; /* darker-blue bolt, tone-on-tone */
   }
 
   /* Mirror of :root so the palette stays on-brand if `.dark` is ever toggled. */
@@ -99,6 +107,12 @@
     --rc-surface: 240 28% 14%;
     --card-back: #5956f6;
     --card-back-mark: #5351e2;
+    --coin-heads-face: #f2a63b;
+    --coin-heads-edge: #ed742f;
+    --coin-heads-mark: #c8761f;
+    --coin-tails-face: #5956f6;
+    --coin-tails-edge: #5351e2;
+    --coin-tails-mark: #4340c0;
   }
 }
 
