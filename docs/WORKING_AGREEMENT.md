@@ -42,3 +42,6 @@ The charter, the ADR log, and the game contract are deliberately rigid. Changing
 ## A note on AI contributors and attribution
 
 The AI agents act through Git identities configured on the WSL machine; CODEOWNERS entries point at the human owner as the accountable reviewer, since GitHub's review gate ultimately rests on accounts the owner controls. Treat CODEOWNERS as "who must approve," not "who typed it." Commit messages should still attribute the agent that produced the work for traceability.
+
+## Comms
+Async non-code coordination uses the repo mailbox and role briefs — see COMMS_PROTOCOL.md.
