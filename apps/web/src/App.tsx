@@ -504,7 +504,14 @@ export function App() {
     };
     const ms = waitingExpiresAt - Date.now();
     if (ms <= 0) {
-      resolveExpiry();
+      // An already-past deadline: fire the failure ONLY if a search is genuinely in flight — the
+      // server can hand a live search an already-expired `expiresAt` and it must still resolve to
+      // "No opponent found" rather than dead-end at 0:00 (#152). If NO search is live (searchingRef
+      // false), this is a STALE remnant that outlived its search — drop it silently, never flash the
+      // failure while idle ("search state is search-scoped; nothing may fire after the search ends" —
+      // Bug 2's stale-value-survives-the-match symptom, belt-and-suspenders behind the match-start clear).
+      if (searchingRef.current) resolveExpiry();
+      else setWaitingExpiresAt(null);
       return;
     }
     const t = setTimeout(resolveExpiry, ms);
@@ -567,6 +574,11 @@ export function App() {
         searchingRef.current = false;
         searchGameRef.current = null;
         setCurrentMatchId(matchId);
+        // The search is over the moment a match forms — drop its deadline so the expiry effect can
+        // never re-arm and flash "No opponent found" after the game ends (search state is
+        // search-scoped; nothing of it may fire once the search resolves into a match). #Bug2.
+        setWaitingExpiresAt(null);
+        setLobbyExpired(false);
         setOpponentId(payload.opponent);
         // Server-authoritative opponent alias — the real name on BOTH the PLAY and JOIN paths
         // (a public alias, not hidden state). Supersedes the JOIN-only ownerName capture below.
@@ -588,7 +600,7 @@ export function App() {
         setGameState(state);
         // On a reload-driven resume, restore match identity + opponent + screen so the
         // user lands back in the live match (these are already set during normal play).
-        if (matchId) setCurrentMatchId(matchId);
+        if (matchId) { setCurrentMatchId(matchId); setWaitingExpiresAt(null); setLobbyExpired(false); }
         if (playerId) {
           const opp = state.players.find((p) => p !== playerId);
           if (opp) setOpponentId(opp);
