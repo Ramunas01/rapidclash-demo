@@ -16,6 +16,11 @@ import { Chess } from 'chess.js';
  *  legally return to the exact starting FEN, so equality is a sound test. */
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
+/** Backstop for player-initiated draw offers (CHESS_DRAW_OFFER.md): a pending offer auto-expires
+ *  after this many of the OFFERER's own moves, so a forgotten offer never lingers (Owner: "implement
+ *  timeout"). Manual Revoke also clears it. Tunable — flagged to the Owner/Advisor to pin. */
+const DRAW_OFFER_EXPIRY_MOVES = 3;
+
 /** Cumulative per-player clocks, declared so the picker is data-driven (CHESS_TIME_CONTROL.md).
  *  Sudden-death for v1 (incrementMs 0); the field exists so Fischer is a later config change. */
 const CHESS_TIME_CONTROL: NonNullable<GameModule['meta']['timeControl']> = {
@@ -63,6 +68,11 @@ interface ChessState {
   clock?: PlayerClocks;
   /** Present only when the match ended via forfeit, bypassing normal play. */
   forcedOutcome?: Outcome;
+  /** Player-initiated draw offers (CHESS_DRAW_OFFER.md). A player id present here holds an active
+   *  offer; the value is that offerer's remaining own-move backstop (DRAW_OFFER_EXPIRY_MOVES),
+   *  decremented on each of their moves and cleared at 0. Public (viewFor exposes it — an offer is
+   *  public by design). The draw completes the instant BOTH players hold an active offer. */
+  drawOffers?: Partial<Record<PlayerId, number>>;
 }
 
 function cast(state: GameState): ChessState {
@@ -169,6 +179,16 @@ export const chessModule: GameModule = {
       fen: chess.fen(),
       history: [...(s.history ?? []), san],
     };
+    // Backstop expiry: a pending draw offer by the MOVER lapses after DRAW_OFFER_EXPIRY_MOVES of
+    // their own moves so a forgotten offer can't linger (manual Revoke also clears it). The
+    // opponent's offer, if any, is carried through unchanged by the spread above.
+    if (s.drawOffers?.[playerId] !== undefined) {
+      const remaining = s.drawOffers[playerId]! - 1;
+      const offers = { ...s.drawOffers };
+      if (remaining <= 0) delete offers[playerId];
+      else offers[playerId] = remaining;
+      newState.drawOffers = offers;
+    }
     // Advance the cumulative clock from ctx.now (never a wall clock — determinism): drain the
     // mover's budget by the time they used this turn, add the increment (0 in v1), then hand
     // the clock to the side now to move. Only when the match seeded a clock (core-driven).
@@ -225,5 +245,32 @@ export const chessModule: GameModule = {
     }
     const opponent = s.players.find((p) => p !== quitter) as PlayerId;
     return { ...s, forcedOutcome: { type: 'win', winner: opponent } };
+  },
+
+  // Player-initiated draw offers (CHESS_DRAW_OFFER.md). Symmetric: `offer` records the sender's
+  // offer, OR — if the opponent already offered — completes the draw via `forcedOutcome` (reusing
+  // the existing draw terminal: stakes returned, no rake, no rematch). `revoke` clears the sender's
+  // own offer only. The core routes match.drawOffer / match.drawRevoke here generically.
+  drawOffers: {
+    offer(state: GameState, playerId: PlayerId): GameState {
+      const s = cast(state);
+      // The match already ended (forfeit / decisive result) — a late offer is a no-op.
+      if (s.forcedOutcome !== undefined) return s;
+      const opponent = s.players.find((p) => p !== playerId) as PlayerId;
+      const offers = s.drawOffers ?? {};
+      // Both-offered = draw: the opponent already holds an active offer → complete the draw now.
+      if (offers[opponent] !== undefined) {
+        return { ...s, drawOffers: {}, forcedOutcome: { type: 'draw' } };
+      }
+      // Otherwise record the sender's offer with a fresh backstop (idempotent re-offer refreshes it).
+      return { ...s, drawOffers: { ...offers, [playerId]: DRAW_OFFER_EXPIRY_MOVES } };
+    },
+    revoke(state: GameState, playerId: PlayerId): GameState {
+      const s = cast(state);
+      if (s.drawOffers?.[playerId] === undefined) return s; // nothing to revoke
+      const offers = { ...s.drawOffers };
+      delete offers[playerId];
+      return { ...s, drawOffers: offers };
+    },
   },
 };

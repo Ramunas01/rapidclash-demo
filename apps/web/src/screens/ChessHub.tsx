@@ -80,15 +80,43 @@ function ChessClockChip({ clock, pid, testid }: { clock: NonNullable<ChessView['
   return <ClockPill ms={ms} active={isActive} low={ms < LOW_TIME_MS} testid={testid} />;
 }
 
-/** Slot-pill aside for chess: each side's clock — live from the view in-match, or the selected
- *  control's base budget (e.g. 10:00) pre-match. Wired into both pills by the GameHub template. */
+/** The amber "Draw offered" indicator (CHESS_DRAW_OFFER.md). It renders on the OFFERING player's
+ *  bar, keyed off the public `drawOffers` view state, so it shows on BOTH screens next to that
+ *  player's name (the offerer sees it on their own bar; the opponent sees it on the offerer's).
+ *  Reuses the existing draw hue (amber-400 — `slotReveal.tsx:48`). Not pressable; the action is the
+ *  Draw request ⇄ Revoke DRAW button. */
+function DrawOfferedChip({ side }: { side: 'opponent' | 'own' }) {
+  return (
+    <span
+      data-testid={side === 'own' ? 'chess-draw-offered-self' : 'chess-draw-offered-opponent'}
+      className="flex items-center gap-1 rounded-md bg-amber-400/15 px-2 py-1 text-[11px] font-black uppercase tracking-wide text-amber-400 ring-1 ring-amber-400/40"
+    >
+      <span aria-hidden="true">½</span>Draw offered
+    </span>
+  );
+}
+
+/** Slot-pill aside for chess: an optional "Draw offered" indicator + each side's clock — live from
+ *  the view in-match, or the selected control's base budget (e.g. 10:00) pre-match. Wired into both
+ *  pills by the GameHub template. */
 function ChessSlotAside(args: GameAreaArgs, side: 'opponent' | 'own'): ReactNode {
   const view = args.gameState as ChessView | null;
   const pid = side === 'own' ? args.playerId : args.opponentId;
   const testid = side === 'own' ? 'chess-clock-self' : 'chess-clock-opponent';
-  if (view?.clock && pid) return <ChessClockChip clock={view.clock} pid={pid} testid={testid} />;
-  if (args.timeControlBaseMs != null) return <ClockPill ms={args.timeControlBaseMs} active={false} low={false} testid={testid} />;
-  return null;
+  const offered = Boolean(args.phase === 'in-match' && pid && view?.drawOffers?.[pid]);
+  const clock =
+    view?.clock && pid ? (
+      <ChessClockChip clock={view.clock} pid={pid} testid={testid} />
+    ) : args.timeControlBaseMs != null ? (
+      <ClockPill ms={args.timeControlBaseMs} active={false} low={false} testid={testid} />
+    ) : null;
+  if (!offered) return clock;
+  return (
+    <>
+      <DrawOfferedChip side={side} />
+      {clock}
+    </>
+  );
 }
 
 /**
@@ -306,6 +334,41 @@ function ChessResultPopup({ outcome, playerId, opponentName }: { outcome: Outcom
   );
 }
 
+// ── Draw offers: the SECONDARY-action button (Play-a-Friend slot) during a match (CHESS_DRAW_OFFER.md) ─
+// Symmetric mutual request: Draw request offers immediately (button → Revoke DRAW + a "Draw offered"
+// bar indicator on both screens); pressing your own Draw request while the opponent already offered
+// completes the draw; Revoke withdraws your own offer. NO confirm step (unlike Resign) — an offer
+// alone can't end the game or cost the stake and is revocable. Server-authoritative: the button
+// reflects the public offer state (view.drawOffers), never local optimism.
+function ChessSecondaryAction({ args }: { args: GameAreaArgs }) {
+  const { gameState, playerId, onDrawOffer, onDrawRevoke } = args;
+  const view = gameState as ChessView | null;
+  const offered = Boolean(playerId && view?.drawOffers?.[playerId]);
+  const base = 'w-full rounded-xl py-3.5 text-[15px] font-bold transition-colors';
+  if (offered) {
+    return (
+      <button
+        type="button"
+        data-testid="chess-draw-revoke"
+        onClick={() => onDrawRevoke?.()}
+        className={cn(base, 'bg-amber-400/15 text-amber-400 ring-1 ring-amber-400/50 hover:bg-amber-400/25')}
+      >
+        Revoke DRAW
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      data-testid="chess-draw-offer"
+      onClick={() => onDrawOffer?.()}
+      className={cn(base, 'bg-background text-foreground hover:brightness-125')}
+    >
+      Draw request
+    </button>
+  );
+}
+
 // ── Resign: three states on the ONE primary-action button (client-only — no server/protocol change) ─
 // PLAY (idle, the default button) → RESIGN (active match) → a red "Confirm resign" (armed). One
 // accidental tap never resigns: only the deliberate second tap on the red confirm calls the existing
@@ -386,6 +449,9 @@ export function ChessHubScreen(props: GameHubScreenProps) {
       gameName="Chess"
       renderGameArea={ChessPanel}
       renderSlotAside={ChessSlotAside}
+      // Draw offers live on the secondary-action button in-match (Play a Friend → Draw request ⇄
+      // Revoke DRAW); idle/result fall back to the default Play a Friend (null). CHESS_DRAW_OFFER.md.
+      renderSecondaryAction={(args) => (args.phase === 'in-match' ? <ChessSecondaryAction args={args} /> : null)}
       // Resign lives on the primary-action button in-match (PLAY→RESIGN→red Confirm); idle/result
       // fall back to the default PLAY button (null). Client-only; reuses the existing forfeit path.
       renderPrimaryAction={(args) => (args.phase === 'in-match' ? <ChessPrimaryAction args={args} /> : null)}

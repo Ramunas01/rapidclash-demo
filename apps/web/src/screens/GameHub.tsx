@@ -47,6 +47,10 @@ export interface GameAreaArgs {
   legalMoves: string[];
   onMove(move: string): void;
   onForfeit(): void;
+  /** OPT-IN draw offers (games declaring the capability, e.g. chess — CHESS_DRAW_OFFER.md). Send/
+   *  withdraw a draw offer; the server records/completes/clears it. Undefined for games without it. */
+  onDrawOffer?(): void;
+  onDrawRevoke?(): void;
   playerId: string | null;
   opponentId: string | null;
   username: string | null;
@@ -105,6 +109,9 @@ export interface GameHubScreenProps {
   onTakeChallenge(matchId: string): void;
   onMakeMove(move: string): void;
   onForfeit(): void;
+  /** OPT-IN draw offers (chess — CHESS_DRAW_OFFER.md). App wraps the WS calls; other hubs ignore them. */
+  onDrawOffer?(): void;
+  onDrawRevoke?(): void;
   /** Subscribe/unsubscribe to EVERY game's feed (cross-game ticker). App wraps the WS calls. */
   onTrackChallenges(gameIds: string[]): void;
   onUntrackChallenges(): void;
@@ -138,6 +145,11 @@ interface GameHubProps extends GameHubScreenProps {
    *  (Crash: PLAY → EJECT → disabled-waiting → back to PLAY) rather than spawning a second control.
    *  Return null to keep the default PLAY button (idle / result → play again). Template-shaped. */
   renderPrimaryAction?(args: GameAreaArgs): ReactNode;
+  /** Optional in-match override for the SECONDARY action button (the Play-a-Friend slot) — mirror of
+   *  `renderPrimaryAction`. When it returns non-null the hub renders it INSTEAD of Play a Friend, so a
+   *  game transforms that button in place (Chess: Play a Friend → Draw request ⇄ Revoke DRAW). Return
+   *  null to keep the default Play a Friend. Never shown while searching (that slot is the Cancel). */
+  renderSecondaryAction?(args: GameAreaArgs): ReactNode;
   /** Opt out of the shared result pop-up (mirrors holdResultMs being opt-in). When true the hub
    *  never renders the ResultOverlay; it instead holds the result phase open with the board mounted
    *  (gameState = the terminal frame, areaArgs.outcome set) so the game presents the result on the
@@ -187,10 +199,10 @@ function useNow(active: boolean): number {
  */
 export function GameHub(props: GameHubProps) {
   const {
-    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, suppressResultOverlay, holdResultMs, ownBarResult, suppressDrawBar,
+    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, ownBarResult, suppressDrawBar,
     token, playerId, username, opponentId, opponentName, serverClockOffset = 0, balance, currentMatchId, gameState, legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
-    onPlay, onCancel, onTakeChallenge, onMakeMove, onForfeit, onTrackChallenges,
+    onPlay, onCancel, onTakeChallenge, onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onTrackChallenges,
     onUntrackChallenges, onSelectGame, onOpenWallet, onOpenGameList, onResultDismiss,
     loggedIn = true, initialStake,
   } = props;
@@ -397,7 +409,7 @@ export function GameHub(props: GameHubProps) {
 
   // Built once and fed to the game area, the per-game slot asides (chess clocks) and the play action.
   const timeControlBaseMs = timeControl?.options.find((o) => o.id === selectedControl)?.baseMs;
-  const areaArgs: GameAreaArgs = { phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, playerId, opponentId, username, opponentName, serverClockOffset, timeControlBaseMs, outcome: overlay?.outcome ?? null, drawBeat };
+  const areaArgs: GameAreaArgs = { phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, playerId, opponentId, username, opponentName, serverClockOffset, timeControlBaseMs, outcome: overlay?.outcome ?? null, drawBeat };
   // The bar-level draw outline: on for every game EXCEPT the ones that carry the draw on their own
   // surface (Blackjack → cards + "Push" label). The board still gets the full `drawBeat` via areaArgs.
   const barDrawBeat = suppressDrawBar ? false : drawBeat;
@@ -462,6 +474,7 @@ export function GameHub(props: GameHubProps) {
                   </button>
                 ) : (renderPrimaryAction?.(areaArgs) ?? null)
               }
+              secondaryActionSlot={searching ? null : (renderSecondaryAction?.(areaArgs) ?? null)}
               timeControl={timeControl}
               selectedControl={selectedControl}
               onSelectControl={setSelectedControl}
@@ -656,7 +669,7 @@ function OwnSlot({ label, isOwn, aside, barVerdict, drawBeat }: { label: string;
  *  Play-a-Friend becomes the active Cancel, while the bet row freezes with the SAME visuals — but
  *  NO "Playing…" label); `noOpponent` shows the polite "No opponent found" note after expiry. */
 function PlayPanel({
-  playing, searching, noOpponent, armedStake, onArm, onPlay, onCancel, actionSlot, timeControl, selectedControl, onSelectControl,
+  playing, searching, noOpponent, armedStake, onArm, onPlay, onCancel, actionSlot, secondaryActionSlot, timeControl, selectedControl, onSelectControl,
 }: {
   playing: boolean;
   /** Pure search: freeze the bet row (no "Playing…") and turn Play-a-Friend into the active Cancel. */
@@ -672,6 +685,9 @@ function PlayPanel({
    *  (e.g. Crash's EJECT during flight, or the hub's waiting label during search). Null → the
    *  default PLAY button (the #1-bug fix: ONE button that transforms, never a second control). */
   actionSlot?: ReactNode;
+  /** When provided (and not searching), replaces the Play-a-Friend button in place — the game's
+   *  transforming SECONDARY action (Chess's Draw request ⇄ Revoke DRAW). Null → the default. */
+  secondaryActionSlot?: ReactNode;
   timeControl?: GameMeta['timeControl'];
   selectedControl?: string;
   onSelectControl(id: string): void;
@@ -829,21 +845,26 @@ function PlayPanel({
 
       {/* Play a Friend transforms IN PLACE into the one active Cancel during a search (#154) — same
           button node, so no remount. Searching → "Cancel", active, wired to the hardened leaveQueue
-          (#153). Otherwise → purple, inert/visual-only (owner D1); greys with the panel in-match.
-          The #143 needs-bet guard stays pre-wired for the idle Play-a-Friend path. */}
-      <button
-        type="button"
-        {...(searching ? {} : { 'aria-disabled': 'true' as const })}
-        data-testid={searching ? 'hub-cancel' : 'hub-play-friend'}
-        onClick={searching ? onCancel : handlePlayFriend}
-        className={cn(
-          'w-full rounded-xl py-3.5 text-[15px] font-bold transition-colors',
-          searching ? 'bg-surface text-foreground hover:brightness-110' : 'cursor-default bg-brand text-white',
-          playing && 'opacity-50',
-        )}
-      >
-        {searching ? 'Cancel' : 'Play a Friend'}
-      </button>
+          (#153). A game may transform it in place via secondaryActionSlot (Chess: Draw request ⇄
+          Revoke DRAW in-match). Otherwise → purple, inert/visual-only (owner D1); greys with the
+          panel in-match. The #143 needs-bet guard stays pre-wired for the idle Play-a-Friend path. */}
+      {!searching && secondaryActionSlot ? (
+        secondaryActionSlot
+      ) : (
+        <button
+          type="button"
+          {...(searching ? {} : { 'aria-disabled': 'true' as const })}
+          data-testid={searching ? 'hub-cancel' : 'hub-play-friend'}
+          onClick={searching ? onCancel : handlePlayFriend}
+          className={cn(
+            'w-full rounded-xl py-3.5 text-[15px] font-bold transition-colors',
+            searching ? 'bg-surface text-foreground hover:brightness-110' : 'cursor-default bg-brand text-white',
+            playing && 'opacity-50',
+          )}
+        >
+          {searching ? 'Cancel' : 'Play a Friend'}
+        </button>
+      )}
     </div>
   );
 }

@@ -151,6 +151,23 @@ export interface GameModule {
    *  the core calls it for any module that declares it; the rest omit it. */
   launch?(state: GameState, now: number): GameState;
 
+  /** OPT-IN player-initiated draw offers (CHESS_DRAW_OFFER.md — chess only, but generic). When a
+   *  module declares this, the core routes `match.drawOffer` / `match.drawRevoke` to it generically
+   *  (no game-id branch — invariant #5). The mechanic is SYMMETRIC: `offer` records `playerId`'s
+   *  offer, OR — if the OPPONENT already holds an active offer — returns a TERMINAL draw state
+   *  (both-offered = draw) that flows through the normal `isTerminal`/`outcome`/settlement path
+   *  (stakes returned, no rake — the existing draw). `revoke` clears `playerId`'s own offer only.
+   *  The offer flags live ON the state, so `viewFor` exposes them publicly to both clients — an
+   *  offer is public by design, no redaction concern. A backstop auto-expiry (a forgotten offer
+   *  lapses after N of the offerer's own moves) is the module's responsibility, applied inside its
+   *  own `applyMove`. Modules without draw offers omit this. */
+  drawOffers?: {
+    /** Record `playerId`'s offer, or return a terminal draw state if the opponent already offered. */
+    offer(state: GameState, playerId: PlayerId): GameState;
+    /** Clear `playerId`'s own pending offer (the opponent's, if any, is untouched). */
+    revoke(state: GameState, playerId: PlayerId): GameState;
+  };
+
   /** OPT-IN absolute per-player deadlines (paired with `timeoutMove`). For games whose timer is
    *  neither a per-move budget (`meta.moveTimeoutMs`) nor a cumulative clock (`meta.timeControl`)
    *  but an ABSOLUTE scheduled event derived from the state — e.g. Crash's shared crash time.

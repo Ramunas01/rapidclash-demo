@@ -240,6 +240,17 @@ export class WsClient {
     return this.send('match.forfeit', {}, matchId);
   }
 
+  /** Offer a draw (games that declare the capability, e.g. chess). Symmetric: sending this records
+   *  your offer, or completes the draw if the opponent already offered (CHESS_DRAW_OFFER.md). */
+  drawOffer(matchId: string): boolean {
+    return this.send('match.drawOffer', {}, matchId);
+  }
+
+  /** Withdraw your own pending draw offer. */
+  drawRevoke(matchId: string): boolean {
+    return this.send('match.drawRevoke', {}, matchId);
+  }
+
   resume(matchId: string): boolean {
     this.setCurrentMatchId(matchId);
     return this.send('match.resume', { matchId } as MatchResumePayload);
