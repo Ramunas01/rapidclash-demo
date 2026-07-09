@@ -1,5 +1,25 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-07-09#4 — Header logo height: tight-cropped wordmark + h-24→h-10 (Advisor #2)            [OPEN]
+From: Coder   Re: ADVISOR_TO_PM.md 2026-07-09#2
+
+Shipped in one PR, branch `fix/header-logo-height`, client-only, one component + one asset. **PR #199.**
+
+Root cause (confirmed against the code, matching the Advisor's diagnosis): no doubled safe-area, no extra top padding to remove — `HubRibbon.tsx`'s header already has a single `pt-[env(safe-area-inset-top)]` and `layout.ts`/`HUB_BODY` has no top pad. The actual cause was the logo asset: `<img class="h-24 …">` = a 96px box, but the wordmark webp had ~61% vertical transparent padding baked in, so most of the box was empty space above the visible mark.
+
+1. **Asset.** `apps/web/src/assets/brand/rapidclash-wordmark.webp` replaced with the Owner-approved tight-cropped version — verified actual dimensions via `PIL.Image.open(...).size` = **(473, 109)**, matching the spec exactly. Committed alongside the code change (was staged uncommitted on disk).
+2. **Code.** `HubRibbon.tsx:28` — `<img>` class `h-24` → `h-10`. Header box shrinks 96px → 40px; visible wordmark renders at essentially unchanged on-screen size (scales proportionally to ~38px tall / ~174px wide from the cropped source) — only the surrounding empty box shrinks.
+3. **Usage check.** Grepped `rapidclash-wordmark`/`logoUrl` across `apps/web/src` — used in exactly one place (`HubRibbon.tsx`), so nothing else depends on the old pixel size/proportions.
+4. Nothing else touched: `pt-[env(safe-area-inset-top)]`, `layout.ts`, `HUB_BODY`, and every other header/below-header gap are pixel-identical to before.
+
+No pre-existing test pinned `h-24` (grepped `apps/web/src/test/` for `HubRibbon`/`h-24`/`logoUrl` — none existed). Added `apps/web/src/test/HubRibbon.test.tsx` (2 tests): logo has `h-10` and not `h-24`; header retains `pt-[env(safe-area-inset-top)]` (regression guard against a future edit accidentally touching or removing the inset while adjusting logo sizing again).
+
+Results: `HubRibbon.test.tsx` 2/2 green; full suite `npx vitest run` (repo root) 75 files / 907 tests — 906 passed, 1 failed (`apps/server/src/chess-draw-offer.smoke.test.ts`, unrelated server-side chess settlement test, no relation to this client-only change). Verified that failure is a pre-existing parallel-run timing flake, not a regression: ran the file in isolation both with and without this diff applied (via `git stash`) — 6/6 green in both cases. `tsc -b` clean; `eslint` clean on touched files.
+
+No deviations from the brief. One judgment call: `docs/COMMS/ADVISOR_TO_PM.md` had a local uncommitted addition (the #2 entry itself, not yet on `origin/main`) already present in the working tree when I started — left it untouched/uncommitted since authoring Advisor-mailbox entries isn't this ticket's concern; only the asset + `HubRibbon.tsx` + the new test were committed.
+
+Ask: PR review — #199, `fix(hub): header logo height — tight-cropped wordmark + h-24→h-10 (Advisor #2)`.
+
 ### 2026-07-09#3 — Chess draw offer→accept flow + solid styling (CHESS_DRAW_OFFER.md rev 3)            [OPEN]
 From: Coder   Re: docs/CHESS_DRAW_OFFER.md rev 3 (Owner-committed on `main`)
 
