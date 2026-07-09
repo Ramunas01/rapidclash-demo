@@ -11,9 +11,7 @@ import { BringARival } from '../components/hub-shared/BringARival.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
 import hero1 from '../assets/banners/hero-1.webp';
 import hero2 from '../assets/banners/hero-2.webp';
-// Owner test banner (Designer #4 asset), added live to evaluate — carries the money-framing concern
-// the Advisor flagged ("WIN REAL … STAKES" + gold jackpot). Kept LAST so the on-thesis heroes stay
-// the default view. Revert = remove this import + its HERO_SLIDES entry (one line each).
+// Third slide of the Designer's final 3-banner set (trophy / "Win Real Rivals' Stakes").
 import heroFront from '../assets/banners/hero-front.webp';
 import boltMark from '../assets/brand/bolt-mark.webp';
 import boltDecor from '../assets/brand/bolt-decor.webp';
@@ -196,32 +194,45 @@ const CAT_TITLE: Record<Cat, string> = {
 
 /* ── Hero carousel ─────────────────────────────────────────────────────────── */
 
-const HERO_SLIDES = [hero1, hero2, heroFront];
+const HERO_SLIDES: { src: string; alt: string }[] = [
+  { src: hero1, alt: 'RapidClash — Players vs Players, Never the House' },
+  { src: hero2, alt: 'RapidClash — provably fair: no house, no edge, real opponents only' },
+  { src: heroFront, alt: "RapidClash — win real rivals' stakes: beat players, take the prize" },
+];
 
 /** Promo hero — a swipeable carousel of static play-money banners with the frame's dot
- *  indicator. Three slides ship (the designer allows up to 5), so the indicator is real; the
- *  third is the Owner's test banner (see the heroFront import note). */
+ *  indicator. Three slides ship as the Designer's final approved set (the frame supports up to
+ *  5): Never-the-House → No-House-No-Edge → Win-Real-Rivals, a thesis → fairness → compete arc. */
 function HeroCarousel() {
   const [index, setIndex] = useState(0);
   const trackRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = trackRef.current;
     if (!el) return;
-    const onScroll = () => setIndex(Math.round(el.scrollLeft / Math.max(1, el.clientWidth)));
+    // Gap-aware: each card is full-width with a gap-4 (16px) between cards, so a page advances by
+    // clientWidth + gap, not clientWidth alone. Measure the actual spacing between the first two
+    // rendered cards' offsetLeft so this stays correct regardless of gap size or slide count (up to 5).
+    const onScroll = () => {
+      const first = el.children[0] as HTMLElement | undefined;
+      const second = el.children[1] as HTMLElement | undefined;
+      const page = first && second ? second.offsetLeft - first.offsetLeft : el.clientWidth;
+      setIndex(Math.round(el.scrollLeft / Math.max(1, page)));
+    };
     el.addEventListener('scroll', onScroll, { passive: true });
     return () => el.removeEventListener('scroll', onScroll);
   }, []);
   return (
     <section data-testid="home-hero" aria-label="Players vs Players, never the house" className="px-4 pt-2">
-      <div ref={trackRef} className="no-scrollbar flex snap-x snap-mandatory overflow-x-auto rounded-[18px]">
-        {HERO_SLIDES.map((src, i) => (
+      <div ref={trackRef} className="no-scrollbar flex snap-x snap-mandatory gap-4 overflow-x-auto">
+        {HERO_SLIDES.map(({ src, alt }, i) => (
           <img
             key={i}
             src={src}
-            alt="RapidClash — Players vs Players, Never the House"
-            // Shorter hero (Designer #6): constrain to ~2.8:1 (2120/754) so the content below moves up.
-            // object-cover crops the current ~2:1 hero-*.webp top/bottom until they're re-cropped to 2.8:1.
-            className="aspect-[2120/754] w-full shrink-0 snap-center object-cover"
+            alt={alt}
+            // ~2.8:1 (2120/754, Designer #6) so the content below moves up; object-cover on the
+            // Designer's final drop-in set (already 2120×754, no cropping needed). rounded-[18px]
+            // lives on each card (not the track) so cards read as separate tiles with a gap between.
+            className="aspect-[2120/754] w-full shrink-0 snap-center rounded-[18px] object-cover"
           />
         ))}
       </div>

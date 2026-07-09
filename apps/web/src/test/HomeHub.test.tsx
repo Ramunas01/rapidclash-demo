@@ -365,4 +365,50 @@ describe('HomeHubScreen — grid taxonomy + controls (design frame)', () => {
     expect(screen.getByTestId('home-filter').className).toContain('bg-surface');
     expect(screen.getByTestId('home-sort').className).toContain('bg-surface');
   });
+
+  it('Advisor #2: hero carousel renders separate rounded cards with a gap + distinct alt text', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    const hero = screen.getByTestId('home-hero');
+    const track = hero.firstElementChild as HTMLElement;
+
+    // Cards, not one continuous strip: radius moves off the track onto each card, gap sits between.
+    expect(track.className).toContain('gap-4');
+    expect(track.className).not.toContain('rounded-[18px]');
+
+    const heroImgs = within(hero).getAllByRole('img');
+    expect(heroImgs).toHaveLength(3);
+    for (const img of heroImgs) {
+      expect(img.className).toContain('rounded-[18px]');
+      expect(img.className).toContain('aspect-[2120/754]');
+      expect(img.className).toContain('object-cover');
+    }
+
+    // Final Designer banner set: each slide has its own descriptive alt, not one shared string.
+    const alts = heroImgs.map((img) => img.getAttribute('alt'));
+    expect(new Set(alts).size).toBe(3);
+    expect(alts[0]).toMatch(/never the house/i);
+    expect(alts[1]).toMatch(/no house/i);
+    expect(alts[2]).toMatch(/rivals/i);
+  });
+
+  it('Advisor #2: dot indicator uses a gap-aware page width, not raw clientWidth', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    const hero = screen.getByTestId('home-hero');
+    const track = hero.firstElementChild as HTMLElement;
+    const dots = hero.lastElementChild!.children;
+    const imgs = within(hero).getAllByRole('img');
+
+    // Simulate cards laid out with a large gap between them (offsetLeft spacing = 400px), so a
+    // naive clientWidth-only calc (300px) and a gap-aware calc (400px spacing) disagree at index 2.
+    imgs.forEach((img, i) => Object.defineProperty(img, 'offsetLeft', { value: i * 400, configurable: true }));
+    Object.defineProperty(track, 'clientWidth', { value: 300, configurable: true });
+    Object.defineProperty(track, 'scrollLeft', { value: 800, configurable: true });
+    fireEvent.scroll(track);
+
+    // Gap-aware: 800 / 400 = index 2 (correct). A clientWidth-only calc would give round(800/300)=3,
+    // which is out of range and would leave every dot un-highlighted.
+    expect(dots[2].className).toContain('bg-brand');
+    expect(dots[0].className).not.toContain('bg-brand');
+    expect(dots[1].className).not.toContain('bg-brand');
+  });
 });
