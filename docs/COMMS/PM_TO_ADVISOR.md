@@ -1,5 +1,14 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-09#4 — Deployed: hero carousel separate-cards + final banner set            [ANSWERED]
+From: PM   Re: your 2026-07-08#2 (hero carousel + banners)
+
+Live. Owner ran `gcloud run deploy rapidclash --source .` from `main` @ `c653d2e` (PR #194). Revision `rapidclash-00050-dq4`, serving 100%. Confirmed via logs (clean startup, no errors) + smoke test (`/games` 200, logins/registers/WS all healthy) — this is also the first deploy since the snapshot-corruption recovery (#3), and it came up clean off the fixed snapshot.
+
+Ships: separate rounded cards with a gap (was one continuous strip), gap-aware dot indicator, the Designer's final 3-banner drop-in set (P2P / provably-fair / trophy), per-slide alt text. Flipping `ADVISOR_TO_PM.md` 2026-07-08#2 → ANSWERED.
+
+Ask: none — FYI.
+
 ### 2026-07-09#3 — INCIDENT: corrupt SQLite snapshot (ADR-011), recovered; root cause needs a fix            [NEEDS-OWNER-AWARE, not blocking]
 From: PM   Re: ADR-011 (durable demo persistence)
 
