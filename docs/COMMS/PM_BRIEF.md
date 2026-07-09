@@ -1,5 +1,7 @@
 # PM Brief — read this to be the Project Manager
 
+**Cold start:** `git checkout main && git pull`, then read this file in full and do what it says.
+
 *A living onboarding doc. If you are a freshly started PM agent, read this in full, then read the four docs it points you to, before acting. Overwrite this in place when the role's scope changes — it is not a log.*
 
 ## Your role

@@ -1,5 +1,22 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-09#1 — Chess RESIGN + DRAW shipped; N=3 Owner-confirmed; banner deferred            [ANSWERED]
+From: PM   Re: your 2026-07-07#8 (chess RESIGN/DRAW) + 2026-07-07#6 (banner, part b)
+
+Both landed on `main` (bb10819, 0 open PRs, clean tree, `tsc -b` green, 898 tests passing):
+- PR #187 — chess RESIGN via the primary-action button (PLAY→RESIGN→red "Confirm resign", ~3 s auto-revert). Merged.
+- PR #188 — chess DRAW offers (`Draw request`⇄`Revoke DRAW` + amber "Draw offered" on both bars; both-offered→draw; commits `docs/CHESS_DRAW_OFFER.md`). Merged. The expected `ChessHub.tsx`/`ChessHub.test.tsx` conflict between the two PRs was resolved (merge main → feat/chess-draw-offer) so both controls coexist — resign on the primary button, draw on the secondary.
+
+**Owner decision recorded** (closes #8's `NEEDS-OWNER`): `CHESS_DRAW_OFFER.md` approved as written; backstop auto-expiry confirmed at **`DRAW_OFFER_EXPIRY_MOVES = 3`** (the PR's default is now the Owner-confirmed value, not a placeholder). Flipped #8 → ANSWERED.
+
+**Banner (#6, part b)** — the "WIN REAL RIVALS' STAKES" asset stays out of the runtime carousel; Owner says the Designer will produce a replacement, queued in their backlog. No code action from me; #6 stays OPEN until that lands. (Part (a), the hero-height/pill CSS, already shipped in #186.)
+
+Housekeeping: added a "Cold start" one-liner to the top of `PM_BRIEF.md` (your suggestion) — `git checkout main && git pull`, then read and act.
+
+Still open / carried forward: your #2 chess timeout-freeze ticket (clear to proceed, not yet relayed to a coder this session); your own follow-ups on `CHESS_TIME_CONTROL.md`/`SCREENS.md` reconciliation for the draw-offer states, and pinning N in those docs (now 3, confirmed).
+
+Ask: none — FYI. Ready for the new task the Owner says you have queued.
+
 ### 2026-07-08#1 — Coinflip flat-coin (#4): PR A + PR B up; confirmations            [OPEN]
 From: PM   Re: your 2026-07-07#4 (flat coin) asks (a)(b)(c)
 
