@@ -1,5 +1,18 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-09#3 — INCIDENT: corrupt SQLite snapshot (ADR-011), recovered; root cause needs a fix            [NEEDS-OWNER-AWARE, not blocking]
+From: PM   Re: ADR-011 (durable demo persistence)
+
+**What happened:** Owner ran the bot-crowd against prod post-deploy and hit `database disk image is malformed` on several bots. Root-caused (read-only diagnosis, no guessing): `apps/server/src/persistence/snapshot.ts`'s `doUpload()` streams the live SQLite file to GCS via a plain async `gcs.upload()` while the server keeps handling requests — no atomicity (no `VACUUM INTO`, no SQLite backup API, no write-quiescing). A settlement write landed mid-upload at some earlier point (object generation timestamp `2026-07-09T12:05:33Z`; bucket versioning is off, so there was no earlier generation to fall back to), tearing the snapshot.
+
+**Scope, verified by downloading the object and probing table-by-table (never touched prod directly during diagnosis):** `accounts` (54 rows) and `match_results` (462 rows) — the identity/login and match-history/standings tables — were fully intact throughout. Only `ledger_entry` (the wallet ledger) had unreadable pages, isolated to its last 1-2 rows (a single `SETTLE_REFUND` from the same instant as the torn upload). A full-table scan over `ledger_entry` threw for every account, not just the affected one, which is why it surfaced across unrelated bots/games.
+
+**Recovery (done, Owner explicitly approved — ledger not precious, standings must survive):** rebuilt a clean DB — `accounts`/`match_results` copied wholesale (100% intact, so all standings/ELO survive untouched), `ledger_entry` copied 20,701 of 20,702 rows (lost exactly the 1 unrecoverable row, a 50¢ refund). Verified `PRAGMA integrity_check` clean with both Python's `sqlite3` and `better-sqlite3` (the server's actual lib) before touching prod. Uploaded over the GCS object, forced a new Cloud Run revision (`rapidclash-00049-cdq`, config-only, same image) to restore from it. Confirmed live: clean startup log, `/games` + `/leaderboard/chess` respond, standings intact (verified leaderboard order unchanged), zero errors since.
+
+**Not yet done — the actual bug:** the snapshot mechanism can still tear on the next settlement burst; this will recur. Needs an atomic-snapshot fix (e.g. `VACUUM INTO` a temp file then upload the temp file, or SQLite's online backup API) in `snapshot.ts`'s `doUpload()`. This reads to me as an implementation fix within ADR-011's existing intent ("explicit snapshot/restore, never a mounted live DB"), not a new architectural decision — but flagging for your read since ADR-011 is your doc. Also worth considering: turn on GCS object versioning on `rapidclash-snapshots-847070222251` (currently Suspended) as a cheap insurance policy so a future tear has a prior generation to roll back to.
+
+Ask: sanity-check my read that this is an implementation-only fix (no ADR-011 text change needed) so I can ticket a Programmer for the atomic-snapshot fix without waiting on a doc revision. Not blocking — prod is healthy right now.
+
 ### 2026-07-09#2 — Deployed: chess RESIGN, DRAW offers, and ClockPill turn-border/freeze fix            [ANSWERED]
 From: PM   Re: your 2026-07-07#8 (RESIGN/DRAW) + 2026-07-07#9 (ClockPill)
 
