@@ -4,10 +4,11 @@ import { createLedger, createMatchmaking } from '@rapidclash/core';
 import { chessModule } from '@rapidclash/game-chess';
 
 // Live-smoke (real chess module + real core + real ledger): player-initiated draw offers
-// (CHESS_DRAW_OFFER.md) routed through the generic core capability. Records an offer, completes the
-// draw when both sides have offered (reusing the existing chess draw settlement — stakes returned,
-// no rake, no rematch), and revokes a pending offer. Mirrors the WS gateway, which just broadcasts
-// the returned state + settles when it turns terminal.
+// (CHESS_DRAW_OFFER.md rev 3 — asymmetric offer→accept) routed through the generic core capability.
+// Records an offer (never self-completing), completes the draw only when the OPPONENT of an active
+// offer accepts (reusing the existing chess draw settlement — stakes returned, no rake, no rematch),
+// and revokes a pending offer. Mirrors the WS gateway, which just broadcasts the returned state +
+// settles when it turns terminal.
 
 describe('chess draw offers — end-to-end (real chess module + core + ledger settlement)', () => {
   function setup(stake: number) {
@@ -33,14 +34,24 @@ describe('chess draw offers — end-to-end (real chess module + core + ledger se
     expect(mm.getActiveMatch(matchId)).toBeDefined(); // not settled
   });
 
-  it('both-offered completes the draw → settle: stakes returned, no rake, match removed', () => {
+  it('both players independently offering does NOT complete the draw (asymmetric — rev 3)', () => {
+    const { mm, matchId } = setup(100);
+    mm.offerDraw(matchId, 'alice');
+    const res = mm.offerDraw(matchId, 'bob'); // Bob offers his own, while Alice is pending
+    expect(chessModule.isTerminal(res.state)).toBe(false);
+    expect(offersOf(mm, matchId)?.['alice']).toBeGreaterThan(0);
+    expect(offersOf(mm, matchId)?.['bob']).toBeGreaterThan(0);
+    expect(mm.getActiveMatch(matchId)).toBeDefined(); // still live
+  });
+
+  it('accept completes the draw → settle: stakes returned, no rake, match removed', () => {
     const { ledger, mm, matchId } = setup(100);
     // Escrow debited on join: both at 900.
     expect(ledger.getBalance('alice')).toBe(900);
     expect(ledger.getBalance('bob')).toBe(900);
 
     mm.offerDraw(matchId, 'alice');
-    const res = mm.offerDraw(matchId, 'bob'); // Bob offers while Alice is pending → draw completes
+    const res = mm.acceptDraw(matchId, 'bob'); // Bob accepts Alice's offer → draw completes
     expect(chessModule.isTerminal(res.state)).toBe(true);
     expect(chessModule.outcome(res.state)).toEqual({ type: 'draw' });
 
@@ -52,6 +63,13 @@ describe('chess draw offers — end-to-end (real chess module + core + ledger se
     expect(ledger.getBalance('alice')).toBe(1000);
     expect(ledger.getBalance('bob')).toBe(1000);
     expect(mm.getActiveMatch(matchId)).toBeUndefined(); // settled + removed
+  });
+
+  it('accept with no active offer to accept is a no-op — match stays live', () => {
+    const { mm, matchId } = setup(100);
+    const res = mm.acceptDraw(matchId, 'bob'); // Alice never offered
+    expect(chessModule.isTerminal(res.state)).toBe(false);
+    expect(mm.getActiveMatch(matchId)).toBeDefined();
   });
 
   it('revoke clears the sender own offer; the match stays live', () => {
@@ -78,5 +96,7 @@ describe('chess draw offers — end-to-end (real chess module + core + ledger se
     const r = mm.joinQueue('bob', 'nodraw', 100);
     if (r.status !== 'matched') throw new Error('expected matched');
     expect(() => mm.offerDraw(r.matchId, 'alice')).toThrow(/does not support draw offers/);
+    expect(() => mm.acceptDraw(r.matchId, 'alice')).toThrow(/does not support draw offers/);
+    expect(() => mm.revokeDraw(r.matchId, 'alice')).toThrow(/does not support draw offers/);
   });
 });

@@ -151,21 +151,27 @@ export interface GameModule {
    *  the core calls it for any module that declares it; the rest omit it. */
   launch?(state: GameState, now: number): GameState;
 
-  /** OPT-IN player-initiated draw offers (CHESS_DRAW_OFFER.md — chess only, but generic). When a
-   *  module declares this, the core routes `match.drawOffer` / `match.drawRevoke` to it generically
-   *  (no game-id branch — invariant #5). The mechanic is SYMMETRIC: `offer` records `playerId`'s
-   *  offer, OR — if the OPPONENT already holds an active offer — returns a TERMINAL draw state
-   *  (both-offered = draw) that flows through the normal `isTerminal`/`outcome`/settlement path
-   *  (stakes returned, no rake — the existing draw). `revoke` clears `playerId`'s own offer only.
+  /** OPT-IN player-initiated draw offers (CHESS_DRAW_OFFER.md rev 3 — chess only, but generic). When
+   *  a module declares this, the core routes `match.drawOffer` / `match.drawRevoke` / `match.drawAccept`
+   *  to it generically (no game-id branch — invariant #5). The mechanic is ASYMMETRIC: `offer` only
+   *  ever records `playerId`'s own offer — it never completes the match, even if the opponent already
+   *  holds an active offer of their own. `accept` is the sole completion path: called by the opponent
+   *  of an active offer, it returns a TERMINAL draw state (flowing through the normal
+   *  `isTerminal`/`outcome`/settlement path — stakes returned, no rake, the existing draw), or is a
+   *  no-op if there's no active offer to accept. `revoke` clears `playerId`'s own offer only.
    *  The offer flags live ON the state, so `viewFor` exposes them publicly to both clients — an
-   *  offer is public by design, no redaction concern. A backstop auto-expiry (a forgotten offer
-   *  lapses after N of the offerer's own moves) is the module's responsibility, applied inside its
-   *  own `applyMove`. Modules without draw offers omit this. */
+   *  offer is public by design, no redaction concern (the only per-viewer difference is which control
+   *  is actionable, handled client-side). A backstop auto-expiry (a forgotten offer lapses after N of
+   *  the offerer's own moves) is the module's responsibility, applied inside its own `applyMove`.
+   *  Modules without draw offers omit this. */
   drawOffers?: {
-    /** Record `playerId`'s offer, or return a terminal draw state if the opponent already offered. */
+    /** Record `playerId`'s own offer. Never completes the match by itself. */
     offer(state: GameState, playerId: PlayerId): GameState;
     /** Clear `playerId`'s own pending offer (the opponent's, if any, is untouched). */
     revoke(state: GameState, playerId: PlayerId): GameState;
+    /** `playerId` accepts the OPPONENT's active offer → terminal draw state. No-op if the opponent
+     *  has no active offer. */
+    accept(state: GameState, playerId: PlayerId): GameState;
   };
 
   /** OPT-IN absolute per-player deadlines (paired with `timeoutMove`). For games whose timer is

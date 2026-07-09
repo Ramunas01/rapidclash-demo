@@ -926,6 +926,13 @@ export function App() {
     if (!wsRef.current.drawRevoke(currentMatchId)) setActionNotice(RECONNECT_NOTICE);
   }, [currentMatchId]);
 
+  // Accept the opponent's pending draw offer (CHESS_DRAW_OFFER.md rev 3) — the only way a draw
+  // offer completes the match; the server resolves it and broadcasts the terminal state.
+  const handleDrawAccept = useCallback(() => {
+    if (!currentMatchId || !wsRef.current) return;
+    if (!wsRef.current.drawAccept(currentMatchId)) setActionNotice(RECONNECT_NOTICE);
+  }, [currentMatchId]);
+
   // Hub result overlay dismissed (auto after ~4s, or the manual X) → drop the payload that drove the
   // overlay, but PRESERVE the finished-round board view (gameState/opponent) so the idle post-round
   // result persists until the player PLAYs or leaves (the wipe now fires only there — resetRoundState).
@@ -1034,6 +1041,7 @@ export function App() {
           onForfeit={handleForfeit}
           onDrawOffer={handleDrawOffer}
           onDrawRevoke={handleDrawRevoke}
+          onDrawAccept={handleDrawAccept}
           onTrackChallenges={handleTrackChallenges}
           onUntrackChallenges={handleUntrackChallenges}
           onSelectGame={handleSelectGame}

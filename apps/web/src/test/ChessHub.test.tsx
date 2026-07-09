@@ -396,8 +396,9 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
     expect(screen.getByText(/one match at a time/i)).toBeInTheDocument();
   });
 
-  // ── Draw offers: the secondary-action button (Play a Friend → Draw request ⇄ Revoke DRAW) + indicator ──
-  describe('Draw offers (CHESS_DRAW_OFFER.md)', () => {
+  // ── Draw offers: the secondary-action button (Play a Friend → Draw request ⇄ Revoke DRAW) + the
+  // per-side offered/accept indicator (CHESS_DRAW_OFFER.md rev 3 — asymmetric offer→accept) ──────────
+  describe('Draw offers (CHESS_DRAW_OFFER.md rev 3 — offer→accept)', () => {
     const inMatch = (over: Partial<Props> = {}) =>
       baseProps({ currentMatchId: 'm1', gameState: view({}), legalMoves: asLegal(OPENING), ...over });
 
@@ -418,28 +419,51 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
       expect(onDrawOffer).toHaveBeenCalledTimes(1);
     });
 
-    it('after you offer (public state) the button becomes "Revoke DRAW"; tapping it sends onDrawRevoke', () => {
+    it('after you offer (public state) the button becomes "Revoke DRAW", solid amber/dark text; tapping it sends onDrawRevoke', () => {
       const onDrawRevoke = vi.fn();
       render(<ChessHubScreen {...inMatch({ gameState: view({ drawOffers: { alice: 3 } }), onDrawRevoke })} />);
       const btn = screen.getByTestId('chess-draw-revoke');
       expect(btn).toHaveTextContent(/revoke draw/i);
+      expect(btn.className).toMatch(/bg-amber-400/);
+      expect(btn.className).toMatch(/text-background/);
       expect(screen.queryByTestId('chess-draw-offer')).toBeNull();
       fireEvent.click(btn);
       expect(onDrawRevoke).toHaveBeenCalledTimes(1);
     });
 
-    it('shows the "Draw offered" indicator on YOUR bar when you have offered', () => {
+    it('own offer: shows a solid-amber, non-tappable "DRAW OFFERED" status on YOUR bar — no "½", not a button', () => {
       render(<ChessHubScreen {...inMatch({ gameState: view({ drawOffers: { alice: 3 } }) })} />);
-      expect(screen.getByTestId('chess-draw-offered-self')).toHaveTextContent(/draw offered/i);
+      const chip = screen.getByTestId('chess-draw-offered-self');
+      expect(chip).toHaveTextContent(/draw offered/i);
+      expect(chip.textContent).not.toContain('½');
+      expect(chip.tagName).not.toBe('BUTTON');
+      expect(chip.className).toMatch(/bg-amber-400/);
+      expect(chip.className).toMatch(/text-background/);
       expect(screen.queryByTestId('chess-draw-offered-opponent')).toBeNull();
     });
 
-    it("shows the indicator on the OPPONENT's bar when they have offered (both screens see the offerer)", () => {
-      render(<ChessHubScreen {...inMatch({ gameState: view({ drawOffers: { bob: 3 } }) })} />);
-      expect(screen.getByTestId('chess-draw-offered-opponent')).toBeInTheDocument();
+    it("opponent's offer: shows a solid-amber, TAPPABLE \"ACCEPT DRAW?\" pill on the offerer's bar; tapping it sends onDrawAccept", () => {
+      const onDrawAccept = vi.fn();
+      render(<ChessHubScreen {...inMatch({ gameState: view({ drawOffers: { bob: 3 } }), onDrawAccept })} />);
+      const chip = screen.getByTestId('chess-draw-offered-opponent');
+      expect(chip.tagName).toBe('BUTTON');
+      expect(chip).toHaveTextContent(/accept draw/i);
+      expect(chip.className).toMatch(/bg-amber-400/);
+      expect(chip.className).toMatch(/text-background/);
       expect(screen.queryByTestId('chess-draw-offered-self')).toBeNull();
-      // The opponent offered, not me → my button is still "Draw request" (mine to match or ignore).
+      fireEvent.click(chip);
+      expect(onDrawAccept).toHaveBeenCalledTimes(1);
+      // The opponent offered, not me → my own button is still "Draw request" (never itself accepts).
       expect(screen.getByTestId('chess-draw-offer')).toBeInTheDocument();
+    });
+
+    it("my own Draw request button never accepts the opponent's pending offer — pressing it only sends my own onDrawOffer", () => {
+      const onDrawOffer = vi.fn();
+      const onDrawAccept = vi.fn();
+      render(<ChessHubScreen {...inMatch({ gameState: view({ drawOffers: { bob: 3 } }), onDrawOffer, onDrawAccept })} />);
+      fireEvent.click(screen.getByTestId('chess-draw-offer'));
+      expect(onDrawOffer).toHaveBeenCalledTimes(1);
+      expect(onDrawAccept).not.toHaveBeenCalled();
     });
 
     it('no indicator in idle/preview (only surfaces in an active match)', () => {

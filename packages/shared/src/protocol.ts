@@ -55,12 +55,18 @@ export interface MatchResumePayload {
 export type MatchForfeitPayload = Record<string, never>;
 
 /** Offer a draw in the current match (games that declare the draw-offer capability, e.g. chess).
- *  Symmetric: sending this records your offer, OR — if the opponent already offered — completes the
- *  draw. Server-authoritative; the client sends intent only (CHESS_DRAW_OFFER.md). */
+ *  Asymmetric (CHESS_DRAW_OFFER.md rev 3): sending this only ever records YOUR OWN offer — it never
+ *  completes the match, even if the opponent already holds an active offer of their own. Completion
+ *  is via `match.drawAccept` only. Server-authoritative; the client sends intent only. */
 export type MatchDrawOfferPayload = Record<string, never>;
 
 /** Withdraw your own pending draw offer in the current match. */
 export type MatchDrawRevokePayload = Record<string, never>;
+
+/** Accept the OPPONENT's pending draw offer (CHESS_DRAW_OFFER.md rev 3) — the only way a draw offer
+ *  completes the match. Sent by the non-offering player; a no-op if the opponent has no active
+ *  offer. Server-authoritative; the client sends intent only. */
+export type MatchDrawAcceptPayload = Record<string, never>;
 
 // ─── Server → Client ─────────────────────────────────────────────────────────
 

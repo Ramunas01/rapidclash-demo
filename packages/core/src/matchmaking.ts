@@ -268,13 +268,17 @@ export interface Matchmaking {
   getActiveMatch(matchId: string): MatchRecord | undefined;
   /** Apply a player's move. Throws IllegalMove if the move is not in legalMoves. */
   applyMove(matchId: string, playerId: PlayerId, move: Move, now: number): ApplyResult;
-  /** OPT-IN player-initiated draw offer (games declaring `drawOffers`, e.g. chess). Records the
-   *  sender's offer, or completes the draw if the opponent already offered (both-offered = a
-   *  terminal draw state). Throws if the game doesn't support draw offers. Not a move (no turn/clock
-   *  change). The gateway broadcasts the returned state + settles it if terminal (CHESS_DRAW_OFFER.md). */
+  /** OPT-IN player-initiated draw offer (games declaring `drawOffers`, e.g. chess). Records only the
+   *  sender's own offer — never completes the match by itself (CHESS_DRAW_OFFER.md rev 3: completion
+   *  is `acceptDraw`-only). Throws if the game doesn't support draw offers. Not a move (no turn/clock
+   *  change). The gateway broadcasts the returned state + settles it if terminal. */
   offerDraw(matchId: string, playerId: PlayerId): ApplyResult;
   /** Withdraw the sender's own pending draw offer. Throws if the game doesn't support draw offers. */
   revokeDraw(matchId: string, playerId: PlayerId): ApplyResult;
+  /** Accept the OPPONENT's active draw offer (CHESS_DRAW_OFFER.md rev 3) — completes the draw via the
+   *  module's terminal state; a no-op if the opponent has no active offer. Throws if the game doesn't
+   *  support draw offers. */
+  acceptDraw(matchId: string, playerId: PlayerId): ApplyResult;
   /** Settle a terminal match. The rake rate is read from the match's game module meta
    *  (`rakeRate`), so the core never branches on the game id. Idempotent: a second call
    *  returns the stored result without touching the ledger. */
@@ -747,11 +751,10 @@ export function createMatchmaking(
     return result;
   }
 
-  /** OPT-IN player-initiated draw offer (CHESS_DRAW_OFFER.md). Routes to the module's `drawOffers`
-   *  capability generically (invariant #5); throws if the game doesn't declare it. An offer is NOT a
-   *  move — it does not touch turn/clock/deadline. Returns the new state (+ no events) so the gateway
-   *  broadcasts + settles exactly like a move: a both-offered completion yields a terminal draw state
-   *  (checked by the caller via `mod.isTerminal`), which settles through the existing draw path. */
+  /** OPT-IN player-initiated draw offer (CHESS_DRAW_OFFER.md rev 3). Routes to the module's
+   *  `drawOffers` capability generically (invariant #5); throws if the game doesn't declare it. An
+   *  offer is NOT a move — it does not touch turn/clock/deadline. Records only the sender's own offer
+   *  — never completes the match by itself (asymmetric: completion is `acceptDraw` only). */
   function offerDraw(matchId: string, playerId: PlayerId): ApplyResult {
     return applyDrawAction(matchId, playerId, (mod, state) => mod.offer(state, playerId));
   }
@@ -759,6 +762,13 @@ export function createMatchmaking(
   /** Withdraw `playerId`'s own pending draw offer (the opponent's is untouched). Broadcast-only. */
   function revokeDraw(matchId: string, playerId: PlayerId): ApplyResult {
     return applyDrawAction(matchId, playerId, (mod, state) => mod.revoke(state, playerId));
+  }
+
+  /** `playerId` accepts the OPPONENT's active draw offer → a terminal draw state (checked by the
+   *  caller via `mod.isTerminal`), which settles through the existing draw path. No-op if the
+   *  opponent has no active offer. */
+  function acceptDraw(matchId: string, playerId: PlayerId): ApplyResult {
+    return applyDrawAction(matchId, playerId, (mod, state) => mod.accept(state, playerId));
   }
 
   function applyDrawAction(
@@ -867,6 +877,7 @@ export function createMatchmaking(
     getActiveMatch,
     applyMove,
     offerDraw,
+    acceptDraw,
     revokeDraw,
     settleMatch,
     forfeitMatch,

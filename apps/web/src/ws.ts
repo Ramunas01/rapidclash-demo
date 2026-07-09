@@ -240,8 +240,8 @@ export class WsClient {
     return this.send('match.forfeit', {}, matchId);
   }
 
-  /** Offer a draw (games that declare the capability, e.g. chess). Symmetric: sending this records
-   *  your offer, or completes the draw if the opponent already offered (CHESS_DRAW_OFFER.md). */
+  /** Offer a draw (games that declare the capability, e.g. chess). Asymmetric (CHESS_DRAW_OFFER.md
+   *  rev 3): sending this only ever records your own offer — it never completes the match by itself. */
   drawOffer(matchId: string): boolean {
     return this.send('match.drawOffer', {}, matchId);
   }
@@ -249,6 +249,11 @@ export class WsClient {
   /** Withdraw your own pending draw offer. */
   drawRevoke(matchId: string): boolean {
     return this.send('match.drawRevoke', {}, matchId);
+  }
+
+  /** Accept the opponent's pending draw offer — the only way a draw offer completes the match. */
+  drawAccept(matchId: string): boolean {
+    return this.send('match.drawAccept', {}, matchId);
   }
 
   resume(matchId: string): boolean {

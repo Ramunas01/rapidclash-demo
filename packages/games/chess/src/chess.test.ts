@@ -350,6 +350,7 @@ describe('chessModule.drawOffers', () => {
   it('is declared (chess opts into the capability)', () => {
     expect(typeof draw.offer).toBe('function');
     expect(typeof draw.revoke).toBe('function');
+    expect(typeof draw.accept).toBe('function');
   });
 
   it('offer records the sender only (opponent has no offer) — no terminal', () => {
@@ -360,18 +361,41 @@ describe('chessModule.drawOffers', () => {
     expect(chessModule.isTerminal(s)).toBe(false);
   });
 
-  it('both-offered completes the draw: terminal, outcome draw, offers cleared', () => {
+  it('offering while the opponent already has an active offer does NOT complete the draw (asymmetric — rev 3)', () => {
+    // Both players independently offering used to auto-complete the draw (rev <3). Rev 3 drops that:
+    // offering only ever records the sender's own offer — completion is `accept`-only.
     const start = chessModule.init([WHITE, BLACK], rng);
     const afterWhite = draw.offer(start, WHITE);
-    const afterBoth = draw.offer(afterWhite, BLACK); // Black offers while White is pending → draw
-    expect(chessModule.isTerminal(afterBoth)).toBe(true);
-    expect(chessModule.outcome(afterBoth)).toEqual({ type: 'draw' });
-    expect(offersOf(afterBoth)).toEqual({});
+    const afterBoth = draw.offer(afterWhite, BLACK); // Black offers while White is pending
+    expect(chessModule.isTerminal(afterBoth)).toBe(false);
+    expect(offersOf(afterBoth)?.[WHITE]).toBeGreaterThan(0);
+    expect(offersOf(afterBoth)?.[BLACK]).toBeGreaterThan(0);
+  });
+
+  it('accept completes the draw when the opponent has an active offer: terminal, outcome draw, offers cleared', () => {
+    const start = chessModule.init([WHITE, BLACK], rng);
+    const afterWhite = draw.offer(start, WHITE);
+    const accepted = draw.accept(afterWhite, BLACK); // Black accepts White's offer
+    expect(chessModule.isTerminal(accepted)).toBe(true);
+    expect(chessModule.outcome(accepted)).toEqual({ type: 'draw' });
+    expect(offersOf(accepted)).toEqual({});
+  });
+
+  it('accept with no active offer to accept is a no-op', () => {
+    const start = chessModule.init([WHITE, BLACK], rng);
+    const s = draw.accept(start, BLACK); // White never offered
+    expect(chessModule.isTerminal(s)).toBe(false);
+    expect(offersOf(s)).toBeUndefined();
+  });
+
+  it('accepting your own offer (not the opponent’s) is a no-op', () => {
+    const afterWhite = draw.offer(chessModule.init([WHITE, BLACK], rng), WHITE);
+    const s = draw.accept(afterWhite, WHITE); // White tries to accept — but White is the offerer, not Black
+    expect(chessModule.isTerminal(s)).toBe(false);
+    expect(offersOf(s)?.[WHITE]).toBeGreaterThan(0);
   });
 
   it('revoke clears the sender own offer (no draw completes)', () => {
-    // Two active offers can never coexist (both-offered = draw), so a revoke only ever acts on a
-    // single active offer: it clears it and the match stays live.
     const afterWhite = draw.offer(chessModule.init([WHITE, BLACK], rng), WHITE);
     const revoked = draw.revoke(afterWhite, WHITE);
     expect(offersOf(revoked)?.[WHITE]).toBeUndefined();
@@ -391,6 +415,14 @@ describe('chessModule.drawOffers', () => {
     const s = draw.offer(forfeited, BLACK);
     expect(offersOf(s)?.[BLACK]).toBeUndefined();
     expect(chessModule.outcome(s)).toEqual(chessModule.outcome(forfeited)); // unchanged
+  });
+
+  it('a late accept after the match ended (forcedOutcome) is a no-op', () => {
+    const start = chessModule.init([WHITE, BLACK], rng);
+    const afterWhite = draw.offer(start, WHITE);
+    const forfeited = chessModule.forfeit(afterWhite, BLACK); // sets forcedOutcome, offer still pending
+    const s = draw.accept(forfeited, BLACK);
+    expect(chessModule.outcome(s)).toEqual(chessModule.outcome(forfeited)); // unchanged (still the forfeit win)
   });
 
   it('backstop expiry: a pending offer lapses after the offerer own moves, but survives the opponent moves', () => {
