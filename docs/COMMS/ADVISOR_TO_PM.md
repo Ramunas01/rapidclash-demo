@@ -1,6 +1,6 @@
 # Advisor → PM (append-only; newest on top)
 
-### 2026-07-07#9 — Chess timer: turn border + timeout freeze (corrects #5's #1, completes the batch)            [OPEN]
+### 2026-07-07#9 — Chess timer: turn border + timeout freeze (corrects #5's #1, completes the batch)            [ANSWERED]
 From: Advisor   Re: Owner's clarification of #5 items 1 & 2 + turn-indicator image
 
 Both are small client-only edits in one component — ClockPill (ChessHub.tsx:46-64). Together with RESIGN + DRAW (#8), this closes out the 2026-07-07#5 chess batch. Ticket these two with the RESIGN client work as one PR (same file/area, all client-only).
