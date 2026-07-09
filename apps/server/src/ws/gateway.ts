@@ -593,7 +593,8 @@ export function registerWsGateway(
             }
 
             case 'match.drawOffer':
-            case 'match.drawRevoke': {
+            case 'match.drawRevoke':
+            case 'match.drawAccept': {
               const matchId = playerMatch.get(playerId);
               if (!matchId) {
                 sendError(socket, 'NOT_IN_MATCH', 'You are not in an active match');
@@ -610,15 +611,18 @@ export function registerWsGateway(
                 break;
               }
 
-              // Record / complete / revoke the offer (server-authoritative). Not a move — turn,
+              // Record / accept / revoke the offer (server-authoritative). Not a move — turn,
               // clock and deadlines are untouched. The offer state is public; viewFor exposes it.
+              // Asymmetric (CHESS_DRAW_OFFER.md rev 3): only drawAccept can complete the match.
               const result =
                 msg.type === 'match.drawOffer'
                   ? matchmaking.offerDraw(matchId, playerId)
-                  : matchmaking.revokeDraw(matchId, playerId);
+                  : msg.type === 'match.drawRevoke'
+                    ? matchmaking.revokeDraw(matchId, playerId)
+                    : matchmaking.acceptDraw(matchId, playerId);
 
-              // Broadcast the updated (redacted) state to BOTH players so the "Draw offered"
-              // indicator appears/clears on both screens.
+              // Broadcast the updated (redacted) state to BOTH players so the "Draw offered" /
+              // "Accept draw?" indicator appears/clears on both screens.
               for (const pid of match.players) {
                 const s = connections.get(pid);
                 if (s?.readyState === 1) {
@@ -626,8 +630,8 @@ export function registerWsGateway(
                 }
               }
 
-              // Both-offered = draw: the offer completed the match → settle + push match.end,
-              // reusing the existing draw settlement (stakes returned, no rake, no rematch).
+              // An accepted offer completed the match → settle + push match.end, reusing the
+              // existing draw settlement (stakes returned, no rake, no rematch).
               if (mod.isTerminal(result.state)) {
                 const settled = matchmaking.settleMatch(matchId);
                 for (const pid of match.players) {

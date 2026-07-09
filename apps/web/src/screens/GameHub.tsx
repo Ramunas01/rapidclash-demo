@@ -47,10 +47,13 @@ export interface GameAreaArgs {
   legalMoves: string[];
   onMove(move: string): void;
   onForfeit(): void;
-  /** OPT-IN draw offers (games declaring the capability, e.g. chess — CHESS_DRAW_OFFER.md). Send/
-   *  withdraw a draw offer; the server records/completes/clears it. Undefined for games without it. */
+  /** OPT-IN draw offers (games declaring the capability, e.g. chess — CHESS_DRAW_OFFER.md rev 3).
+   *  Send/withdraw your own offer, or accept the opponent's; the server records/resolves/clears it.
+   *  Undefined for games without it. */
   onDrawOffer?(): void;
   onDrawRevoke?(): void;
+  /** Accept the opponent's active offer — the only way a draw offer completes the match. */
+  onDrawAccept?(): void;
   playerId: string | null;
   opponentId: string | null;
   username: string | null;
@@ -109,9 +112,11 @@ export interface GameHubScreenProps {
   onTakeChallenge(matchId: string): void;
   onMakeMove(move: string): void;
   onForfeit(): void;
-  /** OPT-IN draw offers (chess — CHESS_DRAW_OFFER.md). App wraps the WS calls; other hubs ignore them. */
+  /** OPT-IN draw offers (chess — CHESS_DRAW_OFFER.md rev 3). App wraps the WS calls; other hubs
+   *  ignore them. */
   onDrawOffer?(): void;
   onDrawRevoke?(): void;
+  onDrawAccept?(): void;
   /** Subscribe/unsubscribe to EVERY game's feed (cross-game ticker). App wraps the WS calls. */
   onTrackChallenges(gameIds: string[]): void;
   onUntrackChallenges(): void;
@@ -202,7 +207,7 @@ export function GameHub(props: GameHubProps) {
     gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, ownBarResult, suppressDrawBar,
     token, playerId, username, opponentId, opponentName, serverClockOffset = 0, balance, currentMatchId, gameState, legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
-    onPlay, onCancel, onTakeChallenge, onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onTrackChallenges,
+    onPlay, onCancel, onTakeChallenge, onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, onTrackChallenges,
     onUntrackChallenges, onSelectGame, onOpenWallet, onOpenGameList, onResultDismiss,
     loggedIn = true, initialStake,
   } = props;
@@ -409,7 +414,7 @@ export function GameHub(props: GameHubProps) {
 
   // Built once and fed to the game area, the per-game slot asides (chess clocks) and the play action.
   const timeControlBaseMs = timeControl?.options.find((o) => o.id === selectedControl)?.baseMs;
-  const areaArgs: GameAreaArgs = { phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, playerId, opponentId, username, opponentName, serverClockOffset, timeControlBaseMs, outcome: overlay?.outcome ?? null, drawBeat };
+  const areaArgs: GameAreaArgs = { phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, playerId, opponentId, username, opponentName, serverClockOffset, timeControlBaseMs, outcome: overlay?.outcome ?? null, drawBeat };
   // The bar-level draw outline: on for every game EXCEPT the ones that carry the draw on their own
   // surface (Blackjack → cards + "Push" label). The board still gets the full `drawBeat` via areaArgs.
   const barDrawBeat = suppressDrawBar ? false : drawBeat;

@@ -88,19 +88,26 @@ function ChessClockChip({ clock, pid, testid, ended }: { clock: NonNullable<Ches
   return <ClockPill ms={ms} active={isActive} low={ms < LOW_TIME_MS} testid={testid} />;
 }
 
-/** The amber "Draw offered" indicator (CHESS_DRAW_OFFER.md). It renders on the OFFERING player's
- *  bar, keyed off the public `drawOffers` view state, so it shows on BOTH screens next to that
- *  player's name (the offerer sees it on their own bar; the opponent sees it on the offerer's).
- *  Reuses the existing draw hue (amber-400 — `slotReveal.tsx:48`). Not pressable; the action is the
- *  Draw request ⇄ Revoke DRAW button. */
-function DrawOfferedChip({ side }: { side: 'opponent' | 'own' }) {
+/** The amber draw-offer indicator on the OFFERING player's bar (CHESS_DRAW_OFFER.md rev 3), keyed
+ *  off the public `drawOffers` view state — it shows on BOTH screens next to the offerer's name, but
+ *  the two viewers see different controls (asymmetric offer→accept): the offerer sees a non-tappable
+ *  `DRAW OFFERED` status on their own bar; the opponent sees a tappable `ACCEPT DRAW?` pill on that
+ *  same bar, which is the ONLY way to complete the draw. Solid amber fill + dark text (no translucent/
+ *  outline style, no "½" glyph) — reuses the existing draw hue (amber-400 — `slotReveal.tsx:48`). */
+function DrawOfferedChip({ side, onAccept }: { side: 'opponent' | 'own'; onAccept?: () => void }) {
+  const testid = side === 'own' ? 'chess-draw-offered-self' : 'chess-draw-offered-opponent';
+  const base = 'flex items-center gap-1 rounded-md bg-amber-400 px-2 py-1 text-[11px] font-black uppercase tracking-wide text-background';
+  if (side === 'own') {
+    return (
+      <span data-testid={testid} className={base}>
+        Draw offered
+      </span>
+    );
+  }
   return (
-    <span
-      data-testid={side === 'own' ? 'chess-draw-offered-self' : 'chess-draw-offered-opponent'}
-      className="flex items-center gap-1 rounded-md bg-amber-400/15 px-2 py-1 text-[11px] font-black uppercase tracking-wide text-amber-400 ring-1 ring-amber-400/40"
-    >
-      <span aria-hidden="true">½</span>Draw offered
-    </span>
+    <button type="button" data-testid={testid} onClick={() => onAccept?.()} className={cn(base, 'hover:brightness-110')}>
+      Accept draw?
+    </button>
   );
 }
 
@@ -125,7 +132,7 @@ function ChessSlotAside(args: GameAreaArgs, side: 'opponent' | 'own'): ReactNode
   if (!offered) return clock;
   return (
     <>
-      <DrawOfferedChip side={side} />
+      <DrawOfferedChip side={side} onAccept={side === 'opponent' ? args.onDrawAccept : undefined} />
       {clock}
     </>
   );
@@ -346,11 +353,13 @@ function ChessResultPopup({ outcome, playerId, opponentName }: { outcome: Outcom
   );
 }
 
-// ── Draw offers: the SECONDARY-action button (Play-a-Friend slot) during a match (CHESS_DRAW_OFFER.md) ─
-// Symmetric mutual request: Draw request offers immediately (button → Revoke DRAW + a "Draw offered"
-// bar indicator on both screens); pressing your own Draw request while the opponent already offered
-// completes the draw; Revoke withdraws your own offer. NO confirm step (unlike Resign) — an offer
-// alone can't end the game or cost the stake and is revocable. Server-authoritative: the button
+// ── Draw offers: the SECONDARY-action button (Play-a-Friend slot) during a match (CHESS_DRAW_OFFER.md
+// rev 3) ─ Asymmetric offer→accept: Draw request offers immediately (button → Revoke DRAW + a solid-
+// orange "Draw offered" bar indicator on the offerer's own bar / a tappable "Accept draw?" pill on the
+// opponent's view of it, ChessSlotAside/DrawOfferedChip). Pressing Draw request never itself accepts
+// an incoming offer — only the ACCEPT DRAW? pill does (the opponent's own Draw request just creates
+// their own separate offer). Revoke withdraws your own offer. NO confirm step (unlike Resign) — an
+// offer alone can't end the game or cost the stake and is revocable. Server-authoritative: the button
 // reflects the public offer state (view.drawOffers), never local optimism.
 function ChessSecondaryAction({ args }: { args: GameAreaArgs }) {
   const { gameState, playerId, onDrawOffer, onDrawRevoke } = args;
@@ -363,7 +372,7 @@ function ChessSecondaryAction({ args }: { args: GameAreaArgs }) {
         type="button"
         data-testid="chess-draw-revoke"
         onClick={() => onDrawRevoke?.()}
-        className={cn(base, 'bg-amber-400/15 text-amber-400 ring-1 ring-amber-400/50 hover:bg-amber-400/25')}
+        className={cn(base, 'bg-amber-400 text-background hover:brightness-110')}
       >
         Revoke DRAW
       </button>

@@ -68,10 +68,11 @@ interface ChessState {
   clock?: PlayerClocks;
   /** Present only when the match ended via forfeit, bypassing normal play. */
   forcedOutcome?: Outcome;
-  /** Player-initiated draw offers (CHESS_DRAW_OFFER.md). A player id present here holds an active
-   *  offer; the value is that offerer's remaining own-move backstop (DRAW_OFFER_EXPIRY_MOVES),
+  /** Player-initiated draw offers (CHESS_DRAW_OFFER.md rev 3). A player id present here holds an
+   *  active offer; the value is that offerer's remaining own-move backstop (DRAW_OFFER_EXPIRY_MOVES),
    *  decremented on each of their moves and cleared at 0. Public (viewFor exposes it — an offer is
-   *  public by design). The draw completes the instant BOTH players hold an active offer. */
+   *  public by design). Asymmetric: offering never completes the match by itself — only the OTHER
+   *  player accepting (`drawOffers.accept`) does. */
   drawOffers?: Partial<Record<PlayerId, number>>;
 }
 
@@ -247,22 +248,20 @@ export const chessModule: GameModule = {
     return { ...s, forcedOutcome: { type: 'win', winner: opponent } };
   },
 
-  // Player-initiated draw offers (CHESS_DRAW_OFFER.md). Symmetric: `offer` records the sender's
-  // offer, OR — if the opponent already offered — completes the draw via `forcedOutcome` (reusing
-  // the existing draw terminal: stakes returned, no rake, no rematch). `revoke` clears the sender's
-  // own offer only. The core routes match.drawOffer / match.drawRevoke here generically.
+  // Player-initiated draw offers (CHESS_DRAW_OFFER.md rev 3). Asymmetric: `offer` records ONLY the
+  // sender's own offer — it never completes the match, even if the opponent already holds an active
+  // offer of their own. `accept` is the sole completion path: called by the opponent of an active
+  // offer, it resolves via `forcedOutcome` (reusing the existing draw terminal: stakes returned, no
+  // rake, no rematch); a no-op if there's no active offer to accept. `revoke` clears the sender's own
+  // offer only. The core routes match.drawOffer / match.drawRevoke / match.drawAccept here generically.
   drawOffers: {
     offer(state: GameState, playerId: PlayerId): GameState {
       const s = cast(state);
       // The match already ended (forfeit / decisive result) — a late offer is a no-op.
       if (s.forcedOutcome !== undefined) return s;
-      const opponent = s.players.find((p) => p !== playerId) as PlayerId;
       const offers = s.drawOffers ?? {};
-      // Both-offered = draw: the opponent already holds an active offer → complete the draw now.
-      if (offers[opponent] !== undefined) {
-        return { ...s, drawOffers: {}, forcedOutcome: { type: 'draw' } };
-      }
-      // Otherwise record the sender's offer with a fresh backstop (idempotent re-offer refreshes it).
+      // Record (or refresh, idempotently) the sender's own offer. Never completes the match by
+      // itself — the opponent must explicitly accept.
       return { ...s, drawOffers: { ...offers, [playerId]: DRAW_OFFER_EXPIRY_MOVES } };
     },
     revoke(state: GameState, playerId: PlayerId): GameState {
@@ -271,6 +270,14 @@ export const chessModule: GameModule = {
       const offers = { ...s.drawOffers };
       delete offers[playerId];
       return { ...s, drawOffers: offers };
+    },
+    accept(state: GameState, playerId: PlayerId): GameState {
+      const s = cast(state);
+      // The match already ended, or the sender has no offer to accept — no-op.
+      if (s.forcedOutcome !== undefined) return s;
+      const opponent = s.players.find((p) => p !== playerId) as PlayerId;
+      if (s.drawOffers?.[opponent] === undefined) return s;
+      return { ...s, drawOffers: {}, forcedOutcome: { type: 'draw' } };
     },
   },
 };
