@@ -340,3 +340,94 @@ describe('chessModule clock (time control)', () => {
     expect(() => chessModule.applyMove(s, { from: 'e2', to: 'e4' }, { playerId: WHITE, now: 2000 })).toThrow(IllegalMove);
   });
 });
+
+// ── Player-initiated draw offers (CHESS_DRAW_OFFER.md) ──────────────────────────────────────────
+describe('chessModule.drawOffers', () => {
+  const draw = chessModule.drawOffers!;
+  type WithOffers = { drawOffers?: Record<string, number>; forcedOutcome?: { type: string } };
+  const offersOf = (s: unknown) => (s as WithOffers).drawOffers;
+
+  it('is declared (chess opts into the capability)', () => {
+    expect(typeof draw.offer).toBe('function');
+    expect(typeof draw.revoke).toBe('function');
+  });
+
+  it('offer records the sender only (opponent has no offer) — no terminal', () => {
+    const start = chessModule.init([WHITE, BLACK], rng);
+    const s = draw.offer(start, WHITE);
+    expect(offersOf(s)?.[WHITE]).toBeGreaterThan(0);
+    expect(offersOf(s)?.[BLACK]).toBeUndefined();
+    expect(chessModule.isTerminal(s)).toBe(false);
+  });
+
+  it('both-offered completes the draw: terminal, outcome draw, offers cleared', () => {
+    const start = chessModule.init([WHITE, BLACK], rng);
+    const afterWhite = draw.offer(start, WHITE);
+    const afterBoth = draw.offer(afterWhite, BLACK); // Black offers while White is pending → draw
+    expect(chessModule.isTerminal(afterBoth)).toBe(true);
+    expect(chessModule.outcome(afterBoth)).toEqual({ type: 'draw' });
+    expect(offersOf(afterBoth)).toEqual({});
+  });
+
+  it('revoke clears the sender own offer (no draw completes)', () => {
+    // Two active offers can never coexist (both-offered = draw), so a revoke only ever acts on a
+    // single active offer: it clears it and the match stays live.
+    const afterWhite = draw.offer(chessModule.init([WHITE, BLACK], rng), WHITE);
+    const revoked = draw.revoke(afterWhite, WHITE);
+    expect(offersOf(revoked)?.[WHITE]).toBeUndefined();
+    expect(chessModule.isTerminal(revoked)).toBe(false);
+  });
+
+  it('revoke with no active offer is a no-op', () => {
+    const start = chessModule.init([WHITE, BLACK], rng);
+    const s = draw.revoke(start, WHITE);
+    expect(offersOf(s)?.[WHITE]).toBeUndefined();
+    expect(chessModule.isTerminal(s)).toBe(false);
+  });
+
+  it('a late offer after the match ended (forcedOutcome) is a no-op', () => {
+    const start = chessModule.init([WHITE, BLACK], rng);
+    const forfeited = chessModule.forfeit(start, WHITE); // sets forcedOutcome
+    const s = draw.offer(forfeited, BLACK);
+    expect(offersOf(s)?.[BLACK]).toBeUndefined();
+    expect(chessModule.outcome(s)).toEqual(chessModule.outcome(forfeited)); // unchanged
+  });
+
+  it('backstop expiry: a pending offer lapses after the offerer own moves, but survives the opponent moves', () => {
+    // White offers, then plays: the offer must persist through several of White's own moves and
+    // then auto-clear (a forgotten offer never lingers). The opponent's moves do not decrement it.
+    let s: unknown = draw.offer(chessModule.init([WHITE, BLACK], rng), WHITE);
+    expect(offersOf(s)?.[WHITE]).toBeGreaterThan(0);
+    // A sequence of legal moves alternating sides; count White's own plies until the offer clears.
+    const seq: ChessMove[] = [
+      { from: 'e2', to: 'e4' }, // White 1
+      { from: 'e7', to: 'e5' }, // Black
+      { from: 'g1', to: 'f3' }, // White 2
+      { from: 'b8', to: 'c6' }, // Black
+      { from: 'f1', to: 'c4' }, // White 3
+      { from: 'g8', to: 'f6' }, // Black
+    ];
+    let clearedAfterWhitePlies = 0;
+    let whitePlies = 0;
+    for (const m of seq) {
+      const mover = view(s).fen.split(' ')[1] === 'w' ? WHITE : BLACK;
+      s = chessModule.applyMove(s, m, ctx(mover)).state;
+      if (mover === WHITE) {
+        whitePlies += 1;
+        if (offersOf(s)?.[WHITE] === undefined && clearedAfterWhitePlies === 0) clearedAfterWhitePlies = whitePlies;
+      } else {
+        // A Black move never clears White's offer.
+        if (whitePlies > 0 && clearedAfterWhitePlies === 0) expect(offersOf(s)?.[WHITE]).toBeGreaterThan(0);
+      }
+    }
+    expect(clearedAfterWhitePlies).toBeGreaterThan(0); // it did eventually lapse
+    expect(offersOf(s)?.[WHITE]).toBeUndefined();
+  });
+
+  it('viewFor exposes the offer publicly (perfect-information — no redaction)', () => {
+    const s = draw.offer(chessModule.init([WHITE, BLACK], rng), WHITE);
+    for (const p of [WHITE, BLACK]) {
+      expect(offersOf(chessModule.viewFor(s, p))?.[WHITE]).toBeGreaterThan(0);
+    }
+  });
+});

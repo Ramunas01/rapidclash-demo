@@ -54,6 +54,14 @@ export interface MatchResumePayload {
 /** Concede or leave an in-progress match (triggers forfeit on the server). */
 export type MatchForfeitPayload = Record<string, never>;
 
+/** Offer a draw in the current match (games that declare the draw-offer capability, e.g. chess).
+ *  Symmetric: sending this records your offer, OR — if the opponent already offered — completes the
+ *  draw. Server-authoritative; the client sends intent only (CHESS_DRAW_OFFER.md). */
+export type MatchDrawOfferPayload = Record<string, never>;
+
+/** Withdraw your own pending draw offer in the current match. */
+export type MatchDrawRevokePayload = Record<string, never>;
+
 // ─── Server → Client ─────────────────────────────────────────────────────────
 
 /** You are in the lobby; no opponent has joined yet. */

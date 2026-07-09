@@ -395,4 +395,56 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
     expect(screen.getByTestId('home-join-j1')).toBeDisabled(); // in-match → one commitment at a time
     expect(screen.getByText(/one match at a time/i)).toBeInTheDocument();
   });
+
+  // ── Draw offers: the secondary-action button (Play a Friend → Draw request ⇄ Revoke DRAW) + indicator ──
+  describe('Draw offers (CHESS_DRAW_OFFER.md)', () => {
+    const inMatch = (over: Partial<Props> = {}) =>
+      baseProps({ currentMatchId: 'm1', gameState: view({}), legalMoves: asLegal(OPENING), ...over });
+
+    it('idle shows the default Play a Friend, not a draw control', () => {
+      render(<ChessHubScreen {...baseProps()} />);
+      expect(screen.getByTestId('hub-play-friend')).toBeInTheDocument();
+      expect(screen.queryByTestId('chess-draw-offer')).toBeNull();
+      expect(screen.queryByTestId('chess-draw-revoke')).toBeNull();
+    });
+
+    it('in-match replaces Play a Friend with "Draw request"; tapping it sends onDrawOffer', () => {
+      const onDrawOffer = vi.fn();
+      render(<ChessHubScreen {...inMatch({ onDrawOffer })} />);
+      const btn = screen.getByTestId('chess-draw-offer');
+      expect(btn).toHaveTextContent(/draw request/i);
+      expect(screen.queryByTestId('hub-play-friend')).toBeNull();
+      fireEvent.click(btn);
+      expect(onDrawOffer).toHaveBeenCalledTimes(1);
+    });
+
+    it('after you offer (public state) the button becomes "Revoke DRAW"; tapping it sends onDrawRevoke', () => {
+      const onDrawRevoke = vi.fn();
+      render(<ChessHubScreen {...inMatch({ gameState: view({ drawOffers: { alice: 3 } }), onDrawRevoke })} />);
+      const btn = screen.getByTestId('chess-draw-revoke');
+      expect(btn).toHaveTextContent(/revoke draw/i);
+      expect(screen.queryByTestId('chess-draw-offer')).toBeNull();
+      fireEvent.click(btn);
+      expect(onDrawRevoke).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows the "Draw offered" indicator on YOUR bar when you have offered', () => {
+      render(<ChessHubScreen {...inMatch({ gameState: view({ drawOffers: { alice: 3 } }) })} />);
+      expect(screen.getByTestId('chess-draw-offered-self')).toHaveTextContent(/draw offered/i);
+      expect(screen.queryByTestId('chess-draw-offered-opponent')).toBeNull();
+    });
+
+    it("shows the indicator on the OPPONENT's bar when they have offered (both screens see the offerer)", () => {
+      render(<ChessHubScreen {...inMatch({ gameState: view({ drawOffers: { bob: 3 } }) })} />);
+      expect(screen.getByTestId('chess-draw-offered-opponent')).toBeInTheDocument();
+      expect(screen.queryByTestId('chess-draw-offered-self')).toBeNull();
+      // The opponent offered, not me → my button is still "Draw request" (mine to match or ignore).
+      expect(screen.getByTestId('chess-draw-offer')).toBeInTheDocument();
+    });
+
+    it('no indicator in idle/preview (only surfaces in an active match)', () => {
+      render(<ChessHubScreen {...baseProps({ gameState: view({ drawOffers: { alice: 3 } }) })} />);
+      expect(screen.queryByTestId('chess-draw-offered-self')).toBeNull();
+    });
+  });
 });

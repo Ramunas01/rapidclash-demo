@@ -94,6 +94,9 @@ export interface ChessView {
   /** Cumulative per-player clocks (perfect-info → both exposed). Display-only; server-authoritative. */
   clock?: PlayerClocks;
   forcedOutcome?: { type: string; winner?: string };
+  /** Player-initiated draw offers (CHESS_DRAW_OFFER.md): a player id present here holds an active
+   *  offer (value = the offerer's remaining backstop moves). Public — both clients render it. */
+  drawOffers?: Record<string, number>;
 }
 
 export interface BlackjackCard {
@@ -911,6 +914,18 @@ export function App() {
     if (!wsRef.current.forfeit(currentMatchId)) setActionNotice(RECONNECT_NOTICE);
   }, [currentMatchId]);
 
+  // Chess draw offers (CHESS_DRAW_OFFER.md): send the intent; the server records/completes/clears
+  // it and broadcasts the public offer state. Generic props (only chess wires them today).
+  const handleDrawOffer = useCallback(() => {
+    if (!currentMatchId || !wsRef.current) return;
+    if (!wsRef.current.drawOffer(currentMatchId)) setActionNotice(RECONNECT_NOTICE);
+  }, [currentMatchId]);
+
+  const handleDrawRevoke = useCallback(() => {
+    if (!currentMatchId || !wsRef.current) return;
+    if (!wsRef.current.drawRevoke(currentMatchId)) setActionNotice(RECONNECT_NOTICE);
+  }, [currentMatchId]);
+
   // Hub result overlay dismissed (auto after ~4s, or the manual X) → drop the payload that drove the
   // overlay, but PRESERVE the finished-round board view (gameState/opponent) so the idle post-round
   // result persists until the player PLAYs or leaves (the wipe now fires only there — resetRoundState).
@@ -1017,6 +1032,8 @@ export function App() {
           onTakeChallenge={handleTakeChallenge}
           onMakeMove={handleMakeMove}
           onForfeit={handleForfeit}
+          onDrawOffer={handleDrawOffer}
+          onDrawRevoke={handleDrawRevoke}
           onTrackChallenges={handleTrackChallenges}
           onUntrackChallenges={handleUntrackChallenges}
           onSelectGame={handleSelectGame}

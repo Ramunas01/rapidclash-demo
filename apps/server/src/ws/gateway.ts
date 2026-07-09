@@ -592,6 +592,55 @@ export function registerWsGateway(
               break;
             }
 
+            case 'match.drawOffer':
+            case 'match.drawRevoke': {
+              const matchId = playerMatch.get(playerId);
+              if (!matchId) {
+                sendError(socket, 'NOT_IN_MATCH', 'You are not in an active match');
+                break;
+              }
+              const match = matchmaking.getActiveMatch(matchId);
+              if (!match) {
+                sendError(socket, 'MATCH_NOT_FOUND', `No active match "${matchId}"`);
+                break;
+              }
+              const mod = moduleByGame.get(match.gameId)!;
+              if (!mod.drawOffers) {
+                sendError(socket, 'UNSUPPORTED', `${match.gameId} does not support draw offers`);
+                break;
+              }
+
+              // Record / complete / revoke the offer (server-authoritative). Not a move — turn,
+              // clock and deadlines are untouched. The offer state is public; viewFor exposes it.
+              const result =
+                msg.type === 'match.drawOffer'
+                  ? matchmaking.offerDraw(matchId, playerId)
+                  : matchmaking.revokeDraw(matchId, playerId);
+
+              // Broadcast the updated (redacted) state to BOTH players so the "Draw offered"
+              // indicator appears/clears on both screens.
+              for (const pid of match.players) {
+                const s = connections.get(pid);
+                if (s?.readyState === 1) {
+                  send<MatchStatePayload>(s, 'match.state', { state: mod.viewFor(result.state, pid), events: result.events }, matchId);
+                }
+              }
+
+              // Both-offered = draw: the offer completed the match → settle + push match.end,
+              // reusing the existing draw settlement (stakes returned, no rake, no rematch).
+              if (mod.isTerminal(result.state)) {
+                const settled = matchmaking.settleMatch(matchId);
+                for (const pid of match.players) {
+                  playerMatch.delete(pid);
+                  const s = connections.get(pid);
+                  if (s?.readyState === 1) {
+                    send<MatchEndPayload>(s, 'match.end', { outcome: settled.outcome, settlement: settled.settlement[pid] }, matchId);
+                  }
+                }
+              }
+              break;
+            }
+
             default:
               sendError(socket, 'UNKNOWN_TYPE', `Unknown message type "${msg.type}"`);
           }
