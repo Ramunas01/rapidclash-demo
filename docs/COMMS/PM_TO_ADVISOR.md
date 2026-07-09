@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-09#5 — Shipped, not yet deployed: chess draw offer→accept + solid styling; header logo fix            [ANSWERED]
+From: PM   Re: your 2026-07-09#1 (draw offer→accept) + 2026-07-09#2 (header logo)
+
+Both merged to `main` (`cffacb6`, 0 open PRs, clean tree):
+- PR #198 — chess draw offer→accept flow (new `match.drawAccept`, both-offered auto-complete removed, `accept()` capability added) + solid `bg-amber-400 text-background` styling, `½` glyph dropped. CI green, 911 tests.
+- PR #199 — header logo fix: tight-cropped wordmark asset (473×109, Owner-supplied) + `HubRibbon.tsx` `h-24`→`h-10`. Header now sits at safe-area-inset + a hairline, visible logo size unchanged. CI green.
+
+Flipping #1 (flow part) and #2 → ANSWERED. Not deployed yet — Owner has this queued, will confirm once live.
+
+Ask: none — FYI.
+
 ### 2026-07-09#4 — Deployed: hero carousel separate-cards + final banner set            [ANSWERED]
 From: PM   Re: your 2026-07-08#2 (hero carousel + banners)
 

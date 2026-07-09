@@ -1,6 +1,35 @@
 # Advisor → PM (append-only; newest on top)
 
-### 2026-07-09#1 — Chess draw offer: styling fixes + offer→accept flow change (Designer)            [OPEN, NEEDS-OWNER for the flow part]
+### 2026-07-09#2 — Header top offset: real cause is the logo asset, not padding (Designer)            [ANSWERED]
+From: Advisor   Re: Designer "reduce header top offset" + annotated screenshot (~77px)
+
+Essence: the goal (header snug under the status bar, page starts higher) is right and achievable — but the Designer's suspected cause is not in the code. There is no doubled safe-area and no large top padding to remove. The ~77px is (1) the device safe-area inset, which is correct and must stay, plus (2) an oversized, mostly-empty logo asset. The real lever is the logo, which is technically a "size" touch — so this needs a quick Designer OK before build. Client-only, one component + one asset.
+
+Sanity check (measured):
+
+The header (HubRibbon.tsx:26) already uses a single pt-[env(safe-area-inset-top)] with no extra offset; the shell (HUB_SHELL) has no top pad ("there is no top pad" — layout.ts:15). So there's nothing doubled to collapse — a coder told to "reduce the top padding" would find it's already minimal, or worse, subtract from the inset and cause a notch collision.
+The gap is two things: (a) env(safe-area-inset-top) ≈ 50–59px on this iPhone — correct, unavoidable, keep it (this is item 4, already satisfied); (b) the logo: <img class="h-24 …"> = a 96px-tall box, and the wordmark webp is 600×257 with 61% vertical transparent padding (mark only spans y=78–179). At 96px that's ~29px of empty space above the visible logo. (a)+(b) ≈ the ~77px measured.
+
+Recommended fix (Option 1 — cleanest, visible logo unchanged):
+
+Replace apps/web/src/assets/brand/rapidclash-wordmark.webp with the tight-cropped version (staged — same filename, drop-in; 473×109, whitespace removed).
+In HubRibbon.tsx:28, change the logo height h-24 → h-10 (≈40px). The visible wordmark stays ~the same size it is now (~38px tall, ~174px wide), but the header box shrinks from 96px to 40px, so the whole page moves up ~56px and the ~29px of logo whitespace goes to zero. Header then sits at safe-area-inset + ~0 — even tighter than the Designer's 8–12px target.
+
+Wordmark is used only here (one usage), so nothing else is affected.
+The one caveat to clear with the Designer: this touches the logo height, which their brief said not to do ("don't touch sizes"). But it's the only real lever, and the visible logo size is preserved, so nothing looks resized — the page just starts higher. Need their nod on it.
+
+Alternative (Option 2 — code-only, no asset swap): just h-24 → h-14. Smaller change, but the visible wordmark also shrinks and some whitespace remains. Less clean; Option 1 preferred.
+
+Honoring the rest of the brief:
+
+Item 2 (change nothing else): honored — only the logo asset + its height class; HUB_BODY and every gap below are untouched, so content simply shifts up.
+Item 4 (notch safe): the fix keeps pt-[env(safe-area-inset-top)], so the safe-area is still respected — no status-bar collision. Already satisfied; verify on device after.
+
+Done when: header sits directly under the safe-area inset with only a hairline of extra space; visible logo unchanged in size; every gap below pixel-identical; safe-area still respected on a notch device.
+
+Ask: get the Designer's OK to adjust the logo height (Option 1), since the "extra top padding" they expected to remove isn't there — the logo asset is the actual cause. On yes, ticket as one small client PR (asset swap + h-24→h-10 in HubRibbon.tsx).
+
+### 2026-07-09#1 — Chess draw offer: styling fixes + offer→accept flow change (Designer)            [ANSWERED]
 From: Advisor   Re: Designer draw-offer feedback + 2 screenshots
 
 Essence: two categories. (A) Pure styling — solid orange, drop the "½" — client-only, ship now. (B) A mechanic change — acceptance moves from "opponent presses their own Draw button" to a dedicated ACCEPT DRAW? pill in the opponent's view; needs a new drawAccept protocol message → owner-gated. Spec rewritten to match: docs/CHESS_DRAW_OFFER.md (revision 3 — replaces the symmetric version that shipped; Owner to commit).
