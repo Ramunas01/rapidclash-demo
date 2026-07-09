@@ -1,75 +1,75 @@
-# CHESS — Draw Offer (symmetric mutual request)
+# CHESS — Draw Offer (offer → accept)
 
-*Spec for the player-initiated draw in chess. **This replaces the earlier two-tap propose→accept version** — the Designer-blessed mechanic is symmetric: each player has a Draw button; pressing it offers immediately, and the draw completes when both sides have offered. Owner-gated: adds protocol messages + match state. Scope: chess only, active match only. Draw terminal reuses the existing locked chess draw (stakes returned, no rake, no rematch, amber/orange result).*
+*Spec for the player-initiated draw in chess. **Revision 3 — this replaces the symmetric "both press their own Draw button" mechanic that shipped.** The Designer-final flow is asymmetric: the offerer offers, the opponent accepts via a dedicated pill. Owner-gated (adds one protocol message). Scope: chess only, active match only. Draw terminal reuses the locked chess draw (stakes returned, no rake, no rematch, orange/amber result).*
 
 ## Summary
 
-During an active match the idle **Play a Friend** button becomes **Draw request**. Pressing it **sends an offer immediately** and the button becomes **Revoke DRAW**; a "Draw offered" indicator appears on the offerer's bar (visible on both screens, next to the offerer's name). The draw completes the moment **both** players have an active offer — i.e. if you press *Draw request* while the opponent's offer is already pending, the game draws at once. You can withdraw your own pending offer with *Revoke DRAW*. Server-authoritative throughout (invariant #2); the client sends intent only. The offer is public by design — not hidden state, so no redaction concern.
+During an active match the idle **Play a Friend** button becomes **Draw request**. Pressing it offers immediately: the offerer's own bar shows a solid-orange **DRAW OFFERED** status pill, their button becomes **Revoke DRAW**, and in the opponent's view the offerer's bar shows a solid-orange **ACCEPT DRAW?** pill. The opponent taps **ACCEPT DRAW?** to agree → draw. The offerer can **Revoke DRAW** to withdraw; the offer also auto-expires after the set move window. Server-authoritative throughout (invariant #2). The offer is public — not hidden state — so no redaction concern; the only per-viewer difference is which control is actionable.
 
-**Why no confirm step (unlike Resign):** an accidental single tap on *Draw request* is harmless — an offer alone can't end the game or cost the stake, it needs the opponent's matching offer, and it's revocable. Resign needs a confirm because one tap forfeits the stake; a draw offer does not. The two controls intentionally differ for this reason.
+**The two players see different things during a pending offer** (both on the offerer's bar):
+- **Offerer** → `DRAW OFFERED` — status, **not** tappable.
+- **Opponent** → `ACCEPT DRAW?` — **the accept button**, tappable.
 
-## The control + indicator
+The opponent's own *Draw request* button does **not** accept — it only makes/revokes the opponent's own separate offer. Accepting happens solely via the `ACCEPT DRAW?` pill.
 
-- **Secondary button** (the Play-a-Friend slot), by state: `Play a Friend` (idle) → `Draw request` (in match, no offer) → `Revoke DRAW` (after you offer) → back to `Draw request` on revoke/expiry/decline → `Play a Friend` (result/idle).
-- **"Draw offered" indicator** on the offering player's bar, next to their name. It is one piece of state (this player has an active offer) rendered on that player's slot, so it shows on **both screens** — the offerer sees it on their own bar, the opponent sees it next to the offerer's name. Amber family (reuse the existing draw hue — the result already uses `amber-400`, `slotReveal.tsx:48`). Not a separate pressable pill; the action is the button.
+**Why no confirm step (unlike Resign):** an accidental *Draw request* tap is harmless — an offer can't end the game by itself (the opponent must accept) and is revocable. Accepting is a single deliberate tap on a distinct pill. Resign forfeits on one tap, so it needs its in-button confirm; draw does not.
+
+## Visual style (all three elements, one system)
+
+Solid, fully opaque **amber/orange** fill with **dark text** (`bg-amber-400 text-background`) — the existing draw hue (`slotReveal.tsx:48`). No translucent fills, no outline-only style, **no "½" glyph**. Applies to: `DRAW OFFERED` pill, `ACCEPT DRAW?` pill, and the `Revoke DRAW` button — so the whole draw state reads as one orange system. Recommend tokenizing the hue (`--draw` = `#fbbf24`).
 
 ## State machine (per player P, active match)
 
-| State | Trigger | Button (secondary) | P's bar indicator | Server msg |
-|---|---|---|---|---|
-| **IDLE** | match active, no offer by P | `Draw request` (active) | none | — |
-| **OFFERED** | P taps *Draw request* (opponent has no active offer) | `Revoke DRAW` (active) | "Draw offered" (both screens) | **`drawOffer`** |
-| **(completion)** | P taps *Draw request* while the **opponent** is OFFERED | — → draw terminal | — | **`drawOffer`** → server resolves draw |
-| **(revoke)** | P taps *Revoke DRAW* | back to `Draw request` | indicator clears | **`drawRevoke`** |
+| Viewer sees on the offerer's bar | Condition | Control |
+|---|---|---|
+| `DRAW OFFERED` | P is the offerer, viewing own offer (`side==='own'`) | status, non-tappable |
+| `ACCEPT DRAW?` | P is the opponent of the offerer (`side==='opponent'`) | button → `drawAccept` |
 
-Symmetric: there is no distinct "accept". Pressing your Draw button either **creates** your offer (opponent not yet offered) or **completes** the draw (opponent already offered). Both-offered = draw.
+Secondary button, by P's own state: `Play a Friend` (idle) → `Draw request` (in match, P has no offer) → `Revoke DRAW` (P has an active offer) → back on revoke/expiry/agreement → `Play a Friend` (result).
 
 ## Lifecycle & edge cases
 
-- **Completion:** server resolves `{type:'draw'}` the instant both players hold an active offer → existing chess draw settlement (stakes returned, no rake, no rematch) → amber/orange "Draw" popup + amber/orange bar outlines on both names (`chessResultLine 'Draw'`, `suppressResultOverlay` — existing path, **reuse, don't reimplement**).
-- **Revoke:** clears only the revoker's own offer; the opponent's state (if any) is untouched.
-- **Decisive result while an offer is pending** (checkmate / flag-fall / resign): the terminal supersedes; offers are discarded, no draw.
-- **Simultaneous** double-offer resolves to a draw (both offers active).
-- **⚠ Auto-expiry — open question.** The original brief had the offer auto-expire after ~2 moves; this corrected version adds explicit **Revoke** but is silent on auto-expiry. Recommend keeping a **backstop expiry** (a pending offer lapses after N of the offerer's own moves) so a forgotten offer doesn't linger indefinitely, *in addition to* manual Revoke. **Confirm with Designer:** keep the backstop (and pin N), or rely on manual Revoke only?
+- **Offer:** `drawOffer` sets P's offer; server broadcasts `drawOffers[P]`. Offerer bar → DRAW OFFERED; opponent's view of it → ACCEPT DRAW?.
+- **Accept:** `drawAccept` from the opponent of an active offer → server resolves `{type:'draw'}` → existing chess draw settlement (stakes returned, no rake, no rematch) → orange "Draw" popup + persistent orange bar outlines (`chessResultLine 'Draw'`, `suppressResultOverlay` — **reuse, don't reimplement**).
+- **Revoke:** `drawRevoke` clears only the offerer's own offer.
+- **Expiry:** unchanged — a pending offer auto-revokes after the set move window (the existing rule/number).
+- **Opponent's own button:** never accepts. If the opponent presses *Draw request* while an incoming offer is pending, that creates the opponent's *own* separate offer (the original offerer would then see ACCEPT DRAW? on the opponent's bar). Accepting the incoming offer is only via the pill. *(Optional UX: disabling the opponent's Draw request button while an incoming offer is pending — leave enabled unless the Designer wants it suppressed.)*
+- **Decisive result while pending** (checkmate / flag-fall / resign): terminal supersedes; offers discarded.
 
 ## Protocol (owner-gated — `packages/shared/src/protocol.ts`)
 
-- Client→server `match.drawOffer` — payload `Record<string, never>`. On receipt: if the opponent's offer is active → resolve draw; else set the sender's offer active + broadcast.
-- Client→server `match.drawRevoke` — payload `Record<string, never>`. Clears the sender's offer + broadcast.
-- Server→client: `drawOffer: { [playerId]: boolean }` (or `offeredBy: PlayerId[]`) in the broadcast match/chess view — public; both clients render it.
-- Terminal: existing `{ type: 'draw' }` outcome → existing chess draw settlement.
-- Keep core generic (plug-in invariant — no `if (gameId === 'chess')`). Chess declares a "supports draw offers" capability; core routes generically. Chess opts in only.
+- **New:** client→server `match.drawAccept` — payload `Record<string, never>`. Resolves the draw when sent by the opponent of an active offer.
+- Existing: `match.drawOffer`, `match.drawRevoke`; view field `drawOffers: Record<PlayerId, number>` (who has an active offer + move count for expiry).
+- **Change:** remove the "both players offered → auto-draw" completion (the symmetric rule). Completion is now **`drawAccept` only.**
+- Keep core generic (no `if gameId==='chess'`); chess declares the capability.
 
 ## Server / module (`apps/server` + chess module)
 
-- Match holds a per-player offer flag (+ move-count-since-offer if the backstop expiry is kept).
-- `drawOffer`: validate active match + sender is a participant. If opponent flag set → resolve draw; else set sender flag + broadcast.
-- `drawRevoke`: clear sender flag + broadcast.
-- (If backstop kept) on the offerer's ply, increment; at N clear + broadcast.
-- All transitions server-authoritative; client state is presentational.
+- On `drawOffer`: set sender's offer + broadcast (do **not** auto-complete against an existing opposite offer).
+- On `drawAccept`: if the *other* player has an active offer → resolve draw via the existing settlement; else no-op.
+- On `drawRevoke`: clear sender's offer.
+- Expiry: on the offerer's ply, advance the move counter; at the window clear + broadcast.
+- All transitions server-authoritative.
 
 ## Client (`apps/web`)
 
-- **New GameHub hook `renderSecondaryAction(args)`** (mirror of `renderPrimaryAction` @140/463) to override the Play-a-Friend button in-match — this hook does not exist yet. Idle/result → default Play a Friend; chess supplies `Draw request` ⇄ `Revoke DRAW`.
-- **Indicator:** render the amber "Draw offered" indicator on the offering player's slot (via the slot aside / bar), keyed off the public `drawOffer` view state so it appears on both screens next to that player's name.
-- Pressing *Draw request* dispatches `drawOffer`; if the opponent already offered, the server returns the draw terminal (existing result path renders). Pressing *Revoke DRAW* dispatches `drawRevoke`.
-
-## Tokens
-
-Reuse the existing draw hue (`amber-400`, `slotReveal.tsx:48`) for the "Draw offered" indicator; recommend tokenizing it (`--draw` = `#fbbf24`). Result treatment unchanged. No hardcoded hex.
+- **`DrawOfferedChip` branches on `side`** (`ChessHub.tsx:96`): `side==='own'` → non-tappable `DRAW OFFERED` status span; `side==='opponent'` → tappable `ACCEPT DRAW?` button dispatching a new `onDrawAccept`. Both solid orange, dark text, no `½`.
+- **New `onDrawAccept` handler:** thread `onDrawAccept?()` through `GameHub` props + `areaArgs` (alongside `onDrawOffer`/`onDrawRevoke`, `GameHub.tsx:52-53/412`); add `handleDrawAccept` + `ws.drawAccept` in `App.tsx` (alongside `handleDrawOffer`/`handleDrawRevoke`, `:919-926`).
+- `Revoke DRAW` button (`ChessSecondaryAction`, `:363`) → solid orange fill.
+- Secondary *Draw request* button no longer participates in accepting (server no longer auto-completes on both-offered).
 
 ## PR sequence
 
-1. **This spec** — Owner-approved (protocol change).
-2. **Protocol PR** (owner-gated): `match.drawOffer` / `match.drawRevoke` + `drawOffer` view field + chess capability flag.
-3. **Server/module PR**: per-player offer flags, both-offered→draw via existing settlement, optional backstop expiry.
-4. **Client PR**: `renderSecondaryAction` hook + `Draw request`⇄`Revoke DRAW` + "Draw offered" indicator + `--draw` token.
+1. **Styling PR (client-only, ship now):** `DRAW OFFERED` (own) + `Revoke DRAW` → solid `bg-amber-400 text-background`, remove `½`. No protocol.
+2. **This spec** — Owner-approved (protocol change).
+3. **Protocol PR** (owner-gated): add `match.drawAccept`; drop the both-offered auto-complete.
+4. **Server/module PR:** accept-completes; keep offer/revoke/expiry.
+5. **Client PR:** `DrawOfferedChip` per-`side` (DRAW OFFERED vs ACCEPT DRAW? button) + `onDrawAccept` wiring.
 
 ## Acceptance criteria
 
-- Play a Friend ⇄ Draw request only during an active match; idle/result show Play a Friend.
-- Pressing Draw request offers immediately and flips the button to Revoke DRAW; a "Draw offered" indicator shows on the offerer's bar on **both** screens.
-- Pressing Draw request while the opponent's offer is pending draws the game at once; both offers simultaneously = draw.
-- Revoke clears only your own offer.
-- Draw terminal = stakes returned, no rake, no rematch, amber/orange popup + amber/orange bar outlines (existing chess draw path).
-- Decisive result supersedes pending offers. Server-authoritative throughout; offer state public (no redaction issue). Only tokens, no hardcoded hex; core stays generic (no chess special-casing).
+- Offerer: pressing Draw request shows solid-orange `DRAW OFFERED` (non-tappable) on their bar + `Revoke DRAW` button; no `½`.
+- Opponent: sees solid-orange `ACCEPT DRAW?` (tappable) on the offerer's bar; tapping it draws the game. Their own Draw request button never accepts.
+- Revoke withdraws the offerer's own offer; offer auto-expires per the existing window.
+- Draw terminal = stakes returned, no rake, no rematch, orange popup + persistent orange bar outlines (existing path).
+- Decisive result supersedes a pending offer. Server-authoritative; offer public (no redaction issue). All three elements share the solid-orange + dark-text style. Only tokens, no hardcoded hex; core stays generic.
