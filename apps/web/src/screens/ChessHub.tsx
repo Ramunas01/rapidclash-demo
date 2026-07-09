@@ -369,6 +369,49 @@ function ChessSecondaryAction({ args }: { args: GameAreaArgs }) {
   );
 }
 
+// ── Resign: three states on the ONE primary-action button (client-only — no server/protocol change) ─
+// PLAY (idle, the default button) → RESIGN (active match) → a red "Confirm resign" (armed). One
+// accidental tap never resigns: only the deliberate second tap on the red confirm calls the existing
+// forfeit (loss → the standard result flow: popup + red bar outline). A ~3 s silence auto-reverts the
+// armed button back to RESIGN, so an accidental first tap cancels itself. The node manages its own
+// two-step state + timer locally; the shared forfeit path is reused unchanged.
+const RESIGN_CONFIRM_MS = 3000;
+
+function ChessPrimaryAction({ args }: { args: GameAreaArgs }) {
+  const { onForfeit } = args;
+  const [armed, setArmed] = useState(false);
+  // Auto-revert the armed (red confirm) state after ~3 s of silence — an accidental first tap cancels.
+  useEffect(() => {
+    if (!armed) return;
+    const id = setTimeout(() => setArmed(false), RESIGN_CONFIRM_MS);
+    return () => clearTimeout(id);
+  }, [armed]);
+
+  const base = 'w-full rounded-xl py-4 text-base font-black uppercase tracking-wider text-white transition-colors';
+  if (armed) {
+    return (
+      <button
+        type="button"
+        data-testid="chess-resign-confirm"
+        onClick={() => { setArmed(false); onForfeit(); }}
+        className={cn(base, 'bg-destructive hover:brightness-110')}
+      >
+        Confirm resign
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      data-testid="chess-resign"
+      onClick={() => setArmed(true)}
+      className={cn(base, 'bg-brand hover:brightness-110')}
+    >
+      Resign
+    </button>
+  );
+}
+
 /** The Chess game-area slot: ONE full-bleed board in every phase (never empty). Idle/searching →
  *  the starting-position preview; in-match → the live board; post-game → the frozen final. The
  *  board itself gates interactivity on legalMoves, so the preview and frozen states are static.
@@ -409,6 +452,9 @@ export function ChessHubScreen(props: GameHubScreenProps) {
       // Draw offers live on the secondary-action button in-match (Play a Friend → Draw request ⇄
       // Revoke DRAW); idle/result fall back to the default Play a Friend (null). CHESS_DRAW_OFFER.md.
       renderSecondaryAction={(args) => (args.phase === 'in-match' ? <ChessSecondaryAction args={args} /> : null)}
+      // Resign lives on the primary-action button in-match (PLAY→RESIGN→red Confirm); idle/result
+      // fall back to the default PLAY button (null). Client-only; reuses the existing forfeit path.
+      renderPrimaryAction={(args) => (args.phase === 'in-match' ? <ChessPrimaryAction args={args} /> : null)}
       suppressResultOverlay
       ownBarResult
       {...props}

@@ -11,7 +11,7 @@ import { chessModule } from '@rapidclash/game-chess';
 
 describe('chess draw offers — end-to-end (real chess module + core + ledger settlement)', () => {
   function setup(stake: number) {
-    let clock = 1_000_000;
+    const clock = 1_000_000; // fixed injected clock — draw offers don't advance time
     const ledger = createLedger(new Database(':memory:'));
     const mm = createMatchmaking(ledger, [chessModule], undefined, { now: () => clock });
     ledger.grant('alice');
