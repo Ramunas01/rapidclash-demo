@@ -42,7 +42,9 @@ function useBoardWidth(): number {
 }
 
 /** Presentational clock chip rendered in a slot pill (display-only; the server is authoritative,
- *  invariant #2). The active side highlights; under ~10s it warns. */
+ *  invariant #2). The active side highlights with a thick brand-purple turn border; under ~10s it
+ *  warns, but never pulses a clock that has already hit zero (Advisor #9 — a dead clock must read
+ *  as a still image, not an endless pulse). */
 function ClockPill({ ms, active, low, testid }: { ms: number; active: boolean; low: boolean; testid: string }) {
   return (
     <span
@@ -51,9 +53,9 @@ function ClockPill({ ms, active, low, testid }: { ms: number; active: boolean; l
       data-low-time={low}
       className={cn(
         'flex items-center gap-1 rounded-md px-2.5 py-1 text-sm font-bold tabular-nums',
-        active ? 'bg-brand/25 text-foreground ring-1 ring-brand/40' : 'bg-background/70 text-muted-foreground',
+        active ? 'bg-brand/25 text-foreground ring-2 ring-brand' : 'bg-background/70 text-muted-foreground',
         low && 'text-destructive',
-        low && active && 'animate-pulse',
+        low && active && ms > 0 && 'animate-pulse',
       )}
     >
       {active && <span className={cn('h-1.5 w-1.5 rounded-full', low ? 'bg-destructive' : 'bg-success')} />}
@@ -63,10 +65,16 @@ function ClockPill({ ms, active, low, testid }: { ms: number; active: boolean; l
 }
 
 /** Live single-player clock: the active player's budget ticks down locally between server updates
- *  (re-synced whenever the server clock advances); the paused side shows its banked value. */
-function ChessClockChip({ clock, pid, testid }: { clock: NonNullable<ChessView['clock']>; pid: string; testid: string }) {
+ *  (re-synced whenever the server clock advances); the paused side shows its banked value.
+ *  `ended` (round-over, e.g. result phase) forces isActive false regardless of the raw server
+ *  `clock.active` — `forfeit()` (resign/timeout) sets `forcedOutcome` but never clears
+ *  `clock.active`, so without this the flagged/resigned player's clock would still evaluate as
+ *  "active" client-side after the match ended, keeping the turn ring/dot/pulse alive forever
+ *  (Advisor #9). The independent `low` → `text-destructive` red coloring is untouched, so the
+ *  frozen loser's clock still reads red. */
+function ChessClockChip({ clock, pid, testid, ended }: { clock: NonNullable<ChessView['clock']>; pid: string; testid: string; ended: boolean }) {
   const active = clock.active ?? null;
-  const isActive = pid === active;
+  const isActive = pid === active && !ended;
   const banked = clock.remainingMs[pid] ?? 0;
   const [, setTick] = useState(0);
   const sync = useRef({ at: Date.now(), remaining: banked });
@@ -98,15 +106,19 @@ function DrawOfferedChip({ side }: { side: 'opponent' | 'own' }) {
 
 /** Slot-pill aside for chess: an optional "Draw offered" indicator + each side's clock — live from
  *  the view in-match, or the selected control's base budget (e.g. 10:00) pre-match. Wired into both
- *  pills by the GameHub template. */
+ *  pills by the GameHub template. `ended` reuses the same idle/result-vs-in-match idiom as
+ *  renderPrimaryAction/renderSecondaryAction (args.phase === 'in-match' gates the live button;
+ *  here its negation gates the frozen clock) so both clocks go fully static — no turn ring/dot, no
+ *  pulse — once the round is over (Advisor #9). */
 function ChessSlotAside(args: GameAreaArgs, side: 'opponent' | 'own'): ReactNode {
   const view = args.gameState as ChessView | null;
   const pid = side === 'own' ? args.playerId : args.opponentId;
   const testid = side === 'own' ? 'chess-clock-self' : 'chess-clock-opponent';
+  const ended = args.phase !== 'in-match';
   const offered = Boolean(args.phase === 'in-match' && pid && view?.drawOffers?.[pid]);
   const clock =
     view?.clock && pid ? (
-      <ChessClockChip clock={view.clock} pid={pid} testid={testid} />
+      <ChessClockChip clock={view.clock} pid={pid} testid={testid} ended={ended} />
     ) : args.timeControlBaseMs != null ? (
       <ClockPill ms={args.timeControlBaseMs} active={false} low={false} testid={testid} />
     ) : null;

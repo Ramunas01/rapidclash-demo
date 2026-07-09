@@ -500,4 +500,66 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
       }
     });
   });
+
+  // ── ClockPill: thick turn border + never pulse a dead/ended clock (Advisor #9) ──────────────
+  describe('ClockPill: turn border weight + never pulse a dead/ended clock (Advisor #9)', () => {
+    it('the active clock gets the thick full-opacity brand ring (ring-2 ring-brand), not the old faint ring-1/40', () => {
+      const clock: PlayerClocks = {
+        remainingMs: { alice: 300_000, bob: 8_000 }, active: 'bob', activeSince: Date.now(), timeControlId: 'blitz5',
+      };
+      render(<ChessHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ clock }), legalMoves: asLegal([]) })} />);
+      const opp = within(screen.getByTestId('hub-slot-opponent')).getByTestId('chess-clock-opponent');
+      expect(opp.className).toContain('ring-2');
+      expect(opp.className).toContain('ring-brand');
+      expect(opp.className).not.toContain('ring-1');
+      expect(opp.className).not.toContain('ring-brand/40');
+    });
+
+    it('a low + active clock with ms > 0 still pulses during play (the live low-time warning is unaffected)', () => {
+      const clock: PlayerClocks = {
+        remainingMs: { alice: 300_000, bob: 8_000 }, active: 'bob', activeSince: Date.now(), timeControlId: 'blitz5',
+      };
+      render(<ChessHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ clock }), legalMoves: asLegal([]) })} />);
+      const opp = within(screen.getByTestId('hub-slot-opponent')).getByTestId('chess-clock-opponent');
+      expect(opp.getAttribute('data-active')).toBe('true');
+      expect(opp.getAttribute('data-low-time')).toBe('true');
+      expect(opp.className).toContain('animate-pulse'); // still running, under 10s → live warning intact
+    });
+
+    it('a clock at ms === 0 never gets animate-pulse, even while nominally "active" per the raw server clock', () => {
+      const clock: PlayerClocks = {
+        remainingMs: { alice: 0, bob: 300_000 }, active: 'alice', activeSince: Date.now(), timeControlId: 'blitz5',
+      };
+      render(<ChessHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ clock }), legalMoves: asLegal([]) })} />);
+      const own = within(screen.getByTestId('hub-slot-own')).getByTestId('chess-clock-self');
+      expect(own.textContent).toContain('0:00');
+      expect(own.getAttribute('data-active')).toBe('true'); // clock.active === 'alice' — nominally active
+      expect(own.getAttribute('data-low-time')).toBe('true');
+      expect(own.className).not.toContain('animate-pulse'); // a dead clock (ms === 0) never pulses
+    });
+
+    it('once the match has ended (result phase), neither clock shows the active ring/dot or pulses — the timed-out clock freezes on a static red 0:00', () => {
+      // forfeit() (resign/timeout) sets forcedOutcome but never clears clock.active — the raw server
+      // clock still says 'alice' is active. The client must render BOTH clocks fully static once the
+      // round is over, regardless of that stale active flag.
+      const clock: PlayerClocks = {
+        remainingMs: { alice: 0, bob: 300_000 }, active: 'alice', activeSince: Date.now(), timeControlId: 'blitz5',
+      };
+      renderToChessResult({ type: 'win', winner: 'bob' }, { gameState: view({ fen: START_FEN, clock }) });
+
+      const own = within(screen.getByTestId('hub-slot-own')).getByTestId('chess-clock-self');
+      const opp = within(screen.getByTestId('hub-slot-opponent')).getByTestId('chess-clock-opponent');
+
+      expect(own.getAttribute('data-active')).toBe('false');
+      expect(opp.getAttribute('data-active')).toBe('false');
+      expect(own.className).not.toContain('animate-pulse');
+      expect(opp.className).not.toContain('animate-pulse');
+      expect(own.className).not.toContain('ring-2'); // no turn border on either side once ended
+
+      // The timed-out/losing clock (alice, 0 ms) still reads a static red 0:00 — the low → red
+      // coloring stays independent of active, so the loser's clock is frozen, not blank.
+      expect(own.textContent).toContain('0:00');
+      expect(own.className).toContain('text-destructive');
+    });
+  });
 });
