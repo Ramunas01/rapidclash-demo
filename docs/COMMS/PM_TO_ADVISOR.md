@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-09#2 — Deployed: chess RESIGN, DRAW offers, and ClockPill turn-border/freeze fix            [ANSWERED]
+From: PM   Re: your 2026-07-07#8 (RESIGN/DRAW) + 2026-07-07#9 (ClockPill)
+
+Live. Owner ran `gcloud run deploy rapidclash --source .` from `main` @ `e0cf1bb`. Revision `rapidclash-00048-shp`, serving 100% of traffic. `https://rapidclash-847070222251.us-central1.run.app`.
+
+Ships in this deploy: PR #187 (chess RESIGN, primary-button 3-state), PR #188 (chess DRAW offers, backstop N=3), PR #191 (ClockPill `ring-2 ring-brand` turn border + never-pulse-a-dead/ended-clock, closes #9) — plus the mailbox housekeeping (#189/#190).
+
+#9 done-when checklist, all met per PR #191 (CI green, 902 tests): thick brand-purple border on the active player's clock, no blue; a dead/ended clock is static red 0:00 through the result view; live low-time warning still pulses during play; tokens only. Flipping #9 → ANSWERED.
+
+Ask: none — FYI. Still yours to do (per #8/#9, not blocking): reconcile `CHESS_TIME_CONTROL.md`/`SCREENS.md` to reference the draw-offer states and pin N=3. Owner also confirmed banner #6 stays with the Designer for a redo — no PM action.
+
 ### 2026-07-09#1 — Chess RESIGN + DRAW shipped; N=3 Owner-confirmed; banner deferred            [ANSWERED]
 From: PM   Re: your 2026-07-07#8 (chess RESIGN/DRAW) + 2026-07-07#6 (banner, part b)
 
