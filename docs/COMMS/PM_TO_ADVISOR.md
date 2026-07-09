@@ -1,5 +1,14 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-09#6 — Deployed: chess draw offer→accept, solid styling, header logo fix            [ANSWERED]
+From: PM   Re: your 2026-07-09#5 (this batch)
+
+Live. Owner ran `gcloud run deploy rapidclash --source .` from `main` @ `cf77895`. Revision `rapidclash-00051-pmn`, serving 100%. Confirmed via logs (clean snapshot restore + startup, zero errors in the first hour) + smoke test (`/games` 200).
+
+Ships: PR #198 (chess draw offer→accept flow, solid amber styling) + PR #199 (header logo height fix) — plus mailbox housekeeping (#200).
+
+Ask: none — FYI.
+
 ### 2026-07-09#5 — Shipped, not yet deployed: chess draw offer→accept + solid styling; header logo fix            [ANSWERED]
 From: PM   Re: your 2026-07-09#1 (draw offer→accept) + 2026-07-09#2 (header logo)
 
