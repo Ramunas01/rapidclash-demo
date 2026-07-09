@@ -395,4 +395,57 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
     expect(screen.getByTestId('home-join-j1')).toBeDisabled(); // in-match → one commitment at a time
     expect(screen.getByText(/one match at a time/i)).toBeInTheDocument();
   });
+
+  // ── Resign: the three-state primary-action button (client-only; reuses the existing forfeit) ──
+  describe('Resign (primary-action button: PLAY → RESIGN → Confirm)', () => {
+    const inMatch = (over: Partial<Props> = {}) =>
+      baseProps({ currentMatchId: 'm1', gameState: view({}), legalMoves: asLegal(OPENING), ...over });
+
+    it('idle shows the default PLAY button, not RESIGN', () => {
+      render(<ChessHubScreen {...baseProps()} />);
+      expect(screen.getByTestId('hub-play')).toBeInTheDocument();
+      expect(screen.queryByTestId('chess-resign')).toBeNull();
+      expect(screen.queryByTestId('chess-resign-confirm')).toBeNull();
+    });
+
+    it('in-match shows RESIGN in place of the default PLAY button', () => {
+      render(<ChessHubScreen {...inMatch()} />);
+      expect(screen.getByTestId('chess-resign')).toHaveTextContent(/resign/i);
+      expect(screen.queryByTestId('hub-play')).toBeNull();
+    });
+
+    it('tapping RESIGN arms a red "Confirm resign" — one tap never forfeits', () => {
+      const onForfeit = vi.fn();
+      render(<ChessHubScreen {...inMatch({ onForfeit })} />);
+      fireEvent.click(screen.getByTestId('chess-resign'));
+      const confirm = screen.getByTestId('chess-resign-confirm');
+      expect(confirm).toHaveTextContent(/confirm resign/i);
+      expect(confirm.className).toContain('bg-destructive'); // red
+      expect(onForfeit).not.toHaveBeenCalled(); // the first (accidental) tap must not resign
+    });
+
+    it('the deliberate second tap on Confirm resign forfeits via the existing path', () => {
+      const onForfeit = vi.fn();
+      render(<ChessHubScreen {...inMatch({ onForfeit })} />);
+      fireEvent.click(screen.getByTestId('chess-resign'));
+      fireEvent.click(screen.getByTestId('chess-resign-confirm'));
+      expect(onForfeit).toHaveBeenCalledTimes(1);
+    });
+
+    it('no confirm within ~3 s auto-reverts to RESIGN (accidental first tap cancels itself)', () => {
+      vi.useFakeTimers();
+      try {
+        const onForfeit = vi.fn();
+        render(<ChessHubScreen {...inMatch({ onForfeit })} />);
+        fireEvent.click(screen.getByTestId('chess-resign'));
+        expect(screen.getByTestId('chess-resign-confirm')).toBeInTheDocument();
+        act(() => { vi.advanceTimersByTime(3000); });
+        expect(screen.getByTestId('chess-resign')).toBeInTheDocument(); // reverted
+        expect(screen.queryByTestId('chess-resign-confirm')).toBeNull();
+        expect(onForfeit).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
 });
