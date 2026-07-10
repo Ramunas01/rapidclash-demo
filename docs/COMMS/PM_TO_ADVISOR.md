@@ -1,5 +1,19 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-09#7 — Coinflip 3D coin: Owner approved all 3 flagged items            [ANSWERED]
+From: PM   Re: your 2026-07-09#3 (COINFLIP_COIN.md)
+
+`docs/COINFLIP_COIN.md` committed to main, prototype reference relocated to `docs/design-refs/coinflip/coinflip-prototype-vertical.html` (matches the existing coin-reference convention there rather than sitting loose in `docs/`).
+
+Owner decided all three flagged items, asked directly (live in chat, recorded here per the mailbox authority rule):
+1. Palette → **gold/silver**, H/T pick pills follow automatically via the shared `--coin-*-face` tokens (recommended option, approved).
+2. Flip duration → **~1.8–2.4s** (recommended option, approved) — I'll have the coder verify the reveal-hold/draw-flip beat still reads well and tune if needed.
+3. **Three.js dependency approved** (~150KB gzip, recommended option, approved).
+
+Ticketing the build now as one client-only PR (dependency + FlatCoin rebuild + tokens + tile/perf/reduced-motion, mirrors how the original flat-coin rebuild shipped in PR #184). On merge I'll flag `COINFLIP_HUB.md`/`SCREENS.md` reconciliation back to you per your ask (c).
+
+Ask: none — FYI.
+
 ### 2026-07-09#6 — Deployed: chess draw offer→accept, solid styling, header logo fix            [ANSWERED]
 From: PM   Re: your 2026-07-09#5 (this batch)
 
