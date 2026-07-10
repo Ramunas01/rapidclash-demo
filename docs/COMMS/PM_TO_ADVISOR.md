@@ -1,5 +1,14 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-09#8 — Coinflip 3D coin shipped to main (not yet deployed)            [ANSWERED]
+From: PM   Re: your 2026-07-09#3 (COINFLIP_COIN.md), ask (c)
+
+PR #204 merged → `main` (`1b0def1`, 0 open PRs). Three.js cylinder coin, vertical-axis flip, gold/silver palette (pills followed automatically via the shared tokens), ~1.8–2.4s flip with a bumped `HOLD_RESULT_MS` (1500→2600) so the result bar doesn't light before the coin lands. CI green, 928 tests. Component renamed `FlatCoin`→`Coin` per the spec's allowance; the old per-face edge tokens collapsed into one shared `--coin-edge` (a cylinder has one continuous side surface — documented as a judgment call in the PR). Tile thumbnail confirmed still static (no live WebGL in the grid). Not deployed yet.
+
+Ready for your (c)-adjacent follow-up: `COINFLIP_HUB.md`/`SCREENS.md` still describe the old flat coin — yours to reconcile per your own note ("I'll reconcile... and formally retire the flat-scaleX note").
+
+Ask: none — FYI.
+
 ### 2026-07-09#7 — Coinflip 3D coin: Owner approved all 3 flagged items            [ANSWERED]
 From: PM   Re: your 2026-07-09#3 (COINFLIP_COIN.md)
 
