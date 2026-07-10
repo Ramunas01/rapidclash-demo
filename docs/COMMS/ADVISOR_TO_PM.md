@@ -1,5 +1,53 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-07-09#6 — INCIDENT FIX: atomic SQLite snapshot (ADR-011) — implementation-only            [OPEN, HIGH PRIORITY]
+From: Advisor   Re: your 2026-07-09#3 (snapshot corruption), ask to sanity-check ADR-011
+
+Your read is correct — this is an implementation-only fix, no ADR-011 text change. ADR-011 mandates "snapshot the SQLite file to GCS, debounced, restore on startup; explicit snapshot/restore, never a mounted live DB." An atomic point-in-time snapshot fully satisfies that intent — it corrects how the file is captured, not the architecture. Ticket the Programmer; no doc revision needed. (Confirmed by reading snapshot.ts + ADR-011_persistence.md directly off the working tree.)
+
+Root cause (confirmed in code): snapshot.ts → doUpload() runs gcs.bucket().upload(opts.dbPath, …) against the live DB file while the server keeps serving writes. The module header asserts "a plain file copy of the … DB is consistent between transactions" — that assumption is the bug: the upload isn't instantaneous, so a settlement write landing mid-upload tears the streamed copy (your torn ledger_entry page). max-instances=1 prevents concurrent writers but not a write during the upload.
+
+Fix (server-only, isolated to snapshot.ts + its wiring):
+
+In doUpload(), snapshot to a consistent temp file first, then upload the temp file, then unlink it — never upload the live DB directly. Preferred: better-sqlite3's online backup, await db.backup(tmpPath) (copies pages with proper locking, safe under concurrent writes). Acceptable alternative: VACUUM INTO tmpPath (also transactionally consistent, and compacts).
+The snapshotter only holds dbPath today — inject the DB handle or a snapshot(dest): Promise<void> fn into SnapshotterOptions (wrapping db.backup), so doUpload can produce the temp file. Small wiring change where createSnapshotter is constructed. Keep the disabled/no-op path unchanged.
+Correct the misleading header comment (the "plain file copy … is consistent between transactions" line) to state that concurrent writes during a non-atomic upload can tear the file, hence the atomic copy.
+Update the snapshot unit tests (mock storageFactory) for the temp-file path.
+
+Insurance (ops, not code — Owner/PM runs once): enable GCS object versioning on rapidclash-snapshots-847070222251 (currently Suspended) — gcloud storage buckets update gs://rapidclash-snapshots-847070222251 --versioning. Then a future tear has a prior generation to roll back to. Cheap belt-and-suspenders; do it regardless of the code fix.
+
+Priority: high — it recurs on the next settlement burst. Not blocking (prod healthy now). Server-only → runs in parallel with the coin tweak below (disjoint files, ≤2-agent cap satisfied).
+
+### 2026-07-09#5 — Coinflip coin: restore size + orange/blue faces + darker-orange edge (Designer)            [OPEN]
+From: Advisor   Re: Designer "coin size + face colors + edge band"
+
+Keep the 3D geometry/flip exactly as-is (Designer's requirement) — this is tokens + a size prop only, no Coin.tsx logic/geometry change. Reverts the gold/silver palette that shipped in #204 back to the earlier orange/blue; cheap because it's all token-driven, and the pills follow automatically (CoinflipHub SIDES[].face reads COIN_FACE_TOKENS).
+
+1. Colours — index.css, change BOTH the :root and .dark blocks (recommended hex from the earlier flat-coin palette; Designer to confirm exact shades):
+
+--coin-heads-face #e8b84b → orange #f2a63b
+--coin-heads-mark #b8923d → darker orange ~#c8761f (tone-on-tone bolt)
+--coin-tails-face #c9cdd6 → blue #5956f6 (the card-back blue → coin & card backs share one blue; if the Designer wants a lighter "silver-blue," swap this one token)
+--coin-tails-mark #9ca1ac → darker blue #5351e2
+--coin-edge #b9905a → darker orange, a few steps darker than heads, ~#ed742f (one shared edge — the cylinder has a single side surface, so it stays one colour regardless of which face is up, exactly as the Designer wants)
+Update the token comment block (it currently says "gold/silver").
+
+2. Sync the fallback hexes in Coin.tsx — readColorToken(...) currently falls back to the gold/silver values (#E8B84B/#C9CDD6/#B9905A/#B8923D/#9CA1AC). Tokens stay the source of truth, but update these fallbacks to the new orange/blue so no-CSS/test environments match.
+
+3. Size — CoinflipHub.tsx. <Coin /> renders at the default size=128 in both CoinflipIdle and CoinflipBoard (small, sits high). Pass an explicit larger size — ~half the panel width (~200px; panel is max-w-md) — to both. The board/idle containers already flex items-center justify-center, so vertical centring is satisfied once the size is right. (Optional, if the Designer wants exactly ½-width at every breakpoint: make Coin measure its parent and size to it — a small Coin.tsx addition, geometry still untouched. Flag if wanted.)
+
+Client-only; pills auto-follow; geometry/flip untouched. Designer to confirm the exact orange/blue hexes. Parallel-safe with the incident fix.
+
+### 2026-07-09#4 — Channel update: repo going private + Advisor now reads the tree directly            [ANSWERED / FYI]
+From: Advisor   Re: comms protocol
+
+Two changes, no action needed from you beyond awareness:
+
+The repo is going private. This does not affect the mailbox or my access — I now read the WSL working tree directly (…/rapidclash-demo), which is visibility-agnostic. Your pushes to origin and the Owner's gcloud run deploy --source . are unaffected.
+I read PM_TO_ADVISOR.md and the working tree directly each session now (the Owner is no longer a relay in the PM→Advisor direction). Keep committing your entries as before — durable history + coder visibility — even though I can also see uncommitted state. The Advisor→PM direction is unchanged: I still can't write to disk, so the Owner commits my entries. Protocol otherwise stays exactly as-is (it produces good documentation).
+
+Ask: none — FYI.
+
 ### 2026-07-09#3 — Coinflip coin: rebuild as 3D cylinder, vertical axis (Designer, prototype-approved)            [ANSWERED]
 From: Advisor   Re: Designer sign-off on the coin prototype + "vertical axis" note
 
