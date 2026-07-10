@@ -7,6 +7,48 @@ import type { CoinflipView } from '../App.js';
 // canvas-confetti needs a real <canvas> (absent in jsdom) — mock it (matches Result/CoinflipPlay tests).
 vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
 
+// The coin is now a real Three.js cylinder; jsdom has no WebGL context, so the real THREE.WebGLRenderer
+// would throw. Stub it (mirrors the canvas-confetti mock above) — this file asserts on CoinflipHub's
+// OWN choreography (pick window, reveal staging, draw beat), not the coin's animation curve (that's
+// covered in isolation by Coin.test.tsx, which also exercises the stub's recorders directly).
+vi.mock('three', async () => import('./three-stub.js'));
+
+// Force prefers-reduced-motion so the coin's flip takes its short ~450ms settle rather than the full
+// ~1.8-2.4s spin — these tests run under both real timers (default `waitFor` ~1s timeout) and fake
+// timers, and only the short path reliably lands within either. Coin.test.tsx covers the full-motion
+// spin (turn count, duration, ease-out) directly.
+beforeEach(() => {
+  // Belt-and-braces: guarantee any previous test's Coin (and its in-flight rAF loop) is fully
+  // unmounted before this test starts — some tests mount a coin already mid-terminal (`face` set
+  // from the first render, e.g. a same-side-draw fixture), which can still be flipping when the
+  // test body returns; `afterEach(cleanup)` in setup.ts covers this too, but ordering it here as
+  // well removes any doubt for a real-timer animation loop racing into the next test.
+  cleanup();
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: true,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  }));
+  // jsdom has no real 2D canvas context either — silence its noisy "not implemented" console.error
+  // (the cap-texture painter in Coin.tsx already no-ops gracefully when this returns null).
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+  // Stub rAF/cancelAnimationFrame with our own tiny setTimeout-based polyfill rather than relying on
+  // jsdom's native one. Root-caused via debugging: once some OTHER test in this file toggles
+  // `vi.useFakeTimers()`/`vi.useRealTimers()` (the win/loss/draw bar-animation tests below), jsdom's
+  // native `requestAnimationFrame` stops invoking its callback at all for the rest of the file — the
+  // coin's flip would silently hang forever. Re-stubbing our own per-test sidesteps that entirely.
+  vi.stubGlobal(
+    'requestAnimationFrame',
+    (cb: FrameRequestCallback) => setTimeout(() => cb(performance.now()), 16) as unknown as number
+  );
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => clearTimeout(id));
+});
+
 type Props = Parameters<typeof CoinflipHubScreen>[0];
 
 function baseProps(over: Partial<Props> = {}): Props {
@@ -40,15 +82,26 @@ function baseProps(over: Partial<Props> = {}): Props {
   };
 }
 
-const CHALLENGE = { matchId: 'c1', ownerName: 'rival', stake: 50, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'none' };
+const CHALLENGE = {
+  matchId: 'c1',
+  ownerName: 'rival',
+  stake: 50,
+  openedAt: 0,
+  expiresAt: Date.now() + 30_000,
+  timeControlId: 'none',
+};
 
 describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
   beforeEach(() => {
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      const u = String(url);
-      if (u.includes('/games') || u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
-      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes('/games') || u.includes('/leaderboard'))
+          return { ok: true, json: async () => [] } as Response;
+        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      })
+    );
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -98,7 +151,9 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
 
   it('Waiting (#154): Play-a-Friend becomes the active "Cancel" and the bet row is greyed/inert', async () => {
     const onCancel = vi.fn();
-    render(<CoinflipHubScreen {...baseProps({ waitingExpiresAt: Date.now() + 30_000, onCancel })} />);
+    render(
+      <CoinflipHubScreen {...baseProps({ waitingExpiresAt: Date.now() + 30_000, onCancel })} />
+    );
     // Play-a-Friend transformed → Cancel (active), Play-a-Friend testid gone.
     const cancel = await screen.findByTestId('hub-cancel');
     expect(cancel.textContent).toMatch(/cancel/i);
@@ -112,7 +167,14 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
   });
 
   it('Waiting: JOIN on other challenges is disabled (one commitment at a time)', async () => {
-    render(<CoinflipHubScreen {...baseProps({ waitingExpiresAt: Date.now() + 30_000, challengesByGame: { coinflip: [CHALLENGE] } })} />);
+    render(
+      <CoinflipHubScreen
+        {...baseProps({
+          waitingExpiresAt: Date.now() + 30_000,
+          challengesByGame: { coinflip: [CHALLENGE] },
+        })}
+      />
+    );
     // Waiting is now signalled in place by the Cancel control (no WaitingBlock).
     await waitFor(() => expect(screen.getByTestId('hub-cancel')).toBeInTheDocument());
     expect(screen.getByTestId('home-join-c1')).toBeDisabled();
@@ -121,7 +183,16 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
   it('In-match: the board + countdown activate, H/T move into the own slot pill, opponent shows PLAYING…', () => {
     const onMakeMove = vi.fn();
     const gameState: CoinflipView = { players: ['pid', 'bob'], choices: {} };
-    render(<CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['heads', 'tails'], onMakeMove })} />);
+    render(
+      <CoinflipHubScreen
+        {...baseProps({
+          currentMatchId: 'm1',
+          gameState,
+          legalMoves: ['heads', 'tails'],
+          onMakeMove,
+        })}
+      />
+    );
     expect(screen.getByTestId('hub-board')).toBeInTheDocument();
     expect(screen.getByTestId('coin-countdown')).toBeInTheDocument(); // 10s pick deadline (cosmetic)
     // Redaction: the opponent's pick is never rendered before match.end.
@@ -143,7 +214,11 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     // other side is NOT locked out — both stay tappable all window, so the pick can still change.
     const onMakeMove = vi.fn();
     const gameState: CoinflipView = { players: ['pid', 'bob'], choices: { pid: 'heads' } };
-    render(<CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [], onMakeMove })} />);
+    render(
+      <CoinflipHubScreen
+        {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [], onMakeMove })}
+      />
+    );
     expect(screen.getByTestId('hub-move-heads')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByTestId('hub-move-tails')).not.toBeDisabled();
     expect(screen.getByTestId('hub-move-tails')).toHaveAttribute('aria-pressed', 'false');
@@ -164,9 +239,15 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
   it('Result: no pop-up overlay — the flip + opponent reveal stage on the board, then the own pill lights', async () => {
     const scrollSpy = vi.fn();
     Element.prototype.scrollIntoView = scrollSpy; // scroll-safety cue (reconciliation a)
-    const gameState: CoinflipView = { players: ['pid', 'bob'], choices: { pid: 'heads', bob: 'tails' }, result: 'heads' };
+    const gameState: CoinflipView = {
+      players: ['pid', 'bob'],
+      choices: { pid: 'heads', bob: 'tails' },
+      result: 'heads',
+    };
     // Start in-match so the match-end edge fires on rerender.
-    const { rerender } = render(<CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
+    const { rerender } = render(
+      <CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />
+    );
 
     // match.end: currentMatchId clears with the terminal payload. The old pop-up is gone.
     rerender(
@@ -177,7 +258,7 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
           lastOutcome: { type: 'win', winner: 'pid' },
           lastSettlement: { delta: 90, newBalance: 1090 },
         })}
-      />,
+      />
     );
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
     // During the hold: the coin flips to the revealed face (flat coin — the face is data-coded, not
@@ -189,26 +270,44 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     expect(scrollSpy).toHaveBeenCalled(); // brought into view on resolve
     // After the reveal the own bar plays the green win fill: the username stays put, "You Win" shows
     // ALONGSIDE it, and the green sits behind as a background layer (#156 — the name is not swapped out).
-    await waitFor(() => {
-      const ownBar = screen.getByTestId('hub-slot-own');
-      expect(ownBar.textContent).toMatch(/you win/i);
-      expect(ownBar.textContent).toContain('me'); // username is NOT replaced by "You Win"
-      expect(ownBar.querySelector('.bg-success')).not.toBeNull(); // green fill = a background layer
-    }, { timeout: 3000 });
+    await waitFor(
+      () => {
+        const ownBar = screen.getByTestId('hub-slot-own');
+        expect(ownBar.textContent).toMatch(/you win/i);
+        expect(ownBar.textContent).toContain('me'); // username is NOT replaced by "You Win"
+        expect(ownBar.querySelector('.bg-success')).not.toBeNull(); // green fill = a background layer
+      },
+      { timeout: 3000 }
+    );
   });
 
   // The bar-level win reveal: keep the username, play the SHARED win animation, settle to the ring.
-  // These drive the phase timing with fake timers. HOLD_RESULT_MS=1500, BAR_VERDICT_BEAT_MS=250,
+  // These drive the phase timing with fake timers. HOLD_RESULT_MS=2600 (bumped for the 3D coin's
+  // longer ~1.8-2.4s flip — COINFLIP_COIN.md flag #2), BAR_VERDICT_BEAT_MS=250,
   // then the shared component: 0.5s fill-in + 2s hold + 0.5s fade-out = 3000ms to settle (constants
   // WIN_FILL_IN_MS/WIN_HOLD_MS/WIN_FADE_OUT_MS live in hub-shared/slotReveal; reused by Blackjack).
   function renderToTerminal(outcome: Props['lastOutcome']) {
     Element.prototype.scrollIntoView = vi.fn();
-    const gameState: CoinflipView = { players: ['pid', 'bob'], choices: { pid: 'heads', bob: 'tails' }, result: 'heads' };
-    const { rerender } = render(<CoinflipHubScreen {...baseProps({ username: 'neo', currentMatchId: 'm1', gameState, legalMoves: [] })} />);
+    const gameState: CoinflipView = {
+      players: ['pid', 'bob'],
+      choices: { pid: 'heads', bob: 'tails' },
+      result: 'heads',
+    };
+    const { rerender } = render(
+      <CoinflipHubScreen
+        {...baseProps({ username: 'neo', currentMatchId: 'm1', gameState, legalMoves: [] })}
+      />
+    );
     rerender(
       <CoinflipHubScreen
-        {...baseProps({ username: 'neo', currentMatchId: null, gameState, lastOutcome: outcome, lastSettlement: { delta: 90, newBalance: 1090 } })}
-      />,
+        {...baseProps({
+          username: 'neo',
+          currentMatchId: null,
+          gameState,
+          lastOutcome: outcome,
+          lastSettlement: { delta: 90, newBalance: 1090 },
+        })}
+      />
     );
   }
 
@@ -218,8 +317,12 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
       renderToTerminal({ type: 'win', winner: 'pid' });
       // Advance in stages: HOLD_RESULT_MS → result phase, then BAR_VERDICT_BEAT_MS → verdict lights
       // (each transition schedules its next timer on re-render, so a single big jump can skip it).
-      await act(async () => { await vi.advanceTimersByTimeAsync(1500 + 50); }); // → result phase
-      await act(async () => { await vi.advanceTimersByTimeAsync(250 + 50); }); // → win animation (fill-in)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2600 + 50);
+      }); // → result phase
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(250 + 50);
+      }); // → win animation (fill-in)
       const ownBar = screen.getByTestId('hub-slot-own');
       expect(ownBar.textContent).toContain('neo'); // username stays put (not swapped out)
       expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you win/i); // alongside
@@ -228,7 +331,9 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
 
       // 0.5s fill-in + 2s hold + 0.5s fade-out = 3s → settles to the persistent green outline and the
       // "You Win"/fill leave together (the shared component unmounts the content on settle).
-      await act(async () => { await vi.advanceTimersByTimeAsync(3000 + 50); });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000 + 50);
+      });
       expect(ownBar.className).toContain('ring-success'); // shared outlineClasses('win')
       expect(ownBar.textContent).toContain('neo'); // username persists into the end state
       expect(screen.queryByTestId('hub-slot-own-verdict')).toBeNull(); // "You Win" left with the fill
@@ -245,8 +350,12 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
       vi.useFakeTimers();
       try {
         renderToTerminal(outcome);
-        await act(async () => { await vi.advanceTimersByTimeAsync(1500 + 50); }); // → result phase
-        await act(async () => { await vi.advanceTimersByTimeAsync(250 + 50); }); // → verdict lights
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(2600 + 50);
+        }); // → result phase
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(250 + 50);
+        }); // → verdict lights
         const ownBar = screen.getByTestId('hub-slot-own');
         expect(ownBar.className).toContain(ring);
         expect(ownBar.querySelector('.bg-success')).toBeNull(); // no fill layer
@@ -261,7 +370,11 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
 
   it('JOIN balance-check: refuses clearly when the owner stake is uncovered, without taking', () => {
     const onTakeChallenge = vi.fn();
-    render(<CoinflipHubScreen {...baseProps({ balance: 5, challengesByGame: { coinflip: [CHALLENGE] }, onTakeChallenge })} />);
+    render(
+      <CoinflipHubScreen
+        {...baseProps({ balance: 5, challengesByGame: { coinflip: [CHALLENGE] }, onTakeChallenge })}
+      />
+    );
     fireEvent.click(screen.getByTestId('home-join-c1'));
     expect(onTakeChallenge).not.toHaveBeenCalled();
     expect(screen.getByTestId('home-ticker-notice').textContent).toMatch(/not enough/i);
@@ -269,7 +382,15 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
 
   it('JOIN succeeds (takes the owner stake) when covered', () => {
     const onTakeChallenge = vi.fn();
-    render(<CoinflipHubScreen {...baseProps({ balance: 1000, challengesByGame: { coinflip: [CHALLENGE] }, onTakeChallenge })} />);
+    render(
+      <CoinflipHubScreen
+        {...baseProps({
+          balance: 1000,
+          challengesByGame: { coinflip: [CHALLENGE] },
+          onTakeChallenge,
+        })}
+      />
+    );
     // The row shows the owner's stake so the tap is informed consent.
     expect(screen.getByTestId('home-stake-c1').textContent).toBe('50¢');
     fireEvent.click(screen.getByTestId('home-join-c1'));
@@ -285,7 +406,9 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
   });
 
   it('is sanitized: no $ anywhere on the hub', () => {
-    const { container } = render(<CoinflipHubScreen {...baseProps({ challengesByGame: { coinflip: [CHALLENGE] } })} />);
+    const { container } = render(
+      <CoinflipHubScreen {...baseProps({ challengesByGame: { coinflip: [CHALLENGE] } })} />
+    );
     expect(container.textContent ?? '').not.toMatch(/\$/);
   });
 
@@ -296,14 +419,30 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
       // Coinflip's module keeps `round`/`replays` public over the wire (the client view type omits
       // them; the shared hub reads them structurally). A same-side push bumps replays 0 → 1 and
       // re-deals a fresh (empty) pick round in the same escrow — a NON-terminal state.
-      const round0 = { players: ['pid', 'bob'], choices: {}, replays: 0 } as unknown as CoinflipView;
+      const round0 = {
+        players: ['pid', 'bob'],
+        choices: {},
+        replays: 0,
+      } as unknown as CoinflipView;
       const drawn = { players: ['pid', 'bob'], choices: {}, replays: 1 } as unknown as CoinflipView;
-      const { rerender } = render(<CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState: round0, legalMoves: [] })} />);
-      rerender(<CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState: drawn, legalMoves: ['heads', 'tails'] })} />);
-      await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+      const { rerender } = render(
+        <CoinflipHubScreen
+          {...baseProps({ currentMatchId: 'm1', gameState: round0, legalMoves: [] })}
+        />
+      );
+      rerender(
+        <CoinflipHubScreen
+          {...baseProps({ currentMatchId: 'm1', gameState: drawn, legalMoves: ['heads', 'tails'] })}
+        />
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50);
+      });
       expect(screen.getByTestId('hub-slot-own').className).toContain('ring-amber-400');
       expect(screen.getByTestId('hub-slot-opponent').className).toContain('ring-amber-400');
-      await act(async () => { await vi.advanceTimersByTimeAsync(2000 + 50); });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000 + 50);
+      });
       expect(screen.getByTestId('hub-slot-own').className).not.toContain('ring-amber-400');
     } finally {
       vi.useRealTimers();
@@ -321,7 +460,11 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
 
   it('In-match: the opponent slot reads "Opponent" (still no alias)', () => {
     const gameState: CoinflipView = { players: ['pid', 'bob'], choices: {} };
-    render(<CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['heads', 'tails'] })} />);
+    render(
+      <CoinflipHubScreen
+        {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['heads', 'tails'] })}
+      />
+    );
     const opp = screen.getByTestId('hub-slot-opponent').textContent ?? '';
     expect(opp).toContain('Opponent');
     expect(opp).not.toMatch(/bob/);
@@ -359,11 +502,15 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
 
 describe('CoinflipHubScreen — waiting transforms in place (#154)', () => {
   beforeEach(() => {
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      const u = String(url);
-      if (u.includes('/games') || u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
-      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes('/games') || u.includes('/leaderboard'))
+          return { ok: true, json: async () => [] } as Response;
+        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      })
+    );
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -374,7 +521,9 @@ describe('CoinflipHubScreen — waiting transforms in place (#154)', () => {
       render(<CoinflipHubScreen {...baseProps({ waitingExpiresAt: 1_000_000 + 30_000 })} />);
       expect(screen.getByTestId('hub-waiting-countdown').textContent).toBe('0:30');
       // Advancing the fake timers moves the mocked clock; the 1s tick recomputes the remaining.
-      act(() => { vi.advanceTimersByTime(5_000); });
+      act(() => {
+        vi.advanceTimersByTime(5_000);
+      });
       expect(screen.getByTestId('hub-waiting-countdown').textContent).toBe('0:25');
     } finally {
       vi.useRealTimers();
@@ -400,10 +549,14 @@ describe('CoinflipHubScreen — waiting transforms in place (#154)', () => {
     // the lobbyExpired change drives the transition.
     const exp = Date.now() + 30_000;
     const { rerender } = render(
-      <CoinflipHubScreen {...baseProps({ initialStake: 10, waitingExpiresAt: exp })} />,
+      <CoinflipHubScreen {...baseProps({ initialStake: 10, waitingExpiresAt: exp })} />
     );
     await screen.findByTestId('hub-cancel'); // searching
-    rerender(<CoinflipHubScreen {...baseProps({ initialStake: 10, waitingExpiresAt: exp, lobbyExpired: true })} />);
+    rerender(
+      <CoinflipHubScreen
+        {...baseProps({ initialStake: 10, waitingExpiresAt: exp, lobbyExpired: true })}
+      />
+    );
 
     // Reverted to idle in place: PLAY tappable, bet re-enabled, the polite note shown.
     const play = screen.getByTestId('hub-play');
@@ -430,7 +583,11 @@ describe('CoinflipHubScreen — waiting transforms in place (#154)', () => {
 
     // → in-match
     const gameState: CoinflipView = { players: ['pid', 'bob'], choices: {} };
-    rerender(<CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['heads', 'tails'] })} />);
+    rerender(
+      <CoinflipHubScreen
+        {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['heads', 'tails'] })}
+      />
+    );
     expect(screen.getByTestId('hub-section-play')).toBe(panelIdle);
     expect(screen.getByTestId('hub-section-bet')).toBe(betIdle);
   });
@@ -438,17 +595,29 @@ describe('CoinflipHubScreen — waiting transforms in place (#154)', () => {
 
 describe('CoinflipHubScreen — related rail (item 5: all games, coming-soon included)', () => {
   const META = (id: string, displayName: string) => ({
-    id, displayName, minPlayers: 2, maxPlayers: 2,
-    ranking: { kind: 'net_winnings' }, bet: { minStake: 1, maxStake: 100, symmetricStake: true },
-    averageDurationSec: 5, rakeRate: 0.025,
+    id,
+    displayName,
+    minPlayers: 2,
+    maxPlayers: 2,
+    ranking: { kind: 'net_winnings' },
+    bet: { minStake: 1, maxStake: 100, symmetricStake: true },
+    averageDurationSec: 5,
+    rakeRate: 0.025,
   });
   beforeEach(() => {
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      const u = String(url);
-      if (u.includes('/games')) return { ok: true, json: async () => [META('coinflip', 'Coinflip'), META('blackjack', 'Blackjack')] } as Response;
-      if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
-      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes('/games'))
+          return {
+            ok: true,
+            json: async () => [META('coinflip', 'Coinflip'), META('blackjack', 'Blackjack')],
+          } as Response;
+        if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
+        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      })
+    );
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -470,11 +639,15 @@ describe('CoinflipHubScreen — related rail (item 5: all games, coming-soon inc
 
 describe('CoinflipHubScreen — choice controls: optimistic purple pick (#160)', () => {
   beforeEach(() => {
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      const u = String(url);
-      if (u.includes('/games') || u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
-      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes('/games') || u.includes('/leaderboard'))
+          return { ok: true, json: async () => [] } as Response;
+        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      })
+    );
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -545,7 +718,11 @@ describe('CoinflipHubScreen — choice controls: optimistic purple pick (#160)',
     expect(screen.getByTestId('hub-move-heads')).toHaveAttribute('aria-pressed', 'true');
 
     // The round is wiped → idle: the picker is gone.
-    rerender(<CoinflipHubScreen {...baseProps({ currentMatchId: null, gameState: null, legalMoves: [] })} />);
+    rerender(
+      <CoinflipHubScreen
+        {...baseProps({ currentMatchId: null, gameState: null, legalMoves: [] })}
+      />
+    );
     expect(screen.queryByTestId('hub-move-heads')).toBeNull();
 
     // A fresh pick window opens with nothing pre-selected (the optimistic pick was cleared).
@@ -558,7 +735,11 @@ describe('CoinflipHubScreen — choice controls: optimistic purple pick (#160)',
     // A same-side round: both chose HEADS, the coin flipped tails → a DRAW (→ auto-replay). The hub
     // renders both picks as HEADS with no block anywhere. A "taken side" block must NEVER be added:
     // it would leak the opponent's hidden pick (a side that won't select = you infer they took it).
-    const gameState: CoinflipView = { players: ['pid', 'bob'], choices: { pid: 'heads', bob: 'heads' }, result: 'tails' };
+    const gameState: CoinflipView = {
+      players: ['pid', 'bob'],
+      choices: { pid: 'heads', bob: 'heads' },
+      result: 'tails',
+    };
     render(<CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState })} />);
     expect(screen.getByTestId('coin-own-pick').textContent).toMatch(/heads/i);
     expect(screen.getByTestId('coin-opp-pick').textContent).toMatch(/heads/i); // same side accepted
@@ -567,9 +748,16 @@ describe('CoinflipHubScreen — choice controls: optimistic purple pick (#160)',
   it('flip-on-draw (#164): the coin STILL flips and the opponent pick reveals during the draw beat', async () => {
     Element.prototype.scrollIntoView = vi.fn();
     // Round 0 live pick window — the live view has NO result (redacted mid-round), so no reveal yet.
-    const r0: CoinflipView = { players: ['pid', 'bob'], choices: { pid: 'heads' }, round: 0, replays: 0 };
+    const r0: CoinflipView = {
+      players: ['pid', 'bob'],
+      choices: { pid: 'heads' },
+      round: 0,
+      replays: 0,
+    };
     const { rerender } = render(
-      <CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState: r0, legalMoves: ['heads', 'tails'] })} />,
+      <CoinflipHubScreen
+        {...baseProps({ currentMatchId: 'm1', gameState: r0, legalMoves: ['heads', 'tails'] })}
+      />
     );
     // Pick window: the flat coin rests on HEADS (its fixed default — reveals nothing; the round
     // result is redacted mid-round). It only flips to the real face at the terminal/draw reveal.
@@ -582,9 +770,18 @@ describe('CoinflipHubScreen — choice controls: optimistic purple pick (#160)',
       choices: {},
       round: 1,
       replays: 1,
-      lastResult: { round: 0, result: 'tails', choices: { pid: 'heads', bob: 'heads' }, winner: null },
+      lastResult: {
+        round: 0,
+        result: 'tails',
+        choices: { pid: 'heads', bob: 'heads' },
+        winner: null,
+      },
     };
-    rerender(<CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState: r1, legalMoves: ['heads', 'tails'] })} />);
+    rerender(
+      <CoinflipHubScreen
+        {...baseProps({ currentMatchId: 'm1', gameState: r1, legalMoves: ['heads', 'tails'] })}
+      />
+    );
 
     // During the beat the coin flips to the drawn face and the opponent's drawn pick reveals — the
     // flip is NOT skipped on a draw (the whole point of #164's flip-on-draw).

@@ -3,6 +3,35 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { App } from '../App.js';
 
+// The Coinflip hub's coin is a real Three.js cylinder now (COINFLIP_COIN.md); jsdom has no WebGL
+// context, so the real THREE.WebGLRenderer throws when this file routes into the Coinflip screen.
+// Stub it (mirrors the canvas-confetti-style mocks used elsewhere) — this file exercises App-level
+// routing/state, not the coin's own animation curve (see Coin.test.tsx for that).
+vi.mock('three', async () => import('./three-stub.js'));
+
+// Force reduced motion + a controlled rAF/getContext stub for every test in this file, same reasoning
+// as CoinflipHub.test.tsx: (a) short flip settle instead of the full ~1.8-2.4s spin, (b) jsdom's own
+// rAF stops firing at all once some test elsewhere toggles fake timers, and (c) jsdom has no real 2D
+// canvas context either (silences a noisy "not implemented" console.error from the cap-texture paint).
+beforeEach(() => {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: true,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  }));
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+  vi.stubGlobal(
+    'requestAnimationFrame',
+    (cb: FrameRequestCallback) => setTimeout(() => cb(performance.now()), 16) as unknown as number
+  );
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => clearTimeout(id));
+});
+
 // jsdom has no WebSocket; WsClient.connect()/disconnect() need a minimal stand-in.
 class MockWebSocket {
   static OPEN = 1;
@@ -23,10 +52,13 @@ describe('App — own alias persistence + logout (#34)', () => {
     localStorage.setItem('rc_playerId', 'pid');
     localStorage.setItem('rc_username', 'alice');
     // Wallet mounts and fetches the balance.
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ balance: 1000, entries: [] }),
-    } as Response));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ balance: 1000, entries: [] }),
+      } as Response)
+    );
   });
 
   afterEach(() => {
@@ -60,7 +92,11 @@ describe('App — own alias persistence + logout (#34)', () => {
 
 describe('App — connection banner (#30)', () => {
   // Capture the socket(s) WsClient opens so the test can drive open/close.
-  let sockets: Array<{ readyState: number; onopen: (() => void) | null; onclose: (() => void) | null }>;
+  let sockets: Array<{
+    readyState: number;
+    onopen: (() => void) | null;
+    onclose: (() => void) | null;
+  }>;
 
   beforeEach(() => {
     sockets = [];
@@ -77,14 +113,20 @@ describe('App — connection banner (#30)', () => {
       sockets.push(s);
       return s;
     });
-    vi.stubGlobal('WebSocket', Object.assign(ctor, { OPEN: 1, CONNECTING: 0, CLOSING: 2, CLOSED: 3 }));
+    vi.stubGlobal(
+      'WebSocket',
+      Object.assign(ctor, { OPEN: 1, CONNECTING: 0, CLOSING: 2, CLOSED: 3 })
+    );
     localStorage.setItem('rc_token', 'tok');
     localStorage.setItem('rc_playerId', 'pid');
     localStorage.setItem('rc_username', 'alice');
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ balance: 1000, entries: [] }),
-    } as Response));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ balance: 1000, entries: [] }),
+      } as Response)
+    );
   });
 
   afterEach(() => {
@@ -98,15 +140,24 @@ describe('App — connection banner (#30)', () => {
     await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
 
     const sock = sockets[0];
-    act(() => { sock.readyState = 1; sock.onopen?.(); }); // connected
+    act(() => {
+      sock.readyState = 1;
+      sock.onopen?.();
+    }); // connected
     expect(screen.queryByTestId('ws-banner')).toBeNull();
 
-    act(() => { sock.readyState = 3; sock.onclose?.(); }); // dropped
+    act(() => {
+      sock.readyState = 3;
+      sock.onclose?.();
+    }); // dropped
     expect(screen.getByTestId('ws-banner').textContent).toContain('Reconnecting');
 
     // A later successful (re)open clears the banner.
     const next = sockets[sockets.length - 1];
-    act(() => { next.readyState = 1; next.onopen?.(); });
+    act(() => {
+      next.readyState = 1;
+      next.onopen?.();
+    });
     expect(screen.queryByTestId('ws-banner')).toBeNull();
   });
 });
@@ -129,20 +180,32 @@ describe('App — match.start routes by the server-authoritative gameId (open-ch
     sockets = [];
     const ctor = vi.fn((url: string) => {
       const s: MockSock = {
-        url, readyState: 0, onopen: null, onmessage: null, onclose: null, send: vi.fn(), close: vi.fn(),
+        url,
+        readyState: 0,
+        onopen: null,
+        onmessage: null,
+        onclose: null,
+        send: vi.fn(),
+        close: vi.fn(),
       };
       sockets.push(s);
       return s;
     });
-    vi.stubGlobal('WebSocket', Object.assign(ctor, { OPEN: 1, CONNECTING: 0, CLOSING: 2, CLOSED: 3 }));
+    vi.stubGlobal(
+      'WebSocket',
+      Object.assign(ctor, { OPEN: 1, CONNECTING: 0, CLOSING: 2, CLOSED: 3 })
+    );
     // A reload-style session with NO game selected locally → pendingGameId is null.
     localStorage.setItem('rc_token', 'tok');
     localStorage.setItem('rc_playerId', 'pid');
     localStorage.setItem('rc_username', 'alice');
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ balance: 1000, entries: [] }),
-    } as Response));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ balance: 1000, entries: [] }),
+      } as Response)
+    );
   });
 
   afterEach(() => {
@@ -156,13 +219,18 @@ describe('App — match.start routes by the server-authoritative gameId (open-ch
     render(<App />);
     await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
     const sock = sockets[0];
-    act(() => { sock.readyState = 1; sock.onopen?.(); });
+    act(() => {
+      sock.readyState = 1;
+      sock.onopen?.();
+    });
     const env = {
       type: 'match.start',
       matchId: 'm1',
       payload: { matchId: 'm1', opponent: 'bob-id', gameId, state },
     };
-    act(() => { sock.onmessage?.({ data: JSON.stringify(env) }); });
+    act(() => {
+      sock.onmessage?.({ data: JSON.stringify(env) });
+    });
   }
 
   it('routes to the chess board when gameId is "chess", even with pendingGameId null (the take case)', async () => {
@@ -192,44 +260,85 @@ describe('App — match.start routes by the server-authoritative gameId (open-ch
 
 describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
   type MockSock = {
-    url: string; readyState: number;
-    onopen: (() => void) | null; onmessage: ((ev: { data: string }) => void) | null; onclose: (() => void) | null;
-    send: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn>;
+    url: string;
+    readyState: number;
+    onopen: (() => void) | null;
+    onmessage: ((ev: { data: string }) => void) | null;
+    onclose: (() => void) | null;
+    send: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
   };
   let sockets: MockSock[];
   const COINFLIP = {
-    id: 'coinflip', displayName: 'Coinflip', minPlayers: 2, maxPlayers: 2,
-    ranking: { kind: 'net_winnings' }, bet: { minStake: 1, maxStake: 100, symmetricStake: true },
-    averageDurationSec: 5, rakeRate: 0.025,
+    id: 'coinflip',
+    displayName: 'Coinflip',
+    minPlayers: 2,
+    maxPlayers: 2,
+    ranking: { kind: 'net_winnings' },
+    bet: { minStake: 1, maxStake: 100, symmetricStake: true },
+    averageDurationSec: 5,
+    rakeRate: 0.025,
   };
 
   beforeEach(() => {
     sockets = [];
     const ctor = vi.fn((url: string) => {
-      const s: MockSock = { url, readyState: 0, onopen: null, onmessage: null, onclose: null, send: vi.fn(), close: vi.fn() };
+      const s: MockSock = {
+        url,
+        readyState: 0,
+        onopen: null,
+        onmessage: null,
+        onclose: null,
+        send: vi.fn(),
+        close: vi.fn(),
+      };
       sockets.push(s);
       return s;
     });
-    vi.stubGlobal('WebSocket', Object.assign(ctor, { OPEN: 1, CONNECTING: 0, CLOSING: 2, CLOSED: 3 }));
+    vi.stubGlobal(
+      'WebSocket',
+      Object.assign(ctor, { OPEN: 1, CONNECTING: 0, CLOSING: 2, CLOSED: 3 })
+    );
     // A resting public challenge for the logged-out ticker (GET /open-challenges).
     const PUB_ROW = {
-      matchId: 'pub-1', gameId: 'coinflip', ownerName: 'zed', stake: 10,
-      openedAt: 100, expiresAt: Date.now() + 30_000, timeControlId: 'none',
+      matchId: 'pub-1',
+      gameId: 'coinflip',
+      ownerName: 'zed',
+      stake: 10,
+      openedAt: 100,
+      expiresAt: Date.now() + 30_000,
+      timeControlId: 'none',
     };
     // NO token → logged out.
-    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
-      const u = String(url);
-      if (u.includes('/open-challenges')) return { ok: true, json: async () => [PUB_ROW] } as Response;
-      if (u.includes('/games')) return { ok: true, json: async () => [COINFLIP] } as Response;
-      if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
-      if (u.includes('/auth/register')) {
-        const body = init?.body ? JSON.parse(String(init.body)) : {};
-        return { ok: true, json: async () => ({ token: 'NEWT', playerId: 'NEWP', balance: 1000, username: body.username }) } as Response;
-      }
-      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const u = String(url);
+        if (u.includes('/open-challenges'))
+          return { ok: true, json: async () => [PUB_ROW] } as Response;
+        if (u.includes('/games')) return { ok: true, json: async () => [COINFLIP] } as Response;
+        if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
+        if (u.includes('/auth/register')) {
+          const body = init?.body ? JSON.parse(String(init.body)) : {};
+          return {
+            ok: true,
+            json: async () => ({
+              token: 'NEWT',
+              playerId: 'NEWP',
+              balance: 1000,
+              username: body.username,
+            }),
+          } as Response;
+        }
+        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      })
+    );
   });
-  afterEach(() => { localStorage.clear(); sessionStorage.clear(); vi.unstubAllGlobals(); });
+  afterEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    vi.unstubAllGlobals();
+  });
 
   it('a logged-out visitor lands on Home with a Sign-in chip + the live public ticker, and no WS is opened', async () => {
     render(<App />);
@@ -260,7 +369,10 @@ describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
     await waitFor(() => expect(sockets.length).toBe(1));
 
     // Open the socket → the captured JOIN intent replays as a challenge.take (the resume).
-    act(() => { sockets[0].readyState = 1; sockets[0].onopen?.(); });
+    act(() => {
+      sockets[0].readyState = 1;
+      sockets[0].onopen?.();
+    });
     const takes = sockets[0].send.mock.calls
       .map((c) => JSON.parse(String(c[0])))
       .filter((m: { type: string }) => m.type === 'challenge.take');
@@ -290,7 +402,10 @@ describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
     await waitFor(() => expect(sockets.length).toBe(1));
 
     // Open the socket → the captured PLAY intent replays as a queue.join (the resume).
-    act(() => { sockets[0].readyState = 1; sockets[0].onopen?.(); });
+    act(() => {
+      sockets[0].readyState = 1;
+      sockets[0].onopen?.();
+    });
     const joins = sockets[0].send.mock.calls
       .map((c) => JSON.parse(String(c[0])))
       .filter((m: { type: string }) => m.type === 'queue.join');
@@ -302,15 +417,24 @@ describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
 
 describe('App — hubs no longer auto-enter Searching on entry after another game (#152 follow-up)', () => {
   type MockSock = {
-    url: string; readyState: number;
-    onopen: (() => void) | null; onmessage: ((ev: { data: string }) => void) | null; onclose: (() => void) | null;
-    send: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn>;
+    url: string;
+    readyState: number;
+    onopen: (() => void) | null;
+    onmessage: ((ev: { data: string }) => void) | null;
+    onclose: (() => void) | null;
+    send: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
   };
   let sockets: MockSock[];
   const meta = (id: string, displayName: string) => ({
-    id, displayName, minPlayers: 2, maxPlayers: 2,
-    ranking: { kind: 'net_winnings' }, bet: { minStake: 1, maxStake: 100, symmetricStake: true },
-    averageDurationSec: 5, rakeRate: 0.025,
+    id,
+    displayName,
+    minPlayers: 2,
+    maxPlayers: 2,
+    ranking: { kind: 'net_winnings' },
+    bet: { minStake: 1, maxStake: 100, symmetricStake: true },
+    averageDurationSec: 5,
+    rakeRate: 0.025,
   });
   const COINFLIP = meta('coinflip', 'Coinflip');
   const RPS = meta('rps', 'Rock Paper Scissors');
@@ -318,26 +442,47 @@ describe('App — hubs no longer auto-enter Searching on entry after another gam
   beforeEach(() => {
     sockets = [];
     const ctor = vi.fn((url: string) => {
-      const s: MockSock = { url, readyState: 0, onopen: null, onmessage: null, onclose: null, send: vi.fn(), close: vi.fn() };
+      const s: MockSock = {
+        url,
+        readyState: 0,
+        onopen: null,
+        onmessage: null,
+        onclose: null,
+        send: vi.fn(),
+        close: vi.fn(),
+      };
       sockets.push(s);
       return s;
     });
-    vi.stubGlobal('WebSocket', Object.assign(ctor, { OPEN: 1, CONNECTING: 0, CLOSING: 2, CLOSED: 3 }));
+    vi.stubGlobal(
+      'WebSocket',
+      Object.assign(ctor, { OPEN: 1, CONNECTING: 0, CLOSING: 2, CLOSED: 3 })
+    );
     // Logged-in reload session with a two-game roster (so the related rail can switch hubs).
     localStorage.setItem('rc_token', 'tok');
     localStorage.setItem('rc_playerId', 'pid');
     localStorage.setItem('rc_username', 'alice');
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      const u = String(url);
-      if (u.includes('/games')) return { ok: true, json: async () => [COINFLIP, RPS] } as Response;
-      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes('/games'))
+          return { ok: true, json: async () => [COINFLIP, RPS] } as Response;
+        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      })
+    );
   });
-  afterEach(() => { localStorage.clear(); sessionStorage.clear(); vi.unstubAllGlobals(); });
+  afterEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    vi.unstubAllGlobals();
+  });
 
   /** Deliver one server envelope over the open socket. */
   function deliver(sock: MockSock, type: string, payload: unknown) {
-    act(() => { sock.onmessage?.({ data: JSON.stringify({ type, payload }) }); });
+    act(() => {
+      sock.onmessage?.({ data: JSON.stringify({ type, payload }) });
+    });
   }
 
   /** Render logged-in, open the socket, enter the Coinflip hub, arm a bet and press PLAY. */
@@ -345,7 +490,10 @@ describe('App — hubs no longer auto-enter Searching on entry after another gam
     render(<App />);
     await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
     const sock = sockets[0];
-    act(() => { sock.readyState = 1; sock.onopen?.(); });
+    act(() => {
+      sock.readyState = 1;
+      sock.onopen?.();
+    });
     fireEvent.click(await screen.findByTestId('home-tile-coinflip'));
     fireEvent.click(await screen.findByTestId('hub-bet-10'));
     fireEvent.click(screen.getByTestId('hub-play'));
@@ -353,11 +501,18 @@ describe('App — hubs no longer auto-enter Searching on entry after another gam
   }
 
   const sent = (sock: MockSock, type: string) =>
-    sock.send.mock.calls.map((c) => JSON.parse(String(c[0]))).filter((m: { type: string }) => m.type === type);
+    sock.send.mock.calls
+      .map((c) => JSON.parse(String(c[0])))
+      .filter((m: { type: string }) => m.type === type);
 
   it('switching hubs abandons a leftover search — the next hub opens idle, not Searching', async () => {
     const sock = await playCoinflip();
-    deliver(sock, 'queue.waiting', { gameId: 'coinflip', matchId: 'q1', since: 0, expiresAt: Date.now() + 90_000 });
+    deliver(sock, 'queue.waiting', {
+      gameId: 'coinflip',
+      matchId: 'q1',
+      since: 0,
+      expiresAt: Date.now() + 90_000,
+    });
     await waitFor(() => expect(screen.getByTestId('hub-waiting-countdown')).toBeInTheDocument());
 
     // Switch to the RPS hub via the related rail (handleSelectGame) while a search is in flight.
@@ -371,19 +526,34 @@ describe('App — hubs no longer auto-enter Searching on entry after another gam
   it('a queue.waiting for a DIFFERENT game is ignored (no cross-game countdown)', async () => {
     const sock = await playCoinflip();
     // A leftover/stray waiting for another game must NOT drive this hub's countdown.
-    deliver(sock, 'queue.waiting', { gameId: 'chess', matchId: 'x', since: 0, expiresAt: Date.now() + 90_000 });
+    deliver(sock, 'queue.waiting', {
+      gameId: 'chess',
+      matchId: 'x',
+      since: 0,
+      expiresAt: Date.now() + 90_000,
+    });
     expect(screen.queryByTestId('hub-waiting-countdown')).toBeNull();
     // The active game's own waiting DOES start it.
-    deliver(sock, 'queue.waiting', { gameId: 'coinflip', matchId: 'q1', since: 0, expiresAt: Date.now() + 90_000 });
+    deliver(sock, 'queue.waiting', {
+      gameId: 'coinflip',
+      matchId: 'q1',
+      since: 0,
+      expiresAt: Date.now() + 90_000,
+    });
     await waitFor(() => expect(screen.getByTestId('hub-waiting-countdown')).toBeInTheDocument());
   });
 
   it('the countdown reaching expiry auto-reverts (no stuck 0:00) — lands on "No opponent found"', async () => {
     const sock = await playCoinflip();
     // A waiting whose server deadline has already passed → auto-resolve, never dead-end at 0:00.
-    deliver(sock, 'queue.waiting', { gameId: 'coinflip', matchId: 'q1', since: 0, expiresAt: Date.now() - 1 });
+    deliver(sock, 'queue.waiting', {
+      gameId: 'coinflip',
+      matchId: 'q1',
+      since: 0,
+      expiresAt: Date.now() - 1,
+    });
     await waitFor(() =>
-      expect(screen.getByTestId('hub-no-opponent').textContent).toContain('No opponent found'),
+      expect(screen.getByTestId('hub-no-opponent').textContent).toContain('No opponent found')
     );
     expect(screen.queryByTestId('hub-waiting-countdown')).toBeNull();
     expect(sent(sock, 'queue.leave').some((m) => m.payload.gameId === 'coinflip')).toBe(true);
@@ -392,52 +562,104 @@ describe('App — hubs no longer auto-enter Searching on entry after another gam
 
 describe('App — round-scoped state wiped as one unit on the destroy events (PLAY / leave / enter)', () => {
   type MockSock = {
-    url: string; readyState: number;
-    onopen: (() => void) | null; onmessage: ((ev: { data: string }) => void) | null; onclose: (() => void) | null;
-    send: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn>;
+    url: string;
+    readyState: number;
+    onopen: (() => void) | null;
+    onmessage: ((ev: { data: string }) => void) | null;
+    onclose: (() => void) | null;
+    send: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
   };
   let sockets: MockSock[];
   const meta = (id: string, displayName: string) => ({
-    id, displayName, minPlayers: 2, maxPlayers: 2,
-    ranking: { kind: 'net_winnings' }, bet: { minStake: 1, maxStake: 100, symmetricStake: true },
-    averageDurationSec: 5, rakeRate: 0.025,
+    id,
+    displayName,
+    minPlayers: 2,
+    maxPlayers: 2,
+    ranking: { kind: 'net_winnings' },
+    bet: { minStake: 1, maxStake: 100, symmetricStake: true },
+    averageDurationSec: 5,
+    rakeRate: 0.025,
   });
-  const ROSTER = [meta('coinflip', 'Coinflip'), meta('rps', 'Rock Paper Scissors'), meta('blackjack', 'Blackjack')];
+  const ROSTER = [
+    meta('coinflip', 'Coinflip'),
+    meta('rps', 'Rock Paper Scissors'),
+    meta('blackjack', 'Blackjack'),
+  ];
 
   // A finished Coinflip round: both picks revealed + the flip (drives the own/opponent pick pills).
-  const COINFLIP_DONE = { players: ['pid', 'bob-id'], choices: { pid: 'heads', 'bob-id': 'tails' }, result: 'heads' };
+  const COINFLIP_DONE = {
+    players: ['pid', 'bob-id'],
+    choices: { pid: 'heads', 'bob-id': 'tails' },
+    result: 'heads',
+  };
   // A finished Blackjack hand: both hands revealed (drives the persistent on-board cards).
   const BLACKJACK_DONE = {
-    players: ['pid', 'bob-id'], round: 0, draws: 0, winner: 'pid',
+    players: ['pid', 'bob-id'],
+    round: 0,
+    draws: 0,
+    winner: 'pid',
     hands: {
-      pid: { cards: [{ rank: 'K', suit: '♠' }, { rank: 'Q', suit: '♥' }], done: true },
-      'bob-id': { cards: [{ rank: '9', suit: '♣' }, { rank: '8', suit: '♦' }], done: true },
+      pid: {
+        cards: [
+          { rank: 'K', suit: '♠' },
+          { rank: 'Q', suit: '♥' },
+        ],
+        done: true,
+      },
+      'bob-id': {
+        cards: [
+          { rank: '9', suit: '♣' },
+          { rank: '8', suit: '♦' },
+        ],
+        done: true,
+      },
     },
   };
 
   beforeEach(() => {
     sockets = [];
     const ctor = vi.fn((url: string) => {
-      const s: MockSock = { url, readyState: 0, onopen: null, onmessage: null, onclose: null, send: vi.fn(), close: vi.fn() };
+      const s: MockSock = {
+        url,
+        readyState: 0,
+        onopen: null,
+        onmessage: null,
+        onclose: null,
+        send: vi.fn(),
+        close: vi.fn(),
+      };
       sockets.push(s);
       return s;
     });
-    vi.stubGlobal('WebSocket', Object.assign(ctor, { OPEN: 1, CONNECTING: 0, CLOSING: 2, CLOSED: 3 }));
+    vi.stubGlobal(
+      'WebSocket',
+      Object.assign(ctor, { OPEN: 1, CONNECTING: 0, CLOSING: 2, CLOSED: 3 })
+    );
     localStorage.setItem('rc_token', 'tok');
     localStorage.setItem('rc_playerId', 'pid');
     localStorage.setItem('rc_username', 'alice');
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      const u = String(url);
-      if (u.includes('/games')) return { ok: true, json: async () => ROSTER } as Response;
-      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes('/games')) return { ok: true, json: async () => ROSTER } as Response;
+        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      })
+    );
     // jsdom has no layout — the Coinflip board scrolls itself into view on a reveal.
     Element.prototype.scrollIntoView = vi.fn();
   });
-  afterEach(() => { localStorage.clear(); sessionStorage.clear(); vi.unstubAllGlobals(); });
+  afterEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    vi.unstubAllGlobals();
+  });
 
   function deliver(sock: MockSock, type: string, payload: unknown) {
-    act(() => { sock.onmessage?.({ data: JSON.stringify({ type, payload }) }); });
+    act(() => {
+      sock.onmessage?.({ data: JSON.stringify({ type, payload }) });
+    });
   }
 
   /** Enter a hub, PLAY, then resolve into a match and END it → the finished-round result view. */
@@ -445,15 +667,25 @@ describe('App — round-scoped state wiped as one unit on the destroy events (PL
     render(<App />);
     await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
     const sock = sockets[0];
-    act(() => { sock.readyState = 1; sock.onopen?.(); });
+    act(() => {
+      sock.readyState = 1;
+      sock.onopen?.();
+    });
     fireEvent.click(await screen.findByTestId(`home-tile-${gameId}`));
     fireEvent.click(await screen.findByTestId('hub-bet-10'));
     fireEvent.click(screen.getByTestId('hub-play'));
     deliver(sock, 'match.start', { matchId: 'm1', opponent: 'bob-id', gameId, state });
-    deliver(sock, 'match.end', { outcome: { type: 'win', winner: 'pid' }, settlement: { delta: 19, newBalance: 1019 } });
-    // Settle into the RESULT phase (PLAY re-enabled). Coinflip holds a ~1.5s "Playing…" reveal beat
-    // after match.end (holdResultMs) before the result phase; wait it out so PLAY is pressable.
-    await waitFor(() => expect(screen.getByTestId('hub-play')).not.toBeDisabled(), { timeout: 2500 });
+    deliver(sock, 'match.end', {
+      outcome: { type: 'win', winner: 'pid' },
+      settlement: { delta: 19, newBalance: 1019 },
+    });
+    // Settle into the RESULT phase (PLAY re-enabled). Coinflip holds a ~2.6s reveal beat after
+    // match.end (holdResultMs — bumped from 1.5s so the win/lose bar never lights before the 3D
+    // coin's longer ~1.8-2.4s flip visually lands, COINFLIP_COIN.md flag #2) before the result
+    // phase; wait it out so PLAY is pressable.
+    await waitFor(() => expect(screen.getByTestId('hub-play')).not.toBeDisabled(), {
+      timeout: 3500,
+    });
     return sock;
   }
 
@@ -469,7 +701,12 @@ describe('App — round-scoped state wiped as one unit on the destroy events (PL
     expect(screen.queryByTestId('coin-opp-pick')).toBeNull();
 
     // …and the coin panel is back to searching.
-    deliver(sock, 'queue.waiting', { gameId: 'coinflip', matchId: 'q2', since: 0, expiresAt: Date.now() + 90_000 });
+    deliver(sock, 'queue.waiting', {
+      gameId: 'coinflip',
+      matchId: 'q2',
+      since: 0,
+      expiresAt: Date.now() + 90_000,
+    });
     await waitFor(() => expect(screen.getByTestId('hub-waiting-countdown')).toBeInTheDocument());
   });
 
@@ -498,7 +735,11 @@ describe('App — round-scoped state wiped as one unit on the destroy events (PL
   it('the same wipe clears another game’s board remnants (Blackjack cards) on PLAY', async () => {
     await enterAndFinish('blackjack', BLACKJACK_DONE);
     // The finished hand persists on the board (Blackjack also suppresses the overlay).
-    await waitFor(() => expect(within(screen.getByTestId('own-hand')).getAllByTestId('card').length).toBeGreaterThan(0));
+    await waitFor(() =>
+      expect(within(screen.getByTestId('own-hand')).getAllByTestId('card').length).toBeGreaterThan(
+        0
+      )
+    );
     // PLAY again → the shared gameState wipe empties the board (back to the idle table, no cards).
     fireEvent.click(screen.getByTestId('hub-play'));
     expect(screen.queryAllByTestId('card')).toHaveLength(0);
@@ -511,19 +752,40 @@ describe('App — round-scoped state wiped as one unit on the destroy events (PL
     render(<App />);
     await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
     const sock = sockets[0];
-    act(() => { sock.readyState = 1; sock.onopen?.(); });
+    act(() => {
+      sock.readyState = 1;
+      sock.onopen?.();
+    });
     fireEvent.click(await screen.findByTestId('home-tile-coinflip'));
     fireEvent.click(await screen.findByTestId('hub-bet-10'));
     fireEvent.click(screen.getByTestId('hub-play'));
     // A real in-flight search with a SHORT server deadline…
-    deliver(sock, 'queue.waiting', { gameId: 'coinflip', matchId: 'q1', since: 0, expiresAt: Date.now() + 150 });
+    deliver(sock, 'queue.waiting', {
+      gameId: 'coinflip',
+      matchId: 'q1',
+      since: 0,
+      expiresAt: Date.now() + 150,
+    });
     await waitFor(() => expect(screen.getByTestId('hub-waiting-countdown')).toBeInTheDocument());
     // …that resolves into a match, which then ENDS (match-start clears the stale deadline).
-    deliver(sock, 'match.start', { matchId: 'm1', opponent: 'bob-id', gameId: 'coinflip', state: COINFLIP_DONE });
-    deliver(sock, 'match.end', { outcome: { type: 'win', winner: 'pid' }, settlement: { delta: 19, newBalance: 1019 } });
-    await waitFor(() => expect(screen.getByTestId('hub-play')).not.toBeDisabled(), { timeout: 2500 });
+    deliver(sock, 'match.start', {
+      matchId: 'm1',
+      opponent: 'bob-id',
+      gameId: 'coinflip',
+      state: COINFLIP_DONE,
+    });
+    deliver(sock, 'match.end', {
+      outcome: { type: 'win', winner: 'pid' },
+      settlement: { delta: 19, newBalance: 1019 },
+    });
+    // holdResultMs bumped to 2.6s (COINFLIP_COIN.md flag #2 — see enterAndFinish above).
+    await waitFor(() => expect(screen.getByTestId('hub-play')).not.toBeDisabled(), {
+      timeout: 3500,
+    });
     // Idle PAST the original 150 ms search deadline — the stale value must not re-arm the expiry.
     await new Promise((r) => setTimeout(r, 300));
-    expect(screen.getByTestId('hub-no-opponent').textContent ?? '').not.toContain('No opponent found');
+    expect(screen.getByTestId('hub-no-opponent').textContent ?? '').not.toContain(
+      'No opponent found'
+    );
   });
 });
