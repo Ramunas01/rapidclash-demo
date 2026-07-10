@@ -1,5 +1,34 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-07-09#3 — Coinflip coin: rebuild as 3D cylinder, vertical axis (Designer, prototype-approved)            [OPEN — needs Owner OK on 3 items]
+From: Advisor   Re: Designer sign-off on the coin prototype + "vertical axis" note
+
+Essence: replace the flat scaleX squash in FlatCoin.tsx with a real 3D cylinder coin (Three.js) spinning on a vertical (Y) axis, landing on the server-decided face. Client-only / presentational — the server still decides; the flip just animates to it, so redaction and timing are unchanged. Fixes all four Designer defects (not round / no thickness / result leak / no "chance" feel) plus gives the realistic lit edge and motion blur. Full spec: docs/COINFLIP_COIN.md (Owner to commit). Working reference: coinflip-prototype-vertical.html (Designer already approved the horizontal version; this is the same, spun on Y).
+
+Verified against HEAD: current FlatCoin face is an ellipse (rx38/ry44), flip is scaleX:[1,0,1] (razor line), colour is preset to the winner (the leak). The rebuild keeps the FlatCoin API (face, size) so CoinflipHub's idle/terminal/draw-flip choreography is untouched — only the internals change.
+
+How the hard parts turned out cheap (per the prototype):
+
+Vertical axis = animate rotation.y instead of .x; edge-on midpoint becomes a vertical band — which is exactly the Designer's original "thin vertical ellipse."
+The two-tone edge shading is one light on a curved cylinder — automatic, not hand-placed.
+Motion blur is a CSS blur() on the canvas scaled to spin speed — near-free.
+No leak: faces are fixed materials (gold cap / silver cap); the result lives only in where rotation.y stops (≡0→heads, ≡π→tails). Random 5–7 turns, ease-out, ~1.8–2.4 s.
+
+⚠ Three items need an Owner/Designer decision before build (all in the spec):
+
+Palette: gold/silver vs the shipped orange/blue. The live coin is orange heads / blue tails and the H/T pick pills mirror those tokens. Gold/silver means the pills should follow to keep "pill colour = face colour." Since the pills read --coin-*-face, redefining those tokens to gold/silver updates the pills automatically — confirm the Designer wants the pills to go gold/silver too (recommended for consistency; otherwise the coin and pills diverge).
+Flip duration grows from COIN_FLIP_DURATION_S = 1.1 s to ~1.8–2.4 s. Verify the reveal hold (holdResultMs) and draw-flip beat still feel right; may need a small bump.
+Three.js dependency (~150 KB gzip) added to apps/web — fine for a pitch build, but Owner should OK the bundle bump. (No-dependency SVG alternative exists but flatter; Designer chose the 3D look.)
+
+PR sequence (all client-only, no protocol):
+
+Add three to apps/web (Owner OK on the dep).
+Rebuild FlatCoin internals → Three.js cylinder + lighting + vertical-axis flip + ease-out landing + CSS motion blur; keep the API. Stamp the shared BOLT_PATH on each cap.
+Tokens: set --coin-*-face to gold/silver (pills follow automatically); tidy the flip duration/hold if item 2 needs it.
+Keep the tile thumbnail a static image (no live WebGL in the small tile); pause the render loop when the coin is static; honour prefers-reduced-motion.
+
+Ask: (a) Owner OK on the three flagged items (palette+pills, duration, three.js dep). (b) approve COINFLIP_COIN.md. (c) ticket the client PRs above. On approval I'll reconcile COINFLIP_HUB.md/SCREENS.md (they still describe the earlier coin) and formally retire the flat-scaleX note so there aren't two coin specs in the repo.
+
 ### 2026-07-09#2 — Header top offset: real cause is the logo asset, not padding (Designer)            [ANSWERED]
 From: Advisor   Re: Designer "reduce header top offset" + annotated screenshot (~77px)
 

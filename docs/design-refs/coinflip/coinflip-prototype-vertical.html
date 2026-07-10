@@ -1,0 +1,145 @@
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RapidClash — coinflip prototype</title>
+<style>
+  :root{
+    --bg:#0B0B0B; --panel:#151515; --edge:#262626;
+    --brand:#8140e2; --gold:#E8B84B; --silver:#C9CDD6; --ink:#f4f4f5; --mut:#8b8b93;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:480px;margin:0 auto;padding:28px 20px 40px;min-height:100dvh;display:flex;flex-direction:column}
+  h1{font-size:15px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;margin:0 0 2px}
+  h1 span{color:var(--brand)}
+  .sub{color:var(--mut);font-size:12.5px;line-height:1.5;margin:0 0 20px}
+  .stageWrap{display:flex;align-items:center;justify-content:center;height:340px;margin:6px 0 4px}
+  #stage{width:300px;height:300px;transition:filter .05s linear}
+  .result{text-align:center;height:26px;font-weight:800;letter-spacing:.05em;font-size:15px;margin:2px 0 18px}
+  .result .g{color:var(--gold)} .result .s{color:var(--silver)}
+  .btns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  button{appearance:none;border:0;border-radius:14px;padding:14px 12px;font-size:14px;font-weight:700;
+    color:var(--ink);background:var(--panel);cursor:pointer;transition:filter .12s,transform .04s}
+  button:hover{filter:brightness(1.25)} button:active{transform:translateY(1px)}
+  button:disabled{opacity:.45;cursor:default}
+  button.primary{background:var(--brand)}
+  .full{grid-column:1 / -1;background:transparent;outline:1px solid var(--edge)}
+  .notes{margin-top:22px;color:var(--mut);font-size:11.5px;line-height:1.65}
+  .notes b{color:var(--ink);font-weight:600}
+  .notes ul{margin:6px 0 0;padding-left:16px} .notes li{margin:3px 0}
+</style>
+
+<div class="wrap">
+  <h1>Rapid<span>Clash</span> — coinflip prototype</h1>
+  <p class="sub">A real 3D cylinder, not a flat disc. Vertical spin axis. The server picks the result; the coin spins 5–7 turns and eases onto it. Faces never recolour — the outcome lives only in where the rotation stops.</p>
+
+  <div class="stageWrap"><div id="stage"></div></div>
+  <div class="result" id="result">Tap a button to flip</div>
+
+  <div class="btns">
+    <button class="primary" id="heads">Flip → Heads (gold)</button>
+    <button class="primary" id="tails">Flip → Tails (silver)</button>
+    <button class="full" id="rand">Flip → Random (server decides)</button>
+  </div>
+
+  <div class="notes">
+    <b>What this proves against the four problems:</b>
+    <ul>
+      <li><b>Round at rest</b> — a real cylinder face is a perfect circle, always.</li>
+      <li><b>Thickness mid-flip</b> — the cylinder's edge has real width; you see it every time the coin turns edge-on.</li>
+      <li><b>Two-tone edge</b> — that light/dark banding on the rim is one light source on a curved surface. It's automatic, not hand-placed.</li>
+      <li><b>No leak</b> — gold and silver alternate the whole spin; you can't tell the result until it settles.</li>
+      <li><b>Feels like chance</b> — random turn count each flip + ease-out deceleration. Motion blur tracks spin speed (a CSS blur, near-free).</li>
+    </ul>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+  const stage = document.getElementById('stage');
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
+  camera.position.set(0.35, 0.35, 8);          // slight elevation → a hint of edge at rest, face still reads circular
+  camera.lookAt(0, 0, 0);
+
+  const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+  renderer.setClearColor(0x000000, 0);
+  stage.appendChild(renderer.domElement);
+
+  function resize(){
+    const s = stage.clientWidth;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(s, s, false);
+    camera.aspect = 1; camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', resize);
+
+  // Coin: radius 1, thickness ~13% of diameter (the Designer's ~10–12% + a hair).
+  const geo = new THREE.CylinderGeometry(1, 1, 0.26, 96);
+  geo.rotateX(Math.PI/2);                    // caps face the camera (±Z); flip = rotate around Y (VERTICAL axis)
+  const gold   = new THREE.MeshStandardMaterial({ color:0xE8B84B, metalness:0.55, roughness:0.34 });
+  const silver = new THREE.MeshStandardMaterial({ color:0xC9CDD6, metalness:0.60, roughness:0.30 });
+  const edge   = new THREE.MeshStandardMaterial({ color:0xB9905A, metalness:0.50, roughness:0.45 }); // warm mid-tone, sits ok next to both faces
+  // CylinderGeometry material order: [side, topCap, bottomCap]; after rotateX topCap faces camera at rest.
+  const coin = new THREE.Mesh(geo, [edge, gold, silver]);
+  scene.add(coin);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+  const key = new THREE.DirectionalLight(0xffffff, 1.05); key.position.set(3, 4, 5); scene.add(key);
+  const rim = new THREE.DirectionalLight(0x8140e2, 0.55); rim.position.set(-4, -1, 2); scene.add(rim); // subtle brand rim
+
+  // --- flip state ---
+  let animating=false, from=0, to=0, startT=0, dur=2000, face='heads', last=performance.now();
+  const btns = ['heads','tails','rand'].map(id=>document.getElementById(id));
+  const resultEl = document.getElementById('result');
+
+  function flip(which){
+    if(animating) return;
+    face = which==='rand' ? (Math.random()<0.5?'heads':'tails') : which;
+    const targetMod = face==='heads' ? 0 : Math.PI;      // rot.y ≡ 0 → gold up ; ≡ π → silver up
+    const halfTurns = reduce ? 2 : (10 + Math.floor(Math.random()*5)); // 5–7 full turns (10–14 halves)
+    from = coin.rotation.y;
+    const base = from + halfTurns*Math.PI;
+    const r = ((targetMod - base) % (2*Math.PI) + 2*Math.PI) % (2*Math.PI);
+    to = base + r;
+    dur = reduce ? 450 : (1800 + Math.random()*600);      // ~1.8–2.4s
+    startT = performance.now();
+    animating = true;
+    btns.forEach(b=>b.disabled=true);
+    resultEl.textContent = 'Flipping…';
+  }
+  document.getElementById('heads').onclick = ()=>flip('heads');
+  document.getElementById('tails').onclick = ()=>flip('tails');
+  document.getElementById('rand').onclick  = ()=>flip('rand');
+
+  const easeOut = p => 1 - Math.pow(1-p, 3);
+
+  function frame(now){
+    requestAnimationFrame(frame);
+    const dt = Math.max(1, now-last); last = now;
+    if(animating){
+      const p = Math.min(1, (now-startT)/dur);
+      const prev = coin.rotation.y;
+      coin.rotation.y = from + (to-from)*easeOut(p);
+      const speed = Math.abs(coin.rotation.y - prev) / (dt/16.67); // radians per ~frame
+      stage.style.filter = 'blur(' + Math.min(7, speed*2.4).toFixed(2) + 'px)';
+      if(p>=1){
+        animating=false;
+        coin.rotation.y = ((to % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI);
+        stage.style.filter='none';
+        btns.forEach(b=>b.disabled=false);
+        resultEl.innerHTML = face==='heads'
+          ? 'Landed <span class="g">HEADS · gold</span>'
+          : 'Landed <span class="s">TAILS · silver</span>';
+      }
+    }
+    renderer.render(scene, camera);
+  }
+
+  resize();
+  requestAnimationFrame(frame);
+})();
+</script>
