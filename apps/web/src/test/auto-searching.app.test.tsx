@@ -8,6 +8,29 @@ import type { GameMeta } from '@rapidclash/shared';
 // armed stake. No navigation/reconnect/stray-server-push path may auto-enter searching.
 
 vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
+// The Coinflip hub's coin is a real Three.js cylinder now (COINFLIP_COIN.md); jsdom has no WebGL
+// context, so stub it (mirrors the canvas-confetti mock above) — see Coin.test.tsx for the coin's
+// own animation-curve coverage.
+vi.mock('three', async () => import('./three-stub.js'));
+
+beforeEach(() => {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: true,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  }));
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+  vi.stubGlobal(
+    'requestAnimationFrame',
+    (cb: FrameRequestCallback) => setTimeout(() => cb(performance.now()), 16) as unknown as number
+  );
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => clearTimeout(id));
+});
 
 type MockSock = {
   url: string;
@@ -20,9 +43,14 @@ type MockSock = {
 };
 
 const META = (id: string, displayName: string): GameMeta => ({
-  id, displayName, minPlayers: 2, maxPlayers: 2,
-  ranking: { kind: 'net_winnings' }, bet: { minStake: 1, maxStake: 1000, symmetricStake: true },
-  averageDurationSec: 10, rakeRate: 0.025,
+  id,
+  displayName,
+  minPlayers: 2,
+  maxPlayers: 2,
+  ranking: { kind: 'net_winnings' },
+  bet: { minStake: 1, maxStake: 1000, symmetricStake: true },
+  averageDurationSec: 10,
+  rakeRate: 0.025,
 });
 
 let sockets: MockSock[];
@@ -34,32 +62,52 @@ function lastSock(): MockSock {
 /** Deliver a server → client envelope on the live socket. */
 function deliver(type: string, payload: unknown, matchId?: string): void {
   act(() => {
-    lastSock().onmessage?.({ data: JSON.stringify({ type, payload, ...(matchId ? { matchId } : {}) }) });
+    lastSock().onmessage?.({
+      data: JSON.stringify({ type, payload, ...(matchId ? { matchId } : {}) }),
+    });
   });
 }
 
 function openLiveSocket(): void {
-  act(() => { lastSock().readyState = 1; lastSock().onopen?.(); });
+  act(() => {
+    lastSock().readyState = 1;
+    lastSock().onopen?.();
+  });
 }
 
 describe('#152 — hubs never auto-enter Searching…', () => {
   beforeEach(() => {
     sockets = [];
     const ctor = vi.fn((url: string) => {
-      const s: MockSock = { url, readyState: 0, onopen: null, onmessage: null, onclose: null, send: vi.fn(), close: vi.fn() };
+      const s: MockSock = {
+        url,
+        readyState: 0,
+        onopen: null,
+        onmessage: null,
+        onclose: null,
+        send: vi.fn(),
+        close: vi.fn(),
+      };
       sockets.push(s);
       return s;
     });
-    vi.stubGlobal('WebSocket', Object.assign(ctor, { OPEN: 1, CONNECTING: 0, CLOSING: 2, CLOSED: 3 }));
+    vi.stubGlobal(
+      'WebSocket',
+      Object.assign(ctor, { OPEN: 1, CONNECTING: 0, CLOSING: 2, CLOSED: 3 })
+    );
     localStorage.setItem('rc_token', 'tok');
     localStorage.setItem('rc_playerId', 'pid');
     localStorage.setItem('rc_username', 'alice');
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      const u = String(url);
-      if (u.includes('/games')) return { ok: true, json: async () => [META('coinflip', 'Coinflip')] } as Response;
-      if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
-      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes('/games'))
+          return { ok: true, json: async () => [META('coinflip', 'Coinflip')] } as Response;
+        if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
+        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      })
+    );
   });
   afterEach(() => {
     localStorage.clear();
@@ -82,7 +130,12 @@ describe('#152 — hubs never auto-enter Searching…', () => {
     // Genuine user PLAY this session: arm a bet, press PLAY, server confirms the rest.
     fireEvent.click(screen.getByTestId('hub-bet-10'));
     fireEvent.click(screen.getByTestId('hub-play'));
-    deliver('queue.waiting', { gameId: 'coinflip', matchId: 'm1', since: Date.now(), expiresAt: Date.now() + 30_000 });
+    deliver('queue.waiting', {
+      gameId: 'coinflip',
+      matchId: 'm1',
+      since: Date.now(),
+      expiresAt: Date.now() + 30_000,
+    });
     // Searching is now in place: the active Cancel control appears (WaitingBlock retired, #154).
     await waitFor(() => expect(screen.getByTestId('hub-cancel')).toBeInTheDocument());
 
@@ -103,7 +156,12 @@ describe('#152 — hubs never auto-enter Searching…', () => {
     await enterCoinflipHub();
 
     // No PLAY pressed — a server queue.waiting arrives out of nowhere.
-    deliver('queue.waiting', { gameId: 'coinflip', matchId: 'm1', since: Date.now(), expiresAt: Date.now() + 30_000 });
+    deliver('queue.waiting', {
+      gameId: 'coinflip',
+      matchId: 'm1',
+      since: Date.now(),
+      expiresAt: Date.now() + 30_000,
+    });
 
     // The hub must stay at Idle (PLAY tappable), never auto-enter Searching with no armed stake.
     await waitFor(() => expect(screen.getByTestId('hub-play')).toBeInTheDocument());

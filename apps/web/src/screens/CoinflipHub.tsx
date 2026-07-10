@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import type { CoinflipView } from '../App.js';
-import { FlatCoin, COIN_FACE_TOKENS } from '../components/coin/FlatCoin.js';
+import { Coin, COIN_FACE_TOKENS } from '../components/coin/Coin.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
 
 // Cosmetic pick countdown (seconds). Mirrors the coinflip module's `moveTimeoutMs` (10s) — the
@@ -9,8 +9,10 @@ import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.j
 // pattern). Kept local so the web app stays decoupled from the game packages.
 const PICK_SECONDS = 10;
 /** Hold the board mounted after match.end so the reveal stages: terminal frame (flip + opponent
- *  reveal) plays during the hold, then `outcome` arrives at the result phase and lights the outline. */
-const HOLD_RESULT_MS = 1500;
+ *  reveal) plays during the hold, then `outcome` arrives at the result phase and lights the outline.
+ *  Bumped from 1500 → 2600 (COINFLIP_COIN.md flag #2): the 3D coin's flip now runs up to ~2.4s (vs the
+ *  old flat coin's 1.1s), so the win/lose bar verdict must not light before the coin visually lands. */
+const HOLD_RESULT_MS = 2600;
 
 // The H/T pick pills mirror the flat coin's face colours one-to-one (orange heads / card-back-blue
 // tails) — the fill IS the identity cue. Token-driven, shared with FlatCoin (no hardcoded hex).
@@ -31,13 +33,44 @@ function CountdownRing({ seconds }: { seconds: number }) {
   const circ = 2 * Math.PI * r;
   const frac = Math.max(0, Math.min(1, seconds / PICK_SECONDS));
   return (
-    <svg width={52} height={52} viewBox="0 0 48 48" data-testid="coin-countdown" role="timer" aria-label={`${seconds} seconds to pick`}>
-      <circle cx={24} cy={24} r={r} fill="none" className="text-border" stroke="currentColor" strokeWidth={3} />
+    <svg
+      width={52}
+      height={52}
+      viewBox="0 0 48 48"
+      data-testid="coin-countdown"
+      role="timer"
+      aria-label={`${seconds} seconds to pick`}
+    >
       <circle
-        cx={24} cy={24} r={r} fill="none" className="text-brand" stroke="currentColor" strokeWidth={3}
-        strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={circ * (1 - frac)} transform="rotate(-90 24 24)"
+        cx={24}
+        cy={24}
+        r={r}
+        fill="none"
+        className="text-border"
+        stroke="currentColor"
+        strokeWidth={3}
       />
-      <text x={24} y={29} textAnchor="middle" className="fill-foreground text-[15px] font-black tabular-nums">{seconds}</text>
+      <circle
+        cx={24}
+        cy={24}
+        r={r}
+        fill="none"
+        className="text-brand"
+        stroke="currentColor"
+        strokeWidth={3}
+        strokeLinecap="round"
+        strokeDasharray={circ}
+        strokeDashoffset={circ * (1 - frac)}
+        transform="rotate(-90 24 24)"
+      />
+      <text
+        x={24}
+        y={29}
+        textAnchor="middle"
+        className="fill-foreground text-[15px] font-black tabular-nums"
+      >
+        {seconds}
+      </text>
     </svg>
   );
 }
@@ -45,8 +78,11 @@ function CountdownRing({ seconds }: { seconds: number }) {
 /** Hero shown in Idle/Waiting — the flat heads coin (no glow), one line. Nothing else. */
 function CoinflipIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
   return (
-    <div className="flex min-h-[200px] flex-col items-center justify-center gap-4 py-3" data-testid="hub-board">
-      <FlatCoin />
+    <div
+      className="flex min-h-[200px] flex-col items-center justify-center gap-4 py-3"
+      data-testid="hub-board"
+    >
+      <Coin />
       <p className="text-xs font-semibold text-muted-foreground">
         {phase === 'waiting' ? 'Finding a rival…' : 'Place your bet and play.'}
       </p>
@@ -68,7 +104,9 @@ function CoinflipBoard({ gameState, serverClockOffset = 0, drawBeat }: GameAreaA
   // Flip-on-draw: a same-side draw is NOT terminal (it replays), but the coin must STILL flip. During
   // the shared draw beat, animate the just-drawn flip from the public `lastResult` snapshot. Once the
   // beat ends the fresh pick window takes over (countdown returns).
-  const drawFlip = drawBeat ? ((view?.lastResult?.result as 'heads' | 'tails' | undefined) ?? null) : null;
+  const drawFlip = drawBeat
+    ? ((view?.lastResult?.result as 'heads' | 'tails' | undefined) ?? null)
+    : null;
   const revealing = terminal || drawFlip != null;
   const coinFace = terminal ? result : drawFlip;
 
@@ -100,13 +138,17 @@ function CoinflipBoard({ gameState, serverClockOffset = 0, drawBeat }: GameAreaA
   }, [revealing]);
 
   return (
-    <div ref={ref} className="relative flex min-h-[200px] items-center justify-center py-3" data-testid="hub-board">
+    <div
+      ref={ref}
+      className="relative flex min-h-[200px] items-center justify-center py-3"
+      data-testid="hub-board"
+    >
       {!revealing && (
         <div className="absolute left-3 top-1/2 -translate-y-1/2">
           <CountdownRing seconds={seconds} />
         </div>
       )}
-      <FlatCoin face={coinFace} />
+      <Coin face={coinFace} />
     </div>
   );
 }
@@ -149,7 +191,7 @@ function SidePill({
       className={cn(
         'flex items-center justify-center rounded-full px-3 py-1.5 text-[12px] font-extrabold uppercase tracking-wide text-white transition-all',
         onClick && 'disabled:cursor-not-allowed disabled:opacity-50',
-        selected && 'ring-2 ring-brand ring-offset-2 ring-offset-surface',
+        selected && 'ring-2 ring-brand ring-offset-2 ring-offset-surface'
       )}
       style={{ background: side.face }}
     >
@@ -175,7 +217,9 @@ function OwnPills({ args }: { args: GameAreaArgs }) {
   const terminal = isTerminal(view);
   // Own choice is NOT redacted by viewFor (only the opponent's is) — so this is the server-recorded
   // pick, just one round-trip behind the tap. The optimistic pick below bridges that gap.
-  const myChoice = playerId ? (view?.choices?.[playerId] as 'heads' | 'tails' | undefined) : undefined;
+  const myChoice = playerId
+    ? (view?.choices?.[playerId] as 'heads' | 'tails' | undefined)
+    : undefined;
 
   const [optimisticPick, setOptimisticPick] = useState<'heads' | 'tails' | null>(null);
   // Clear the optimistic pick when the round resolves (terminal — a decisive result OR a draw before
@@ -207,7 +251,12 @@ function OwnPills({ args }: { args: GameAreaArgs }) {
     <span className="flex items-center gap-1.5" role="group" aria-label="Pick a side">
       {SIDES.map((s) => (
         // Both pills stay tappable the whole window — tapping either just moves the purple outline.
-        <SidePill key={s.id} side={s} selected={selected === s.id} onClick={() => handlePick(s.id)} />
+        <SidePill
+          key={s.id}
+          side={s}
+          selected={selected === s.id}
+          onClick={() => handlePick(s.id)}
+        />
       ))}
     </span>
   );
@@ -223,13 +272,19 @@ function OpponentPill({ args }: { args: GameAreaArgs }) {
   // The opponent's pick reveals at terminal AND during the draw beat (from the public lastResult —
   // that round is over, so it no longer hides anything). Otherwise it stays "PLAYING…".
   const oppChoice = terminal
-    ? (opponentId ? (view?.choices?.[opponentId] as 'heads' | 'tails' | undefined) : undefined)
+    ? opponentId
+      ? (view?.choices?.[opponentId] as 'heads' | 'tails' | undefined)
+      : undefined
     : drawBeat && opponentId
       ? (view?.lastResult?.choices?.[opponentId] as 'heads' | 'tails' | undefined)
       : undefined;
   if (!terminal && !drawBeat) {
     if (phase !== 'in-match') return null;
-    return <span className="shrink-0 text-xs font-black uppercase tracking-wide text-foreground/70">PLAYING…</span>;
+    return (
+      <span className="shrink-0 text-xs font-black uppercase tracking-wide text-foreground/70">
+        PLAYING…
+      </span>
+    );
   }
   const side = SIDES.find((s) => s.id === oppChoice);
   if (!side) return null;
@@ -248,7 +303,9 @@ export function CoinflipHubScreen(props: GameHubScreenProps) {
       gameId="coinflip"
       gameName="Coinflip"
       renderGameArea={CoinflipPanel}
-      renderSlotAside={(args, side) => (side === 'own' ? <OwnPills args={args} /> : <OpponentPill args={args} />)}
+      renderSlotAside={(args, side) =>
+        side === 'own' ? <OwnPills args={args} /> : <OpponentPill args={args} />
+      }
       suppressResultOverlay
       holdResultMs={HOLD_RESULT_MS}
       ownBarResult
