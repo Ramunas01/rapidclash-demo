@@ -14,16 +14,18 @@ const PICK_SECONDS = 10;
  *  old flat coin's 1.1s), so the win/lose bar verdict must not light before the coin visually lands. */
 const HOLD_RESULT_MS = 2600;
 
-/** Coin render size (px) — the canvas size passed to <Coin>. Coin polish v2 (ADVISOR_TO_PM.md
- *  2026-07-10#2): paired with Coin.tsx's fov drop (30→~17), the coin now fills ~90% of its own
- *  canvas (vs ~47% before), so 420 renders a VISIBLE coin of ~378-385px — the Designer's ~385px
- *  target, near the panel's full inner width (panel is `max-w-md`, ~448px). Shared by both the idle
- *  hero and the in-match board; both containers are `flex … items-center justify-center` with a
- *  `min-h-[…]` FLOOR (not a ceiling — no `overflow-hidden`/fixed height on either container or its
- *  parent, so a taller child just grows the box; verified no clipping is possible at 420). Bumped
- *  the floor itself from 200px→440px anyway so it's an honest floor for the new size, not a stale
- *  number that happens not to bind. */
-const COIN_SIZE_PX = 420;
+/** Coin render size (px) — the canvas size passed to <Coin>. REGRESSION FIX (ADVISOR_TO_PM.md
+ *  2026-07-10#3): coin polish v2 set this to 420, which — paired with the fov-17 telephoto framing
+ *  (fills ~90% of its own canvas, unchanged/correct) — rendered a ~385px coin, but 420px is bigger
+ *  than the ~390px-wide phone panel. Flexbox shrank the box's WIDTH to fit while its HEIGHT stayed
+ *  420 (a non-square box), so the camera's fixed-aspect (1:1) render stretched into a vertical
+ *  ellipse, AND the 420-tall box (plus the matching `min-h-[440px]` floor below) forced the whole
+ *  board past a phone viewport, pushing PLAY/bet controls off-screen. 420→240 keeps the box within
+ *  the panel width (so it's never squeezed non-square — see also Coin.tsx's `shrink-0` belt-and-
+ *  suspenders) and renders a visible coin of ~215-220px at the same fov-17 ~90% fill ratio — much
+ *  bigger than the pre-#212 ~93px, while keeping the board compact enough to fit one screen. Shared
+ *  by both the idle hero and the in-match board. */
+const COIN_SIZE_PX = 240;
 
 // The H/T pick pills mirror the flat coin's face colours one-to-one (orange heads / card-back-blue
 // tails) — the fill IS the identity cue. Token-driven, shared with FlatCoin (no hardcoded hex).
@@ -90,7 +92,7 @@ function CountdownRing({ seconds }: { seconds: number }) {
 function CoinflipIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
   return (
     <div
-      className="flex min-h-[440px] flex-col items-center justify-center gap-4 py-3"
+      className="flex min-h-[260px] flex-col items-center justify-center gap-4 py-3"
       data-testid="hub-board"
     >
       <Coin size={COIN_SIZE_PX} />
@@ -151,7 +153,7 @@ function CoinflipBoard({ gameState, serverClockOffset = 0, drawBeat }: GameAreaA
   return (
     <div
       ref={ref}
-      className="relative flex min-h-[440px] items-center justify-center py-3"
+      className="relative flex min-h-[260px] items-center justify-center py-3"
       data-testid="hub-board"
     >
       {!revealing && (

@@ -339,7 +339,7 @@ export function Coin({
       data-testid="coin-face"
       data-face={displayFace}
       aria-hidden="true"
-      className={cn('coin-glow block', className)}
+      className={cn('coin-glow block shrink-0', className)}
       style={{ width: size, height: size }}
     >
       <canvas

@@ -1,5 +1,22 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-07-11#1 — REGRESSION FIX: coinflip oversized coin box — portrait blowup + ellipse (ADVISOR_TO_PM.md #3)            [OPEN]
+From: Coder   Re: ADVISOR_TO_PM.md 2026-07-10#3
+
+Shipped in one PR, branch `fix/coinflip-coin-size-regression`. **PR #215.** Sizing only — verified against the actual deployed-broken code first (per the "reproduce before changing behaviour" rule): #212 did set `COIN_SIZE_PX = 420` + both containers to `min-h-[440px]`, and `Coin.tsx`'s wrapper `<div>` does size both width AND height to `size` via `style={{ width: size, height: size }}` — confirmed the Advisor's diagnosis exactly (420px coin box > ~390px phone panel width → flexbox shrinks the box's width but not its height → non-square box → the fixed-aspect-1 `PerspectiveCamera(17, 1, ...)` render stretches into a vertical ellipse; the 420-tall box + `min-h-[440px]` also pushed PLAY/bet controls off-screen on a phone viewport).
+
+1. **`CoinflipHub.tsx`** — `COIN_SIZE_PX` `420`→**`240`**. Left `fov 17` in `Coin.tsx` completely untouched (that framing is correct, from #212) — at the same ~90% canvas-fill ratio, 240px renders a visible coin of roughly ~215-220px: well within the ~390px panel width (so the box can never be squeezed non-square) and much bigger than the pre-#212 ~93px original complaint, while keeping the board compact enough that header + both player bars + coin + PLAY + bet row fit one phone screen.
+2. Both `min-h-[440px]` occurrences (`CoinflipIdle` hero, `CoinflipBoard` in-match) → **`min-h-[260px]`**, restoring an honest floor for the new 240px size (both containers still `flex … items-center justify-center`, no `overflow-hidden`, so this is a floor not a ceiling as before).
+3. **`Coin.tsx`** — wrapper `<div>` className `cn('coin-glow block', className)` → `cn('coin-glow block shrink-0', className)`. Belt-and-suspenders per spec: prevents flexbox from ever shrinking the box's width independently of its height again, so the render can't go non-square even if `COIN_SIZE_PX` is bumped again later. Not strictly load-bearing at 240 (already narrower than the panel) but cheap insurance against this exact bug class.
+
+Diff is exactly these three lines (two `CoinflipHub.tsx` values, one `Coin.tsx` class) — nothing else touched. `CylinderGeometry`, `rotateX`, `planFlip`/`easeOutCubic`, the flip animation, camera `fov`, `metalness`/`roughness`, `.coin-glow` gradient, and all color tokens from #212 are unchanged.
+
+Grepped `Coin.test.tsx`/`CoinflipHub.test.tsx` first — no test asserted the old `COIN_SIZE_PX`, the old `min-h-[440px]`, or the wrapper's className, so nothing needed updating.
+
+Results: `npx vitest run` — **75 files / 932 tests passing**; `npx tsc -b` clean; `eslint --ext .ts,.tsx packages apps` clean; `cd apps/web && npx vite build` succeeds (same pre-existing >500kB chunk warning, unrelated). No headless-browser screenshot verification possible in this sandbox (no Chromium deps — same known limitation as prior coin tickets); verified the fix structurally instead (traced the flex/box-sizing chain by hand against the actual JSX/CSS).
+
+Ask: PR review — #215, `fix(coinflip): coin size regression — portrait blowup + ellipse (Advisor #3)`.
+
 ### 2026-07-10#4 — Coinflip coin polish v2: exact tails hex + real size + de-dull (Designer, ADVISOR_TO_PM.md #2)            [OPEN]
 From: Coder   Re: ADVISOR_TO_PM.md 2026-07-10#2
 
