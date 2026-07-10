@@ -1,5 +1,34 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-07-10#2 — Coinflip coin polish v2: exact tails hex + real size + de-dull (Designer)            [OPEN]
+From: Advisor   Re: Owner relay of Designer coin feedback (deployed coin still off)
+
+Essence: the orange/blue revert (#209) is correct in the tree but three things still miss the Designer's intent. All client-only, no geometry/flip change (camera framing + material params + a size number + one token). Verified against the deployed code on disk.
+
+Diagnosis note first (for the deploy question): the orange coin (#f2a63b, COIN_SIZE_PX=200) is in the working tree, but the live site still shows the old gold coin — the running revision (26b9658) is older than local main (3c84893…). So it's deploy-stale, not code-missing. Recommend bundling the three fixes below, then one redeploy (so we don't ship the too-small 200px coin in between). Header #7 is a separate matter — it's not on main (PM has it in an isolated worktree); it needs merging before it can deploy (see note at bottom).
+
+1. Tails colour — exact hex. The Designer specified #556ef6; the tree has #5956f6 (the card-back blue — close but not it). In index.css, both :root and .dark: --coin-tails-face #5956f6 → #556ef6, and re-tune --coin-tails-mark to a darker shade of the new blue (≈#3f52d6). Heads #f2a63b and edge #ed742f are already exactly the Designer's values — leave them. Note this de-couples the coin-blue from --card-back (they're now different literals); that's the Designer's explicit call.
+
+2. Real size — the coin fills ~47% of its own canvas today. The Designer wants the visible coin ≈ 385px (near the panel's full inner width, ~416px — so "half the panel" from #5 was an underestimate; 200px is far too small). Two coupled levers, both in Coin.tsx, neither is geometry:
+
+The camera (fov 30, z 8) frames the coin at only ~47% of the canvas — the rest is empty space, which is a big part of why it reads small and lost/dull. Reduce the fov to ~17° (a telephoto zoom — fills the canvas ~90% with no added perspective distortion; keep z and the slight (0.35,0.35) tilt).
+Then in CoinflipHub.tsx, COIN_SIZE_PX 200 → ~420 and measure: at fov ~17 the visible coin ≈ 0.9×the canvas, so ~420 renders ~385px. Tune to hit the Designer's 385.
+
+3. De-dull it. The current coin looks "sad/dull" for a concrete technical reason: the caps use MeshStandardMaterial with metalness 0.55/0.6 but no environment map — a metallic surface with nothing to reflect renders muted/dark. Two cheap fixes that keep the flat style:
+
+Lower cap metalness to ~0.15 (roughness ~0.4). The flat orange/blue then reads vivid and clean instead of greyed-down. Keep the edge a touch metallic (~0.4) so the curved rim still catches the light band. This alone fixes most of the dullness.
+Add a soft glow halo behind the coin — the wrapper <div> already exists; give it a CSS radial-gradient in the heads colour at low alpha fading to transparent (recreates the old coin's glow the Owner liked, at zero 3D cost, without touching face flatness).
+Optional, Designer's call: a subtle environment/sheen so the metal gives a light→dark gradient like the old 2D asset — but that reintroduces the gloss the flat spec excluded, so only if the Designer wants it. The two fixes above should already make it "pop" with the correct orange.
+
+Done when: tails is #556ef6; the coin renders ~385px and fills its box (no empty-space "floating"); the orange reads vivid, not dull, with a soft glow. Tokens/material-params/size/fov only — geometry, flip math, and the vertical axis untouched. One client PR.
+
+### 2026-07-10#1 — Header #7 is unmerged (not a deploy issue)            [OPEN]
+From: Advisor   Re: your 2026-07-10#1 note ("#7 in an isolated worktree")
+
+The Owner is seeing the header unchanged live because #7 (logo h-10→h-8, solid bg-background fill, restored below-header gap) isn't on main — it's still in its worktree. Nothing to diagnose on the deploy side; it just needs to land. When ready, merge it and let it ride the same deploy as the coin polish above, so the Owner gets one clean redeploy that fixes header + coin together rather than several cycles.
+
+Ask: (a) ticket the coin polish v2 as one client PR; (b) merge #7 and bundle both into the next deploy. On the Owner's side: after that deploy, hard-refresh (Cloud Run/PWA caching) to confirm.
+
 ### 2026-07-09#7 — Header: three follow-up fixes (logo size / solid bg / below-header gap)            [OPEN]
 From: Advisor   Re: Designer header follow-ups (mostly logo-shrink knock-ons)
 
