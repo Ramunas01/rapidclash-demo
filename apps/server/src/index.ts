@@ -8,12 +8,27 @@ const dbPath = process.env.DB_PATH ?? 'rapidclash.db';
 // Durable persistence (ADR-011): when GCS_BUCKET is set, restore the last snapshot onto the
 // DB file *before* opening it, and snapshot it back after each settlement. Unset → no-op, so
 // local dev is unchanged.
-const snapshotter = createSnapshotter({ bucket: process.env.GCS_BUCKET, dbPath });
+//
+// `db` doesn't exist yet at this point — restore() has to land the file on disk before we can
+// open it — so `snapshot` is wired as a closure over the `db` binding below rather than a
+// value. That's safe because `snapshot` is only ever invoked from doUpload(), which only runs
+// after a debounced trigger() following a settlement — i.e. well after `db` is assigned a few
+// lines down. (better-sqlite3's `db.backup()` resolves BackupMetadata; the closure discards it
+// to match the `Promise<void>` shape doUpload() expects.)
+// eslint-disable-next-line prefer-const -- declared here so the snapshot() closure above can capture the binding; assigned once, below, after restore()
+let db: Database.Database;
+const snapshotter = createSnapshotter({
+  bucket: process.env.GCS_BUCKET,
+  dbPath,
+  snapshot: async (dest) => {
+    await db.backup(dest);
+  },
+});
 if (snapshotter.enabled) {
   await snapshotter.restore();
 }
 
-const db = new Database(dbPath);
+db = new Database(dbPath);
 const services = createServices(db, gameModules, { onSettled: () => snapshotter.trigger() });
 
 const app = buildApp(services, gameModules);
