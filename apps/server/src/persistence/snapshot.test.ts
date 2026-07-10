@@ -2,8 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Storage } from '@google-cloud/storage';
 import Database from 'better-sqlite3';
 import type { GameModule, GameState, PlayerId, Outcome } from '@rapidclash/shared';
+import { unlink } from 'node:fs/promises';
 import { createSnapshotter } from './snapshot.js';
 import { createServices } from '../server.js';
+
+// The snapshotter unlinks its temp file via node:fs/promises after every upload attempt. Mock
+// it so tests can assert the temp file (not the live DB) is what gets cleaned up, without
+// touching the real filesystem.
+vi.mock('node:fs/promises', () => ({ unlink: vi.fn().mockResolvedValue(undefined) }));
 
 // ─── Mock GCS client ──────────────────────────────────────────────────────────
 // Shaped to the slice of the Storage API the snapshotter uses:
@@ -18,6 +24,12 @@ function mockStorage(opts: { downloadError?: unknown } = {}) {
   const bucket = vi.fn(() => ({ file, upload }));
   const storage = { bucket } as unknown as Storage;
   return { storage, download, upload, file, bucket };
+}
+
+// The injected `snapshot(dest)` fn stands in for `db.backup(dest)` (ADR-011 incident fix) —
+// doUpload() must call this to produce the atomic temp-file copy before it ever touches GCS.
+function mockSnapshot() {
+  return vi.fn().mockResolvedValue(undefined);
 }
 
 const silent = () => {};
@@ -92,13 +104,15 @@ describe('snapshotter — debounced upload on trigger (ADR-011)', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it('uploads once after the debounce window', async () => {
+  it('uploads once after the debounce window — the temp snapshot, never the live dbPath', async () => {
     const m = mockStorage();
+    const snapshot = mockSnapshot();
     const snap = createSnapshotter({
       bucket: 'my-bucket',
       dbPath: '/tmp/rapidclash.db',
       debounceMs: 5_000,
       storageFactory: () => m.storage,
+      snapshot,
       log: silent,
     });
 
@@ -108,7 +122,10 @@ describe('snapshotter — debounced upload on trigger (ADR-011)', () => {
     await vi.advanceTimersByTimeAsync(5_000);
 
     expect(m.upload).toHaveBeenCalledTimes(1);
-    expect(m.upload).toHaveBeenCalledWith('/tmp/rapidclash.db', { destination: 'rapidclash.db' });
+    // The atomic temp file is what gets uploaded — never '/tmp/rapidclash.db' (the live DB).
+    expect(m.upload).toHaveBeenCalledWith('/tmp/rapidclash.db.snapshot-tmp', {
+      destination: 'rapidclash.db',
+    });
   });
 
   it('coalesces a burst of triggers into a single upload', async () => {
@@ -118,6 +135,7 @@ describe('snapshotter — debounced upload on trigger (ADR-011)', () => {
       dbPath: '/tmp/rapidclash.db',
       debounceMs: 5_000,
       storageFactory: () => m.storage,
+      snapshot: mockSnapshot(),
       log: silent,
     });
 
@@ -144,6 +162,7 @@ describe('snapshotter — debounced upload on trigger (ADR-011)', () => {
       dbPath: '/tmp/rapidclash.db',
       debounceMs: 5_000,
       storageFactory: () => m.storage,
+      snapshot: mockSnapshot(),
       log: silent,
     });
 
@@ -175,6 +194,7 @@ describe('snapshotter — debounced upload on trigger (ADR-011)', () => {
       dbPath: '/tmp/rapidclash.db',
       debounceMs: 5_000,
       storageFactory: () => m.storage,
+      snapshot: mockSnapshot(),
       log: silent,
     });
 
@@ -182,6 +202,96 @@ describe('snapshotter — debounced upload on trigger (ADR-011)', () => {
     await snap.flush(); // does not wait out the 5s debounce
 
     expect(m.upload).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('snapshotter — atomic snapshot-to-temp-file upload (incident fix, ADR-011)', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.mocked(unlink).mockClear();
+  });
+
+  it('snapshots to a temp file via the injected snapshot() fn before ever touching GCS', async () => {
+    const m = mockStorage();
+    const snapshot = mockSnapshot();
+    const snap = createSnapshotter({
+      bucket: 'my-bucket',
+      dbPath: '/tmp/rapidclash.db',
+      debounceMs: 5_000,
+      storageFactory: () => m.storage,
+      snapshot,
+      log: silent,
+    });
+
+    snap.trigger();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    // snapshot() (standing in for db.backup()) is called with the temp path, and runs before
+    // the GCS upload — never the live dbPath.
+    expect(snapshot).toHaveBeenCalledTimes(1);
+    expect(snapshot).toHaveBeenCalledWith('/tmp/rapidclash.db.snapshot-tmp');
+    expect(m.upload).toHaveBeenCalledWith('/tmp/rapidclash.db.snapshot-tmp', {
+      destination: 'rapidclash.db',
+    });
+    // The live DB file itself is never the upload target.
+    expect(m.upload).not.toHaveBeenCalledWith('/tmp/rapidclash.db', expect.anything());
+  });
+
+  it('unlinks the temp file after a successful upload', async () => {
+    const m = mockStorage();
+    const snap = createSnapshotter({
+      bucket: 'my-bucket',
+      dbPath: '/tmp/rapidclash.db',
+      debounceMs: 5_000,
+      storageFactory: () => m.storage,
+      snapshot: mockSnapshot(),
+      log: silent,
+    });
+
+    snap.trigger();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(unlink).toHaveBeenCalledWith('/tmp/rapidclash.db.snapshot-tmp');
+  });
+
+  it('unlinks the temp file even when the GCS upload itself fails (best-effort cleanup)', async () => {
+    const m = mockStorage();
+    m.upload.mockRejectedValueOnce(new Error('network blip'));
+    const snap = createSnapshotter({
+      bucket: 'my-bucket',
+      dbPath: '/tmp/rapidclash.db',
+      debounceMs: 5_000,
+      storageFactory: () => m.storage,
+      snapshot: mockSnapshot(),
+      log: silent,
+    });
+
+    snap.trigger();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    // Failed upload must not crash the server (existing contract) — and the temp file is still
+    // cleaned up rather than left behind.
+    expect(unlink).toHaveBeenCalledWith('/tmp/rapidclash.db.snapshot-tmp');
+  });
+
+  it('never calls GCS upload when the snapshot-to-temp-file step itself fails', async () => {
+    const m = mockStorage();
+    const snapshot = vi.fn().mockRejectedValue(new Error('backup failed: database is locked'));
+    const snap = createSnapshotter({
+      bucket: 'my-bucket',
+      dbPath: '/tmp/rapidclash.db',
+      debounceMs: 5_000,
+      storageFactory: () => m.storage,
+      snapshot,
+      log: silent,
+    });
+
+    snap.trigger();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(snapshot).toHaveBeenCalledTimes(1);
+    expect(m.upload).not.toHaveBeenCalled();
   });
 });
 
@@ -221,6 +331,7 @@ describe('settlement triggers the debounced snapshot upload (ADR-011)', () => {
       dbPath: '/tmp/rapidclash.db',
       debounceMs: 5_000,
       storageFactory: () => m.storage,
+      snapshot: mockSnapshot(),
       log: silent,
     });
 

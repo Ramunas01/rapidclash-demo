@@ -10,13 +10,23 @@
 //   • trigger() — after every settlement / standings write: debounce an upload of the DB
 //     file back to the same object, coalescing rapid match bursts into one upload.
 //
-// `--max-instances=1` (ADR-009) means a single writer, so there is no locking concern and a
-// plain file copy of the (rollback-journal, no-WAL) DB is consistent between transactions.
+// `--max-instances=1` (ADR-009) means a single writer, so there is no cross-instance
+// concurrency concern — but it does NOT mean the upload itself is atomic. A GCS upload's
+// network I/O takes real wall-clock time, and the event loop keeps serving other requests
+// (including settlement writes) while it runs. INCIDENT (2026-07-09): a plain file copy of
+// the live DB_PATH was uploaded directly, a settlement write landed mid-upload, and the
+// streamed copy was torn (`database disk image is malformed`) — the old claim that "a plain
+// file copy is consistent between transactions" was false. doUpload() therefore never reads
+// the live file directly: it first produces a point-in-time-consistent copy into a temp file
+// (via better-sqlite3's online backup API, which copies pages under the engine's own locking),
+// uploads *that* temp file, then unlinks it. The temp file is the only thing that ever touches
+// the network, so a write landing mid-upload can no longer tear the bytes GCS receives.
 //
 // GCS_BUCKET unset → every method is a silent no-op, so local dev / tests are unchanged.
 // Application Default Credentials authenticate inside Cloud Run with no key file.
 
 import type { Storage } from '@google-cloud/storage';
+import { unlink } from 'node:fs/promises';
 
 export interface SnapshotterOptions {
   /** Target bucket name. Undefined/empty (local dev) → the snapshotter is a no-op. */
@@ -29,6 +39,18 @@ export interface SnapshotterOptions {
   debounceMs?: number;
   /** Injectable Storage factory (tests pass a mock; prod lazily constructs the real one). */
   storageFactory?: () => Storage;
+  /**
+   * Produces a consistent, point-in-time copy of the live DB at `dest`. doUpload() calls this
+   * to create the temp file that actually gets uploaded — the live dbPath is never uploaded
+   * directly. Production wires this to `db.backup(dest)` (better-sqlite3's online backup API);
+   * tests inject a mock the same way they inject `storageFactory`. The live DB handle doesn't
+   * exist yet when the snapshotter is constructed (restore() has to land the file on disk
+   * first), so callers typically pass a closure over a `let db` binding assigned right after —
+   * `snapshot` is only ever invoked from doUpload(), which only runs after a debounced
+   * trigger(), i.e. well after a settlement, long after the DB handle has been assigned.
+   * Required for the enabled (bucket-configured) path; the disabled path never calls it.
+   */
+  snapshot?: (dest: string) => Promise<void>;
   /** Log sink (tests silence it; prod uses console). */
   log?: (msg: string) => void;
 }
@@ -129,11 +151,28 @@ export function createSnapshotter(opts: SnapshotterOptions): Snapshotter {
     }
   }
 
+  // Fixed name is safe: schedule()/runUpload() guarantee at most one doUpload() in flight at a
+  // time, so there's never a second writer racing this same path.
+  const tmpPath = `${opts.dbPath}.snapshot-tmp`;
+
   async function doUpload(): Promise<void> {
     try {
-      const gcs = await client();
-      await gcs.bucket(bucket!).upload(opts.dbPath, { destination: objectName });
-      log(`[snapshot] uploaded ${opts.dbPath} → ${bucket}/${objectName}`);
+      if (!opts.snapshot) {
+        throw new Error('snapshot() is not wired — cannot produce an atomic copy of the live DB');
+      }
+      try {
+        // 1) Snapshot the live DB into a temp file under the engine's own locking — this is
+        //    the atomic, point-in-time copy. Never upload opts.dbPath (the live file) directly.
+        await opts.snapshot(tmpPath);
+        // 2) Upload the temp file, not the live DB.
+        const gcs = await client();
+        await gcs.bucket(bucket!).upload(tmpPath, { destination: objectName });
+        log(`[snapshot] uploaded ${tmpPath} → ${bucket}/${objectName}`);
+      } finally {
+        // 3) Always clean up the temp file — whether the snapshot step, the upload, both, or
+        //    neither failed. Best-effort: a missing file (snapshot never got that far) is fine.
+        await unlink(tmpPath).catch(() => {});
+      }
     } catch (err: unknown) {
       // A failed upload must not crash the live server; the next settlement re-triggers and
       // the file is re-uploaded whole, so a transient failure self-heals.
