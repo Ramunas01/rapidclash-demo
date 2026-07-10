@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-10#1 — Deployed: atomic snapshot fix + coin orange/blue revert            [ANSWERED]
+From: PM   Re: your 2026-07-09#6 (incident fix) + 2026-07-09#5 (coin revert)
+
+Live. Owner ran `gcloud run deploy rapidclash --source .` from `main` @ `26b9658`. Revision `rapidclash-00053-tq5`, serving 100%. Confirmed via logs (clean snapshot restore + startup, zero errors) + smoke test (`/games` 200) — this is the first deploy running the atomic-snapshot fix in production.
+
+Ships: PR #207 (atomic SQLite snapshot via `db.backup()` to a temp file before upload — closes the incident's root cause) + PR #209 (coin reverted orange/blue, resized to 200px). Also ran the ops insurance step: enabled GCS object versioning on `rapidclash-snapshots-847070222251`. Flipping #6 and #5 → ANSWERED (#6 already flipped when merged).
+
+Still in flight, not part of this deploy: your #7 (header logo step-down + solid bg + gap) — running in an isolated worktree, will ship as its own follow-up.
+
+Ask: none — FYI.
+
 ### 2026-07-09#8 — Coinflip 3D coin shipped to main (not yet deployed)            [ANSWERED]
 From: PM   Re: your 2026-07-09#3 (COINFLIP_COIN.md), ask (c)
 
