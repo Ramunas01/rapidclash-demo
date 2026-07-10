@@ -1,6 +1,28 @@
 # Advisor → PM (append-only; newest on top)
 
-### 2026-07-10#2 — Coinflip coin polish v2: exact tails hex + real size + de-dull (Designer)            [OPEN]
+### 2026-07-10#3 — Coinflip regression: oversized coin box → portrait table + ellipse (fix polish v2 sizing)            [OPEN, quick fix]
+From: Advisor   Re: PR #212 (coin polish v2) — Owner reports the coin/table blew up
+
+**What's wrong (verified in the deployed `Coin.tsx` + `CoinflipHub.tsx`):** polish v2 set `COIN_SIZE_PX = 420` and `min-h-[440px]` on both boards to hit the "~385px visible" target. But `COIN_SIZE_PX` is the coin's literal on-screen box (`Coin` wrapper is `style={{ width: size, height: size }}`), and the phone panel is only ~390px wide. Two coupled failures result, **same root cause — the coin is bigger than the panel:**
+
+1. **Portrait / off-screen controls.** A 420px-tall coin box + `min-h-[440px]` forces the board ≥440px tall → on a phone that's ~70-80% of the viewport, so the panel turns portrait and pushes PLAY + the bet controls below the fold (they used to fit on one screen with both player bars + header). The old compact landscape board was short because the coin box was ~200px.
+
+2. **Ellipse (squeezed-horizontal coin).** The camera aspect is hardcoded `1` (`new THREE.PerspectiveCamera(17, 1, …)`) and the canvas is `h-full w-full` (displays at its box's shape). Because 420 > ~390, flexbox shrinks the box's **width** to fit the panel but leaves **height** at 420 → a non-square box → the square render is stretched into a vertical ellipse. ("Round for a beat, then squishes" = first paint, then flex settles.)
+
+**The fix (client-only, `Coin.tsx` + `CoinflipHub.tsx`, no geometry/flip/token/colour/glow change — keep everything from #212 the Owner likes):**
+
+- **Size down so the board is compact landscape again.** `CoinflipHub.tsx`: `COIN_SIZE_PX` `420` → **~240**, and revert `min-h-[440px]` → **~`min-h-[260px]`** on *both* `CoinflipIdle` and `CoinflipBoard`. Keep `fov 17`, so the coin still fills ~90% of its box → a visible coin ≈ **~220px** — much more present than the old ~93px, but small enough that both player bars + header + PLAY + bet fit on one screen (the Owner's hard requirement). Tune the exact number against that one-screen constraint, not a fixed px.
+- **Make the coin immune to flex distortion (so it's always round).** `Coin.tsx`: add **`shrink-0`** to the wrapper `<div>` (`cn('coin-glow block', className)` → `cn('coin-glow block shrink-0', className)`). Then flex can never squish the square box; combined with the smaller size (now well under the panel width) the aspect stays 1:1 and the coin stays round. *(Belt-and-suspenders — at ~240px it no longer overflows, but `shrink-0` prevents this class of bug returning if the size is ever bumped.)*
+
+**My miss to own:** the "~385px visible" target in my 2026-07-10#2 was too large for a ~390px-wide mobile panel — a 385px coin is essentially the full screen width, which is what forced the portrait blow-up. The one-screen layout wins over the big-coin target; ~220px visible is the right ballpark for mobile. Flag to the Designer that 385 isn't achievable on mobile without losing the one-screen layout.
+
+**Optional robust follow-up (not needed for the fix):** if the Designer later wants the coin to scale with the device, make it a responsive square (measure the container width, cap at a fraction of it) *and* make the renderer aspect-aware (`camera.aspect = w/h; camera.updateProjectionMatrix(); renderer.setSize(w,h)`) so it's correct at any box shape. For now the fixed square + `shrink-0` is simpler and correct.
+
+Done when: on a phone, the coinflip panel is back to a compact landscape with both bars, header, PLAY, and bet controls visible without scrolling; the coin is perfectly round at rest and through the whole spin (no ellipse); colours/glow/de-dull from #212 unchanged.
+
+Ask: ticket as one small client PR (`Coin.tsx` + `CoinflipHub.tsx`). Owner to eyeball the exact `COIN_SIZE_PX`/`min-h` against the one-screen fit after it's up.
+
+### 2026-07-10#2 — Coinflip coin polish v2: exact tails hex + real size + de-dull (Designer)            [ANSWERED]
 From: Advisor   Re: Owner relay of Designer coin feedback (deployed coin still off)
 
 Essence: the orange/blue revert (#209) is correct in the tree but three things still miss the Designer's intent. All client-only, no geometry/flip change (camera framing + material params + a size number + one token). Verified against the deployed code on disk.
