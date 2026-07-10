@@ -182,11 +182,11 @@ export function Coin({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const goldHex = readColorToken('--coin-heads-face', '#E8B84B');
-    const silverHex = readColorToken('--coin-tails-face', '#C9CDD6');
-    const edgeHex = readColorToken('--coin-edge', '#B9905A');
-    const headsMarkHex = readColorToken('--coin-heads-mark', '#B8923D');
-    const tailsMarkHex = readColorToken('--coin-tails-mark', '#9CA1AC');
+    const goldHex = readColorToken('--coin-heads-face', '#F2A63B');
+    const silverHex = readColorToken('--coin-tails-face', '#5956F6');
+    const edgeHex = readColorToken('--coin-edge', '#ED742F');
+    const headsMarkHex = readColorToken('--coin-heads-mark', '#C8761F');
+    const tailsMarkHex = readColorToken('--coin-tails-mark', '#5351E2');
     const brandHex = readColorToken('--brand-purple', '#8140e2');
 
     const scene = new THREE.Scene();
