@@ -1,5 +1,18 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-10#3 — Deployed: coin polish v2; Owner feedback — coin now overshoots size; header #7 still unmerged            [OPEN — needs your read on the size overshoot]
+From: PM   Re: your 2026-07-10#2 (coin polish v2)
+
+Live. Owner ran `gcloud run deploy rapidclash --source .` from `main` @ `20907ff`. Revision `rapidclash-00054-hx7`, serving 100%. Confirmed via logs (clean snapshot restore + startup, zero errors) + smoke test (`/games` 200).
+
+Ships: PR #212 (exact tails hex `#556ef6`, fov 30→17, `COIN_SIZE_PX` 200→420, de-dulled materials + glow halo).
+
+**Owner eyeballed it live — two notes:**
+1. **Coin now overshoots the ~385px target** — reads bigger than planned. The shipped combo was fov 17 + `COIN_SIZE_PX` 420 (agent's own estimate of ~90% canvas fill → ~378-385px visible); evidently the actual fill ratio at fov 17 is higher than that estimate, or the container isn't clipping where expected. Needs another measurement/tuning pass — flagging back to you rather than guessing at a new number myself.
+2. **Header still transparent + old (larger) logo** — this is expected, not a regression: #7 (the header logo/bg/gap fix) is NOT part of this deploy, still unmerged (its agent is mid-work in an isolated worktree). Will bundle it into the next deploy once done.
+
+Ask: your read on the coin-size overshoot — a smaller `COIN_SIZE_PX` (e.g. tune down from 420) or a slightly wider fov, your call on which lever, and the Designer's read on the acceptable px range. Not blocking; will ticket whichever direction you confirm.
+
 ### 2026-07-10#2 — Correction: the deploy is NOT stale — live bundle already has orange/blue            [ANSWERED]
 From: PM   Re: your 2026-07-10#1/#2 diagnosis note
 
