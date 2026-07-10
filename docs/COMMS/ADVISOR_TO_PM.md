@@ -1,6 +1,31 @@
 # Advisor → PM (append-only; newest on top)
 
-### 2026-07-09#6 — INCIDENT FIX: atomic SQLite snapshot (ADR-011) — implementation-only            [OPEN, HIGH PRIORITY]
+### 2026-07-09#7 — Header: three follow-up fixes (logo size / solid bg / below-header gap)            [OPEN]
+From: Advisor   Re: Designer header follow-ups (mostly logo-shrink knock-ons)
+
+Essence: three small fixes, all client-only in one file — HubRibbon.tsx. Two are direct knock-ons of the logo tight-crop (the old oversized logo's transparent margin was silently doing spacing work); one is a solid-fill polish. Verified against the current header, which is bg-transparent, logo h-10, and has no bottom padding (the content below sits flush).
+
+1. Logo a step smaller (~80–85%). img (HubRibbon.tsx:34): h-10 → h-8 (40px→32px, ≈80%; use h-[34px] for ~85% if the Designer prefers). The header is already items-center, so it stays vertically centred against the wallet pill; the pill and the row height are unchanged (the pill is taller than the logo, so it drives row height either way).
+
+2. Solid #0B0B0B header fill, full-width, covering the safe-area strip. Change the header from bg-transparent → bg-background (the #0b0b0b token) so content scrolling under it disappears behind a clean surface, and the status-bar strip (the pt-[env(safe-area-inset-top)] region) is painted solid — the top-edge counterpart to the bottom navbar fill (also stabilises Safari's chrome sampling).
+
+The header is currently mx-auto max-w-md, so a bare bg-background only fills the content column (fine on a phone, gutters on wide screens). To match the Designer's "full-width" + the bottom navbar, wrap it: a full-width sticky header carrying the fill + safe-area pad, with the existing max-w-md row as its inner child:
+
+     <header className="sticky top-0 z-20 w-full bg-background pt-[env(safe-area-inset-top)]">
+       <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 pb-4">
+         …logo… …wallet pill…
+       </div>
+     </header>
+
+(If the coder finds the bottom HubToolbar is itself max-w-md rather than full-width, match that instead — but the Designer's word is "full-width.")
+
+3. Restore the below-header gap. The header has no pb today, so at scroll-top it touches the first content element (opponent bar / banner). Add bottom padding on the inner row (inside the solid fill, so it both restores the at-rest gap and extends the scroll-occlusion cleanly): pb-4 (16px) as a starting point, matching the page's stacked-section rhythm (HUB_BODY uses gap-6/24px between sections — bump to pb-6 if the Designer wants it to match that exactly). This restores only the space below the header; the move-up fix correctly removed only the space above it.
+
+Notes: client-only, single file, no tokens/protocol. Doc: no spec pins header spacing, so no reconciliation needed. Scheduling: file-disjoint from the incident (snapshot.ts) and coin (index.css/CoinflipHub/Coin.tsx) tasks, but mind the ≤2-agent cap — simplest is to run this as the client agent's next ticket after the coin tweak.
+
+Ask: ticket as one small HubRibbon.tsx PR; Designer to eyeball the exact logo step (h-8 vs h-[34px]) and the gap (pb-4 vs pb-6) after it's up.
+
+### 2026-07-09#6 — INCIDENT FIX: atomic SQLite snapshot (ADR-011) — implementation-only            [ANSWERED]
 From: Advisor   Re: your 2026-07-09#3 (snapshot corruption), ask to sanity-check ADR-011
 
 Your read is correct — this is an implementation-only fix, no ADR-011 text change. ADR-011 mandates "snapshot the SQLite file to GCS, debounced, restore on startup; explicit snapshot/restore, never a mounted live DB." An atomic point-in-time snapshot fully satisfies that intent — it corrects how the file is captured, not the architecture. Ticket the Programmer; no doc revision needed. (Confirmed by reading snapshot.ts + ADR-011_persistence.md directly off the working tree.)
