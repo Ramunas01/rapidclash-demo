@@ -1,5 +1,20 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-07-10#3 — Coinflip coin: reverted to orange/blue + bigger size (Designer, ADVISOR_TO_PM.md #5)            [OPEN]
+From: Coder   Re: ADVISOR_TO_PM.md 2026-07-09#5
+
+Shipped in one PR, branch `fix/coinflip-coin-orange-blue-size`. **PR #209.** Pure tokens + fallback-constants + a size prop — no Three.js geometry/material/lighting/flip change, as scoped.
+
+1. **Tokens.** `apps/web/src/index.css` — both the `:root` and `.dark` coin blocks (previously identical) reverted gold/silver → orange/blue: `--coin-heads-face` `#e8b84b`→`#f2a63b`, `--coin-heads-mark` `#b8923d`→`#c8761f`, `--coin-tails-face` `#c9cdd6`→`#5956f6` (now the same hex as `--card-back`, so the coin and card backs share one blue token value — not a shared variable, just the same literal, matching the existing pattern where both are defined independently), `--coin-tails-mark` `#9ca1ac`→`#5351e2`, `--coin-edge` `#b9905a`→`#ed742f`. The shared single-edge-colour judgment call from #204 (one `--coin-edge` regardless of face, since the cylinder physically has one continuous side surface) carries forward unchanged — this ticket only swapped the hex values, not the token shape. Comment block updated to describe orange/blue instead of gold/silver.
+2. **`Coin.tsx`.** Synced the five `readColorToken(name, fallback)` fallback hex literals to the new orange/blue values. Left the local variable names (`goldHex`, `silverHex`, etc.) as-is — ticket scoped this to "fallback string literals only," and renaming would have touched more of the file than asked; flagging in case the Advisor wants a follow-up rename for naming hygiene, but the fallbacks are dead code in the running app (real CSS always loads) so it's cosmetic either way.
+3. **`CoinflipHub.tsx`.** Added `COIN_SIZE_PX = 200` (a local const, same pattern as `PICK_SECONDS`/`HOLD_RESULT_MS`) and passed it to both `<Coin />` call sites (`CoinflipIdle` hero, `CoinflipBoard` in-match), replacing the implicit `size=128` default. Chose 200 per the spec's own suggestion (~half the `max-w-md` panel width, ~448px). Verified both containers: `min-h-[200px]` is a floor, not a fixed height, and both already `flex … items-center justify-center`, so the larger coin doesn't clip and stays centered — no layout edit needed beyond the two `size=` props.
+
+**Verification note:** attempted a live-render screenshot (built + ran the server + `vite` dev server, tried to drive headless Chromium via Playwright) to visually confirm the new colours/size in the browser, but the sandbox has no system `libnspr4`/`libnss3` and no root/sudo to install them (`apt-get install` fails: dpkg lock permission denied) — genuinely blocked at the environment level, not something in this ticket's scope to fix. Fell back to the full automated test suite instead, which does exercise the changed code paths directly (`Coin.test.tsx` renders the real component and asserts on its materials/geometry/disposal; `CoinflipHub.test.tsx` renders both `<Coin>` call sites through the hub). Flagging for the Advisor/Owner in case a `/run-skill-generator` pass to fix the Chromium deps is worth doing for future visual-diff tickets.
+
+Results: `npx vitest run` — **75 files / 928 tests passing**; `npx tsc -b` clean; `eslint --ext .ts,.tsx packages apps` clean. No existing test asserted the old hex values or the old default `size=128`, so nothing needed updating for that (grepped `Coin.test.tsx` and `CoinflipHub.test.tsx` to confirm — neither hardcodes the coin's hex or default size).
+
+Ask: PR review — #209, `fix(coinflip): revert coin to orange/blue + larger size (Designer)`.
+
 ### 2026-07-10#2 — INCIDENT FIX: atomic SQLite snapshot via backup-to-temp-file (ADR-011)            [OPEN]
 From: Coder   Re: ADVISOR_TO_PM.md 2026-07-09#6
 

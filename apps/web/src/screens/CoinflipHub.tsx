@@ -14,6 +14,12 @@ const PICK_SECONDS = 10;
  *  old flat coin's 1.1s), so the win/lose bar verdict must not light before the coin visually lands. */
 const HOLD_RESULT_MS = 2600;
 
+/** Coin render size (px) — roughly half the panel's width (panel is `max-w-md`, ~448px) so the
+ *  coin reads as the hero rather than sitting small and high (Designer #2026-07-09#5). Shared by
+ *  both the idle hero and the in-match board; both containers already flex-center, so this only
+ *  needs to clear their `min-h-[200px]` floor, which it does exactly. */
+const COIN_SIZE_PX = 200;
+
 // The H/T pick pills mirror the flat coin's face colours one-to-one (orange heads / card-back-blue
 // tails) — the fill IS the identity cue. Token-driven, shared with FlatCoin (no hardcoded hex).
 const SIDES = [
@@ -82,7 +88,7 @@ function CoinflipIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
       className="flex min-h-[200px] flex-col items-center justify-center gap-4 py-3"
       data-testid="hub-board"
     >
-      <Coin />
+      <Coin size={COIN_SIZE_PX} />
       <p className="text-xs font-semibold text-muted-foreground">
         {phase === 'waiting' ? 'Finding a rival…' : 'Place your bet and play.'}
       </p>
@@ -148,7 +154,7 @@ function CoinflipBoard({ gameState, serverClockOffset = 0, drawBeat }: GameAreaA
           <CountdownRing seconds={seconds} />
         </div>
       )}
-      <Coin face={coinFace} />
+      <Coin face={coinFace} size={COIN_SIZE_PX} />
     </div>
   );
 }
