@@ -61,11 +61,13 @@
     /* Coin (Three.js 3D cylinder, COINFLIP_COIN.md) — orange/blue faces + tone-on-tone bolt caps, one
      * shared edge colour for the cylinder's single continuous side surface (Designer-restored orange/blue
      * palette, reverting the brief gold/silver shift from #204; the H/T pick pills in CoinflipHub read
-     * `.face` off these same tokens, so they follow automatically). */
+     * `.face` off these same tokens, so they follow automatically). Coin polish v2 (ADVISOR_TO_PM.md
+     * 2026-07-10#2): --coin-tails-face is the Designer's EXACT spec hex, #556ef6 — deliberately a
+     * different literal from --card-back (#5956f6), not the same blue reused; don't re-couple them. */
     --coin-heads-face: #f2a63b; /* orange */
     --coin-heads-mark: #c8761f; /* darker-orange bolt, tone-on-tone */
-    --coin-tails-face: #5956f6; /* blue — same as --card-back, so coin & card backs share one blue */
-    --coin-tails-mark: #5351e2; /* darker-blue bolt, tone-on-tone */
+    --coin-tails-face: #556ef6; /* blue — Designer's exact spec, decoupled from --card-back */
+    --coin-tails-mark: #3f52d6; /* darker-blue bolt, tone-on-tone (retuned to match the new blue) */
     --coin-edge: #ed742f; /* darker orange — one shared edge, regardless of which face is up */
   }
 
@@ -110,8 +112,8 @@
     --card-back-mark: #5351e2;
     --coin-heads-face: #f2a63b;
     --coin-heads-mark: #c8761f;
-    --coin-tails-face: #5956f6;
-    --coin-tails-mark: #5351e2;
+    --coin-tails-face: #556ef6;
+    --coin-tails-mark: #3f52d6;
     --coin-edge: #ed742f;
   }
 }
@@ -141,6 +143,19 @@
   }
   .no-scrollbar::-webkit-scrollbar {
     display: none; /* Chrome/Safari */
+  }
+
+  /* Coin polish v2 (ADVISOR_TO_PM.md 2026-07-10#2): a cheap CSS-only ambient glow behind the coin's
+   * canvas (zero 3D/render cost) — the canvas has a transparent clear colour, so this shows through
+   * around the coin's edge. Token-driven (--coin-heads-face), never a hardcoded hex; `color-mix` is
+   * used rather than the `hsl(var(...) / a)` idiom seen elsewhere because this token is a raw hex
+   * literal, not an HSL triple (see the coin token block above/`--card-back`). */
+  .coin-glow {
+    background: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--coin-heads-face) 28%, transparent) 0%,
+      transparent 70%
+    );
   }
 }
 
