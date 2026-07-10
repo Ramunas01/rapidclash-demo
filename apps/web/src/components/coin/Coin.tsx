@@ -183,14 +183,18 @@ export function Coin({
     if (!canvas) return;
 
     const goldHex = readColorToken('--coin-heads-face', '#F2A63B');
-    const silverHex = readColorToken('--coin-tails-face', '#5956F6');
+    const silverHex = readColorToken('--coin-tails-face', '#556EF6');
     const edgeHex = readColorToken('--coin-edge', '#ED742F');
     const headsMarkHex = readColorToken('--coin-heads-mark', '#C8761F');
-    const tailsMarkHex = readColorToken('--coin-tails-mark', '#5351E2');
+    const tailsMarkHex = readColorToken('--coin-tails-mark', '#3F52D6');
     const brandHex = readColorToken('--brand-purple', '#8140e2');
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
+    // fov ~17 (down from 30, coin polish v2 — ADVISOR_TO_PM.md 2026-07-10#2): a telephoto zoom that
+    // frames the coin at ~90% of the canvas instead of ~47%, with no added perspective distortion.
+    // Same z=8 and the same slight (0.35, 0.35) tilt — this is camera framing only, not a geometry
+    // or flip-math change.
+    const camera = new THREE.PerspectiveCamera(17, 1, 0.1, 100);
     camera.position.set(0.35, 0.35, 8);
     camera.lookAt(0, 0, 0);
 
@@ -204,20 +208,24 @@ export function Coin({
     const geometry = new THREE.CylinderGeometry(1, 1, 0.26, 96);
     geometry.rotateX(Math.PI / 2);
 
+    // De-dull pass (coin polish v2 — ADVISOR_TO_PM.md 2026-07-10#2): a metallic surface with no
+    // environment map to reflect renders muted/dark. Caps drop to a mostly-non-metallic 0.15/~0.4
+    // roughness so the flat orange/blue reads vivid and clean. The edge stays a touch metallic
+    // (~0.45, little changed) so the curved rim still catches the light band.
     const edgeMat = new THREE.MeshStandardMaterial({
       color: edgeHex,
-      metalness: 0.5,
+      metalness: 0.45,
       roughness: 0.45,
     });
     const headsMat = new THREE.MeshStandardMaterial({
       map: makeCapTexture(goldHex, headsMarkHex),
-      metalness: 0.55,
-      roughness: 0.34,
+      metalness: 0.15,
+      roughness: 0.4,
     });
     const tailsMat = new THREE.MeshStandardMaterial({
       map: makeCapTexture(silverHex, tailsMarkHex),
-      metalness: 0.6,
-      roughness: 0.3,
+      metalness: 0.15,
+      roughness: 0.4,
     });
     // CylinderGeometry material order: [side, topCap, bottomCap]; after rotateX the top cap faces
     // the camera at rest — heads (gold) up, matching resting-heads.
@@ -331,7 +339,7 @@ export function Coin({
       data-testid="coin-face"
       data-face={displayFace}
       aria-hidden="true"
-      className={cn('block', className)}
+      className={cn('coin-glow block', className)}
       style={{ width: size, height: size }}
     >
       <canvas

@@ -1,5 +1,22 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-07-10#4 — Coinflip coin polish v2: exact tails hex + real size + de-dull (Designer, ADVISOR_TO_PM.md #2)            [OPEN]
+From: Coder   Re: ADVISOR_TO_PM.md 2026-07-10#2
+
+Shipped in one PR, branch `fix/coinflip-coin-polish-v2`. **PR #212.** Camera framing + material params + one CSS token + a size number — no `CylinderGeometry`, `rotateX`, `planFlip`/`easeOutCubic`, turn counts, duration, or vertical-axis change, as scoped.
+
+1. **Tails hex, exact.** `apps/web/src/index.css` — both `:root` and `.dark`: `--coin-tails-face` `#5956f6`→`#556ef6` (the Designer's exact spec), `--coin-tails-mark` retuned darker `#5351e2`→`#3f52d6`. This deliberately DE-COUPLES `--coin-tails-face` from `--card-back`, which stays `#5956f6` — did not "fix" it back to match, per the spec's explicit call. `--coin-heads-face`/`--coin-heads-mark`/`--coin-edge` untouched. Updated the token comment.
+2. **Real size — two coupled levers, `Coin.tsx`.** Camera `fov` `30`→`17` (same `z=8`, same `(0.35, 0.35)` tilt — a telephoto zoom, not a geometry/perspective change) so the coin fills ~90% of its canvas instead of ~47%. Synced the `readColorToken` fallback hexes (`--coin-tails-face`→`#556EF6`, `--coin-tails-mark`→`#3F52D6`) so no-CSS/test environments match. Then `CoinflipHub.tsx`: `COIN_SIZE_PX` `200`→**`420`** — paired with the fov drop, a 420px canvas renders a VISIBLE coin of ~378-385px, landing on the Designer's ~385px target.
+3. **De-dull.** Cap materials (`headsMat`/`tailsMat`) `metalness` `0.55`/`0.6`→**`0.15`** (both), `roughness`→**`0.4`** (both, up from 0.34/0.3) — the flat orange/blue now reads vivid instead of muted/dark (a metallic surface with no environment map renders dull, which was the root cause). Left the edge material closer to where it was (`metalness` `0.5`→`0.45`, barely moved) so the curved rim still catches the light band, per the spec's "touch metallic" instruction. Did NOT add an environment map/reflective sheen — spec explicitly flagged that as optional/Designer's-call-only and out of this ticket's "done when."
+4. **Glow halo.** Added a `.coin-glow` utility class (`index.css`, `@layer utilities`) on the coin's wrapper `<div data-testid="coin-face">` — a CSS `radial-gradient` using `color-mix(in srgb, var(--coin-heads-face) 28%, transparent) 0%, transparent 70%`, zero 3D/render cost (shows through the canvas's already-transparent clear colour). **Judgment call**: checked for precedent first — every existing `radial-gradient` glow in this codebase (`Wallet.tsx`, `ChessPlay.tsx`, `Auth.tsx`, etc.) uses a hardcoded `rgba(...)` literal, none combine a CSS custom property with alpha. Since `--coin-heads-face` is a raw hex literal (not an HSL triple like most other tokens — see `--card-back` for the same pattern), I used `color-mix()` rather than the spec's illustrative `hsl(var(...)/a)` idiom — CSS-native, no JS hex-parsing needed, token stays the single source of truth.
+5. **Container floor.** Bumped both coin containers' `min-h-[200px]`→`min-h-[440px]` in `CoinflipHub.tsx`. Verified empirically (read the actual JSX/classNames, not assumed) that neither container nor its `rounded-2xl bg-surface p-4` parent has `overflow-hidden` or a fixed height — a taller child was never going to clip, flex just grows to fit — but the stale 200px number no longer reflected an honest floor for the new 420px size, so updated it anyway.
+
+No test asserted the old tails hex, fov, metalness, `COIN_SIZE_PX`, or the old `min-h-[200px]` — grepped `Coin.test.tsx`/`CoinflipHub.test.tsx` to confirm before editing; nothing needed updating.
+
+Results: `npx vitest run` — **75 files / 932 tests passing**; `npx tsc -b` clean; `eslint --ext .ts,.tsx packages apps` clean; `vite build` succeeds (same pre-existing >500kB chunk warning, unrelated). No headless-browser screenshot verification possible in this sandbox (no working Chromium deps — a known prior limitation, not fixed here, out of this ticket's scope).
+
+Ask: PR review — #212, `fix(coinflip): coin polish v2 — exact tails hex, real size, de-dull (Designer)`.
+
 ### 2026-07-10#3 — Coinflip coin: reverted to orange/blue + bigger size (Designer, ADVISOR_TO_PM.md #5)            [OPEN]
 From: Coder   Re: ADVISOR_TO_PM.md 2026-07-09#5
 
