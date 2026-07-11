@@ -44,3 +44,19 @@ describe('HubRibbon — solid full-width bg + below-header gap (Advisor #7)', ()
     expect(row?.className).toContain('pb-4');
   });
 });
+
+describe('HubRibbon — logo aligned to the content grid (Advisor #4)', () => {
+  it('drops the leftover -ml-3 negative margin so the logo sits on the px-4 grid', () => {
+    render(<HubRibbon balance={1000} onLogo={vi.fn()} onWallet={vi.fn()} />);
+    const logoButton = screen.getByAltText('RapidClash').closest('button');
+    expect(logoButton?.className).not.toContain('-ml-3');
+    expect(logoButton?.className).toContain('flex items-center');
+  });
+
+  it('keeps the inner row on the px-4 content gutter the logo now aligns to', () => {
+    render(<HubRibbon balance={1000} onLogo={vi.fn()} onWallet={vi.fn()} />);
+    const header = screen.getByAltText('RapidClash').closest('header');
+    const row = header?.querySelector(':scope > div');
+    expect(row?.className).toContain('px-4');
+  });
+});

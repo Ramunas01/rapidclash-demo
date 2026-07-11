@@ -31,7 +31,7 @@ export function HubRibbon({ balance, onLogo, onWallet, loggedIn = true }: Props)
   return (
     <header className="sticky top-0 z-20 w-full bg-background pt-[env(safe-area-inset-top)]">
       <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 pb-4">
-        <button type="button" onClick={onLogo} aria-label="RapidClash — home" className="-ml-3 flex items-center">
+        <button type="button" onClick={onLogo} aria-label="RapidClash — home" className="flex items-center">
           <img src={logoUrl} alt="RapidClash" className="h-8 w-auto object-contain" />
         </button>
 
