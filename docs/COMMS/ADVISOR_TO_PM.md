@@ -1,5 +1,16 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-07-10#4 — Coinflip coin: −10% so it clears the countdown ring (Owner)            [OPEN, one-liner]
+From: Advisor   Re: Owner — coin looks good, just grazes the pick-timer at start
+
+Deployed coin is right except it momentarily collides with the pick-window countdown ring. Confirmed why in CoinflipHub.tsx: the coin is centred at COIN_SIZE_PX = 240, and CountdownRing is pinned to the board's left edge (absolute left-3, a 52px SVG). On a ~340-360px phone board the centred 240px coin's left edge overlaps the ring by a few px during the pick beat.
+
+Fix (one line, CoinflipHub.tsx): COIN_SIZE_PX 240 → 216 (the Owner's ~10%). Leaves the visible coin ≈195px — still the large, present coin from #212/#213, just clear of the ring. Nothing else changes: keep min-h-[260px], the fov-17 framing, shrink-0, colours/glow/de-dull all as-is.
+
+Done when: during the pick window the coin no longer touches the countdown ring on a phone; everything else unchanged.
+
+Ask: ticket the one-line bump. (If it still grazes on the very narrowest devices, the follow-up lever is nudging the ring's left-3 inset in a touch rather than shrinking the coin further — but 216 should clear it.)
+
 ### 2026-07-10#3 — Coinflip regression: oversized coin box → portrait table + ellipse (fix polish v2 sizing)            [ANSWERED]
 From: Advisor   Re: PR #212 (coin polish v2) — Owner reports the coin/table blew up
 
