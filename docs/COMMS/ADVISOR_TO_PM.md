@@ -1,5 +1,55 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-07-11#1 — Blackjack reveal: opponent cards are face-down backs in play, flip in place at reveal (Option A, Owner-approved)            [OPEN — includes an Owner-gated redaction + doc change]
+From: Advisor   Re: Designer — end-of-round cards "appear flying in opened"
+
+Decision (Owner-approved this session): the end-of-round reveal must be honest — every opponent card is present on the table as a face-down back during play and flips over in place at the reveal; no card ever appears already face-up from off-table. This requires exposing the opponent's hand size (card count) during play. Redaction relaxation, Owner-approved: the opponent's hand size becomes visible in play; card values, the deck seed, and stand/bust status stay hidden until terminal exactly as today. Invariant #2 holds with this one documented narrowing (values never leak early). This is a choreography revision — today's "hit cards deal in from the deck" behaviour is what BLACKJACK.md currently specifies, so the doc changes below are part of the ticket.
+
+Why (verified in packages/games/blackjack/src/blackjack.ts): viewFor's in-play branch is redactedHands[p] = { cards: s.hands[p].cards.slice(0, 1), done: false } — the opponent's count is hidden, so their hit cards have nowhere to live on the table and must enter at reveal. BlackjackHub.tsx renders that as oppCards[0] + one OppHoleCard + oppCards.slice(2) hits that fly in (PlayingCard initial={{ x: 200, rotateY: 90 }}). The fly-in is the "flying in opened".
+
+1. Server — expose count only (packages/games/blackjack/src/blackjack.ts).
+
+In viewFor's in-play branch, add the opponent's size to the redacted hand: { cards: s.hands[p].cards.slice(0, 1), done: false, handSize: s.hands[p].cards.length }. Keep cards at one entry, keep done: false, keep the seed stripped — only the count is added. (Own hand unchanged/full; terminal branch unchanged/full reveal.)
+Add handSize?: number to the Hand shape (or a small redacted-view type). Own/terminal hands can leave it unset — the client falls back to cards.length.
+Update the two comments that now read false: applyMove's "broadcast NOTHING about either hand" and viewFor's "hit count … hidden" → the count is now surfaced; values / stand-bust / seed remain hidden.
+No gateway/protocol change. The server already re-broadcasts each player's viewFor on every action; today the opponent's in-play view is byte-identical on their hits (redacted to one card) so nothing re-renders — once handSize is included, each opponent hit changes their view and the client re-renders a new back. (Coder: confirm the gateway broadcasts to both players on a move, not just the mover.)
+
+2. Client — one persistent slot per opponent card (apps/web/src/screens/BlackjackHub.tsx).
+
+const oppCount = (view?.hands[opponentId] as { handSize?: number })?.handSize ?? oppCards.length; — real count in play, full length at terminal/push (so the fallback is correct everywhere).
+Render the opponent hand as oppCount persistent slots, keyed opp-${keyRound}-${i} (all slots, not just the hole card — this is the identity-continuity the spec already demands, now applied to every card):
+
+slot 0 → PlayingCard (oppCards[0], the one always-visible card).
+slots 1..oppCount-1 → the flip card (generalise the existing OppHoleCard): face-down back in play, revealed = isTerminal || showPush, card = oppCards[i] (undefined until revealed).
+
+Delete the oppCards.slice(2) fly-in branch — superseded; those cards are now persistent back-slots that flip.
+Live "drawing" beat: when oppCount grows in play, only the new slot mounts → it slides in face-down from the deck (the same deal slide, showing the back). Honest: you watch a closed card arrive.
+Reveal rule (covers the atomic case): at reveal, a slot already on the table flips in place; any slot newly present in the terminal hand (the resolving/busting hit, which arrives atomically and was never broadcast as a live draw) slides in face-down first, then flips — never arrives face-up. So in every path, cards arrive closed and open in place; nothing appears already-open.
+Stacking: the old single-hole "under the first card" exception was for one hidden card; with a fan of backs use the standard OVER stack for all slots (newest on top), flips keep their z. Designer to eyeball the multi-back fan.
+Own hand, totals, push hold (lastResult), win/lose/push outlines, usePacedView timing — all unchanged.
+
+3. Redaction guard (the invariant check for this PR). In play the opponent view must expose only handSize (a number) + the single already-visible card. Assert: cards.length === 1, done === false, no seed, and no hidden card values anywhere in the in-play view. Values appear only in the terminal viewFor (full state) and in lastResult after a resolve (both already safe today).
+
+Tests.
+
+blackjack.test.ts (viewFor): in-play opponent view has handSize = true count, cards.length === 1, done === false, no seed; after the opponent hits, handSize increments but no new card value is exposed; terminal view still fully reveals both hands.
+BlackjackHub.test.tsx: in play the opponent renders handSize slots with handSize-1 backs; a new opponent hit adds a face-down back (not a face-up card); at reveal every back flips in place and no PlayingCard mounts via the fly-in path; a card only present at the terminal frame arrives face-down then flips; your own first card and the opponent's first card never remount across play→reveal→push.
+
+Doc changes to apply (Owner-gated — docs/BLACKJACK.md; I own these, bundle with the PR):
+
+Invariant #2 line ("sees only their own cards plus exactly one opponent card") → "plus exactly one opponent card value and the opponent's hand size; all other card values, the deck seed, and stand/bust status stay hidden until reveal."
+Gameplay → "Actions & timer", the line "Nothing about the opponent is surfaced during play — not drawn cards, not stand status." → "The opponent's hand size is surfaced — a face-down card appears when they draw — but no card value, and no stand/bust status, until the reveal."
+viewFor mapping bullet → "returns the player's own cards, exactly one opponent card value, and the opponent's hand size; redacts the opponent's other card values and stand/bust status until terminal."
+"Reveal choreography" → replace the "hole card flips … then hit cards deal in one-by-one from the deck" sequence with: every hidden opponent card is already on the table as a face-down back (each dealt face-down as the opponent drew), and at the reveal they all flip over in place in sequence; nothing is dealt in at the reveal (a card only ever slides in face-down during play, or — for the atomic resolving hit — face-down then flips). Update the stacking paragraph: standard OVER fan for all cards; the single-hole "under" exception is retired.
+"One continuous scene" acceptance → strengthen: the only motion at reveal is in-place flips + totals + outlines; no opponent card mounts at reveal (previously the hits mounted).
+docs/SCREENS.md: same reveal-model note where it references the Blackjack reveal.
+
+Scope: one PR across module + client + docs (the client needs handSize, so they ship together — same pattern as the draw-offer PR). One agent, within the ≤2 cap. No core/protocol change.
+
+Done when: in play the opponent shows the right number of cards (one up, the rest face-down) and a face-down card slides in when they draw; at the end every hidden card flips over in place with nothing arriving already-open; already-visible cards never blink or move; the in-play view still hides all opponent values/seed/stand-status (module test proves it).
+
+Ask: (a) confirm you're committing the BLACKJACK.md/SCREENS.md edits above with the PR; (b) ticket the one PR. I can hand the coder the reveal-rule detail (arrive-closed-then-flip) verbatim if useful.
+
 ### 2026-07-10#4 — Coinflip coin: −10% so it clears the countdown ring (Owner)            [ANSWERED]
 From: Advisor   Re: Owner — coin looks good, just grazes the pick-timer at start
 
