@@ -325,7 +325,26 @@ export function GameHub(props: GameHubProps) {
   // scanning) so the in-match board reveals a beat later instead of snapping in.
   // `resultPending` keeps the phase in-match (board mounted, "Playing…") through the reveal hold,
   // even though the server has already cleared currentMatchId.
-  const phase: Phase = overlay ? 'result' : resultPending ? 'in-match' : (currentMatchId && !holdSearch) ? 'in-match' : (currentMatchId || waiting) ? 'waiting' : 'idle';
+  //
+  // One-render bridge (Advisor #2, 2026-07-11): `overlay`/`resultPending` are only set by the effect
+  // above, which fires one render AFTER `currentMatchId` first goes null (effects run post-commit).
+  // On that exact first render, both are still their stale (falsy) pre-match values, so without this
+  // bridge the formula falls all the way through to 'idle' for one frame — unmounting any board that
+  // only mounts on 'in-match'/'result' (e.g. Blackjack's), so every card replays its mount animation
+  // instead of transitioning in place. `lastOutcome`/`lastSettlement` are ordinary props (not
+  // effect-derived) and App's onMatchEnd sets them in the SAME batch it nulls currentMatchId, so they
+  // are already fresh on this exact render — bridge off them instead. This branch only ever fires in
+  // the narrow window where overlay/resultPending/currentMatchId/waiting are all already falsy AND a
+  // fresh result exists — i.e. only this one-render gap; the moment the effect catches up it sets
+  // overlay directly (holdResultMs falsy) or resultPending then overlay (holdResultMs > 0), both of
+  // which are already handled by the EARLIER branches above, so this stops competing immediately.
+  const hasFreshResult = lastOutcome != null && lastSettlement != null;
+  const phase: Phase = overlay ? 'result'
+    : resultPending ? 'in-match'
+    : (currentMatchId && !holdSearch) ? 'in-match'
+    : (currentMatchId || waiting) ? 'waiting'
+    : hasFreshResult ? (holdResultMs && holdResultMs > 0 ? 'in-match' : 'result')
+    : 'idle';
 
   function dismissResult() {
     clearPendingResult();

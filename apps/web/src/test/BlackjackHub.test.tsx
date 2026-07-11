@@ -585,6 +585,48 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       expect(within(screen.getByTestId('opp-hand')).getAllByTestId('card')[0]).toBe(oppFirstBefore);
     });
 
+    it("GameHub phase bridge (Advisor #2): a REAL decisive-terminal transition — currentMatchId genuinely goes to null, not held at 'm1' — never drops the board for a frame; both bar-adjacent AND own cards keep DOM identity", async () => {
+      // Unlike the "key continuity" test above (and the honest-reveal tests below it), which
+      // deliberately hold `currentMatchId: 'm1'` across the rerender to isolate the board's own
+      // reveal choreography from GameHub's phase machine, this test exercises the actual wire
+      // event: App's onMatchEnd sets lastOutcome/lastSettlement AND clears currentMatchId to null
+      // in the same batch (verified in App.tsx's onMatchEnd handler). That is exactly the
+      // transition where GameHub's `phase` derivation used to fall through to 'idle' for one
+      // render (overlay/resultPending are effect-derived and lag a render behind), which unmounts
+      // BlackjackPanel's board (idle → no cards) before it remounts fresh nodes the very next
+      // render — every card, including the player's OWN (which never animates at reveal in the
+      // correct behaviour), would replay its mount-entrance animation. Capturing DOM identity
+      // across the single rerender call is the tell: a remount mints brand-new elements.
+      const inPlay = inPlayView({
+        hands: {
+          pid: { cards: [c('K'), c('Q', '♥')], done: true }, // 20 — already final
+          bob: { cards: [c('9', '♣')], done: false, handSize: 2 }, // one visible + one hidden back
+        },
+      });
+      const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlay, legalMoves: [] })} />);
+      const ownFirstBefore = within(screen.getByTestId('own-hand')).getAllByTestId('card')[0];
+      const oppFirstBefore = within(screen.getByTestId('opp-hand')).getAllByTestId('card')[0];
+
+      const terminal = inPlayView({
+        hands: {
+          pid: { cards: [c('K'), c('Q', '♥')], done: true },
+          bob: { cards: [c('9', '♣'), c('8', '♦')], done: true },
+        },
+        winner: 'pid',
+      });
+      // The real decisive-terminal flow: currentMatchId clears to null in the SAME rerender that
+      // delivers lastOutcome/lastSettlement — no artificial hold.
+      rerender(<BlackjackHubScreen {...baseProps({
+        currentMatchId: null, gameState: terminal, legalMoves: [],
+        lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 },
+      })} />);
+
+      // The board must have stayed mounted throughout — the SAME DOM nodes persist, own card
+      // included. A remount (the bug) would mint fresh elements for both hands.
+      expect(within(screen.getByTestId('own-hand')).getAllByTestId('card')[0]).toBe(ownFirstBefore);
+      expect(within(screen.getByTestId('opp-hand')).getAllByTestId('card')[0]).toBe(oppFirstBefore);
+    });
+
     it('after the reveal flip the (face-up) hole card sits OVER the first card, and hits stack over in deal order', async () => {
       const terminal = inPlayView({
         hands: {

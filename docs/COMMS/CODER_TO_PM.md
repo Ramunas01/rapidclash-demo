@@ -1,5 +1,36 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-07-11#5 — GameHub: fixed the one-render idle flicker at decisive reveal (ADVISOR_TO_PM.md 2026-07-11#2)            [OPEN]
+From: Coder   Re: ADVISOR_TO_PM.md 2026-07-11#2
+
+Shipped in one PR, branch `fix/gamehub-phase-bridge-flicker`. **PR #226.** Shared/core file (`GameHub.tsx`'s `phase` derivation) — flagged for careful review in the PR description per the brief.
+
+**Root cause, re-verified myself against the code (not just trusted the ticket):** `phase` was derived directly from `overlay`/`resultPending`, both only set by the `[currentMatchId, lastOutcome, lastSettlement, gameState, holdResultMs]` effect, which fires one render *after* `currentMatchId` first flips to `null` (effects run post-commit). On that gap render both are stale/falsy, so the formula fell through to `'idle'` — unmounting any board that only mounts on `'in-match'`/`'result'` (Blackjack's), so every card (own included) replayed its mount animation instead of transitioning in place.
+
+**App-render timing premise — confirmed, no discrepancy found.** Read `App.tsx`'s `onMatchEnd` handler directly: it calls `setLastOutcome`, `setLastSettlement`, `setBalance`, and `setCurrentMatchId(null)` all synchronously in one handler invocation, so React batches them into one render — `lastOutcome`/`lastSettlement` are already fresh on the exact render `currentMatchId` goes null. Matches the PM's independent verification exactly. **No `App.tsx` change made.**
+
+**Fix (`GameHub.tsx`):** bridged the gap off `lastOutcome`/`lastSettlement` (ordinary props, not effect-derived):
+```ts
+const hasFreshResult = lastOutcome != null && lastSettlement != null;
+const phase: Phase = overlay ? 'result'
+  : resultPending ? 'in-match'
+  : (currentMatchId && !holdSearch) ? 'in-match'
+  : (currentMatchId || waiting) ? 'waiting'
+  : hasFreshResult ? (holdResultMs && holdResultMs > 0 ? 'in-match' : 'result')
+  : 'idle';
+```
+Only fires in the exact one-render window (all four earlier signals falsy AND a fresh result exists); the instant the effect catches up, the earlier branches take over and this stops competing.
+
+**Dismiss path traced, not assumed:** `dismissResult` (GameHub) + `onResultDismiss` → App's `handleHubResultDismiss` clears `lastOutcome`/`lastSettlement` in the same batch → `hasFreshResult` correctly goes false → phase falls to `'idle'` normally. For opt-out games (Blackjack, `suppressResultOverlay`), the result phase persists until a new match starts (earlier `currentMatchId` branch wins) or `resetRoundState` wipes the result on the next PLAY/leave (round-scoped-state invariant) — consistent either way.
+
+**Open Games `joinDisabled` (`phase === 'in-match' || 'waiting'`) — reasoned through, no regression:** for non-`holdResultMs` games the bridge resolves straight to `'result'` on the gap render (same as the post-effect render, just one render earlier) — `joinDisabled` unaffected. For `holdResultMs` games (Coinflip/Baccarat/Dice) the bridge now reads `'in-match'` on that gap render instead of a stray `'idle'` blip — this actually *closes* a related latent gap (Open Games briefly allowing a join mid-reveal), not a new one. No other hub's phase-dependent logic is reachable by the new branch since it only supersedes the previous `'idle'` fallback.
+
+**Test (regression guard):** extended `BlackjackHub.test.tsx` (the shared vehicle already used for the push-path "key continuity" test) with a new test exercising the REAL decisive-terminal flow — `currentMatchId` genuinely transitions from `'m1'` to `null` in the same rerender that delivers `lastOutcome`/`lastSettlement` (the existing push-path and honest-reveal tests all deliberately hold `currentMatchId` constant, so none of them hit this bug). Asserts both the own-hand and opponent-hand first cards keep exact DOM identity (`toBe`) across the transition. **Verified the guard property directly**: `git stash`'d the `GameHub.tsx` fix, reran the new test — failed, specifically on the own-card identity check (matching the bug's "even your own cards fly in" tell); reapplied the fix — passed. No stash artifacts left behind.
+
+Results: `npx vitest run apps/web/src/test/BlackjackHub.test.tsx` — 42/42 passing; full `npx vitest run` — **75 files / 942 tests passing**; `npx tsc -b` clean; `npx eslint --ext .ts,.tsx packages apps` clean.
+
+Ask: PR review — #226, `fix(hub): bridge GameHub's one-render idle flicker at decisive reveal (Advisor #2, shared)`. Shared collision-zone file; please review the phase-formula diff carefully as flagged.
+
 ### 2026-07-11#4 — Blackjack: honest reveal — face-down backs in play, flip in place (Advisor #1)            [OPEN]
 From: Coder   Re: ADVISOR_TO_PM.md 2026-07-11#1
 
