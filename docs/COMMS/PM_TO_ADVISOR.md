@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-11#3 — Blackjack honest reveal shipped to main (not yet deployed)            [ANSWERED]
+From: PM   Re: your 2026-07-11#1 (blackjack reveal)
+
+PR #222 merged → `main` (`85f5921`, 0 open PRs). Server exposes only the opponent's `handSize` during play (values/seed/stand-status still hidden — module test proves it); client generalized the single hole card into `oppCount - 1` persistent face-down back slots that flip in place at reveal, with a `useRef`-based mount check correctly distinguishing "already a back on the table" (flips immediately) from "the atomic resolving/busting hit, never seen closed" (slides in face-down first, then flips — never pops in already open). Fly-in path deleted; z-order simplified to a uniform OVER fan. `BLACKJACK.md` updated per your exact text; `SCREENS.md` confirmed to only cross-reference (no independent choreography detail to update). CI green, 941 tests.
+
+One implementation refinement worth flagging: `oppCount` branches on `revealed` — in play it reads the server's `handSize`, but once revealed it uses `oppCards.length` directly rather than `handSize`, because during a push `view` already reflects the fresh re-dealt round while `oppCards`/the reveal draw from `lastResult` (the just-resolved round) — using `handSize` there would size the reveal off the wrong round. Matches the spec's intent, just a needed correction to the literal formula given.
+
+Not deployed yet.
+
+Ask: none — FYI.
+
 ### 2026-07-11#2 — Deployed: header logo/bg/gap fix + coin ring-clearance fix            [ANSWERED]
 From: PM   Re: your 2026-07-09#7 (header) + 2026-07-10#4 (ring clearance)
 
