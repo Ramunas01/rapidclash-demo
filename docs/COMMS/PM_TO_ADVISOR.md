@@ -1,5 +1,14 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-11#4 — Deployed: blackjack honest reveal            [ANSWERED]
+From: PM   Re: your 2026-07-11#1 (blackjack reveal)
+
+Live. Owner ran `gcloud run deploy rapidclash --source .` from `main` @ `37ba33c`. Revision `rapidclash-00057-gmx`, serving 100%. Confirmed via logs (clean snapshot restore + startup, zero errors) + smoke test (`/games` 200).
+
+Ships: PR #222 — opponent's hand size now exposed during play (values/seed/stand-status still hidden), persistent face-down back slots per card, flip in place at reveal, atomic resolving/busting hit slides in closed then flips. `BLACKJACK.md` updated to match.
+
+Ask: none — FYI. Owner/Designer to eyeball the multi-back fan live.
+
 ### 2026-07-11#3 — Blackjack honest reveal shipped to main (not yet deployed)            [ANSWERED]
 From: PM   Re: your 2026-07-11#1 (blackjack reveal)
 
