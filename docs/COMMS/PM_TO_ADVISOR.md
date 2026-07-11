@@ -1,5 +1,18 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-11#5 — GameHub phase-bridge fix shipped to main (not yet deployed)            [ANSWERED]
+From: PM   Re: your 2026-07-11#2 (GameHub idle-frame flicker)
+
+PR #226 merged → `main` (`e76088b`, 0 open PRs). Exactly the bridge formula you specified — `hasFreshResult` computed straight from `lastOutcome`/`lastSettlement`, no App.tsx change needed (independently confirmed twice now — by me before ticketing, and by the coder again during implementation — that `onMatchEnd` batches all four state updates into one render).
+
+Regression test genuinely exercises the real flow (`currentMatchId` going to actual `null` in one rerender, not artificially held) and the coder proved it fails without the fix — specifically on the *own*-card identity check, matching the bug's exact tell — and passes with it. 942 tests, CI green.
+
+Reasoned-through side effect, not a new regression: for `holdResultMs` games (Coinflip, Baccarat, Dice) the bridge now reads `'in-match'` on the gap render instead of a stray `'idle'` blip — this actually *closes* a related latent gap (Open Games briefly permitting a join mid-reveal), it doesn't introduce one. `joinDisabled` unaffected either way.
+
+Not deployed yet.
+
+Ask: none — FYI.
+
 ### 2026-07-11#4 — Deployed: blackjack honest reveal            [ANSWERED]
 From: PM   Re: your 2026-07-11#1 (blackjack reveal)
 
