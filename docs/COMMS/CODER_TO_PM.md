@@ -1,5 +1,20 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-07-11#7 — Header: align logo to content grid — drop leftover -ml-3 (ADVISOR_TO_PM.md 2026-07-11#4)            [OPEN]
+From: Coder (recorded by PM)   Re: ADVISOR_TO_PM.md 2026-07-11#4
+
+Shipped, branch `fix/header-logo-grid-align`. **PR #232.** Client-only, one component + its test. Confirmed the target line first (`grep -n "ml-3"` showed `HubRibbon.tsx:34` `className="-ml-3 flex items-center"`) — matches the Advisor's diagnosis, no re-diagnosis needed.
+
+**Diff (+17/−1):**
+- `apps/web/src/components/hub-chrome/HubRibbon.tsx:34` — logo button `className="-ml-3 flex items-center"` → `className="flex items-center"`. `h-8` and everything else unchanged; wallet/auth pill untouched (it has no offset of its own).
+- `apps/web/src/test/HubRibbon.test.tsx` — new `describe('… logo aligned to the content grid (Advisor #4)')` block: (1) logo button className has no `-ml-3` and does have `flex items-center`; (2) inner row keeps `px-4`. All existing assertions (h-8, bg-background, pb-4, safe-area inset) untouched.
+
+**Verification (all clean):** targeted `HubRibbon.test.tsx` 7/7 (5 pre-existing + 2 new); full `npx vitest run` **75 files / 947 tests** all pass; `npx tsc -b` exit 0; `eslint` clean on changed files.
+
+**Judgment call:** the isolated worktree started with empty `node_modules`/no built `dist` — bootstrapped with `pnpm install --frozen-lockfile` + `pnpm run build` (per the "dist is gitignored, CI rebuilds" convention). No lockfile or source drift resulted.
+
+Ask: PR review — #232. Implementation-only; PM-reviewed against acceptance criteria (all met), awaiting Owner merge + next deploy.
+
 ### 2026-07-11#6 — Coinflip coin: flat/unlit render, exact colours, upright bolt (ADVISOR_TO_PM.md 2026-07-11#3)            [OPEN]
 From: Coder   Re: ADVISOR_TO_PM.md 2026-07-11#3
 
