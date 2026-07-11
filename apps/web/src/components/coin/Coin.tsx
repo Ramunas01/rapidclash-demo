@@ -91,10 +91,37 @@ export function planFlip(
 /** Cap texture size (px) — a canvas this small is plenty for a coin rendered at typical hub sizes. */
 const CAP_TEXTURE_SIZE = 256;
 
-/** Paint a cap: the face colour fills the square (the cylinder's circular UV inscribes it), plus the
- *  shared {@link BOLT_PATH} stamped tone-on-tone via `markHex` (a subtle canvas texture — the
- *  simplest way to get the SVG brand mark onto a Three.js cap without a real decal/GLSL pass). */
-function makeCapTexture(faceHex: string, markHex: string): THREE.CanvasTexture {
+/**
+ * Paint a cap: the face colour fills the square (the cylinder's circular UV inscribes it), plus the
+ * shared {@link BOLT_PATH} stamped tone-on-tone via `markHex` (a subtle canvas texture — the
+ * simplest way to get the SVG brand mark onto a Three.js cap without a real decal/GLSL pass).
+ *
+ * **Rotation (bolt-upright fix, verified numerically — see the coder's confidence note in
+ * `CODER_TO_PM.md`).** `BOLT_PATH` is authored upright for a normal y-down 2D surface (it's the same
+ * path `CardBack.tsx`'s SVG draws unrotated). But this cap is a `CylinderGeometry` cap after
+ * `geometry.rotateX(π/2)` (applied once, below) — walking through Three's actual cap-UV formulas
+ * (`u = z/(2r)+0.5`, `v = ±x/(2r)+0.5`, read straight from the installed `three` source) composed
+ * with that rotateX and the camera projection shows the canvas image lands on screen rotated +90°
+ * (clockwise). `ROTATE = -π/2` here cancels that, verified by projecting the bolt's four distinctive
+ * (asymmetric) path points through the real geometry + camera and confirming the "top" vertex ends up
+ * above the "bottom" vertex, and "far right" ends up right of "far left" — not just "some rotation".
+ *
+ * **Heads vs tails — no mirror needed (verified, not assumed).** The two caps face opposite
+ * directions, which usually means an identically-painted texture reads MIRRORED on one of them. Here
+ * it doesn't: Three's own cap generator already flips the sign of the bottom cap's `v` formula (to
+ * account for it facing -Y instead of +Y), and that flip exactly cancels the flip animation's own
+ * 180°-around-Y rotation that brings tails to face the camera. The same numeric check run against the
+ * TAILS cap (with `mesh.rotation.y = π`, i.e. tails actually facing the camera) lands the identical
+ * screen positions as heads with the SAME `ROTATE` and no extra mirror; adding a `ctx.scale(-1, 1)` to
+ * "fix" tails was checked too and reproduces a backwards bolt, confirming the mirror hypothesis is
+ * wrong for this geometry. `side` is kept (tags the texture) so the two call sites stay
+ * self-documenting and there's a named hook if a future geometry change ever does need to diverge.
+ */
+function makeCapTexture(
+  faceHex: string,
+  markHex: string,
+  side: 'heads' | 'tails'
+): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = CAP_TEXTURE_SIZE;
   canvas.height = CAP_TEXTURE_SIZE;
@@ -104,17 +131,33 @@ function makeCapTexture(faceHex: string, markHex: string): THREE.CanvasTexture {
     ctx.fillRect(0, 0, CAP_TEXTURE_SIZE, CAP_TEXTURE_SIZE);
     // BOLT_PATH's viewBox is 0 0 24 24, roughly centred on (12, 12). Scale it to ~55% of the cap
     // diameter and centre it, tone-on-tone (mark is a shade of the face colour, never a stark cutout).
+    const ROTATE = -Math.PI / 2;
     const scale = (CAP_TEXTURE_SIZE * 0.55) / 24;
     const half = CAP_TEXTURE_SIZE / 2;
     ctx.save();
-    ctx.translate(half - 12 * scale, half - 12 * scale);
+    // Rotate in place around the cap's centre: move the origin to canvas-centre, rotate, scale, then
+    // shift BOLT_PATH's own centre (~12, 12) onto that origin — in that order, so the path spins about
+    // the cap centre rather than orbiting off it.
+    ctx.translate(half, half);
+    ctx.rotate(ROTATE);
     ctx.scale(scale, scale);
+    ctx.translate(-12, -12);
     ctx.fillStyle = markHex;
     ctx.fill(new Path2D(BOLT_PATH));
     ctx.restore();
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.needsUpdate = true;
+  texture.name = side === 'heads' ? 'coin-cap-heads' : 'coin-cap-tails';
+  // Colour-space guard (verified necessary, not belt-and-suspenders): `renderer.outputColorSpace`
+  // defaults to `SRGBColorSpace` in r0.185, and a `THREE.Color` parsed from a hex string round-trips
+  // through that correctly on its own — but a hand-built `CanvasTexture.map` does NOT get an implicit
+  // `SRGBColorSpace` (its default is `NoColorSpace`, per three's own source/docs: "Most `map` textures
+  // set `texture.colorSpace = SRGBColorSpace`" — it's the caller's job). Without this line the canvas's
+  // sRGB-encoded pixels would be treated as already-linear, then re-encoded on output — landing off the
+  // exact pill hex. This only affects the caps (their colour comes from `map`); the edge's flat
+  // `color:` doesn't need it.
+  texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
 
@@ -124,9 +167,9 @@ type SceneRefs = {
   camera: THREE.PerspectiveCamera;
   mesh: THREE.Mesh;
   geometry: THREE.BufferGeometry;
-  edgeMat: THREE.MeshStandardMaterial;
-  headsMat: THREE.MeshStandardMaterial;
-  tailsMat: THREE.MeshStandardMaterial;
+  edgeMat: THREE.MeshBasicMaterial;
+  headsMat: THREE.MeshBasicMaterial;
+  tailsMat: THREE.MeshBasicMaterial;
 };
 
 type FlipState = {
@@ -170,10 +213,9 @@ export function Coin({
     target: 'heads',
   });
   const rafRef = useRef<number | null>(null);
-  const lastFrameRef = useRef(0);
   // The one bit of React-visible state: which face is currently "true" — resting immediately, or the
-  // just-landed face once a flip settles. Everything else (rotation, blur) is driven imperatively so
-  // we don't re-render on every animation frame.
+  // just-landed face once a flip settles. Everything else (rotation) is driven imperatively so we
+  // don't re-render on every animation frame.
   const [displayFace, setDisplayFace] = useState<CoinFace>('heads');
 
   // ---- Mount: build the Three.js scene once. Tears it down on unmount (no leaked WebGL contexts —
@@ -187,7 +229,6 @@ export function Coin({
     const edgeHex = readColorToken('--coin-edge', '#ED742F');
     const headsMarkHex = readColorToken('--coin-heads-mark', '#C8761F');
     const tailsMarkHex = readColorToken('--coin-tails-mark', '#3F52D6');
-    const brandHex = readColorToken('--brand-purple', '#8140e2');
 
     const scene = new THREE.Scene();
     // fov ~17 (down from 30, coin polish v2 — ADVISOR_TO_PM.md 2026-07-10#2): a telephoto zoom that
@@ -208,38 +249,23 @@ export function Coin({
     const geometry = new THREE.CylinderGeometry(1, 1, 0.26, 96);
     geometry.rotateX(Math.PI / 2);
 
-    // De-dull pass (coin polish v2 — ADVISOR_TO_PM.md 2026-07-10#2): a metallic surface with no
-    // environment map to reflect renders muted/dark. Caps drop to a mostly-non-metallic 0.15/~0.4
-    // roughness so the flat orange/blue reads vivid and clean. The edge stays a touch metallic
-    // (~0.45, little changed) so the curved rim still catches the light band.
-    const edgeMat = new THREE.MeshStandardMaterial({
-      color: edgeHex,
-      metalness: 0.45,
-      roughness: 0.45,
+    // Flat/unlit (Designer + Owner — ADVISOR_TO_PM.md 2026-07-11#3): the previous lit
+    // `MeshStandardMaterial` under three scene lights dimmed/tinted the tokens (measured ~⅔ down,
+    // colour-shifted) — an unlit `MeshBasicMaterial` renders `color`/`map` at their exact value with
+    // no lighting to dull or tint them. This also gives the "no shine/glow" flat look for free: basic
+    // material ignores lights entirely, so there's nothing left to remove per-material (only the
+    // scene's lights themselves, deleted below, need to go).
+    const edgeMat = new THREE.MeshBasicMaterial({ color: edgeHex });
+    const headsMat = new THREE.MeshBasicMaterial({
+      map: makeCapTexture(goldHex, headsMarkHex, 'heads'),
     });
-    const headsMat = new THREE.MeshStandardMaterial({
-      map: makeCapTexture(goldHex, headsMarkHex),
-      metalness: 0.15,
-      roughness: 0.4,
-    });
-    const tailsMat = new THREE.MeshStandardMaterial({
-      map: makeCapTexture(silverHex, tailsMarkHex),
-      metalness: 0.15,
-      roughness: 0.4,
+    const tailsMat = new THREE.MeshBasicMaterial({
+      map: makeCapTexture(silverHex, tailsMarkHex, 'tails'),
     });
     // CylinderGeometry material order: [side, topCap, bottomCap]; after rotateX the top cap faces
     // the camera at rest — heads (gold) up, matching resting-heads.
     const mesh = new THREE.Mesh(geometry, [edgeMat, headsMat, tailsMat]);
     scene.add(mesh);
-
-    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-    const key = new THREE.DirectionalLight(0xffffff, 1.05);
-    key.position.set(3, 4, 5);
-    scene.add(key);
-    // Subtle brand rim light — colour comes from the `--brand-purple` token, never a hardcoded hex.
-    const rim = new THREE.DirectionalLight(brandHex, 0.55);
-    rim.position.set(-4, -1, 2);
-    scene.add(rim);
 
     sceneRef.current = { renderer, scene, camera, mesh, geometry, edgeMat, headsMat, tailsMat };
     renderer.render(scene, camera); // paint the resting frame once — no rAF loop while static.
@@ -279,7 +305,6 @@ export function Coin({
       }
       flipRef.current.animating = false;
       s.mesh.rotation.y = 0;
-      if (canvasRef.current) canvasRef.current.style.filter = 'none';
       s.renderer.render(s.scene, s.camera);
       setDisplayFace('heads');
       return;
@@ -299,7 +324,6 @@ export function Coin({
       dur: durationMs,
       target,
     };
-    lastFrameRef.current = performance.now();
 
     const tick = () => {
       // Read the clock ourselves rather than trusting the rAF callback's timestamp argument — some
@@ -309,20 +333,13 @@ export function Coin({
       const current = sceneRef.current;
       const anim = flipRef.current;
       if (!current) return;
-      const dt = Math.max(1, now - lastFrameRef.current);
-      lastFrameRef.current = now;
 
       if (anim.animating) {
         const p = Math.min(1, (now - anim.startT) / anim.dur);
-        const prevY = current.mesh.rotation.y;
         current.mesh.rotation.y = anim.from + (anim.to - anim.from) * easeOutCubic(p);
-        const speed = Math.abs(current.mesh.rotation.y - prevY) / (dt / 16.67); // rad per ~frame
-        if (canvasRef.current)
-          canvasRef.current.style.filter = `blur(${Math.min(7, speed * 2.4).toFixed(2)}px)`;
         if (p >= 1) {
           anim.animating = false;
           current.mesh.rotation.y = ((anim.to % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-          if (canvasRef.current) canvasRef.current.style.filter = 'none';
           setDisplayFace(anim.target);
         }
       }
@@ -339,16 +356,10 @@ export function Coin({
       data-testid="coin-face"
       data-face={displayFace}
       aria-hidden="true"
-      className={cn('coin-glow block shrink-0', className)}
+      className={cn('block shrink-0', className)}
       style={{ width: size, height: size }}
     >
-      <canvas
-        ref={canvasRef}
-        width={size}
-        height={size}
-        className="block h-full w-full"
-        style={{ transition: 'filter .05s linear' }}
-      />
+      <canvas ref={canvasRef} width={size} height={size} className="block h-full w-full" />
     </div>
   );
 }
