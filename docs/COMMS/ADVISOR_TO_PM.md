@@ -1,6 +1,21 @@
 # Advisor → PM (append-only; newest on top)
 
-### 2026-07-11#3 — Coinflip coin: render flat/unlit — exact pill colours, no shine/glow/blur, upright bolt (Designer)            [OPEN]
+### 2026-07-11#4 — Header: align the logo to the content grid — drop the leftover -ml-3 (Designer)            [OPEN, one-liner]
+From: Advisor   Re: Designer "align the logo to the content edge" + Owner's 40px measurement
+
+Root cause (verified in HubRibbon.tsx). The logo button carries a hardcoded negative margin: className="-ml-3 flex items-center". -ml-3 = −12px left margin. The header's inner row is px-4 (16px) and every content section/banner is also px-4 (16px) — so they would align, but -ml-3 pulls the logo out to 16 − 12 = 4px while the content sits at 16px. That ~12pt offset is the Designer's "half-a-bolt too far left" and matches the Owner's ~40-image-px estimate (≈12pt at the wordmark's h-8 render scale). It's a leftover from the pre-tight-crop wordmark (which had transparent padding baked in — the negative margin pulled the inset bolt back to the edge); once PR #199 tight-cropped the asset so the bolt is flush at the image's own left edge, that compensation became a 12px over-pull. Same tight-crop aftermath as the earlier header fixes — no image change is needed, so no distortion risk.
+
+Fix (one line, HubRibbon.tsx): drop -ml-3 from the logo button — className="-ml-3 flex items-center" → className="flex items-center". The logo then sits at the row's px-4, the identical container padding the content sections use (responsive at every width, not a hardcoded offset — exactly the Designer's "use the container padding" ask). Logo size (h-8) unchanged.
+
+Confirming the Designer's right-side question: the wallet/auth pill has no offset of its own — it's the right child of the justify-between … px-4 row, so its right edge already sits on the row's px-4 (16px) = the content/banner right edge. Nothing to change there; once the logo drops back onto the grid, both edges are aligned.
+
+Test (HubRibbon.test.tsx): assert the logo button no longer carries -ml-3 (no negative left margin), and that the row keeps px-4. Existing logo-size/bg-background/pb-4 assertions unchanged.
+
+Scope: one-line client change, HubRibbon.tsx (+ the test). No asset edit, no other layout change.
+
+Ask: ticket the one-liner. (Owner: no need to re-pad the wordmark — the stray negative margin was the whole problem.)
+
+### 2026-07-11#3 — Coinflip coin: render flat/unlit — exact pill colours, no shine/glow/blur, upright bolt (Designer)            [ANSWERED]
 From: Advisor   Re: Designer "coin rendering fixes (animation stays, visuals go flat)" + Owner colour measurements
 
 **Diagnosis (confirms the Owner's read).** The coin faces are fed the *correct* hex — the tokens already equal the pill colours (`--coin-heads-face #f2a63b`, `--coin-tails-face #556ef6`) — but they're rendered through a **lit `MeshStandardMaterial`** under three lights, so the output is the hex multiplied *down* and tinted: the Owner measured `A18658` (that's `#f2a63b` dimmed ~⅔ by the sub-unity lighting) and `636EA9` (`#556ef6` with its blue knocked down and warmed by the purple rim light). The `metalness 0.15/0.45` with no environment map dims it further (a metallic surface reflecting a black void). This is not a Three limitation — an **unlit** material shows the raw hex at full brilliance, which is exactly the flat look the Designer wants. The fix and the Designer's request are the same change.
