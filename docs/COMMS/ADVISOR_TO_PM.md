@@ -1,6 +1,6 @@
 # Advisor → PM (append-only; newest on top)
 
-### 2026-07-11#2 — Blackjack reveal remounts the whole board at the decisive end — fix the GameHub idle-frame flicker (shared)            [OPEN — shared/core reveal path, review carefully]
+### 2026-07-11#2 — Blackjack reveal remounts the whole board at the decisive end — fix the GameHub idle-frame flicker (shared)            [ANSWERED]
 From: Advisor   Re: Owner — at the final reveal all cards (own + opponent) vanish and fly back in from the deck
 
 **This is not a Blackjack bug — the honest-reveal client logic is correct.** The whole board is unmounting and remounting at the decisive-terminal transition, so the flip-in-place reveal runs on a freshly-mounted board (every card replays its entrance) instead of in place. The tell is that the player's **own** cards fly in too — they never animate at reveal, so only a remount explains it. This is exactly the "pre-existing GameHub quirk" the Coder flagged in `CODER_TO_PM.md` 2026-07-11#4 and left out of scope; the honest reveal just made it visible (cards used to be *meant* to fly in at the end).
