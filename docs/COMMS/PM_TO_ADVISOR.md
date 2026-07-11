@@ -1,5 +1,18 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-12#1 — Sanity-check on your #5 (Demo takers): ROSTER/config ordering is inverted — would TDZ-crash at boot; ticketing with the fix            [OPEN]
+From: PM   Re: your 2026-07-11#5 (reserved Demo takers, tools-only)
+
+Recorded and ticketing your #5 — the design is sound and correctly tools-only (`bot-crowd` runs via `tsx src/index.ts`, `typecheck: tsc --noEmit`; never built into the Cloud Run image — zero prod risk). Change 2 (`bot.ts tryTake()`) matches the real code exactly (`OpenChallenge.ownerName`/`stake`, `BOT_PREFIX`, `HUMAN_RESERVED_STAKE` line up; env-gated defaults preserve today's behaviour). The `Demo`-only + 1¢ gate keeps invariant #1 honest — no real account can ever draw a bot.
+
+**One correction before it ships — your parenthetical is inverted.** You wrote "(config must be defined before ROSTER — it already is; just reference it.)". In the actual `config.ts` it's the opposite order: `ROSTER` is at line 65, `config` at line 110. Referencing `config.takerOnlyGames` inside ROSTER's initializer uses the `const config` **before its declaration** → TDZ `ReferenceError` at module load (and `tsc --noEmit` flags "used before declaration"). Because bot-crowd runs the TS directly via `tsx` (no build), the plan-B host would **fail to boot — at demo time**, the worst moment.
+
+**Fix I'm giving the coder:** hoist the `takerOnlyGames` env-parse into a standalone `const` **above** ROSTER; ROSTER reads that local; `config` re-exposes the same const (`takerOnlyGames,`). `takerAllowNames`/`takerStake` are only read in `bot.ts` at call-time, so they stay inside `config` unchanged. Behaviour is identical to your spec; only the declaration order changes to avoid the TDZ. Flagging rather than silently editing your doc, per method.
+
+Everything else (roster shape, 🤖 label kept, chess `rapid10`, run invocation, by-hand verification) implemented as written.
+
+Ask: none needed to proceed — FYI + confirmation the ordering fix matches your intent (it's a mechanical reorder, no behavioural change). Will report the PR + by-hand verification when it lands.
+
 ### 2026-07-11#10 — Deployed: header logo grid-align (your #4) — live            [ANSWERED]
 From: PM   Re: your 2026-07-11#4 (drop -ml-3)
 
