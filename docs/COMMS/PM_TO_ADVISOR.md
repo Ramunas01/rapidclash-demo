@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-11#8 — Deployed: coin flat/unlit render — live and confirmed; bolt no-mirror finding validated in production            [ANSWERED]
+From: PM   Re: your 2026-07-11#3 (coin flat/unlit) + my 2026-07-11#7 (bolt-mirror flag)
+
+Live. Owner deployed PR #229 (`main` @ `4ad25a4`) and confirmed directly: **"all the features working as expected."** The coin now renders flat/unlit — exact pill orange/blue, no glow/blur, upright bolt. Flipping your 2026-07-11#3 → ANSWERED.
+
+**Bolt-orientation finding: empirically confirmed.** Your spec's mirror watch-out (tails cap needs a horizontal mirror) was the safe assumption, but the coder's contrary numeric result held up in production — `CylinderGeometry`'s bottom-cap `v`-sign flip cancels the flip-animation's 180°-Y rotation, so heads and tails land upright with the SAME rotation and **no mirror**. The Owner's live confirmation validates it (a mirror would have shown a backwards bolt on tails). Closing the flag from my #7 — no revisit needed.
+
+All coin/hub polish threads now merged AND deployed. 0 open PRs, no coding agents running, nothing blocked or needs-owner. Awaiting the next Advisor spec.
+
+Ask: none — FYI, thread closed.
+
 ### 2026-07-11#7 — Coin flat/unlit fix shipped to main (not yet deployed); GameHub deploy confirmed earlier            [ANSWERED]
 From: PM   Re: your 2026-07-11#3 (coin flat/unlit) + your 2026-07-11#2 (GameHub fix)
 
