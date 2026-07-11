@@ -13,61 +13,69 @@ interface Props {
 }
 
 /**
- * Top ribbon — transparent except the wordmark (left) and a pill control (right): the
- * Login/Sign-up auth-gate when logged out, the live wallet chip (balance ¢ + Wallet) when
- * signed in. Shared across hubs. `sticky top-0` (in-flow) on the body-scroll layout (#142):
- * it reserves the wordmark band at the top, then sticks as the page scrolls so content slides
- * behind it (the bar stays transparent over the scroll surface). `pt-[safe-area-inset-top]`
- * keeps the wordmark below the status bar under viewport-fit=cover; the safe-area strip above
- * it shows the #0B0B0B shell behind the transparent header.
+ * Top ribbon — solid #0B0B0B fill (the canonical `bg-background` token) except the wordmark
+ * (left) and a pill control (right): the Login/Sign-up auth-gate when logged out, the live
+ * wallet chip (balance ¢ + Wallet) when signed in. Shared across hubs. `sticky top-0` (in-flow)
+ * on the body-scroll layout (#142): it reserves the wordmark band at the top, then sticks as the
+ * page scrolls so content slides *underneath* it and disappears behind the solid fill (mirrors
+ * HubToolbar's full-viewport-width solid base — never a fresh literal, or we recreate the drift
+ * the unification removed; also stabilizes Safari's chrome-color sampling). `pt-[safe-area-inset-top]`
+ * keeps the wordmark below the status bar under viewport-fit=cover; the safe-area strip above it
+ * is now painted solid too, not the transparent-over-shell look this used to have.
+ *
+ * Structural note: the outer `<header>` is full-width (not `max-w-md`) so the solid fill spans
+ * the whole viewport on wide screens — only the inner row is `max-w-md`-constrained. The inner
+ * row also carries `pb-4`, restoring a resting-state gap below the header (Advisor #7).
  */
 export function HubRibbon({ balance, onLogo, onWallet, loggedIn = true }: Props) {
   return (
-    <header className="sticky top-0 z-20 mx-auto flex w-full max-w-md items-center justify-between bg-transparent px-4 pt-[env(safe-area-inset-top)]">
-      <button type="button" onClick={onLogo} aria-label="RapidClash — home" className="-ml-3 flex items-center">
-        <img src={logoUrl} alt="RapidClash" className="h-10 w-auto object-contain" />
-      </button>
+    <header className="sticky top-0 z-20 w-full bg-background pt-[env(safe-area-inset-top)]">
+      <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 pb-4">
+        <button type="button" onClick={onLogo} aria-label="RapidClash — home" className="-ml-3 flex items-center">
+          <img src={logoUrl} alt="RapidClash" className="h-8 w-auto object-contain" />
+        </button>
 
-      <div className="flex items-center gap-2">
-        {loggedIn ? (
-          <button
-            type="button"
-            onClick={onWallet}
-            aria-label="Open wallet"
-            data-testid="hub-wallet-chip"
-            className="flex items-center gap-2 rounded-full bg-surface py-1.5 pl-3.5 pr-1.5 transition-colors hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-          >
-            <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />
-            <span className="text-sm font-bold tabular-nums text-foreground" data-testid="hub-balance">
-              {balance === null ? '—' : formatCredits(balance)}
-            </span>
-            <span className="flex items-center gap-1.5 rounded-full bg-brand px-3.5 py-2 text-xs font-extrabold uppercase tracking-wide text-white">
-              <WalletGlyph />
-              Wallet
-            </span>
-          </button>
-        ) : (
-          <div className="flex items-center gap-1 rounded-full bg-surface py-1.5 pl-4 pr-1.5">
+        <div className="flex items-center gap-2">
+          {loggedIn ? (
             <button
               type="button"
               onClick={onWallet}
-              aria-label="Log in"
-              data-testid="hub-login-chip"
-              className="whitespace-nowrap px-2 py-1.5 text-[13px] font-bold tracking-wide text-foreground focus:outline-none"
+              aria-label="Open wallet"
+              data-testid="hub-wallet-chip"
+              className="flex items-center gap-2 rounded-full bg-surface py-1.5 pl-3.5 pr-1.5 transition-colors hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
             >
-              LOG IN
+              <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />
+              <span className="text-sm font-bold tabular-nums text-foreground" data-testid="hub-balance">
+                {balance === null ? '—' : formatCredits(balance)}
+              </span>
+              <span className="flex items-center gap-1.5 rounded-full bg-brand px-3.5 py-2 text-xs font-extrabold uppercase tracking-wide text-white">
+                <WalletGlyph />
+                Wallet
+              </span>
             </button>
-            <button
-              type="button"
-              onClick={onWallet}
-              aria-label="Sign up"
-              data-testid="hub-signin-chip"
-              className="whitespace-nowrap rounded-full bg-brand px-5 py-2.5 text-[13px] font-extrabold tracking-wide text-white transition-colors hover:brightness-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-            >
-              SIGN UP
-            </button>
-          </div>
-        )}
+          ) : (
+            <div className="flex items-center gap-1 rounded-full bg-surface py-1.5 pl-4 pr-1.5">
+              <button
+                type="button"
+                onClick={onWallet}
+                aria-label="Log in"
+                data-testid="hub-login-chip"
+                className="whitespace-nowrap px-2 py-1.5 text-[13px] font-bold tracking-wide text-foreground focus:outline-none"
+              >
+                LOG IN
+              </button>
+              <button
+                type="button"
+                onClick={onWallet}
+                aria-label="Sign up"
+                data-testid="hub-signin-chip"
+                className="whitespace-nowrap rounded-full bg-brand px-5 py-2.5 text-[13px] font-extrabold tracking-wide text-white transition-colors hover:brightness-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+              >
+                SIGN UP
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );
