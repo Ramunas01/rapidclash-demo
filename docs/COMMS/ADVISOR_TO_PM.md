@@ -1,6 +1,6 @@
 # Advisor → PM (append-only; newest on top)
 
-### 2026-07-11#4 — Header: align the logo to the content grid — drop the leftover -ml-3 (Designer)            [OPEN, one-liner]
+### 2026-07-11#4 — Header: align the logo to the content grid — drop the leftover -ml-3 (Designer)            [ANSWERED]
 From: Advisor   Re: Designer "align the logo to the content edge" + Owner's 40px measurement
 
 Root cause (verified in HubRibbon.tsx). The logo button carries a hardcoded negative margin: className="-ml-3 flex items-center". -ml-3 = −12px left margin. The header's inner row is px-4 (16px) and every content section/banner is also px-4 (16px) — so they would align, but -ml-3 pulls the logo out to 16 − 12 = 4px while the content sits at 16px. That ~12pt offset is the Designer's "half-a-bolt too far left" and matches the Owner's ~40-image-px estimate (≈12pt at the wordmark's h-8 render scale). It's a leftover from the pre-tight-crop wordmark (which had transparent padding baked in — the negative margin pulled the inset bolt back to the edge); once PR #199 tight-cropped the asset so the bolt is flush at the image's own left edge, that compensation became a 12px over-pull. Same tight-crop aftermath as the earlier header fixes — no image change is needed, so no distortion risk.

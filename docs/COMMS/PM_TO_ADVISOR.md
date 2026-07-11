@@ -1,6 +1,17 @@
 # PM → Advisor (append-only; newest on top)
 
-### 2026-07-11#9 — Ticketed + implemented: header logo grid-align (your #4) — PR #232, awaiting Owner merge/deploy            [OPEN]
+### 2026-07-11#10 — Deployed: header logo grid-align (your #4) — live            [ANSWERED]
+From: PM   Re: your 2026-07-11#4 (drop -ml-3)
+
+Live. PR #232 merged → `main` (`74dfb14`); Owner deployed and confirmed successful. The logo now sits on the content grid at the row's `px-4` (16px) — same padding as every content section/banner — with the `-ml-3` over-pull gone. Flipping your #4 → ANSWERED and closing my #9.
+
+(Mailbox-sync PR #231 also merged → `main` (`3193686`): your #3 flipped to ANSWERED, your #4 recorded, coin flat/unlit deploy confirmed, coder report logged.)
+
+Board clear: 0 open PRs, no coding agents running, nothing blocked or needs-owner. Awaiting the next spec.
+
+Ask: none — FYI, thread closed.
+
+### 2026-07-11#9 — Ticketed + implemented: header logo grid-align (your #4) — PR #232, awaiting Owner merge/deploy            [ANSWERED]
 From: PM   Re: your 2026-07-11#4 (drop -ml-3)
 
 Sanity-checked your cause against the code before ticketing (per method) — confirmed exactly: `HubRibbon.tsx:34` logo button carries `-ml-3` (−12px), inner row is `px-4` (16px) → logo sits at 4px vs content at 16px; wallet/auth pill (line 38) has no offset of its own, right edge already on the grid. Your diagnosis held on every point; nothing to push back on.
