@@ -1,5 +1,31 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-07-11#6 — Coinflip coin: flat/unlit render, exact colours, upright bolt (ADVISOR_TO_PM.md 2026-07-11#3)            [OPEN]
+From: Coder   Re: ADVISOR_TO_PM.md 2026-07-11#3
+
+Shipped, branch `fix/coinflip-coin-flat-unlit`. **PR #229.** Client-only visual fix in `apps/web/src/components/coin/Coin.tsx` (+ `index.css`, `Coin.test.tsx`, `three-stub.ts`). Motion/geometry untouched (`planFlip`, `easeOutCubic`, turn count, duration range, `rotateX`, camera) — materials/lights/glow/blur/bolt-orientation only.
+
+**What changed:**
+- `edgeMat`/`headsMat`/`tailsMat`: `MeshStandardMaterial` (with `metalness`/`roughness`) → `MeshBasicMaterial` (unlit). `SceneRefs` type updated.
+- Removed the scene's `AmbientLight` + two `DirectionalLight`s (key + brand-purple rim) and the now-unused `brandHex` read.
+- Removed `coin-glow` from the wrapper `<div>`'s className and deleted the now-orphaned `.coin-glow` utility from `index.css` (confirmed `Coin.tsx` was its only consumer).
+- Removed the per-frame `canvas.style.filter = blur(...)` logic, both `'none'` resets, and the `transition: 'filter .05s linear'` inline style — plus the `lastFrameRef`/speed-calc code that only existed to drive it.
+
+**Colour-space guard — verified necessary, not just defensive.** Read `three@0.185.1`'s actual installed source: `renderer.outputColorSpace` defaults to `SRGBColorSpace` already (confirmed at `WebGLRenderer`'s constructor), and `THREE.Color` (used for `edgeMat.color`) round-trips through that correctly on its own. But a hand-built `CanvasTexture` (used for `headsMat.map`/`tailsMat.map`) defaults to **`NoColorSpace`** — three's own doc comment says plainly "Most `map` textures set `texture.colorSpace = SRGBColorSpace`", i.e. it's the caller's job, not automatic. Without it, the canvas's sRGB pixels would be treated as already-linear and re-encoded on output, landing off the exact `--coin-heads-face`/`--coin-tails-face` hex. Added `texture.colorSpace = THREE.SRGBColorSpace` explicitly in `makeCapTexture` — this was a real fix, not belt-and-suspenders.
+
+**Bolt-orientation fix — confidence: high, verified numerically, not guessed.** No visual render harness exists here, so instead of eyeballing a rotation I wrote a standalone script against the real installed `three` package (pure geometry/UV/camera-projection math, no WebGL/mocking needed) to compute exactly where canvas-drawn points land on screen for both caps:
+1. Read `CylinderGeometry.generateCap()`'s actual source: top cap UV is `u=z/(2r)+0.5, v=x/(2r)+0.5`; the bottom cap flips the `v` sign via its own `sign=-1`.
+2. Composed that with the single `geometry.rotateX(π/2)` (unchanged) and the real camera (`fov 17`, `position (0.35,0.35,8)`, `lookAt(0,0,0)`) via `THREE.Vector3.project()`.
+3. Projected four asymmetric points off the real `BOLT_PATH` (top tip, bottom tip, far-left, far-right — a lightning bolt isn't symmetric, so these disambiguate both rotation direction and mirroring) through: (a) no fix, which reproduced the reported "sideways" bug; (b) `ctx.rotate(-π/2)` on the **heads** cap (`rotation.y=0`) — lands upright, correctly handed; (c) the **same** `-π/2` on the **tails** cap at `rotation.y=π` (the orientation tails actually faces the camera) — lands at **identical** screen coordinates to heads, also upright and correctly handed, **no mirror needed**; (d) as a control, added a hypothetical `ctx.scale(-1,1)` mirror to tails "to be safe" — this reproduced a backwards bolt, confirming a mirror would have been a regression, not a fix.
+
+Why heads and tails don't need different transforms despite facing opposite directions: `CylinderGeometry`'s own cap generator already bakes a sign flip into the bottom cap's `v` formula (for it facing -Y instead of +Y in the geometry's rest frame), and that flip exactly cancels the flip animation's own 180°-around-Y rotation that brings tails to face the camera. By the time tails is actually visible, its screen mapping is identical to heads'. This is a specific, verified cancellation for this exact geometry, not an assumed general rule. `makeCapTexture` still takes a `side: 'heads' | 'tails'` param (tags the texture's `.name`, keeps call sites self-documenting, leaves a hook if a future geometry change ever does need to diverge) — but today both branches use the identical rotation, no mirror.
+
+**Tests:** `three-stub.ts` renamed `MeshStandardMaterial` → `MeshBasicMaterial` (constructor type drops `metalness`/`roughness` so a stray prop at a call site is now a compile error); added `sceneAdded` (records every `Scene#add` call so tests can assert "no lights" without a Scene handle) and the real `SRGBColorSpace` string constant; `CanvasTexture` now tracks `.name`/`.colorSpace`. `Coin.test.tsx`: material assertions → `MeshBasicMaterial`; added tests for no lights in the scene, cap textures declaring `srgb` colour space, no `coin-glow` in the wrapper className, and no `blur()` filter ever appearing on the canvas across a full flip (previously asserted blur *did* appear — inverted). `planFlip`/`easeOutCubic`/turn-count/landing tests unchanged, still pass.
+
+**Verification:** `pnpm exec vitest run apps/web/src/test/Coin.test.tsx` (20/20), `.../CoinflipHub.test.tsx` (33/33), full `pnpm test` from repo root (75 files / 945 tests, all passing), `npx tsc -b apps/web` clean, `eslint`/`prettier` clean on changed files. (Note: `pnpm --filter web exec vitest run <file>` intermittently mis-resolves config/setup in this environment and gave false failures on unrelated files that also fail identically on unmodified `main` — the real signal is `pnpm test` from repo root, which is green.)
+
+Ask: none — FYI, ticket closed pending review.
+
 ### 2026-07-11#5 — GameHub: fixed the one-render idle flicker at decisive reveal (ADVISOR_TO_PM.md 2026-07-11#2)            [OPEN]
 From: Coder   Re: ADVISOR_TO_PM.md 2026-07-11#2
 
