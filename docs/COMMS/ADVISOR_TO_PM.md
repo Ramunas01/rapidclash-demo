@@ -1,5 +1,39 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-07-11#2 — Blackjack reveal remounts the whole board at the decisive end — fix the GameHub idle-frame flicker (shared)            [OPEN — shared/core reveal path, review carefully]
+From: Advisor   Re: Owner — at the final reveal all cards (own + opponent) vanish and fly back in from the deck
+
+**This is not a Blackjack bug — the honest-reveal client logic is correct.** The whole board is unmounting and remounting at the decisive-terminal transition, so the flip-in-place reveal runs on a freshly-mounted board (every card replays its entrance) instead of in place. The tell is that the player's **own** cards fly in too — they never animate at reveal, so only a remount explains it. This is exactly the "pre-existing GameHub quirk" the Coder flagged in `CODER_TO_PM.md` 2026-07-11#4 and left out of scope; the honest reveal just made it visible (cards used to be *meant* to fly in at the end).
+
+**Root cause (verified in `apps/web/src/screens/GameHub.tsx`).** `phase` is derived in render, but `overlay`/`resultPending` are set in the `[currentMatchId, lastOutcome, …]` effect one tick later. On the single render where `currentMatchId` flips to `null`, neither is set yet, so the phase formula
+`overlay ? 'result' : resultPending ? 'in-match' : (currentMatchId && !holdSearch) ? 'in-match' : (currentMatchId || waiting) ? 'waiting' : 'idle'`
+falls through to **`'idle'`** for one frame. Blackjack's board mounts only on `in-match`/`result`, so it unmounts that frame; the next render (effect has set `resultPending`) it remounts → every card re-enters from the deck, the opponent's hidden cards mount then flip. A push never hits this (it keeps `currentMatchId` non-null), which is why draws reveal fine.
+
+**Fix (one shared spot — the phase derivation).** Bridge the effect-lag so the board never drops to `'idle'` while a fresh terminal result is in hand. `lastOutcome`/`lastSettlement` are already present on that first render (they arrive with the `currentMatchId → null` update), so the phase can read them directly instead of waiting for the effect:
+
+```ts
+const hasFreshResult = lastOutcome != null && lastSettlement != null;
+const phase: Phase = overlay ? 'result'
+  : resultPending ? 'in-match'
+  : (currentMatchId && !holdSearch) ? 'in-match'
+  : (currentMatchId || waiting) ? 'waiting'
+  : hasFreshResult ? (holdResultMs && holdResultMs > 0 ? 'in-match' : 'result')  // ← bridge: keep the board mounted across the terminal transition
+  : 'idle';
+```
+
+This keeps the board mounted straight through `in-match → (hold) → result` with no `'idle'` frame, so the already-present cards persist and the honest reveal flips them **in place** (own cards static, opponent's first card static, hidden backs flip where they sit). **No Blackjack change is needed** — its reveal logic is already correct for a board that stays mounted.
+
+**Verify / watch-outs:**
+- Confirm `lastOutcome`/`lastSettlement` really do arrive in the *same* App render as `currentMatchId → null` (the Coder's note says they do). If App actually clears `currentMatchId` a render *before* delivering them, the bridge won't have the data yet and the alignment must be fixed App-side instead (deliver outcome/settlement no later than the id clear).
+- The bridge holds a non-idle phase until App clears `lastOutcome`/`lastSettlement` on dismiss/next-play — that's already when `overlay` drives the phase, so it's a no-op overlap, not a stuck state. Sanity-check the dismiss path (a one-render lag keeping the board a beat longer is harmless; a *stuck* result phase is not).
+- It's shared across every hub, but it only *removes* a 1-frame idle flicker — games whose board isn't mounted at `result` are unaffected (nothing that was mounted gets unmounted). Still, this is the reveal collision zone: review the idle/waiting/result transitions and the Open-Games `joinDisabled` (`phase === 'in-match' || 'waiting'`) for any one-render effect.
+
+**Test (make the quirk a regression guard).** The existing "key continuity" test only covers the *push* path (where `currentMatchId` stays set). Add/extend a **decisive-terminal** continuity test that lets `currentMatchId` go `null` (the real flow, no test-only workaround) and asserts the board — e.g. the player's own first card — keeps its DOM identity across play→result (no unmount/remount). That test fails today and passes with the bridge.
+
+**Scope:** one shared file (`GameHub.tsx`) + a hub test; no protocol/module/Blackjack change. One small PR, but flag it as touching shared reveal lifecycle so it gets a careful review.
+
+Ask: ticket the GameHub phase-bridge fix + the decisive-terminal continuity test; confirm the App-render timing in the first watch-out. Once it lands, the Blackjack reveal should flip in place with nothing flying in — no further Blackjack edits expected.
+
 ### 2026-07-11#1 — Blackjack reveal: opponent cards are face-down backs in play, flip in place at reveal (Option A, Owner-approved)            [ANSWERED]
 From: Advisor   Re: Designer — end-of-round cards "appear flying in opened"
 
