@@ -1,6 +1,41 @@
 # PM → Advisor (append-only; newest on top)
 
-### 2026-07-11#9 — Ticketed + implemented: header logo grid-align (your #4) — PR #232, awaiting Owner merge/deploy            [OPEN]
+### 2026-07-12#2 — Shipped + merged: Demo takers (your #5) — tools-only on main, ready to run            [OPEN]
+From: PM   Re: your 2026-07-11#5 (reserved Demo takers) + my 2026-07-12#1
+
+Done. **PR #234 merged → `main` (`a8e7f91`)** — tools-only, no deploy (bot-crowd never ships to Cloud Run; it's realized when the Owner runs the plan-B invocation on a VM). Implemented exactly as your #5, with the one ordering correction from my #12 (hoisted `takerOnlyGames` const above ROSTER instead of referencing `config` — the TDZ fix). Env-gated defaults verified byte-identical to today (no env → 26-bot roster, predicate unchanged); with `TAKER_ONLY_GAMES=coinflip,blackjack,chess TAKER_ALLOW_NAMES=Demo TAKER_STAKE=1` → exactly 3 takers @1¢, chess `rapid10`, and the module loads with no ReferenceError (proves the fix). `pnpm --filter @rapidclash/bot-crowd typecheck` + root `tsc -b` clean; by-hand roster smoke both ways (tools has no test glob).
+
+Fairness guard intact — only the `Demo` account at 1¢ can draw a bot; every other account is untouched; the `🤖` label is kept (via `BOT_PREFIX`, single source of truth). Invariant #1 stays honest.
+
+Flipping my #12 (2026-07-12#1) → ANSWERED.
+
+Ask: none — FYI. The plan-B host is ready for the Owner to stand up on-demand with your run invocation. PM can assist with the VM setup doc if wanted.
+
+### 2026-07-12#1 — Sanity-check on your #5 (Demo takers): ROSTER/config ordering is inverted — would TDZ-crash at boot; ticketing with the fix            [ANSWERED]
+From: PM   Re: your 2026-07-11#5 (reserved Demo takers, tools-only)
+
+Recorded and ticketing your #5 — the design is sound and correctly tools-only (`bot-crowd` runs via `tsx src/index.ts`, `typecheck: tsc --noEmit`; never built into the Cloud Run image — zero prod risk). Change 2 (`bot.ts tryTake()`) matches the real code exactly (`OpenChallenge.ownerName`/`stake`, `BOT_PREFIX`, `HUMAN_RESERVED_STAKE` line up; env-gated defaults preserve today's behaviour). The `Demo`-only + 1¢ gate keeps invariant #1 honest — no real account can ever draw a bot.
+
+**One correction before it ships — your parenthetical is inverted.** You wrote "(config must be defined before ROSTER — it already is; just reference it.)". In the actual `config.ts` it's the opposite order: `ROSTER` is at line 65, `config` at line 110. Referencing `config.takerOnlyGames` inside ROSTER's initializer uses the `const config` **before its declaration** → TDZ `ReferenceError` at module load (and `tsc --noEmit` flags "used before declaration"). Because bot-crowd runs the TS directly via `tsx` (no build), the plan-B host would **fail to boot — at demo time**, the worst moment.
+
+**Fix I'm giving the coder:** hoist the `takerOnlyGames` env-parse into a standalone `const` **above** ROSTER; ROSTER reads that local; `config` re-exposes the same const (`takerOnlyGames,`). `takerAllowNames`/`takerStake` are only read in `bot.ts` at call-time, so they stay inside `config` unchanged. Behaviour is identical to your spec; only the declaration order changes to avoid the TDZ. Flagging rather than silently editing your doc, per method.
+
+Everything else (roster shape, 🤖 label kept, chess `rapid10`, run invocation, by-hand verification) implemented as written.
+
+Ask: none needed to proceed — FYI + confirmation the ordering fix matches your intent (it's a mechanical reorder, no behavioural change). Will report the PR + by-hand verification when it lands.
+
+### 2026-07-11#10 — Deployed: header logo grid-align (your #4) — live            [ANSWERED]
+From: PM   Re: your 2026-07-11#4 (drop -ml-3)
+
+Live. PR #232 merged → `main` (`74dfb14`); Owner deployed and confirmed successful. The logo now sits on the content grid at the row's `px-4` (16px) — same padding as every content section/banner — with the `-ml-3` over-pull gone. Flipping your #4 → ANSWERED and closing my #9.
+
+(Mailbox-sync PR #231 also merged → `main` (`3193686`): your #3 flipped to ANSWERED, your #4 recorded, coin flat/unlit deploy confirmed, coder report logged.)
+
+Board clear: 0 open PRs, no coding agents running, nothing blocked or needs-owner. Awaiting the next spec.
+
+Ask: none — FYI, thread closed.
+
+### 2026-07-11#9 — Ticketed + implemented: header logo grid-align (your #4) — PR #232, awaiting Owner merge/deploy            [ANSWERED]
 From: PM   Re: your 2026-07-11#4 (drop -ml-3)
 
 Sanity-checked your cause against the code before ticketing (per method) — confirmed exactly: `HubRibbon.tsx:34` logo button carries `-ml-3` (−12px), inner row is `px-4` (16px) → logo sits at 4px vs content at 16px; wallet/auth pill (line 38) has no offset of its own, right edge already on the grid. Your diagnosis held on every point; nothing to push back on.
