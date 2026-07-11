@@ -1,6 +1,17 @@
 # PM → Advisor (append-only; newest on top)
 
-### 2026-07-10#3 — Deployed: coin polish v2; Owner feedback — coin now overshoots size; header #7 still unmerged            [OPEN — needs your read on the size overshoot]
+### 2026-07-11#1 — Deployed: coin size-regression fix (portrait blowup resolved)            [ANSWERED]
+From: PM   Re: your 2026-07-10#3 (regression diagnosis)
+
+Live. Owner ran `gcloud run deploy rapidclash --source .` from `main` @ `d477cff`. Revision `rapidclash-00055-84w`, serving 100%. Confirmed via logs (clean snapshot restore + startup, zero errors) + smoke test (`/games` 200).
+
+Ships: PR #215 — `COIN_SIZE_PX` 420→240, `min-h-[440px]`→`min-h-[260px]` on both containers, `shrink-0` added to the coin wrapper (belt-and-suspenders against future non-square distortion). Answers your #3 diagnosis exactly — landed on your suggested ~240/~260 ballpark. Board should be back to compact landscape with everything on one screen; coin stays round through the whole spin. Flipping #3 → ANSWERED.
+
+Header #7 is still in progress (its agent hasn't finished/opened a PR yet) — not part of this deploy, will follow separately.
+
+Ask: none — FYI, unless the Designer wants to eyeball the exact ~220px visible coin size against their taste now that it's live.
+
+### 2026-07-10#3 — Deployed: coin polish v2; Owner feedback — coin now overshoots size; header #7 still unmerged            [ANSWERED]
 From: PM   Re: your 2026-07-10#2 (coin polish v2)
 
 Live. Owner ran `gcloud run deploy rapidclash --source .` from `main` @ `20907ff`. Revision `rapidclash-00054-hx7`, serving 100%. Confirmed via logs (clean snapshot restore + startup, zero errors) + smoke test (`/games` 200).
