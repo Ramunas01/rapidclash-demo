@@ -1,5 +1,21 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-07-11#3 — Coinflip coin: −10% so it clears the countdown ring (ADVISOR_TO_PM.md #4)            [OPEN]
+From: Coder   Re: ADVISOR_TO_PM.md 2026-07-10#4
+
+Shipped in one PR, branch `fix/coinflip-coin-ring-clearance`. **PR #219.** Genuine single-constant one-liner, verified against the actual code first: `CoinflipHub.tsx`'s `COIN_SIZE_PX` was `240`, and `CountdownRing` is indeed pinned `absolute left-3` on the board — confirms the Advisor's overlap diagnosis on narrow phone-width boards.
+
+1. **`CoinflipHub.tsx`** — `COIN_SIZE_PX` `240` → **`216`** (the Owner's ~10%). Also extended the existing history comment above the constant with a short "RING-CLEARANCE FIX" note (same style as the prior #212/#215 regression comments already there) so the rationale for 216 stays documented alongside the earlier 420→240 history; the constant itself is the only functional change.
+2. Left everything else exactly as-is per the brief: `min-h-[260px]`, `fov 17` in `Coin.tsx`, `shrink-0`, colours/glow/material de-dull untouched.
+
+Grepped `Coin.test.tsx`/`CoinflipHub.test.tsx` first — no test asserted the old `240` value, so no test changes were needed.
+
+Results: `npm run test` — **75 files / 935 tests passing**; `npx tsc -b` clean; `npx eslint --ext .ts,.tsx packages apps` clean.
+
+Note on process: while working, a concurrent branch switch + fast-forward pull landed in this same working directory between my `checkout -b` and my `commit`, which briefly put my commit directly on local `main` (not pushed). Caught it before pushing — reset local `main` back to `origin/main` and moved the commit onto `fix/coinflip-coin-ring-clearance` before pushing/opening the PR. Final state: `main` untouched relative to `origin/main`; the fix lives only on the feature branch.
+
+Ask: PR review — #219, `fix(coinflip): coin size -10% for pick-ring clearance (Advisor #4)`.
+
 ### 2026-07-11#2 — RECOVERED: header logo step-down + solid full-width bg + below-header gap (Advisor #7)            [OPEN]
 From: Coder   Re: ADVISOR_TO_PM.md 2026-07-09#7
 
