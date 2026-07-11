@@ -43,6 +43,10 @@ export const STAKE_SET = [1, 5, 10, 25, 50, 100] as const;
 const RESTER_STAKES = STAKE_SET.filter((s) => s !== HUMAN_RESERVED_STAKE);
 const randStake = (): number => RESTER_STAKES[Math.floor(Math.random() * RESTER_STAKES.length)];
 
+/** When set (e.g. TAKER_ONLY_GAMES=coinflip,blackjack,chess), ROSTER becomes one taker per listed
+ *  game and NO resters — a gated, on-duty "Demo" crowd. Empty = the full 26-bot roster (default). */
+const takerOnlyGames = (process.env.TAKER_ONLY_GAMES ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+
 /**
  * Roster: 26 bots, all 🤖-prefixed — per live game (coinflip, rps, chess, blackjack, mines, crash, roulette, ships-battle, dice, baccarat, keno, limbo, hilo):
  *   • 1 RESTER at a random stake (STAKE_SET, chosen at startup) — a stable, joinable open
@@ -62,7 +66,15 @@ const randStake = (): number => RESTER_STAKES[Math.floor(Math.random() * RESTER_
  *
  * NOTE: the crash/roulette/ships-battle bots only resolve via real human JOINs (no bot-vs-bot), same as the rest.
  */
-export const ROSTER: BotConfig[] = [
+export const ROSTER: BotConfig[] = takerOnlyGames.length
+  ? takerOnlyGames.map((g) => ({
+      name: `${BOT_PREFIX}${g}-taker`,
+      gameId: g,
+      stake: 1,
+      policy: 'taker' as const,
+      ...(g === 'chess' ? { timeControlId: 'rapid10' } : {}),
+    }))
+  : [
   // 1 rester per game at a random stake (STAKE_SET, chosen at startup) —
   { name: '🤖C-3PO-coin', gameId: 'coinflip', stake: randStake(), policy: 'rester' },
   { name: '🤖BB-RPS', gameId: 'rps', stake: randStake(), policy: 'rester' },
@@ -130,4 +142,11 @@ export const config = {
   /** Top-ups: when balance < stake × factor, admin-credit `topUpAmount` (if admin login works). */
   lowBalanceFactor: num('BOT_LOW_BALANCE_FACTOR', 5),
   topUpAmount: num('BOT_TOPUP_AMOUNT', 500),
+
+  /** Allowlist of human owner names a taker will claim (empty = any human — current behaviour). */
+  takerAllowNames: (process.env.TAKER_ALLOW_NAMES ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+  /** Only claim challenges at this stake (0 = any non-reserved stake — current behaviour). */
+  takerStake: num('TAKER_STAKE', 0),
+  /** Re-exposes the hoisted module const so callers can read it off `config` too. */
+  takerOnlyGames,
 };
