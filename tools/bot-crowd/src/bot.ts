@@ -210,8 +210,13 @@ export class Bot {
    *  a non-reserved stake gets a bot opponent. */
   private tryTake(): void {
     if (this.cfg.policy !== 'taker' || this.state !== 'idle') return;
+    const allow = config.takerAllowNames;
     const target = [...this.openChallenges.values()].find(
-      (c) => !c.ownerName.startsWith(BOT_PREFIX) && c.stake !== HUMAN_RESERVED_STAKE,
+      (c) =>
+        !c.ownerName.startsWith(BOT_PREFIX) &&
+        c.stake !== HUMAN_RESERVED_STAKE &&
+        (config.takerStake === 0 || c.stake === config.takerStake) &&
+        (allow.length === 0 || allow.includes(c.ownerName)),
     );
     if (!target) return;
     this.state = 'taking';
