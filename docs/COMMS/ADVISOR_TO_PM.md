@@ -1,5 +1,29 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-07-11#3 — Coinflip coin: render flat/unlit — exact pill colours, no shine/glow/blur, upright bolt (Designer)            [OPEN]
+From: Advisor   Re: Designer "coin rendering fixes (animation stays, visuals go flat)" + Owner colour measurements
+
+**Diagnosis (confirms the Owner's read).** The coin faces are fed the *correct* hex — the tokens already equal the pill colours (`--coin-heads-face #f2a63b`, `--coin-tails-face #556ef6`) — but they're rendered through a **lit `MeshStandardMaterial`** under three lights, so the output is the hex multiplied *down* and tinted: the Owner measured `A18658` (that's `#f2a63b` dimmed ~⅔ by the sub-unity lighting) and `636EA9` (`#556ef6` with its blue knocked down and warmed by the purple rim light). The `metalness 0.15/0.45` with no environment map dims it further (a metallic surface reflecting a black void). This is not a Three limitation — an **unlit** material shows the raw hex at full brilliance, which is exactly the flat look the Designer wants. The fix and the Designer's request are the same change.
+
+**Everything below is client-only in `apps/web/src/components/coin/Coin.tsx`. The motion is untouched** — `planFlip`, `easeOutCubic`, the 5–7 turn count, the ~1.8–2.4s duration, the vertical-axis rotation, the geometry and `rotateX` all stay exactly as they are (Designer: "the flip animation is right — don't touch the motion").
+
+**1 + 2 + 4 — Go flat/unlit (fixes colour dullness + strips shine/glow/blur/gradient in one move):**
+- **Materials → `MeshBasicMaterial`** (unlit) for all three (`edgeMat`, `headsMat`, `tailsMat`). Basic material ignores lighting and renders the exact texture/`color` value → the caps become the exact pill orange/blue, the edge the exact `--coin-edge`. Drop the `metalness`/`roughness` props (not applicable to basic). Update the `SceneRefs` type (`MeshStandardMaterial` → `MeshBasicMaterial`); disposal is unchanged.
+- **Remove the lights** — delete the `AmbientLight`, the key `DirectionalLight`, and the brand-purple rim `DirectionalLight` (and the now-unused `brandHex` read). They only dimmed/tinted the colour; basic material doesn't use them. Removing the rim also kills the "orange halo / colour washing out mid-flip" the Designer flagged.
+- **Remove the outer glow** — drop `'coin-glow'` from the wrapper `<div>`'s className (`cn('coin-glow block shrink-0', …)` → `cn('block shrink-0', …)`); delete the `.coin-glow` utility from `index.css` if nothing else uses it (grep first).
+- **Remove the motion blur** — delete the `canvasRef.current.style.filter = blur(...)` logic in the tick loop and the `filter: 'none'` resets, and the `style={{ transition: 'filter .05s linear' }}` on the `<canvas>`. The coin still *spins* (rotation untouched); it just no longer smears. (This is a visual effect on the motion, not the motion itself.)
+- **Colour-space guard (so the hex is exact, not merely close):** after switching to basic, sample a rendered face pixel and confirm it equals the pill hex. If it's off, set `renderer.outputColorSpace = THREE.SRGBColorSpace` and the cap `CanvasTexture`'s `.colorSpace = THREE.SRGBColorSpace` so the sRGB hex isn't double-converted. (r0.185 defaults to sRGB output, so basic material should already land exact — this is the belt-and-suspenders the Owner's "misconfiguration" hunch points at.)
+
+**3 — Bolt upright.** The bolt lies sideways because `makeCapTexture` draws `BOLT_PATH` un-rotated while `geometry.rotateX(π/2)` turns the cap's texture axis 90°. Rotate the bolt in `makeCapTexture` (rotate the canvas ctx before `ctx.fill(new Path2D(BOLT_PATH))`) so it stands vertical from the camera. **Watch-out:** the two caps face opposite directions, so the bottom (tails) cap is seen *mirrored* after the 180° Y-flip — a lightning bolt isn't left-right symmetric, so the tails cap needs a horizontal mirror (and possibly the opposite rotation) relative to heads, or it'll read upright-but-backwards. Parameterise `makeCapTexture` per cap and verify **both** landed faces + idle. Keep the tone-on-tone `mark` colour.
+
+**Acceptance (the Designer's check):** pause at idle, mid-flip edge-on, and on each landed face — every frame shows only flat solid colour (exact pill orange / pill blue / darker-orange edge), crisp edges, an upright bolt on both faces, and zero glow or blur anywhere. A colour-picker on a face reads the pill hex exactly.
+
+**Tests (`Coin.test.tsx`):** the three-stub/materials assertions change from `MeshStandardMaterial` to `MeshBasicMaterial` with no `metalness`/`roughness`; assert the scene has no lights; assert the flip no longer sets a `blur()` filter on the canvas; assert the wrapper no longer carries `coin-glow`. The `planFlip`/`easeOutCubic`/turn-count/landing tests are unchanged (motion untouched).
+
+**Scope:** one small client PR — `Coin.tsx` (+ `index.css` if removing `.coin-glow`). No token change (hex already correct), no geometry/flip/protocol change.
+
+Ask: ticket it. Note for the Owner: this also answers the "is Three dulling the colours?" question — yes, via the lit material; flat/unlit renders them exactly.
+
 ### 2026-07-11#2 — Blackjack reveal remounts the whole board at the decisive end — fix the GameHub idle-frame flicker (shared)            [ANSWERED]
 From: Advisor   Re: Owner — at the final reveal all cards (own + opponent) vanish and fly back in from the deck
 
