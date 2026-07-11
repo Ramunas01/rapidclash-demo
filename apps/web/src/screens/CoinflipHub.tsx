@@ -24,8 +24,13 @@ const HOLD_RESULT_MS = 2600;
  *  the panel width (so it's never squeezed non-square — see also Coin.tsx's `shrink-0` belt-and-
  *  suspenders) and renders a visible coin of ~215-220px at the same fov-17 ~90% fill ratio — much
  *  bigger than the pre-#212 ~93px, while keeping the board compact enough to fit one screen. Shared
- *  by both the idle hero and the in-match board. */
-const COIN_SIZE_PX = 240;
+ *  by both the idle hero and the in-match board.
+ *
+ *  RING-CLEARANCE FIX (ADVISOR_TO_PM.md 2026-07-10#4): 240 → 216 (~10% down). The centred coin's
+ *  left edge grazed the pick-window CountdownRing (pinned `absolute left-3` on the board) on narrow
+ *  phone-width boards. 216 renders a visible coin ≈195px — still large and present — while clearing
+ *  the ring. Nothing else (min-h, fov-17 framing, shrink-0, colours/glow) changed. */
+const COIN_SIZE_PX = 216;
 
 // The H/T pick pills mirror the flat coin's face colours one-to-one (orange heads / card-back-blue
 // tails) — the fill IS the identity cue. Token-driven, shared with FlatCoin (no hardcoded hex).
