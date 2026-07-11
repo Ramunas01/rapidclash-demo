@@ -15,6 +15,8 @@ const rngWith = (seed: number): Rng => ({ next: () => 0, int: () => seed });
 interface Hand {
   cards: Card[];
   done: boolean;
+  /** Present only on the in-play redacted OPPONENT hand (Advisor #1, honest reveal). */
+  handSize?: number;
 }
 interface Bj {
   players: [string, string];
@@ -272,13 +274,43 @@ describe('blackjackModule.viewFor — redaction', () => {
     expect(aView.hands[B].done).toBe(false); // opponent status hidden
     expect(aView.seed).toBeUndefined(); // seed stripped (would reveal hidden cards)
   });
-  it('reveals everything at terminal (both hands + seed)', () => {
+
+  // ── Advisor #1 (2026-07-11): honest reveal — the opponent's hand SIZE is now surfaced during play
+  // (a face-down back per hidden card, client-side) while values, stand/bust status, and the seed
+  // stay hidden exactly as before. This is the redaction-guard invariant for the new field. ──
+  it("surfaces the opponent's true hand size (`handSize`) in play, alongside the one visible card, own hand untouched", () => {
+    const s = state([card('10'), card('9')], [card('7'), card('8'), card('2')], { seed: 999 });
+    const aView = as(bj.viewFor(s, A));
+    expect(aView.hands[B].handSize).toBe(3); // B's real hand size, even though only 1 card is shown
+    expect(aView.hands[B].cards).toHaveLength(1); // still exactly one card VALUE
+    expect(aView.hands[B].done).toBe(false); // still hidden
+    expect(aView.seed).toBeUndefined(); // still hidden
+    // The own hand branch never carries `handSize` (the client falls back to `cards.length` there).
+    expect(aView.hands[A].handSize).toBeUndefined();
+  });
+
+  it("a hit bumps the opponent's `handSize` without exposing the new card's VALUE", () => {
+    const s = state([card('10'), card('9')], [card('7'), card('8')]); // B has 2 cards
+    const beforeView = as(bj.viewFor(s, A));
+    expect(beforeView.hands[B].handSize).toBe(2);
+
+    const afterHit = bj.applyMove(s, 'hit', ctx(B)).state; // B hits → 3 cards
+    const afterView = as(bj.viewFor(afterHit, A));
+    expect(afterView.hands[B].handSize).toBe(3); // count incremented
+    expect(afterView.hands[B].cards).toHaveLength(1); // still exactly one VALUE exposed
+    expect(afterView.hands[B].cards[0]).toEqual(card('7')); // the same, original visible card
+  });
+
+  it('reveals everything at terminal (both hands + seed) — full reveal is unchanged', () => {
     const s = state([card('10'), card('9')], [card('10'), card('8')], { seed: 999 });
     const done = bothStand(s);
     const view = as(bj.viewFor(done, B));
     expect(view.hands[A].cards).toHaveLength(2); // opponent fully revealed
     expect(view.hands[B].cards).toHaveLength(2);
     expect(view.seed).toBe(999); // revealed for verifiability
+    // `handSize` is irrelevant once fully revealed — the client reads `cards.length` instead.
+    expect(view.hands[A].handSize).toBeUndefined();
+    expect(view.hands[B].handSize).toBeUndefined();
   });
 });
 

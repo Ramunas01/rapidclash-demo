@@ -24,6 +24,11 @@ interface Hand {
   cards: Card[];
   /** True once the player has stood, busted, or timed-out (auto-stand) — they then wait. */
   done: boolean;
+  /** Public-safe hand size, set ONLY on the in-play redacted view of the OPPONENT's hand (viewFor) so
+   *  the client can render a face-down back for every card they actually hold (and slide a new one in
+   *  on each hit) without learning any card VALUE, stand/bust status, or the seed. Unset on the own-hand
+   *  branch and the terminal (fully-revealed) branch — the client falls back to `cards.length` there. */
+  handSize?: number;
 }
 
 /**
@@ -247,8 +252,10 @@ export const blackjackModule: GameModule = {
       me.done = true; // stand
     }
 
-    // During play, broadcast NOTHING about either hand (the actor sees their own card via
-    // viewFor; the opponent must not learn of a hit, a stand, or a bust until the reveal).
+    // During play, broadcast NOTHING about either hand's VALUES or stand/bust status (the actor sees
+    // their own cards via viewFor; the opponent must not learn a card value, a stand, or a bust until
+    // the reveal). The opponent's hand SIZE is the one exception — viewFor surfaces it as `handSize` so
+    // the client can render a face-down back for every card they hold (Advisor #1, honest reveal).
     let events: GameEvent[] = [];
     if (next.players.every((p) => next.hands[p].done)) {
       events = resolveRound(next);
@@ -275,14 +282,15 @@ export const blackjackModule: GameModule = {
     // so the shared draw-beat reader sees the same field it reads on every other tie-replay game.
     if (terminal(s)) return { ...s, replays: s.draws };
 
-    // In play → own hand in full; opponent shows EXACTLY ONE card, with hit count and
-    // stand/bust status hidden; the seed is stripped (it would reveal the hidden cards).
+    // In play → own hand in full; opponent shows EXACTLY ONE card plus their true hand SIZE (so a
+    // face-down back can stand in for every card they hold), with card values beyond the one shown,
+    // stand/bust status, and the seed all still hidden until terminal.
     const redactedHands: Record<PlayerId, Hand> = {};
     for (const p of s.players) {
       if (p === playerId) {
         redactedHands[p] = s.hands[p];
       } else {
-        redactedHands[p] = { cards: s.hands[p].cards.slice(0, 1), done: false };
+        redactedHands[p] = { cards: s.hands[p].cards.slice(0, 1), done: false, handSize: s.hands[p].cards.length };
       }
     }
     return {

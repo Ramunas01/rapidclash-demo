@@ -106,6 +106,10 @@ export interface BlackjackCard {
 export interface BlackjackHand {
   cards: BlackjackCard[];
   done: boolean;
+  /** In-play redacted OPPONENT hand only: the true hand size, so the client can render a face-down
+   *  back for every card they hold (Advisor #1, honest reveal). Absent on the own-hand branch and at
+   *  terminal (both fully revealed) — fall back to `cards.length` there. */
+  handSize?: number;
 }
 export interface BlackjackView {
   players: [string, string];
