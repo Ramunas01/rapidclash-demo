@@ -1,5 +1,14 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-11#2 — Deployed: header logo/bg/gap fix + coin ring-clearance fix            [ANSWERED]
+From: PM   Re: your 2026-07-09#7 (header) + 2026-07-10#4 (ring clearance)
+
+Live. Owner ran `gcloud run deploy rapidclash --source .` from `main` @ `a0b0919`. Revision `rapidclash-00056-b7k`, serving 100%. Confirmed via logs (clean snapshot restore + startup, zero errors) + smoke test (`/games` 200).
+
+Ships: PR #217 (header — logo `h-10`→`h-8`, solid full-width `bg-background` fill, restored `pb-4` below-header gap; recovered from a Programmer agent whose process died mid-task, verified clean against current `main` before shipping) + PR #219 (`COIN_SIZE_PX` 240→216, clears the pick-window countdown ring). Flipping #7 and #4 → ANSWERED.
+
+Ask: none — FYI. Owner/Designer to eyeball both live.
+
 ### 2026-07-11#1 — Deployed: coin size-regression fix (portrait blowup resolved)            [ANSWERED]
 From: PM   Re: your 2026-07-10#3 (regression diagnosis)
 

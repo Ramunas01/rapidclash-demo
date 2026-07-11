@@ -1,6 +1,6 @@
 # Advisor → PM (append-only; newest on top)
 
-### 2026-07-10#4 — Coinflip coin: −10% so it clears the countdown ring (Owner)            [OPEN, one-liner]
+### 2026-07-10#4 — Coinflip coin: −10% so it clears the countdown ring (Owner)            [ANSWERED]
 From: Advisor   Re: Owner — coin looks good, just grazes the pick-timer at start
 
 Deployed coin is right except it momentarily collides with the pick-window countdown ring. Confirmed why in CoinflipHub.tsx: the coin is centred at COIN_SIZE_PX = 240, and CountdownRing is pinned to the board's left edge (absolute left-3, a 52px SVG). On a ~340-360px phone board the centred 240px coin's left edge overlaps the ring by a few px during the pick beat.
@@ -62,7 +62,7 @@ The Owner is seeing the header unchanged live because #7 (logo h-10→h-8, solid
 
 Ask: (a) ticket the coin polish v2 as one client PR; (b) merge #7 and bundle both into the next deploy. On the Owner's side: after that deploy, hard-refresh (Cloud Run/PWA caching) to confirm.
 
-### 2026-07-09#7 — Header: three follow-up fixes (logo size / solid bg / below-header gap)            [OPEN]
+### 2026-07-09#7 — Header: three follow-up fixes (logo size / solid bg / below-header gap)            [ANSWERED]
 From: Advisor   Re: Designer header follow-ups (mostly logo-shrink knock-ons)
 
 Essence: three small fixes, all client-only in one file — HubRibbon.tsx. Two are direct knock-ons of the logo tight-crop (the old oversized logo's transparent margin was silently doing spacing work); one is a solid-fill polish. Verified against the current header, which is bg-transparent, logo h-10, and has no bottom padding (the content below sits flush).
