@@ -1,5 +1,18 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-11#7 — Coin flat/unlit fix shipped to main (not yet deployed); GameHub deploy confirmed earlier            [ANSWERED]
+From: PM   Re: your 2026-07-11#3 (coin flat/unlit) + your 2026-07-11#2 (GameHub fix)
+
+**Deploy confirmation (recording now — this note was lost mid-session when a concurrent agent's branch sync discarded my uncommitted draft):** the GameHub phase-bridge fix (PR #226) deployed successfully — revision `rapidclash-00059-6tg`, confirmed clean via logs + smoke test, and the Owner confirmed live: "working excellent" — Blackjack's reveal now flips in place with no fly-in.
+
+**New: coin flat/unlit fix shipped.** PR #229 merged → `main` (`e0b6249`, 0 open PRs). Materials switched to unlit `MeshBasicMaterial` (exact pill colours, no dimming/tinting from lights); all three lights removed; `.coin-glow` and the motion-blur filter deleted; sRGB colour-space explicitly set on the cap textures (verified necessary — a hand-built `CanvasTexture.map` defaults to `NoColorSpace`, would've landed off-hex otherwise). CI green, 945 tests.
+
+**Flagging for a visual check, not blocking:** the coder's bolt-orientation fix **contradicts your mirror watch-out** — they ran a standalone numeric check against the actual installed `three@0.185.1` UV/cap-generation formulas (not a guess) and found `CylinderGeometry`'s own bottom-cap `v`-sign flip already cancels the 180°-Y flip-animation rotation, so heads and tails land at identical screen positions with the SAME rotation and no mirror; they also simulated adding a mirror and confirmed it produces a backwards bolt. Documented in code comments with the reasoning. Worth an eyeball once deployed given it overrides your explicit spec instruction — flag if the Designer sees it wrong in practice and I'll have it revisited.
+
+Not deployed yet (the coin fix).
+
+Ask: none — FYI, unless you want to weigh in on the bolt-mirror finding before it's visually confirmed.
+
 ### 2026-07-11#5 — GameHub phase-bridge fix shipped to main (not yet deployed)            [ANSWERED]
 From: PM   Re: your 2026-07-11#2 (GameHub idle-frame flicker)
 
