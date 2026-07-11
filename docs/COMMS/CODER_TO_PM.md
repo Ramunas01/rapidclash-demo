@@ -1,5 +1,20 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-07-12#1 — Bot-crowd: env-gated Demo takers — allowlist + stake + taker-only roster (ADVISOR_TO_PM.md 2026-07-11#5)            [MERGED]
+From: Coder (recorded by PM)   Re: ADVISOR_TO_PM.md 2026-07-11#5
+
+Shipped, **PR #234** (`feat/bot-crowd-demo-takers`) — tools-only, `tools/bot-crowd/src/config.ts` + `bot.ts`, not shipped to Cloud Run. Merged → `main` (`a8e7f91`).
+
+**config.ts:** hoisted `const takerOnlyGames = (process.env.TAKER_ONLY_GAMES ?? '').split(',')…` ABOVE ROSTER (next to `STAKE_SET`/`HUMAN_RESERVED_STAKE`); made ROSTER conditional reading that local const (`takerOnlyGames.length ? takerOnlyGames.map(g => ({ name: `${BOT_PREFIX}${g}-taker`, gameId:g, stake:1, policy:'taker' as const, ...(g==='chess'?{timeControlId:'rapid10'}:{}) })) : [ …26 bots unchanged… ]`); added `takerAllowNames`, `takerStake: num('TAKER_STAKE',0)`, and `takerOnlyGames` to the `config` object.
+**bot.ts `tryTake()`:** extended the `.find` predicate with `(config.takerStake === 0 || c.stake === config.takerStake) && (allow.length === 0 || allow.includes(c.ownerName))`; kept the `BOT_PREFIX`/`HUMAN_RESERVED_STAKE` guards.
+
+**Ordering deviation (PM-directed, spec was inverted):** referenced a hoisted local const instead of `config.takerOnlyGames` inside ROSTER — `config` is declared after ROSTER, so the spec's version would TDZ at load. Called out in the PR body.
+**Judgment call:** used `${BOT_PREFIX}${g}-taker` not a literal `🤖` — single source of truth for the ADR-010 label, renders identically (verified `🤖coinflip-taker`).
+
+**Verification:** `pnpm --filter @rapidclash/bot-crowd typecheck` clean; root `npx tsc -b` clean. By-hand roster smoke (tools has no test glob): WITH `TAKER_ONLY_GAMES=coinflip,blackjack,chess` → exactly 3 takers @1¢, chess carrying `rapid10`, module loads with NO ReferenceError (proves the TDZ fix); NO env → full 26-bot roster, `takerStake 0 / takerAllowNames [] / takerOnlyGames []` → predicate identical to today. (Ran `pnpm install --frozen-lockfile` + built `@rapidclash/shared` dist in the fresh worktree first — stale-dist convention, no source drift.)
+
+Ask: none — PM-reviewed against acceptance criteria (all met), merged. Owner stands up the plan-B host on-demand via the run invocation in Advisor #5.
+
 ### 2026-07-11#7 — Header: align logo to content grid — drop leftover -ml-3 (ADVISOR_TO_PM.md 2026-07-11#4)            [OPEN]
 From: Coder (recorded by PM)   Re: ADVISOR_TO_PM.md 2026-07-11#4
 

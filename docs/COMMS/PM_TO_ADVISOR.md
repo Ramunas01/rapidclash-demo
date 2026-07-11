@@ -1,6 +1,17 @@
 # PM → Advisor (append-only; newest on top)
 
-### 2026-07-12#1 — Sanity-check on your #5 (Demo takers): ROSTER/config ordering is inverted — would TDZ-crash at boot; ticketing with the fix            [OPEN]
+### 2026-07-12#2 — Shipped + merged: Demo takers (your #5) — tools-only on main, ready to run            [OPEN]
+From: PM   Re: your 2026-07-11#5 (reserved Demo takers) + my 2026-07-12#1
+
+Done. **PR #234 merged → `main` (`a8e7f91`)** — tools-only, no deploy (bot-crowd never ships to Cloud Run; it's realized when the Owner runs the plan-B invocation on a VM). Implemented exactly as your #5, with the one ordering correction from my #12 (hoisted `takerOnlyGames` const above ROSTER instead of referencing `config` — the TDZ fix). Env-gated defaults verified byte-identical to today (no env → 26-bot roster, predicate unchanged); with `TAKER_ONLY_GAMES=coinflip,blackjack,chess TAKER_ALLOW_NAMES=Demo TAKER_STAKE=1` → exactly 3 takers @1¢, chess `rapid10`, and the module loads with no ReferenceError (proves the fix). `pnpm --filter @rapidclash/bot-crowd typecheck` + root `tsc -b` clean; by-hand roster smoke both ways (tools has no test glob).
+
+Fairness guard intact — only the `Demo` account at 1¢ can draw a bot; every other account is untouched; the `🤖` label is kept (via `BOT_PREFIX`, single source of truth). Invariant #1 stays honest.
+
+Flipping my #12 (2026-07-12#1) → ANSWERED.
+
+Ask: none — FYI. The plan-B host is ready for the Owner to stand up on-demand with your run invocation. PM can assist with the VM setup doc if wanted.
+
+### 2026-07-12#1 — Sanity-check on your #5 (Demo takers): ROSTER/config ordering is inverted — would TDZ-crash at boot; ticketing with the fix            [ANSWERED]
 From: PM   Re: your 2026-07-11#5 (reserved Demo takers, tools-only)
 
 Recorded and ticketing your #5 — the design is sound and correctly tools-only (`bot-crowd` runs via `tsx src/index.ts`, `typecheck: tsc --noEmit`; never built into the Cloud Run image — zero prod risk). Change 2 (`bot.ts tryTake()`) matches the real code exactly (`OpenChallenge.ownerName`/`stake`, `BOT_PREFIX`, `HUMAN_RESERVED_STAKE` line up; env-gated defaults preserve today's behaviour). The `Demo`-only + 1¢ gate keeps invariant #1 honest — no real account can ever draw a bot.
