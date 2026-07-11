@@ -16,6 +16,9 @@ import {
   rendererRenderCalls,
   rendererDisposed,
   geometryDisposed,
+  sceneAdded,
+  AmbientLight,
+  DirectionalLight,
 } from './three-stub.js';
 
 // jsdom has no real WebGL context — `THREE.WebGLRenderer` would throw when constructed. Stub the
@@ -151,6 +154,34 @@ describe('Coin — resting state', () => {
     expect(heads.map).not.toBe(tails.map); // distinct textures per face
   });
 
+  it('is unlit: MeshBasicMaterial with no metalness/roughness, and the scene has no lights (Advisor #3)', () => {
+    render(<Coin />);
+    expect(capturedMaterials).toHaveLength(3);
+    for (const mat of capturedMaterials) {
+      // MeshBasicMaterial genuinely has no metalness/roughness slot (unlike the old
+      // MeshStandardMaterial) — assert they're absent, not just unset, so a regression back to a lit
+      // material (which would add these) is caught even if someone leaves them undefined.
+      expect(mat).not.toHaveProperty('metalness');
+      expect(mat).not.toHaveProperty('roughness');
+    }
+    // No AmbientLight, no DirectionalLight — flat/unlit means nothing lights the coin at all.
+    expect(sceneAdded.some((o) => o instanceof AmbientLight)).toBe(false);
+    expect(sceneAdded.some((o) => o instanceof DirectionalLight)).toBe(false);
+  });
+
+  it('cap textures declare sRGB colour space so the rendered face matches the pill hex exactly', () => {
+    render(<Coin />);
+    const [, heads, tails] = capturedMaterials;
+    expect(heads.map?.colorSpace).toBe('srgb');
+    expect(tails.map?.colorSpace).toBe('srgb');
+  });
+
+  it('wrapper no longer carries the removed coin-glow CSS glow', () => {
+    render(<Coin />);
+    const wrapper = screen.getByTestId('coin-face');
+    expect(wrapper.className).not.toMatch(/coin-glow/);
+  });
+
   it('resolves colours from the CSS tokens at runtime — never a hardcoded literal', () => {
     const getComputedStyleSpy = vi.spyOn(window, 'getComputedStyle');
     getComputedStyleSpy.mockReturnValue({
@@ -201,16 +232,25 @@ describe('Coin — flip animation (full motion)', () => {
     );
   });
 
-  it('motion blur tracks spin speed: the canvas blurs while flipping and clears once landed', async () => {
+  it('no motion blur: the canvas never gets a CSS blur() filter, mid-flip or landed (Advisor #3)', async () => {
     installFakeAnimationClock();
     const { container, rerender } = render(<Coin face={null} />);
-    rerender(<Coin face="tails" />);
     const canvas = container.querySelector('canvas')!;
-    await waitFor(() => expect(canvas.style.filter).toMatch(/blur\(/));
+    // Poll the canvas's filter across the whole flip (mid-spin, edge-on, and landed) — never a blur.
+    let sawBlur = false;
+    const observer = new MutationObserver(() => {
+      if (/blur\(/.test(canvas.style.filter)) sawBlur = true;
+    });
+    observer.observe(canvas, { attributes: true, attributeFilter: ['style'] });
+    rerender(<Coin face="tails" />);
     await waitFor(() =>
       expect(screen.getByTestId('coin-face').getAttribute('data-face')).toBe('tails')
     );
-    expect(canvas.style.filter).toBe('none');
+    observer.disconnect();
+    expect(sawBlur).toBe(false);
+    expect(canvas.style.filter).toBe('');
+    // The old `transition: filter .05s linear` inline style is gone too — nothing left to transition.
+    expect(canvas.style.transition).toBe('');
   });
 
   it('never recolours mid-spin: the same three material instances persist across two different flips', async () => {

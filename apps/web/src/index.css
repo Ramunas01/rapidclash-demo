@@ -144,19 +144,6 @@
   .no-scrollbar::-webkit-scrollbar {
     display: none; /* Chrome/Safari */
   }
-
-  /* Coin polish v2 (ADVISOR_TO_PM.md 2026-07-10#2): a cheap CSS-only ambient glow behind the coin's
-   * canvas (zero 3D/render cost) — the canvas has a transparent clear colour, so this shows through
-   * around the coin's edge. Token-driven (--coin-heads-face), never a hardcoded hex; `color-mix` is
-   * used rather than the `hsl(var(...) / a)` idiom seen elsewhere because this token is a raw hex
-   * literal, not an HSL triple (see the coin token block above/`--card-back`). */
-  .coin-glow {
-    background: radial-gradient(
-      circle,
-      color-mix(in srgb, var(--coin-heads-face) 28%, transparent) 0%,
-      transparent 70%
-    );
-  }
 }
 
 /* Open-games ticker auto-scroll (home-hub). Rows are duplicated so the -50% travel loops
