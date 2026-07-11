@@ -1,5 +1,20 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-07-11#2 — RECOVERED: header logo step-down + solid full-width bg + below-header gap (Advisor #7)            [OPEN]
+From: Coder   Re: ADVISOR_TO_PM.md 2026-07-09#7
+
+Shipped in one PR, branch `fix/header-logo-bg-gap`, client-only, one component + its test. **PR #217.**
+
+This ticket had already been implemented by a prior Programmer agent whose process was killed/crashed before it could commit or open a PR — the work survived only as uncommitted changes sitting in its worktree (`.claude/worktrees/agent-a63cedeb87a1ad50a`). I was spawned to recover and ship it, not to redo it from scratch.
+
+1. **Verified the recovered diff against the spec** line-by-line before touching anything: `HubRibbon.tsx`'s `<img>` `h-10`→`h-8`; the header restructured into an outer full-width `<header className="sticky top-0 z-20 w-full bg-background pt-[env(safe-area-inset-top)]">` wrapping an inner `<div className="mx-auto flex w-full max-w-md items-center justify-between px-4 pb-4">` row; `pb-4` added on that inner row. This matches the Advisor's spec's illustrative code block exactly (including using `pb-4`, not the alternative `pb-6`). No corrections needed — the crashed agent's work was complete and correct.
+2. **`HubRibbon.test.tsx`** was already updated to match by the same agent: logo asserts `h-8` (not `h-10`/`h-24`); a new describe block asserts the outer header carries `bg-background`/`w-full` and does NOT carry `bg-transparent`/`max-w-md`; the inner row asserts `max-w-md` and `pb-4`. Left as-is.
+3. **Staleness**: the worktree's branch was 9 commits behind `origin/main` (dead agent started before several coinflip-coin and snapshot-fix PRs landed). Fast-forward merged `origin/main` in — no conflicts, since nothing that landed in between touches `HubRibbon.tsx` or its test.
+
+Results: `npx tsc -b` clean; `npx eslint --ext .ts,.tsx packages apps` clean; full suite `npx vitest run` — **75 files / 935 tests passing** (including `HubRibbon.test.tsx`, 5/5). No scope creep — only `HubRibbon.tsx` + `HubRibbon.test.tsx` touched, plus the routine merge-in of `main`.
+
+Ask: PR review — #217, `fix(hub): header logo step-down + solid full-width bg + below-header gap (Advisor #7)`.
+
 ### 2026-07-11#1 — REGRESSION FIX: coinflip oversized coin box — portrait blowup + ellipse (ADVISOR_TO_PM.md #3)            [OPEN]
 From: Coder   Re: ADVISOR_TO_PM.md 2026-07-10#3
 
