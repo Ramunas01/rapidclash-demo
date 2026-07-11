@@ -22,8 +22,10 @@ function baseProps(over: Partial<Props> = {}): Props {
   };
 }
 
-/** In-play view: own hand full (2 cards), opponent redacted to exactly ONE card. `replays` mirrors
- *  `draws` (as the real viewFor does) so the shared draw-beat reader sees the same field. */
+/** In-play view: own hand full (2 cards), opponent redacted to exactly ONE card VALUE plus their
+ *  true `handSize` (Advisor #1, honest reveal — the field the real `viewFor` now surfaces so the
+ *  client can render a face-down back per hidden card). `replays` mirrors `draws` (as the real
+ *  viewFor does) so the shared draw-beat reader sees the same field. */
 function inPlayView(over: Partial<BlackjackView> = {}): BlackjackView {
   const merged: BlackjackView = {
     players: ['pid', 'bob'],
@@ -31,7 +33,7 @@ function inPlayView(over: Partial<BlackjackView> = {}): BlackjackView {
     draws: 0,
     hands: {
       pid: { cards: [{ rank: '10', suit: '♠' }, { rank: '7', suit: '♥' }], done: false },
-      bob: { cards: [{ rank: 'K', suit: '♣' }], done: false },
+      bob: { cards: [{ rank: 'K', suit: '♣' }], done: false, handSize: 2 },
     },
     ...over,
   };
@@ -117,7 +119,7 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       draws: 1,
       hands: {
         pid: { cards: [{ rank: '9', suit: '♠' }, { rank: '8', suit: '♥' }], done: false },
-        bob: { cards: [{ rank: '4', suit: '♣' }], done: false },
+        bob: { cards: [{ rank: '4', suit: '♣' }], done: false, handSize: 2 },
       },
     });
     render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: replay, legalMoves: ['hit', 'stand'] })} />);
@@ -307,7 +309,7 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
           {...baseProps({
             currentMatchId: 'm1',
             legalMoves: done ? [] : ['hit', 'stand'],
-            gameState: inPlayView({ hands: { pid: { cards, done }, bob: { cards: [c('K', '♣')], done: false } } }),
+            gameState: inPlayView({ hands: { pid: { cards, done }, bob: { cards: [c('K', '♣')], done: false, handSize: 2 } } }),
           })}
         />,
       );
@@ -502,13 +504,14 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       expect(screen.getByTestId('hub-board').querySelector('img')).toBeNull();
     });
 
-    it('the face-down hole card sits UNDER the first opponent card (z-order fixed before the deal)', () => {
+    it('the face-down back sits OVER the first opponent card, even while hidden (Advisor #1: the old "sits under" exception is retired — standard ascending fan applies to every slot)', () => {
       render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: [] })} />);
       const opp = within(screen.getByTestId('opp-hand'));
       const firstCard = opp.getByTestId('card'); // the one revealed face-up card
-      const hole = opp.getByTestId('card-back'); // the persistent hole card (face-down)
-      // Lower z-index = underneath. The hole must never sit on top of the first card.
-      expect(Number(hole.style.zIndex)).toBeLessThan(Number(firstCard.style.zIndex));
+      const back = opp.getByTestId('card-back'); // a persistent face-down back
+      // Higher z-index = on top. The back now stacks OVER the first card, same as everything else —
+      // no special "sits under while hidden" exception (BLACKJACK.md).
+      expect(Number(back.style.zIndex)).toBeGreaterThan(Number(firstCard.style.zIndex));
     });
 
     it('reveal is continuous: in play the hole is face-down; at terminal it reveals IN PLACE (the same slot becomes a card, no card-back), and opponent hits deal in', async () => {
@@ -595,11 +598,125 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       await waitFor(() => {
         expect(within(screen.getByTestId('opp-hand')).getAllByTestId('card')).toHaveLength(3);
       }, { timeout: 2000 });
-      // DOM order = deal order: first card, the revealed hole, the hit. Ascending z → hole OVER first,
-      // hit OVER hole (the face-down "underneath" exception ends the moment it flips).
+      // DOM order = deal order: first card, the revealed back, the hit. Ascending z throughout — the
+      // standard OVER fan applies to every slot now, hidden or revealed alike (BLACKJACK.md).
       const z = within(screen.getByTestId('opp-hand')).getAllByTestId('card').map((el) => Number(el.style.zIndex));
-      expect(z[0]).toBeLessThan(z[1]); // revealed hole over the first card
-      expect(z[1]).toBeLessThan(z[2]); // hit over the hole, in deal order
+      expect(z[0]).toBeLessThan(z[1]); // revealed back over the first card
+      expect(z[1]).toBeLessThan(z[2]); // hit over the back, in deal order
+    });
+  });
+
+  // ── Advisor #1 (2026-07-11): honest reveal — the opponent's hand size is now surfaced during play,
+  // so a face-down back stands in for EVERY hidden card (not just one hole card), and a live hit
+  // slides a new back in. Nothing ever appears already face-up from off-table. ──
+  describe('Advisor #1: honest reveal — face-down backs match the true hand size', () => {
+    it('in play, the opponent renders exactly `handSize` total slots: one visible card + (handSize-1) face-down backs', () => {
+      const view = inPlayView({
+        hands: {
+          pid: { cards: [c('10'), c('7', '♥')], done: false },
+          bob: { cards: [c('K', '♣')], done: false, handSize: 4 }, // opponent already holds 4 cards
+        },
+      });
+      render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view, legalMoves: ['hit', 'stand'] })} />);
+      const opp = within(screen.getByTestId('opp-hand'));
+      expect(opp.getAllByTestId('card')).toHaveLength(1); // still exactly one VALUE ever shown
+      expect(opp.getAllByTestId('card-back')).toHaveLength(3); // handSize(4) − 1 visible = 3 backs
+    });
+
+    it('a live opponent hit adds exactly ONE new face-down back — never a face-up value', () => {
+      const before = inPlayView({
+        hands: {
+          pid: { cards: [c('10'), c('7', '♥')], done: false },
+          bob: { cards: [c('K', '♣')], done: false, handSize: 2 },
+        },
+      });
+      const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: before, legalMoves: [] })} />);
+      expect(within(screen.getByTestId('opp-hand')).getAllByTestId('card-back')).toHaveLength(1);
+
+      const afterHit = inPlayView({
+        hands: {
+          pid: { cards: [c('10'), c('7', '♥')], done: false },
+          bob: { cards: [c('K', '♣')], done: false, handSize: 3 }, // opponent hit — size rose by one
+        },
+      });
+      rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: afterHit, legalMoves: [] })} />);
+      const opp = within(screen.getByTestId('opp-hand'));
+      expect(opp.getAllByTestId('card-back')).toHaveLength(2); // one MORE back — the live draw
+      expect(opp.getAllByTestId('card')).toHaveLength(1); // still just the one value — nothing leaked
+    });
+
+    it('a back already on the table during play (handSize already ≥3 before the round ends) survives the terminal reveal as the SAME DOM node — no fly-in remount for hit-cards', async () => {
+      const inPlay = inPlayView({
+        hands: {
+          pid: { cards: [c('K'), c('Q', '♥')], done: true },
+          bob: { cards: [c('9', '♣')], done: false, handSize: 3 }, // TWO backs already live on the table
+        },
+      });
+      // `currentMatchId` stays 'm1' across both renders (the terminal `gameState` — winner set —
+      // arrives over `match.state` before the separate `match.end` clears the match id in real usage;
+      // matches the existing "key continuity" test's pattern, and keeps GameHub's own `phase` at
+      // 'in-match' throughout so only the board's OWN reveal logic — not an unrelated GameHub phase
+      // transition — is under test here).
+      const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlay, legalMoves: [] })} />);
+      const backsBefore = within(screen.getByTestId('opp-hand')).getAllByTestId('card-back');
+      expect(backsBefore).toHaveLength(2);
+      const secondBackNode = backsBefore[1]; // index 2 — a back seen live, before any reveal
+
+      const terminal = inPlayView({
+        hands: {
+          pid: { cards: [c('K'), c('Q', '♥')], done: true },
+          bob: { cards: [c('9', '♣'), c('8', '♦'), c('4')], done: true },
+        },
+        winner: 'pid',
+      });
+      rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
+
+      await waitFor(() => {
+        expect(within(screen.getByTestId('opp-hand')).getAllByTestId('card')).toHaveLength(3);
+      }, { timeout: 2000 });
+      // Same DOM node, now flipped in place — never unmounted/remounted (the old fly-in path always
+      // minted a BRAND NEW element for a hit-card at reveal; this proves that path is gone).
+      expect(within(screen.getByTestId('opp-hand')).getAllByTestId('card')[2]).toBe(secondBackNode);
+    });
+
+    it('a slot present ONLY in the terminal frame (never seen as a live back) still arrives face-down and only then flips — it never pops in already face-up', async () => {
+      const inPlay = inPlayView({
+        hands: {
+          pid: { cards: [c('K'), c('Q', '♥')], done: true },
+          // Only ONE back ever seen live (handSize 2) — the eventual 3rd card is the atomic
+          // resolving/busting hit, appended + resolved server-side in the same step.
+          bob: { cards: [c('9', '♣')], done: false, handSize: 2 },
+        },
+      });
+      const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlay, legalMoves: [] })} />);
+      expect(within(screen.getByTestId('opp-hand')).getAllByTestId('card-back')).toHaveLength(1);
+
+      const terminal = inPlayView({
+        hands: {
+          pid: { cards: [c('K'), c('Q', '♥')], done: true },
+          bob: { cards: [c('9', '♣'), c('8', '♦'), c('4')], done: true },
+        },
+        winner: 'pid',
+      });
+      // `currentMatchId` stays 'm1' — see the comment in the previous test for why.
+      rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
+      await waitFor(() => {
+        expect(within(screen.getByTestId('opp-hand')).getAllByTestId('card')).toHaveLength(3);
+      }, { timeout: 2000 });
+
+      // DOM order: index 0 (own visible card, a plain PlayingCard with no flip wrapper), index 1
+      // (was already a back — no extra delay), index 2 (brand new at reveal — the resolving hit).
+      const cards = within(screen.getByTestId('opp-hand')).getAllByTestId('card');
+      const flipTransform = (el: HTMLElement) => (el.firstElementChild as HTMLElement)?.style.transform ?? '';
+
+      // Give the flips a little wall-clock time to start ticking (well under either's flip duration).
+      await new Promise((r) => setTimeout(r, 150));
+      // Index 1 (already on the table live) has no extra delay — by now it has visibly started
+      // opening (no longer sitting at the fully-closed 180°).
+      expect(flipTransform(cards[1])).not.toBe('rotateY(180deg)');
+      // Index 2 (never seen live — mounts already-revealed) still slides in face-down first: it is
+      // STILL fully closed at this point, proving it never popped straight to face-up on arrival.
+      expect(flipTransform(cards[2])).toBe('rotateY(180deg)');
     });
   });
 });
