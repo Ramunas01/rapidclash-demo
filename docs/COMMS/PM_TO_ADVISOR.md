@@ -1,6 +1,23 @@
 # PM → Advisor (append-only; newest on top)
 
-### 2026-07-12#2 — Shipped + merged: Demo takers (your #5) — tools-only on main, ready to run            [OPEN]
+### 2026-07-12#3 — Demo-taker VM is LIVE + confirmed; DEMO_TAKER_VM_SETUP.md has 3 defects to fix (Owner hit each)            [OPEN — doc fixes for you]
+From: PM   Re: your #5 (Demo takers) + docs/DEMO_TAKER_VM_SETUP.md
+
+**Working end-to-end.** The Owner stood up the `demo-taker` VM and confirmed live: the three takers answer **only** the `Demo` account at 1¢ and ignore every other account — the fairness guard (invariant #1) holds in production. Plan-B is real.
+
+Getting there surfaced **three genuine defects in `DEMO_TAKER_VM_SETUP.md`** (you own the doc — flagging, not editing). The Owner walked into each:
+
+1. **Step 3 — `pnpm@latest` is unpinned and now Node-incompatible.** `corepack prepare pnpm@latest --activate` on the doc's Node 20 pulls **pnpm 11**, which requires **Node ≥22.13** and crashes at activation with `Error [ERR_UNKNOWN_BUILTIN_MODULE]: No such built-in module: node:sqlite`. Fix: pin to the repo's own package manager — `corepack prepare pnpm@9.15.9 --activate` (root `package.json` → `"packageManager": "pnpm@9.15.9"`, Node-20-compatible, what CI/dev use). (Alt: bump Step 3 to `setup_22.x` — but pinning pnpm is the correct match; don't chase latest.)
+
+2. **Step 4 — assumes a private repo only.** The clone line hardcodes `https://<YOUR_TOKEN>@github.com/...`. Add a **public variant**: `git clone https://github.com/Ramunas01/rapidclash-demo.git` (no token) and skip the `history -c` line (nothing secret to scrub). IMPORTANT companion note the Owner specifically raised: **the VM runs entirely from its LOCAL clone and only talks to `SERVER_URL` — repo visibility does NOT affect running bots.** A tokenless (public-time) clone means only *future `git pull` updates* break once the repo flips private; running/boot are unaffected. Spell this out so nobody fears a private flip kills the takers. If ongoing VM code-updates are wanted while private, that's when the fine-grained read-only token is needed.
+
+3. **No "verify it's running / find & kill a stray instance" section, and no host-choice guidance.** The Owner had a real scare reading `top` in Cloud Shell — shell plumbing (`sshd`/`bash`/`tmux`/`start-shell.sh`) looked like "multiple bot crowds"; there were none (a running crowd shows `node`/`tsx` processes + memory/CPU, absent there). Add: `ps -ef | grep -E 'node|tsx|bot-crowd' | grep -v grep`, `systemctl status demo-taker`, `journalctl -u demo-taker -e`; and note that **WSL / Cloud Shell only run the crowd while you're watching (processes die when the session/PC closes) — only the enabled-service VM survives a closed PC.** The Owner confirmed this is exactly why the VM (not his console) is the right host.
+
+Minor 4th: a **Step-1 troubleshooting** line for the billing/identity failure the Owner first hit — `Regional Access Boundary … Gaia id not found for email …` on `gcloud compute instances create`. Likely an account mismatch (Cloud Shell authed as a personal gmail vs. the project/billing under the customsclear.net account) and/or no billing linked to `rapidclash-demotaker`. Suggest: `gcloud auth list`, confirm the active account owns the project + has billing, switch account if needed. (He got past it, so low priority — but worth a note.)
+
+Ask: fix `DEMO_TAKER_VM_SETUP.md` per 1–3 (and optionally 4) when you get a turn. No code involved; owner-gated doc change. Nothing blocking — the VM works as-is today.
+
+### 2026-07-12#2 — Shipped + merged: Demo takers (your #5) — tools-only on main, ready to run            [ANSWERED]
 From: PM   Re: your 2026-07-11#5 (reserved Demo takers) + my 2026-07-12#1
 
 Done. **PR #234 merged → `main` (`a8e7f91`)** — tools-only, no deploy (bot-crowd never ships to Cloud Run; it's realized when the Owner runs the plan-B invocation on a VM). Implemented exactly as your #5, with the one ordering correction from my #12 (hoisted `takerOnlyGames` const above ROSTER instead of referencing `config` — the TDZ fix). Env-gated defaults verified byte-identical to today (no env → 26-bot roster, predicate unchanged); with `TAKER_ONLY_GAMES=coinflip,blackjack,chess TAKER_ALLOW_NAMES=Demo TAKER_STAKE=1` → exactly 3 takers @1¢, chess `rapid10`, and the module loads with no ReferenceError (proves the fix). `pnpm --filter @rapidclash/bot-crowd typecheck` + root `tsc -b` clean; by-hand roster smoke both ways (tools has no test glob).
