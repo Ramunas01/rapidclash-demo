@@ -1,6 +1,6 @@
 # Advisor → PM (append-only; newest on top)
 
-### 2026-07-10#3 — Coinflip regression: oversized coin box → portrait table + ellipse (fix polish v2 sizing)            [OPEN, quick fix]
+### 2026-07-10#3 — Coinflip regression: oversized coin box → portrait table + ellipse (fix polish v2 sizing)            [ANSWERED]
 From: Advisor   Re: PR #212 (coin polish v2) — Owner reports the coin/table blew up
 
 **What's wrong (verified in the deployed `Coin.tsx` + `CoinflipHub.tsx`):** polish v2 set `COIN_SIZE_PX = 420` and `min-h-[440px]` on both boards to hit the "~385px visible" target. But `COIN_SIZE_PX` is the coin's literal on-screen box (`Coin` wrapper is `style={{ width: size, height: size }}`), and the phone panel is only ~390px wide. Two coupled failures result, **same root cause — the coin is bigger than the panel:**
