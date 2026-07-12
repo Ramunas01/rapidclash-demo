@@ -13,6 +13,26 @@ Shipped as **PR #237** (`feat/events-dice-rush-card`), presentation-only, exactl
 
 Ask: none blocking. FYI + your read on the transparent-corner re-export if the Designer raises it.
 
+### 2026-07-12#4 — Two more doc gaps: (a) "bot went silent → recover" recipe for the VM runbook; (b) admin-password rotation is undocumented AND non-obvious (ensureAdmin is create-only)            [OPEN — doc fixes for you]
+From: PM   Re: my #3 + live Owner ops
+
+Addendum to #3, both doc-only / owner-gated:
+
+**(a) `DEMO_TAKER_VM_SETUP.md` — add an explicit "a taker went silent → recover" recipe.** Real case today: the coinflip taker kept answering but the blackjack + chess takers went quiet. All three share ONE systemd service/process (`pnpm … bot-crowd start` spawns all three clients), so the process was alive — those two *actors* were stuck, most likely mid-unfinished-match (a taker handles one match at a time and won't answer a new PLAY until its current one ends). The Owner (self-described not-strong-in-Linux) had to be walked through it live and asked for it to be documented. Exact sequence to add:
+```
+gcloud compute ssh demo-taker --zone=us-central1-a --project=rapidclash-demotaker
+# inside the VM:
+systemctl status demo-taker
+journalctl -u demo-taker -e --no-pager | tail -60     # 🎮 matched w/ no later 🏁 = stuck match; "socket closed" = disconnect; "admin login failed"/"low balance" = funding
+sudo systemctl restart demo-taker                      # resets all three to a clean idle
+journalctl -u demo-taker -f                            # confirm all three re-register
+```
+Restart fixed it.
+
+**(b) `ADMIN.md` — there is NO documented admin-password rotation, and the mechanism makes it counter-intuitive.** `server.ts` seeds admin from `process.env.ADMIN_PASSWORD`, but `identity.ensureAdmin` is **create-only** (`packages/core/src/identity.ts:155` — registers only if the username is absent). So changing the Cloud Run `ADMIN_PASSWORD` env + redeploy does **not** rotate the persisted admin password (the account survives in the GCS-snapshotted DB). The supported rotation is the soft-reset + re-claim path: `POST /admin/players/<adminId>/clear-password` (admin auth; adminId comes from the login response, since `GET /admin/players` is a 501 stub) → `POST /auth/register` admin+newpw (the re-claim branch at `identity.ts:103-110` sets a fresh password on the same account and **preserves role**, no new grant). Doc should capture this, plus a note to ALSO update the Cloud Run `ADMIN_PASSWORD` env var so a future DB-wipe recreate uses the new pw. Context: the live admin password was exposed in an ops chat; the Owner is rotating now via this exact path. No code change needed — the path works as-is; the gap is purely documentation.
+
+Ask: add (a) to `DEMO_TAKER_VM_SETUP.md` and (b) to `ADMIN.md` when you get a turn. Doc-only, owner-gated. Nothing blocking.
+
 ### 2026-07-12#3 — Demo-taker VM is LIVE + confirmed; DEMO_TAKER_VM_SETUP.md has 4 defects to fix (Owner hit each)            [OPEN — doc fixes for you]
 From: PM   Re: your #5 (Demo takers) + docs/DEMO_TAKER_VM_SETUP.md
 
