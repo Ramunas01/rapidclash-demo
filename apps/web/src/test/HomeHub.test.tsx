@@ -314,17 +314,23 @@ describe('HomeHubScreen — grid taxonomy + controls (design frame)', () => {
     expect(screen.queryByTestId('home-tile-mines')).toBeNull();
   });
 
-  it('Events shows the Coin Flip tournament announcement (1 Sept 2026) — no $ / prize copy', async () => {
+  it('Events shows the Dice Rush tournament card image — no $ / prize copy', async () => {
     const { container } = render(<HomeHubScreen {...baseProps()} />);
     await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
 
     fireEvent.click(screen.getByTestId('home-cat-events'));
     const events = screen.getByTestId('home-events');
-    expect(events.textContent).toMatch(/Coin Flip Showdown/i);
-    expect(events.textContent).toMatch(/1 September 2026/i);
+    // The announcement copy is baked into the image — the Events card is now a single <img>.
+    expect(events.tagName).toBe('IMG');
+    const src = events.getAttribute('src');
+    expect(src).toBeTruthy();
+    // Vite resolves the asset import to a URL that carries the filename; if a
+    // future transform stubs it out, the alt below still pins it to Dice Rush.
+    if (src && /dice-rush/i.test(src)) expect(src).toMatch(/dice-rush/i);
+    expect(events.getAttribute('alt')).toMatch(/Dice Rush/i);
     // The grid of tiles is replaced by the announcement.
     expect(screen.queryByTestId('home-tile-coinflip')).toBeNull();
-    // Play-money only — no real-money / prize-pool copy.
+    // Play-money only — no real-money / prize-pool copy (trivially true now; kept as a guard).
     expect(container.textContent ?? '').not.toMatch(/\$/);
     expect(events.textContent ?? '').not.toMatch(/prize pool/i);
   });

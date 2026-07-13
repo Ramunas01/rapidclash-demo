@@ -14,7 +14,7 @@ import hero2 from '../assets/banners/hero-2.webp';
 // Third slide of the Designer's final 3-banner set (trophy / "Win Real Rivals' Stakes").
 import heroFront from '../assets/banners/hero-front.webp';
 import boltMark from '../assets/brand/bolt-mark.webp';
-import boltDecor from '../assets/brand/bolt-decor.webp';
+import diceRush from '../assets/events/dice-rush.webp';
 
 /** Demo taxonomy for the Filter control (Card / Table / Logic). Client-side, presentation only. */
 const GAME_KIND: Record<string, 'card' | 'table' | 'logic'> = {
@@ -454,26 +454,12 @@ function TileArt({ art, name }: { art?: string; name: string }) {
 function EventsBanner() {
   return (
     <div className="px-4">
-      <div data-testid="home-events" className="relative overflow-hidden rounded-[14px] border border-border bg-surface p-5">
-        <div className="pointer-events-none absolute -bottom-5 -right-3 h-28 w-28 opacity-90">
-          <img src={boltDecor} alt="" aria-hidden="true" className="h-full w-full object-contain" />
-        </div>
-        <span className="inline-block rounded-full bg-brand/20 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.1em] text-brand">
-          Tournament · Save the date
-        </span>
-        <h3 className="relative mt-3 text-xl font-black">Coin Flip Showdown</h3>
-        <p className="relative mt-1 text-sm font-bold text-foreground/80">1 September 2026</p>
-        <p className="relative mt-2 max-w-[78%] text-[12.5px] leading-relaxed text-muted-foreground">
-          A bracket of pure 50/50 nerve — last player standing takes the crown. Play-money entry, bragging rights only.
-        </p>
-        <button
-          type="button"
-          aria-disabled="true"
-          className="relative mt-4 inline-flex cursor-default items-center gap-2 rounded-[10px] bg-brand/30 px-4 py-2.5 text-[13px] font-bold text-white/80"
-        >
-          Invitations open soon
-        </button>
-      </div>
+      <img
+        src={diceRush}
+        alt="Dice Rush tournament — one roll per round, highest number wins the bracket"
+        data-testid="home-events"
+        className="block h-auto w-full"
+      />
     </div>
   );
 }
