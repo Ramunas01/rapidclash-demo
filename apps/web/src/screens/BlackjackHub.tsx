@@ -27,18 +27,14 @@ const DEAL_STAGGER_S = 0.22;
 const FRAME_DELAY_MS = 1000;
 
 /** Cards fan with the NEWEST card ON TOP (standard overlapping fan): each card's z-order is fixed
- *  BEFORE its deal animation, ASCENDING with index (`CARD_Z_BASE + index`) — for every card, face-down
- *  or face-up alike. (The old "the face-down hole card sits under the first card" exception is retired
- *  now that a fan of face-down backs, not one hole card, represents the whole hidden hand — see
- *  docs/BLACKJACK.md. Flips keep whatever z they render at.) */
+ *  BEFORE its deal animation, ASCENDING with index (`CARD_Z_BASE + index`). The ONE exception is the
+ *  opponent's hole card WHILE face-down — it sits UNDER the first card (`CARD_Z_BASE - 1`) so nothing
+ *  peeks through; the moment it flips face-up it rejoins the ascending OVER pattern. */
 const CARD_Z_BASE = 40;
 
-/** A newly-mounted back-slot that is ALREADY revealed on its very first render (the one atomic
- *  resolving/busting hit — appended and resolved server-side in the same step, so it was never
- *  broadcast as a live in-play draw and never sat on the table as a back) still slides in face-down
- *  first, then flips — it must never render already face-up. This is the delay before that flip
- *  starts, so the slide-in visibly lands before the card opens (see `OppBackCard`). */
-const FRESH_REVEAL_FLIP_DELAY_S = 0.5;
+/** At the terminal reveal the opponent's HIT cards deal in AFTER the hole-card flip (a continuous
+ *  scene, not all at once) — the first hit starts at this offset (s); each next one is staggered. */
+const HIT_DEAL_START_S = 0.45;
 
 /** Item 5 — the CONVENTIONAL Blackjack hand-value label (soft/hard), never the raw ace combination
  *  ("11, 21" was the bug). Computed from the VISIBLE cards only, so the opponent's total stays
@@ -107,27 +103,14 @@ function PlayingCard({ card, index, delay = 0, frame = null }: { card: Blackjack
   );
 }
 
-/** A face-down back standing in for ONE of the opponent's hidden cards — one persistent element per
- *  hand slot beyond the always-visible first card. Slides in face-down the moment the opponent holds
- *  that many cards (a live Hit, or the opening deal for the second card), gently pulsing while they
- *  act, and FLIPS in place to its value at the terminal reveal / push (a back→face rotateY at its
- *  existing position — never an unmount-and-remount, so the reveal reads as a dealer turning cards
- *  over, not a screen refresh). Redaction-safe: `card` is undefined until the server's terminal frame,
- *  and the front face is backface-hidden until the flip. Its testid is `card-back` while hidden and
- *  `card` once revealed, so counts stay truthful.
- *
- *  Identity-continuity subtlety (BLACKJACK.md): a slot that was ALREADY on the table as a back during
- *  play (existing React key, just re-rendered with `revealed=true`) must flip in place with no extra
- *  delay. A slot that mounts for the FIRST time already revealed — the one atomic resolving/busting hit
- *  that was appended and resolved server-side in the same step, so it was never broadcast as a live
- *  in-play draw and never sat on the table as a back — must still visibly arrive closed and only then
- *  open, never pop in already face-up. `useRef`'s initial value is fixed at mount and never updated by
- *  later re-renders, so it's the exact signal for "was this slot revealed from the very first frame it
- *  ever rendered" — precisely the newly-mounted-at-reveal case — with no separate count-tracking needed. */
-function OppBackCard({ card, revealed, index, delay = 0, active = false, frame = null }: { card?: BlackjackCard; revealed: boolean; index: number; delay?: number; active?: boolean; frame?: CardFrame }) {
+/** The opponent's hole card — ONE persistent element that stands in for their hidden card during
+ *  play (a face-down back, gently pulsing while they act) and FLIPS in place to its value at the
+ *  terminal reveal (a back→face rotateY at its existing position — never an unmount-and-remount, so
+ *  the reveal reads as a dealer turning it over, not a screen refresh). Redaction-safe: `card` is
+ *  undefined until the server's terminal frame, and the front face is backface-hidden until the flip.
+ *  Its testid is `card-back` while hidden and `card` once revealed, so counts stay truthful. */
+function OppHoleCard({ card, revealed, index, delay = 0, active = false, frame = null }: { card?: BlackjackCard; revealed: boolean; index: number; delay?: number; active?: boolean; frame?: CardFrame }) {
   const pulsing = active && !revealed;
-  const mountedRevealed = useRef(revealed);
-  const flipDelay = mountedRevealed.current ? FRESH_REVEAL_FLIP_DELAY_S : 0;
   return (
     <motion.div
       data-testid={revealed ? 'card' : 'card-back'}
@@ -137,21 +120,18 @@ function OppBackCard({ card, revealed, index, delay = 0, active = false, frame =
       transition={pulsing
         ? { x: { duration: 0.5, ease: [0.22, 1, 0.36, 1], delay }, opacity: { duration: 0.5, delay }, y: { duration: 1.1, repeat: Infinity, ease: 'easeInOut', delay: delay + 0.5 } }
         : { duration: 0.5, ease: [0.22, 1, 0.36, 1], delay }}
-      // Standard ascending OVER fan for every slot, face-down or face-up (the old single-hole "under"
-      // exception is retired — see docs/BLACKJACK.md). Flips keep whatever z they render at.
-      style={{ marginLeft: index === 0 ? 0 : -22, zIndex: CARD_Z_BASE + index, perspective: 600 }}
+      // Under the first card WHILE face-down (CARD_Z_BASE - 1, below index 0 — set from the start of
+      // the deal, no snap); once revealed it rejoins the ascending OVER fan (CARD_Z_BASE + index).
+      style={{ marginLeft: index === 0 ? 0 : -22, zIndex: revealed ? CARD_Z_BASE + index : CARD_Z_BASE - 1, perspective: 600 }}
       // The push result outline rings the whole card (on the testid element, like PlayingCard).
       className={cn('relative h-20 w-14 rounded-lg', cardFrameClass(frame))}
     >
-      {/* The flip: rotateY 180 (back faces out) → 0 (face faces out). `initial` is explicit (rather
-          than left to default to `animate`) so a slot that mounts ALREADY revealed still starts closed
-          and animates open, instead of popping in already face-up — see the doc comment above. */}
+      {/* The flip: rotateY 180 (back faces out) → 0 (face faces out) in place at the reveal. */}
       <motion.div
         className="relative h-full w-full"
         style={{ transformStyle: 'preserve-3d' }}
-        initial={{ rotateY: 180 }}
         animate={{ rotateY: revealed ? 0 : 180 }}
-        transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1], delay: flipDelay }}
+        transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
       >
         {/* Front — the revealed card value (hidden by backface-visibility until the flip lands). */}
         <div
@@ -278,9 +258,8 @@ function useDelayedFlag(active: boolean, delayMs: number): boolean {
 
 /**
  * The live Blackjack table (item 3/8) — also the persistent post-match table in the result phase.
- * Redaction: own hand in full, exactly ONE opponent card value shown plus their true hand size (a
- * face-down back for each remaining card, sliding in as they draw) until the terminal reveal, when
- * every back flips in place. Cards are centred and overlap; ownership reads from table side +
+ * Redaction: own hand in full, exactly ONE opponent card shown (a face-down card stands in for the
+ * rest) until the terminal reveal. Cards are centred and overlap; ownership reads from table side +
  * visibility (no name labels — the slot pills carry the usernames). Totals sit above each hand. At
  * the decisive end the cards stay on the table and a green/red frame (server outcome only) rings
  * the player's own cards a beat after the reveal; it persists until a new game starts.
@@ -317,18 +296,6 @@ function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, phase, ou
   const oppCards = showPush
     ? (opponentId ? lastResult!.hands[opponentId]?.cards ?? [] : [])
     : ((opponentId && view?.hands[opponentId]?.cards) || []);
-  // The reveal is CONTINUOUS: true once either the decisive terminal or the push hold is showing.
-  // Hoisted above `oppCount` (which needs it) — `revealed` used to be declared further below.
-  const revealed = isTerminal || showPush;
-  // The opponent's TRUE hand size (Advisor #1, honest reveal) drives how many card slots (1 visible +
-  // N face-down backs) the opponent's hand renders. In play, `viewFor` now surfaces it as `handSize`
-  // on the redacted opponent hand, so a back can stand in for every card they actually hold — never
-  // inferred from `oppCards.length`, which in play is always redacted to 1. Once `revealed`, lean on
-  // `oppCards.length` (the full, correct hand — terminal's or the push's `lastResult`) directly rather
-  // than `handSize`: during a push, `view` already reflects the FRESH re-dealt round (not the
-  // just-resolved one `oppCards` is drawn from), so its `handSize` would describe the wrong round.
-  const oppHandSize = opponentId ? view?.hands[opponentId]?.handSize : undefined;
-  const oppCount = revealed ? oppCards.length : (oppHandSize ?? oppCards.length);
 
   // A push is exhaustively both-bust (Case 1 → red cards) or equal non-bust totals (Case 2 → orange
   // cards); both hands take the SAME outline. The red card outline keeps its bust meaning even in a
@@ -344,9 +311,10 @@ function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, phase, ou
   // exact keys those cards had in the last in-play frame — key by the RESOLVED round (lastResult.round),
   // not the fresh replay round (view.round, already bumped) — so nothing unmounts/remounts across the
   // reveal → push. Only the next genuine deal (round+1, when the beat ends and showPush drops) gets
-  // fresh keys and remounts to animate. Every opponent back flips in place (never a fly-in deal) at a
+  // fresh keys and remounts to animate. The opponent's hole card + hits reveal (flip / deal-in) at a
   // terminal decisive result OR during the push hold; both are one continuous scene, never two subtrees.
   const keyRound = showPush && lastResult ? lastResult.round : round;
+  const revealed = isTerminal || showPush;
   // Own hand is "final" (label collapses to a single best value) once it is done, or at the terminal
   // reveal, or while the pushed hands are held; the opponent's is final only when fully revealed.
   const ownDone = Boolean(playerId && view?.hands[playerId]?.done);
@@ -356,12 +324,10 @@ function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, phase, ou
   // Opening deal (item 4): the four initial cards arrive one-by-one — own[0], opp[0], own[1],
   // opp-hidden — via a per-card stagger. Only the opening frame staggers; a later Hit / the
   // terminal reveal / a held push mount alone with no delay (deal order is meaningless then).
-  // (The opening frame's opponent hand is always exactly `handSize` 2 → one back slot, index 1 —
-  // so `backDeal` only ever needs to stagger that one slot; any later back slot mounts with no delay.)
   const opening = !isTerminal && !showPush && ownCards.length === 2 && oppCards.length === 1;
   const ownDeal = (i: number) => (opening && i < 2 ? (i === 0 ? 0 : 2) * DEAL_STAGGER_S : 0);
   const oppDeal = (i: number) => (opening && i === 0 ? 1 * DEAL_STAGGER_S : 0);
-  const backDeal = (i: number) => (opening && i === 1 ? 3 * DEAL_STAGGER_S : 0);
+  const backDeal = opening ? 3 * DEAL_STAGGER_S : 0;
 
   // Win/lose card frame (item: result on the board, no pop-up). Driven strictly by the server's
   // match.end outcome; non win/lose terminals (draw/void) get no frame. Held a beat after reveal.
@@ -394,32 +360,20 @@ function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, phase, ou
       )}
 
       {/* Opponent hand — ONE continuous structure for play, the decisive reveal, AND the push hold
-          (no separate subtree, no re-mount): the first card stays visible, every other card the
-          opponent holds is a persistent face-down back (Advisor #1, honest reveal — `oppCount` slots
-          total, from the server's true `handSize`) that slides in the moment they draw and FLIPS in
-          place to its value when `revealed` — never a fly-in already-face-up card. During a push it is
+          (no separate subtree, no re-mount): the first card stays, the persistent hole card FLIPS in
+          place to its value when `revealed`, then hit cards deal in one-by-one. During a push it is
           the SAME resolved cards in a held/framed state (red/orange outline) — keyed by the resolved
           round so they carry their identities straight from the last in-play frame. */}
       <section data-testid="opp-hand" className="relative z-[1] flex flex-1 flex-col items-center justify-center gap-2">
         <HandTotalPill label={totalLabel(oppCards, oppFinal)} testid="opp-total" />
         <div className="flex items-end justify-center">
           {oppCards[0] && <PlayingCard key={`opp-${keyRound}-0`} card={oppCards[0]} index={0} delay={oppDeal(0)} frame={pushFrame} />}
-          {/* Every other card the opponent holds: a persistent face-down back, one slot per index,
-              flipping in place to its value at the reveal/push (never a fly-in). */}
-          {Array.from({ length: Math.max(oppCount - 1, 0) }, (_, j) => {
-            const i = j + 1;
-            return (
-              <OppBackCard
-                key={`opp-${keyRound}-${i}`}
-                index={i}
-                revealed={revealed}
-                card={oppCards[i]}
-                active={waitingOnOpponent}
-                delay={backDeal(i)}
-                frame={pushFrame}
-              />
-            );
-          })}
+          {/* Persistent hole card: face-down in play, flips in place to its value at the reveal/push. */}
+          <OppHoleCard key={`opp-hole-${keyRound}`} index={1} revealed={revealed} card={oppCards[1]} active={waitingOnOpponent} delay={backDeal} frame={pushFrame} />
+          {/* Opponent hits reveal only once revealed (decisive terminal or push) — deal in one-by-one. */}
+          {revealed && oppCards.slice(2).map((c, j) => (
+            <PlayingCard key={`opp-hit-${keyRound}-${j}`} card={c} index={j + 2} delay={HIT_DEAL_START_S + j * DEAL_STAGGER_S} frame={pushFrame} />
+          ))}
         </div>
       </section>
 
