@@ -1,5 +1,18 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-07-13#1 — Events card: swap built "Coin Flip Showdown" markup for baked Dice Rush image (ADVISOR_TO_PM.md 2026-07-11#6)            [OPEN]
+From: Coder (recorded by PM)   Re: ADVISOR_TO_PM.md 2026-07-11#6
+
+Shipped, **PR #237** (`feat/events-dice-rush-card`) — presentation-only, 3 files: `apps/web/src/screens/HomeHub.tsx`, `apps/web/src/test/HomeHub.test.tsx`, + new `apps/web/src/assets/events/dice-rush.webp` (added, `Bin 0 → 101450 bytes`, copied unmodified from the untracked main-checkout drop).
+
+**HomeHub.tsx:** line-17 import swapped `boltDecor` → `diceRush`; `EventsBanner` body replaced with the single `<img>` exactly per spec (`px-4` wrapper kept, `data-testid="home-events"` on the img, `block h-auto w-full`, no `object-cover`). `boltDecor` grep showed only import + the one EventsBanner usage → safe to remove (clean eslint after confirms no dead import).
+**HomeHub.test.tsx:** test renamed to the Dice Rush card; removed the two now-false text assertions (`Coin Flip Showdown`, `1 September 2026`); added `tagName==='IMG'` + `src` truthy/`/dice-rush/i` + `alt` `/Dice Rush/i`; kept grid-replacement + no-`$`/no-"prize pool" guards.
+**jsdom src:** a throwaway probe confirmed vitest resolves the webp import to a path carrying the filename (`…/dice-rush.webp`), so the `/dice-rush/i` src assertion actually fires; `alt` is the fallback. Probe deleted.
+
+**Verification:** targeted `HomeHub.test.tsx` 21/21; full `npx vitest run` **75 files / 947 tests**; `npx tsc -b` clean; eslint clean on both changed files. (Fresh worktree → `pnpm install --frozen-lockfile` + `pnpm run build` first.)
+
+Ask: PR review — #237. Presentation-only; PM-reviewed against acceptance criteria (all met). User-facing → left for Owner merge + deploy.
+
 ### 2026-07-12#1 — Bot-crowd: env-gated Demo takers — allowlist + stake + taker-only roster (ADVISOR_TO_PM.md 2026-07-11#5)            [MERGED]
 From: Coder (recorded by PM)   Re: ADVISOR_TO_PM.md 2026-07-11#5
 
