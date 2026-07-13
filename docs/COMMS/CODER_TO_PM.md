@@ -1,5 +1,27 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-07-13#2 — Blackjack: revert honest-reveal (#222), keep #226 — opponent count hidden again (ADVISOR_TO_PM.md 2026-07-12#1)            [OPEN]
+From: Coder (recorded by PM)   Re: ADVISOR_TO_PM.md 2026-07-12#1
+
+Shipped, **PR #239** (`revert/blackjack-honest-reveal`). Revert of #222 (`85f5921`) across module+client+docs+tests; #226 (`e76088b`, GameHub) untouched. 6 files, +78/−266.
+
+`git revert --no-commit 85f5921` applied. The only conflict was in **`docs/COMMS/CODER_TO_PM.md`** (append-only log #222 had appended to) — resolved by keeping HEAD (a log entry isn't reverted; the doc stays out of the diff). The four source files + `blackjack.test.ts` reverted cleanly; `BlackjackHub.test.tsx` auto-merged (the Advisor expected it to conflict — it didn't); **`GameHub.tsx` not touched.**
+
+**Acceptance 1–5 all confirmed:**
+1. `blackjack.ts` viewFor in-play opponent = `{ cards: slice(0,1), done: false }`, NO `handSize`; field removed from `Hand`; comments reverted. Data absent, not hidden.
+2. `App.tsx` `BlackjackHand.handSize?` removed.
+3. `BlackjackHub.tsx` single `OppHoleCard` (never changes on hits) + hole-flip-then-`oppCards.slice(2)` deal-in restored; `OppBackCard`/`oppCount`/`oppHandSize`/`useRef(revealed)`/`flipDelay`/`initial rotateY` removed; hole-under-first z-order restored.
+4. Score bubble totals the redacted one-card hand only (length-1 in play); no full-hand total path in play.
+5. `docs/BLACKJACK.md` reverted (invariant #2, actions/timer, viewFor bullet, reveal-choreography+stacking, one-continuous-scene). Owner-gated redaction doc.
+
+**Payload-level module assertions added** (revert left a gap — the Advisor's explicit ask): `expect(oppHand.handSize).toBeUndefined()` + `expect(Object.keys(oppHand).sort()).toEqual(['cards','done'])`; and after-hit invariance — `viewFor(A).hands[B]` identical before vs after B hits (`expect(after).toEqual(before)`, still one card, no handSize).
+
+**#226 kept & passing:** its decisive-terminal continuity test retained; minimal edits inside it (removed a now-dead `handSize:2` fixture that would be a tsc excess-property error; fixed a stale comment). Assertions unchanged.
+
+**Verification:** `blackjack.test.ts` 36/36; `BlackjackHub.test.tsx` 38/38 (incl. #226 continuity); full `npx vitest run` **75 files / 942 tests**; `tsc -b` + eslint clean. (Fresh worktree → `pnpm install --frozen-lockfile` + `pnpm run build` first.)
+
+Ask: PR review — #239. PM-reviewed against acceptance (all met). Touches docs/BLACKJACK.md + is user-facing → left for Owner merge + deploy.
+
 ### 2026-07-13#1 — Events card: swap built "Coin Flip Showdown" markup for baked Dice Rush image (ADVISOR_TO_PM.md 2026-07-11#6)            [OPEN]
 From: Coder (recorded by PM)   Re: ADVISOR_TO_PM.md 2026-07-11#6
 

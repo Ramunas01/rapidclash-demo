@@ -1,5 +1,31 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-07-12#1 — Blackjack: hide the opponent's card count again — revert the honest-reveal (Option A / PR #222) (Designer)            [OPEN — reverses the earlier Option A decision]
+From: Advisor   Re: Designer "opponent's hits must not be visible during play"
+
+**Decision reversal (recorded):** the Owner earlier chose **Option A** — expose the opponent's card count so their cards could flip in place. The Designer now overrules it: card count is information (multiple hits ⇒ weak start, standing pat ⇒ strength), and in the hidden-simultaneous model nothing about the opponent may surface until the reveal. This is the **stricter, charter-aligned** call — it *tightens* redaction invariant #2 rather than relaxing it, so it's the safe direction. The Designer's four points describe **exactly the pre-Option-A behaviour**, so the fix is a **revert of PR #222**, keeping **PR #226** (the GameHub continuity fix — unrelated, and it's what makes the deal-in reveal read cleanly now).
+
+**Confirmed current state (verified on disk):** `blackjack.ts` `viewFor` in-play sets `handSize: s.hands[p].cards.length`; `BlackjackHub.tsx` renders `OppBackCard` × `oppCount-1` and flips them in place. That's #222. Revert target = the code that preceded it, which satisfies all four Designer points as-is.
+
+**What to restore (revert #222 — module + client + docs + tests):**
+1. **Server payload (`blackjack.ts`) — the Designer's strongest requirement (point 2: don't even *send* it).** `viewFor` in-play opponent branch back to `{ cards: s.hands[p].cards.slice(0, 1), done: false }` — **remove `handSize`.** Remove the `handSize?` field from `Hand`. Revert the two comments (`applyMove` "size is the one exception" and `viewFor` "size surfaced") to the original "nothing about the opponent's hand — values, count, stand/bust, seed — until terminal." The payload then genuinely carries no opponent hits/count/stand-bust/seed in play — visual hiding was never the ask, the data must be absent.
+2. **`App.tsx`** — remove the mirrored `BlackjackHand.handSize?`.
+3. **Client (`BlackjackHub.tsx`)** — back to: opponent = `oppCards[0]` (face-up) + **one** face-down hole card, and this **never changes during the live round regardless of hits** (point 1). At the reveal, the hole flips in place, then `oppCards.slice(2)` (the real hits) **deal in one-by-one from the deck** with the deal animation (point 3). Remove the `OppBackCard` multi-slot model, the `oppCount = handSize ?? …` logic, the `useRef(revealed)`/`flipDelay`/`initial rotateY` terminal-slot handling, and restore the single-`OppHoleCard` + `{revealed && oppCards.slice(2).map(...)}` fly-in branch and the prior z-order.
+4. **Score bubble (point 4)** — falls out of the payload revert: the opponent total is computed from the redacted one-card hand, so it shows only the face-up value and never moves on hidden draws. Verify no code path totals the full hand in play.
+5. **Docs (`docs/BLACKJACK.md`)** — revert the #222 wording (invariant #2, the actions/timer "nothing surfaced" line, the `viewFor` mapping bullet, the reveal-choreography + stacking paragraph, the "one continuous scene" paragraph) back to the count-hidden / hole-flip-then-deal-in model. (`SCREENS.md` had no choreography detail — nothing there.)
+
+**Keep PR #226 (do NOT revert it).** It's the shared GameHub phase-bridge that stopped the whole board remounting at the decisive reveal — independent of the count model, and the reason the deal-in reveal now looks clean (your own cards and the opponent's first card stay put; only the hits animate in). Its regression test lives in `BlackjackHub.test.tsx` and asserts own + opponent **first-card** DOM identity across the terminal — that still holds in the reverted model (card 0 persists), so the test stays valid and passing.
+
+**Cleanest path:** `git revert` the #222 merge for the source files (`blackjack.ts`, `App.tsx`, `BlackjackHub.tsx`, `BLACKJACK.md`) — those should revert cleanly (nothing since touched them; #226 was GameHub-only). **`BlackjackHub.test.tsx` will conflict** because #226 added its continuity test to that file *after* #222 — resolve by hand: take #222's test reversion (restore the original redaction/reveal tests, drop the slot/`handSize`/flip-in-place tests) **but keep #226's decisive-terminal continuity test**. Re-run it to confirm it still passes in the reverted model.
+
+**Acceptance (Designer's test):** play a multi-hit round — from your screen the opponent's hand is pixel-identical (two cards, one face-down) from deal to reveal, with no count change / animation / timing cue when they act; a payload capture shows no opponent hits, count, or stand/bust before terminal; at the reveal the hole flips then the extra cards deal in one at a time; the opponent total shows only the face-up value throughout play.
+
+**Scope:** revert of #222 across module + client + docs + tests, keeping #226. Owner-gated doc/redaction change, but in the tightening direction (Owner is directing it). One PR.
+
+Note: this discards the multi-back slot model and the subtle terminal-slot flip logic from #222 — a deliberate reversal on the Designer's information-leak reasoning, not a defect. The hole-card flip-in-place itself predates #222 and is preserved.
+
+Ask: ticket the revert. Confirm the payload-level assertion (no opponent hits/count/stand-bust in the in-play view) lands in the module test — that's the one that proves the Designer's point 2.
+
 ### 2026-07-11#6 — Events card: replace the built "Coin Flip Showdown" card with the Dice Rush image (Designer)            [OPEN, small client PR]
 From: Advisor   Re: Designer "swap the event card image"
 
