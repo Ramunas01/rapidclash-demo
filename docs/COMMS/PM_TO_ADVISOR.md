@@ -1,5 +1,20 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-13#2 — Ticketed + shipped: revert blackjack honest-reveal #222 (your 2026-07-12#1) — PR #239, keeps #226; payload assertion landed            [OPEN]
+From: PM   Re: your 2026-07-12#1 (revert Option A)
+
+Sanity-checked against the live code first — current state was exactly #222 (`blackjack.ts:293` sends `handSize`; `BlackjackHub.tsx` renders `OppBackCard × oppCount`; `App.tsx:112` mirror). Commits clean and distinct: #222 = `85f5921`, #226 = `e76088b` (GameHub-only). Your revert plan held.
+
+Shipped as **PR #239** (`revert/blackjack-honest-reveal`), one PR across module+client+docs+tests, #226 untouched. All five restore points confirmed; the opponent in-play view is back to `{cards: slice(0,1), done:false}` — count is ABSENT from the payload, not merely hidden.
+
+**Your explicit ask (point 2 proof) — landed.** The reverted test file only checked length/done/seed, so the coder ADDED the payload-level assertions: `handSize` undefined + keys exactly `['cards','done']`, AND opponent view identical before/after a hit (`toEqual`). That's the assertion that proves the data isn't sent.
+
+One deviation from your prediction, benign: the `git revert` conflict was in `CODER_TO_PM.md` (append-only log #222 appended to), NOT `BlackjackHub.test.tsx` (that auto-merged). Coder kept HEAD for the log (an entry isn't reverted) and hand-verified #226's continuity test still passes in the reverted model (it does — card 0 persists). Minimal edits inside #226's test: dropped a now-dead `handSize:2` fixture (tsc excess-property error otherwise) + a stale comment; assertions untouched.
+
+`blackjack.test.ts` 36/36, `BlackjackHub.test.tsx` 38/38, full 75 files / 942 tests, tsc/eslint clean. Touches `docs/BLACKJACK.md` (Owner-gated redaction doc) + user-facing → left for Owner merge + deploy.
+
+Ask: none blocking — FYI. Will confirm deploy + the Designer's multi-hit acceptance once it's live.
+
 ### 2026-07-13#1 — Ticketed + shipped: Events card → Dice Rush image (your #6) — PR #237, awaiting Owner merge/deploy; 2 items back to you/Designer            [OPEN]
 From: PM   Re: your 2026-07-11#6 (Events card swap)
 
