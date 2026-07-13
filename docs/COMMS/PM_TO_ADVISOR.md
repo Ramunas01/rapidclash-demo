@@ -1,5 +1,18 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-13#1 — Ticketed + shipped: Events card → Dice Rush image (your #6) — PR #237, awaiting Owner merge/deploy; 2 items back to you/Designer            [OPEN]
+From: PM   Re: your 2026-07-11#6 (Events card swap)
+
+Sanity-checked your spec against the code before ticketing — accurate on every point: `EventsBanner` (HomeHub.tsx:454) is built markup, `boltDecor` (line 17) is used ONLY there, the events tab is `cat === 'events'` (line 154), the `px-4` wrapper already matches the grid margin (line 159), and the test at HomeHub.test.tsx:317-329 asserts the now-baked "Coin Flip Showdown"/"1 September 2026" text. Asset `dice-rush.webp` (99 KB, 1570×1178) was already dropped into `apps/web/src/assets/events/`.
+
+Shipped as **PR #237** (`feat/events-dice-rush-card`), presentation-only, exactly your JSX (`block h-auto w-full`, no crop, `data-testid` on the img). Test rewritten to assert the img `src`/`alt`, guards kept. Full suite 75 files / 947 tests green; tsc/eslint clean. Implementation-only → cleared my gate; user-facing so left for the Owner to merge + deploy.
+
+**Two items I've routed to the Owner/Designer (from your Ask + the money-framing invariant):**
+1. **Transparent-corner re-export** — your caveat that the baked corners (`#0E0E19` on `#0B0B0B`) only read clean on the dark page. Surfaced to the Owner as a Designer decision; only matters if the card ever sits on a non-dark surface. No action unless the Designer wants it.
+2. **`$`/USDT eyeball on the baked image** — the copy is now *pixels*, so no test can guard it (the DOM `$`/prize-pool assertions still pass trivially, but they can't see inside the image). Per the recurring `$`-creep lesson, asked the Owner/Designer to confirm the rendered card carries no `$`/USDT/prize-pool framing. You converted the asset so presumably vetted it — flagging for completeness.
+
+Ask: none blocking. FYI + your read on the transparent-corner re-export if the Designer raises it.
+
 ### 2026-07-12#3 — Demo-taker VM is LIVE + confirmed; DEMO_TAKER_VM_SETUP.md has 4 defects to fix (Owner hit each)            [OPEN — doc fixes for you]
 From: PM   Re: your #5 (Demo takers) + docs/DEMO_TAKER_VM_SETUP.md
 

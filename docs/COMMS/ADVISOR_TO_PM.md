@@ -1,5 +1,40 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-07-11#6 — Events card: replace the built "Coin Flip Showdown" card with the Dice Rush image (Designer)            [OPEN, small client PR]
+From: Advisor   Re: Designer "swap the event card image"
+
+**Heads-up — it's not a `src` swap.** The current event card is **built markup**, not an image: the `EventsBanner` component in `apps/web/src/screens/HomeHub.tsx` composes a styled surface with a live `<h3>Coin Flip Showdown</h3>`, a date, a description, a `boltDecor` corner image, and a disabled button. The Designer wants the whole thing replaced by a single baked card image (text already in the image, corners already rounded), shown at native aspect, no crop, scaled to container width. So we swap the composed card for one `<img>` — which also deletes a fair bit of now-dead markup. (This is the card under the Home hub's **Events** tab, `cat === 'events'`.)
+
+**Asset:** add **`dice-rush.webp`** to `apps/web/src/assets/events/` (I converted the Designer's PNG to WebP to match the other banner assets — **99 KB vs 2.25 MB**, native **1570×1178**, ~4:3; presented alongside this entry). PNG would also work, but WebP matches convention and is ~23× smaller.
+
+**Change (`HomeHub.tsx`):**
+- Add the import: `import diceRush from '../assets/events/dice-rush.webp';`
+- Replace the entire `EventsBanner` body with the image, at native aspect / no crop / full container width — note this uses `h-auto` (native ratio), **not** the hero carousel's `object-cover` (which crops):
+  ```tsx
+  function EventsBanner() {
+    return (
+      <div className="px-4">
+        <img
+          src={diceRush}
+          alt="Dice Rush tournament — one roll per round, highest number wins the bracket"
+          data-testid="home-events"
+          className="block h-auto w-full"
+        />
+      </div>
+    );
+  }
+  ```
+  (Keep the `px-4` wrapper so it aligns to the same content margin as the grid, and keep `data-testid="home-events"` on the img so existing selectors resolve.)
+- **Remove the now-unused `boltDecor` import** (it was only used by the old EventsBanner decoration) — otherwise it's a dead-import lint error.
+
+**Corners (one honest caveat).** The PNG is fully opaque; its rounded corners are baked by filling the corner triangles with a near-black `#0E0E19`, which sits on the page background `#0B0B0B` — so on-page it reads as cleanly rounded (the two near-blacks are indistinguishable). I did **not** add CSS rounding: the baked radius is unknown (CSS-rounding would clip the card), and I can't colour-key the corners transparent because the "TOURNAMENT" pill uses that same dark tone. If the Designer wants pixel-perfect corners on *any* background, the clean fix is a re-export with **transparent** corners — flag it back to them; otherwise as-is is fine on the dark page.
+
+**Test (`HomeHub` test):** the events assertion that looks for "Coin Flip Showdown" text must change — that text is gone (baked into the image now). Assert the `home-events` img renders with the expected `src`/`alt` instead.
+
+**Scope:** one small client PR — `HomeHub.tsx` + the new `assets/events/dice-rush.webp`. Presentation only; no protocol/data change.
+
+Ask: drop the asset in and ticket the swap. Confirm with the Designer whether they want the transparent-corner re-export (only matters if the card ever sits on a non-dark surface).
+
 ### 2026-07-11#5 — Reserved "Demo" takers (plan-B): gate the bot-crowd to a single "Demo" account @ 1¢, 3 games (tools-only, demo-only)            [OPEN — for demos]
 From: Advisor   Re: Owner — a reserved fallback opponent for coinflip/blackjack/chess when the live crowd isn't running
 
