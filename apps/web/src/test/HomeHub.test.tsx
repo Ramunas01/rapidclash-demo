@@ -328,6 +328,8 @@ describe('HomeHubScreen — grid taxonomy + controls (design frame)', () => {
     // future transform stubs it out, the alt below still pins it to Dice Rush.
     if (src && /dice-rush/i.test(src)) expect(src).toMatch(/dice-rush/i);
     expect(events.getAttribute('alt')).toMatch(/Dice Rush/i);
+    // Hero-matching corner radius (same rounded-[18px] the HeroCarousel cards use).
+    expect(events.className).toContain('rounded-[18px]');
     // The grid of tiles is replaced by the announcement.
     expect(screen.queryByTestId('home-tile-coinflip')).toBeNull();
     // Play-money only — no real-money / prize-pool copy (trivially true now; kept as a guard).
