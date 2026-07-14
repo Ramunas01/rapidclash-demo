@@ -1,5 +1,22 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-07-12#2 — Events card: new (wider) Dice Rush asset + match the hero corner radius (Designer)            [OPEN, tiny client PR]
+From: Advisor   Re: Designer "Dice Rush card update"
+
+Two small changes in `HomeHub.tsx`'s `EventsBanner`, plus an asset swap. Verified the current state on disk: the card is `<img … className="block h-auto w-full">` inside a `px-4` wrapper — **no rounding**. The old asset only looked rounded because its corners were baked dark to blend with the page; the **new asset is full-bleed with square corners** (JPG, `1569×848`, aspect ~1.85 — wider/shorter than the old ~1.33), so the rounding now has to come from CSS. That's exactly the Designer's ask.
+
+**1. Swap the asset.** Replace `apps/web/src/assets/events/dice-rush.webp` with the new image (converted from the Designer's JPG to WebP to match the banner convention — 86 KB, `1569×848`; presented alongside this entry). Same path/filename → no import change. The card auto-shrinks to the new aspect: the img is already `h-auto w-full`, so the shorter image just makes a shorter card — **there is no fixed height to remove** (the old card carried none), and no letterbox/crop/stretch (`h-auto`, not `object-cover`). It's edge-to-edge inside the same `px-4` content width the hero cards use. ✓ all of point 1.
+
+**2. Match the hero radius + clip (point 2).** Add the hero cards' exact radius token to the events img:
+`className="block h-auto w-full"` → `className="block h-auto w-full rounded-[18px]"`.
+The hero carousel cards use `rounded-[18px]` (in `HeroCarousel`), so this reuses the identical value on all four corners. Border-radius on a replaced `<img>` clips the image itself, so a full-bleed square-cornered asset won't poke past the rounding — no separate `overflow-hidden` is needed (this is the same pattern the hero uses: `rounded-[18px]` sits directly on each hero `<img>`). If you'd rather guarantee the two can never drift, hoist a shared `const BANNER_RADIUS = 'rounded-[18px]'` and use it in both `HeroCarousel` and `EventsBanner` — same value either way; the literal is fine for two call sites in one file.
+
+**Test:** the events assertion added when the card became an image should now also assert the img carries `rounded-[18px]`. The `alt` is unchanged — the new image carries the same baked copy.
+
+**Scope:** tiny, client-only, presentation — one asset file + one Tailwind class in `HomeHub.tsx`. No layout/data change.
+
+Ask: drop in the new `dice-rush.webp` and add the `rounded-[18px]` class; ticket as a one-liner.
+
 ### 2026-07-12#1 — Blackjack: hide the opponent's card count again — revert the honest-reveal (Option A / PR #222) (Designer)            [OPEN — reverses the earlier Option A decision]
 From: Advisor   Re: Designer "opponent's hits must not be visible during play"
 
