@@ -69,8 +69,8 @@ function TickerBody({ count, rows, clones }: { count: number; rows: ReactNode; c
 function TickerHeader() {
   return (
     <div className="mb-3 flex items-center gap-2 px-4">
-      <h2 className="text-sm font-extrabold uppercase tracking-[0.03em]">Open Games</h2>
-      <span className="ml-1 flex items-center gap-1.5 text-[11px] font-bold uppercase text-success">
+      <h2 className="text-sm font-extrabold uppercase leading-none tracking-[0.03em]">Open Games</h2>
+      <span className="ml-1 flex items-center gap-1.5 text-[11px] font-bold uppercase leading-none text-success">
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" /> Live
       </span>
     </div>

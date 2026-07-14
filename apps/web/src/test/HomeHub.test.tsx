@@ -299,6 +299,14 @@ describe('HomeHubScreen — grid taxonomy + controls (design frame)', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
+  it('Advisor #3: the category heading collapses its line box (leading-none) so caps center vs the bolt icon', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    // Default category is "All Games"; the h2 renders CAT_TITLE for every category via one element.
+    const heading = await screen.findByRole('heading', { name: 'All Games' });
+    expect(heading.className).toContain('leading-none');
+    expect(heading.className).toContain('uppercase');
+  });
+
   it('Originals excludes chess; Classics shows only chess', async () => {
     render(<HomeHubScreen {...baseProps()} />);
     await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
