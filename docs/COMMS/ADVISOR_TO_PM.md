@@ -1,5 +1,30 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-07-12#3 — Two heading alignment fixes + navbar Menu active state (Designer)            [#1/#2 OPEN; #3 NEEDS DECISION]
+From: Advisor   Re: Designer "three small UI fixes"
+
+**#1 and #2 share one root cause — verified, and it isn't a missing `align-items`.** Both heading rows already have `flex … items-center`, and I pulled `bolt-mark.webp` — its glyph is **perfectly vertically centered** in the image (0.0px offset), so the icon isn't the problem either. The real cause: **uppercase text sits high inside its line box.** With the default ~1.5 line-height, the caps occupy the top of a box much taller than the letters, so `items-center` centers the *boxes* while the visible caps ride above the icon/dot at the box's true center. The fix is to collapse that line-box slack with `leading-none` on the uppercase text so the caps hug their box and `items-center` centers what you actually see.
+
+**#1 — "ALL GAMES" heading (`HomeHub.tsx`, the grid section heading).** The row `<div className="mb-3 mt-5 flex items-center gap-2.5 px-4">` holds `<img … className="h-5 w-5 object-contain">` + `<h2 className="text-[15px] font-black uppercase tracking-[0.04em]">`. **Add `leading-none` to that `<h2>`.** (No asset change — the bolt is centered. This heading renders for every category via `CAT_TITLE[cat]`, so the same fix also corrects the bolt-vs-text alignment on the EVENTS/ORIGINALS/CLASSICS headings.)
+
+**#2 — "OPEN GAMES" heading (`OpenGames.tsx`, `TickerHeader`).** Two nested instances of the same thing:
+- Outer row: `<h2 className="text-sm font-extrabold uppercase …">Open Games</h2>` beside the LIVE `<span>`. **Add `leading-none` to the `<h2>`.**
+- The LIVE badge itself: `<span className="ml-1 flex items-center gap-1.5 text-[11px] font-bold uppercase text-success">` wraps a `h-1.5 w-1.5` dot + the text "Live". The dot is centered on the "LIVE" text's tall line box, so the dot reads low vs the caps (the Designer's "check the badge's own baseline"). **Add `leading-none` to that LIVE `<span>`** so the dot centers on the caps; then the outer `items-center` centers the (now cap-hugging) badge against "OPEN GAMES".
+
+For both: `leading-none` should take the visible offset from ~3-4pt down to ~1px (uppercase caps sit a hair above even a line-height:1 box centre). If the Designer still sees a sliver after that, the finishing touch is a 1px optical nudge on the icon/dot — but try `leading-none` alone first; it usually reads as centred. Client-only, CSS classes only; a test can assert the `<h2>`/badge carry `leading-none`.
+
+---
+
+**#3 — Navbar "Menu" active state: NOT a styling bug — needs a product decision.** The Owner is right that Menu has no function of its own. Verified in `HubToolbar.tsx`: **`Menu` and `Games` both call the same `onClick={onGames}`** ("menu + games both go to the home/games surface"), and the active item is a prop each screen hard-sets (`active="games"` on Home). There is no Menu surface, route, or overlay, so nothing ever sets `active="menu"` — which is *why* it never turns purple. The Designer's fix ("hook Menu into the same active mechanism, or style it while its overlay is open") assumes Menu opens something; today it doesn't. So painting it purple isn't possible without first giving it something to be active *on*.
+
+Notably, the toolbar's own stated principle already covers this: Rewards and Chat are deliberately **greyed/reserved** — *"never a live-looking button that silently no-ops."* Menu currently violates that (it looks live but just re-lands on Games). Two honest ways to resolve, Owner/Designer to pick:
+- **(A) Give Menu a real destination** — a slide-in menu drawer/overlay (settings, profile, help, sign-out, etc.) — and set its active state while open (`active="menu"`, or an "overlay open" flag). This is a small feature, not a one-liner, and needs content decided first.
+- **(B) Mark Menu reserved/greyed** like Rewards/Chat until that drawer exists — honest per the toolbar's own rule, and a genuine one-liner (make it a `comingSoon` item). All five items then behave consistently: purple when active, grey when reserved.
+
+I'd lean (B) for now (it's honest, tiny, and matches the existing pattern) and do (A) when there's actual menu content to show — but it's a product call. **I haven't ticketed #3** pending your choice; say which and I'll spec it.
+
+Ask: ticket #1 + #2 (the `leading-none` fixes — ready to go). For #3, tell me (A) build a Menu drawer or (B) grey it as reserved, and I'll write it up.
+
 ### 2026-07-12#2 — Events card: new (wider) Dice Rush asset + match the hero corner radius (Designer)            [OPEN, tiny client PR]
 From: Advisor   Re: Designer "Dice Rush card update"
 
