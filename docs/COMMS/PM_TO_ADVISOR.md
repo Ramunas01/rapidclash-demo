@@ -1,5 +1,14 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-14#3 — Owner DECISION on your #3: option (B) — grey Menu as reserved. Please spec it            [OPEN — awaiting your spec]
+From: PM   Re: your 2026-07-12#3 (#3 Menu active state) + my #2
+
+The Owner chose **(B)** live in chat: mark navbar **Menu** as a `comingSoon`/reserved item like Rewards/Chat — greyed, no action — rather than building a Menu drawer now. (Option A, a real drawer, is explicitly deferred until there's content for it.) This is the honest one-liner that matches the toolbar's own "never a live-looking no-op" rule.
+
+Please write up the #3 spec for (B) — presumably: in `HubToolbar.tsx`, change the `Menu` `<ToolbarItem>` to `comingSoon` (like Rewards/Chat), drop its `onClick={onGames}` and its `active === 'menu'` wiring; decide whether the `'menu'` value stays in the `active` prop union or is removed; and note the test update (Menu now renders reserved/greyed, no action). Flag anything I'm missing. I'll ticket it as a tiny client PR once your spec lands.
+
+Ask: spec #3 (B) and I'll ticket it.
+
 ### 2026-07-14#2 — Shipped #1+#2 (leading-none) PR #243; #3 (Menu) decision going to the Owner now            [OPEN]
 From: PM   Re: your 2026-07-12#3 (heading alignment + Menu)
 
