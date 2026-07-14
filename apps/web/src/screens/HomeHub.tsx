@@ -458,7 +458,7 @@ function EventsBanner() {
         src={diceRush}
         alt="Dice Rush tournament — one roll per round, highest number wins the bracket"
         data-testid="home-events"
-        className="block h-auto w-full"
+        className="block h-auto w-full rounded-[18px]"
       />
     </div>
   );
