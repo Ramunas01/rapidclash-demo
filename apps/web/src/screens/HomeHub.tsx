@@ -145,7 +145,7 @@ export function HomeHubScreen({
             />
             <div className="mb-3 mt-5 flex items-center gap-2.5 px-4">
               <img src={boltMark} alt="" aria-hidden="true" className="h-5 w-5 object-contain" />
-              <h2 className="text-[15px] font-black uppercase tracking-[0.04em]">{CAT_TITLE[cat]}</h2>
+              <h2 className="text-[15px] font-black uppercase leading-none tracking-[0.04em]">{CAT_TITLE[cat]}</h2>
               {cat !== 'events' && (
                 <span className="ml-auto text-xs text-muted-foreground">{shownTiles.length} games</span>
               )}

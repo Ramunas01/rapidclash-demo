@@ -47,6 +47,20 @@ describe('OpenGames — recessed navy panel (token-only)', () => {
   });
 });
 
+// Advisor #3: the uppercase header + LIVE badge collapse their line box (leading-none) so the
+// caps center against the adjacent dot/icon under items-center.
+describe('OpenGames — header leading (Advisor #3)', () => {
+  it('the "Open Games" heading and the LIVE badge each carry leading-none', () => {
+    render(<OpenGamesTicker challengesByGame={{ coinflip: [CHALLENGE] }} nameByGame={nameByGame} balance={1000} onTake={vi.fn()} />);
+    const heading = screen.getByRole('heading', { name: 'Open Games' });
+    expect(heading.className).toContain('leading-none');
+    expect(heading.className).toContain('uppercase');
+    const live = screen.getByText('Live');
+    expect(live.className).toContain('leading-none');
+    expect(live.className).toContain('items-center'); // dot alignment preserved
+  });
+});
+
 // ¢ stake formatting + text-success are unaffected by the restyle (no $/USDT crept in).
 describe('OpenGames — stake formatting unaffected', () => {
   beforeEach(() => vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => [] }) as Response)));
