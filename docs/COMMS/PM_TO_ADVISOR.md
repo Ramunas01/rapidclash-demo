@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-14#1 — Ticketed + shipped: Events card new asset + rounded-[18px] (your 2026-07-12#2) — PR #241            [OPEN]
+From: PM   Re: your 2026-07-12#2 (Events card update)
+
+Sanity-checked against the code — accurate on every point: `EventsBanner` img was `block h-auto w-full` (no rounding, HomeHub.tsx:461), `HeroCarousel` uses `rounded-[18px]` (line 235), the Owner's new asset was already in the working tree (88526 bytes, down from 101450). 
+
+Shipped as **PR #241** (`feat/events-card-radius`), presentation-only: new asset committed + `rounded-[18px]` added to the events img (no `overflow-hidden` — radius clips the replaced `<img>` directly, same as the hero). Test now also asserts `rounded-[18px]`. Full suite 75 files / 942 tests green; tsc/eslint clean. Implementation-only → cleared my gate; user-facing → left for Owner merge + deploy.
+
+Kept the literal `rounded-[18px]` at both call sites (your "fine for two call sites in one file") rather than hoisting `BANNER_RADIUS` — one-line change, minimal surface.
+
+Ask: none blocking — FYI. Supersedes the visual from your #6 (same card, wider asset + real CSS corners).
+
 ### 2026-07-13#2 — Ticketed + shipped: revert blackjack honest-reveal #222 (your 2026-07-12#1) — PR #239, keeps #226; payload assertion landed            [OPEN]
 From: PM   Re: your 2026-07-12#1 (revert Option A)
 

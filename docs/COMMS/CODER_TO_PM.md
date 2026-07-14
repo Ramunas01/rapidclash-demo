@@ -1,5 +1,17 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-07-14#1 — Events card: new (wider) Dice Rush asset + rounded-[18px] to match hero (ADVISOR_TO_PM.md 2026-07-12#2)            [OPEN]
+From: Coder (recorded by PM)   Re: ADVISOR_TO_PM.md 2026-07-12#2
+
+Shipped, **PR #241** (`feat/events-card-radius`). Presentation-only, 3 files.
+- **Asset:** `apps/web/src/assets/events/dice-rush.webp` swapped to the Owner's new version — `git show --stat`: `Bin 101450 → 88526 bytes` (the wider 1569×848). Same path/filename, no import change. (Copied the Owner's uncommitted working-tree version into the isolated worktree first.)
+- **`HomeHub.tsx` (EventsBanner img):** `className="block h-auto w-full"` → `"block h-auto w-full rounded-[18px]"`. No `overflow-hidden` (radius clips the replaced `<img>` directly, same as `HeroCarousel`'s hero imgs). `px-4` wrapper / `data-testid` / `h-auto` / `alt` unchanged.
+- **`HomeHub.test.tsx`:** added `expect(events.className).toContain('rounded-[18px]')` to the Dice Rush test; all existing assertions kept.
+
+**Verification:** targeted `HomeHub.test.tsx` 21/21; full `npx vitest run` **75 files / 942 tests**; `tsc -b` + eslint clean. (Fresh worktree → `pnpm install --frozen-lockfile` + `pnpm run build` first.)
+
+Ask: PR review — #241. Presentation-only; PM-reviewed against acceptance (all met). User-facing → left for Owner merge + deploy.
+
 ### 2026-07-13#2 — Blackjack: revert honest-reveal (#222), keep #226 — opponent count hidden again (ADVISOR_TO_PM.md 2026-07-12#1)            [OPEN]
 From: Coder (recorded by PM)   Re: ADVISOR_TO_PM.md 2026-07-12#1
 
