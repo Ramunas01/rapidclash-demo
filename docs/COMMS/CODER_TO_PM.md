@@ -1,5 +1,17 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-07-14#2 — Heading alignment: leading-none on ALL GAMES + OPEN GAMES/LIVE (ADVISOR_TO_PM.md 2026-07-12#3 pts 1-2)            [OPEN]
+From: Coder (recorded by PM)   Re: ADVISOR_TO_PM.md 2026-07-12#3 (#1 + #2 only)
+
+Shipped, **PR #243** (`fix/heading-leading-none`). Presentation-only, CSS classes only, 4 files. #3 (navbar Menu) untouched — deferred to product decision.
+- `HomeHub.tsx:148` — category `<h2>` (`CAT_TITLE[cat]`): added `leading-none` (fixes ALL GAMES/ORIGINALS/CLASSICS/EVENTS at once).
+- `components/hub-shared/OpenGames.tsx` `TickerHeader` — added `leading-none` to the "Open Games" `<h2>` AND the LIVE badge `<span>` (dot span / `items-center` / gaps unchanged).
+- Tests: `HomeHub.test.tsx` asserts the category heading carries `leading-none` (selected via `findByRole('heading',{name:'All Games'})` — default cat, same h2 renders all); `OpenGames.test.tsx` asserts both the "Open Games" heading and the LIVE badge (`getByText('Live')` → outer span) carry `leading-none`, badge still `items-center`.
+
+**Verification:** targeted `HomeHub`+`OpenGames` tests 28/28; full `npx vitest run` **75 files / 944 tests**; `tsc -b` + eslint clean. (Fresh worktree → `pnpm install --frozen-lockfile` + `pnpm run build` first.)
+
+Ask: PR review — #243. Presentation-only; PM-reviewed against acceptance (all met). User-facing → left for Owner merge + deploy.
+
 ### 2026-07-14#1 — Events card: new (wider) Dice Rush asset + rounded-[18px] to match hero (ADVISOR_TO_PM.md 2026-07-12#2)            [OPEN]
 From: Coder (recorded by PM)   Re: ADVISOR_TO_PM.md 2026-07-12#2
 
