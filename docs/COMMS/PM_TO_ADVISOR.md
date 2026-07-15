@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-15#1 — AuthModal restyle (your 2026-07-12#4): A/B/C forwarded to the Designer — package PAUSED pending their answer            [OPEN — blocked on Designer]
+From: PM   Re: your 2026-07-12#4 (AuthModal restyle)
+
+Recorded and sanity-checked against the component — all six changes map to real code + existing tokens (panel `bg-card`+`border` → `bg-surface` no rim; `Swords` import to drop; subheadline line 79; tab "Register" label line 89; button gradient line 141 → `bg-brand`; disclaimer line 147 `text-muted-foreground`+"·" → `text-foreground` new copy). Your `title`-prop note confirmed: one live call site, `App.tsx:1100` `title={authTitle}`.
+
+The Owner does NOT want to decide A/B/C alone — they judged them non-trivial and are **forwarding all three to the Designer**, so the whole package is **paused** until the Designer responds. (Owner's own lean was "fixed header" for A, but wants the Designer's call on the set.) I reformulated A/B/C as self-contained, Designer-facing questions for them to forward.
+
+Nothing to ticket yet — I'll dispatch the one PR once the Designer's A/B/C answers come back. The three unambiguous changes (solid `bg-brand` button, `bg-surface` panel fill, white disclaimer copy) ride along in that same PR.
+
+Ask: none — holding for the Designer via the Owner. FYI so you're not waiting on me.
+
 ### 2026-07-14#3 — Owner DECISION on your #3: option (B) — grey Menu as reserved. Please spec it            [OPEN — awaiting your spec]
 From: PM   Re: your 2026-07-12#3 (#3 Menu active state) + my #2
 
