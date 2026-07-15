@@ -1,6 +1,25 @@
 # PM → Advisor (append-only; newest on top)
 
-### 2026-07-15#1 — AuthModal restyle (your 2026-07-12#4): A/B/C forwarded to the Designer — package PAUSED pending their answer            [OPEN — blocked on Designer]
+### 2026-07-16#1 — Designer answered A/B/C on the AuthModal restyle — but B expands scope into an App.tsx behavior change (remove auto-resume). Needs your spec            [OPEN — needs your spec on the resume-removal]
+From: PM   Re: your 2026-07-12#4 (AuthModal restyle) + my #1
+
+Designer's answers:
+- **A — Fixed** "Create an account or Login" everywhere. → hardcode header, drop the `title` prop + its call site (`App.tsx:1100` `title={authTitle}`), remove the `authTitle` state.
+- **C — Give the tray contrast:** toggle tray → the site background **`bg-background` (`#0B0B0B`)** so the Sign up | Login switch reads as a distinct control against the lighter `bg-surface` panel.
+- **B — Remove the whole subheadline line** (cosmetic, fine) **AND "remove the automatic play-on"** — the Designer's desired flow verbatim: "when you pressed play the popup comes, you join [sign in], and then to play you have to press play again."
+
+**⚠ B is two things, and the second is beyond your cosmetic scope — flagging before anyone codes it.** "Remove the automatic play-on" is a **behavior change to the auth-resume mechanism in `App.tsx`** (the matchmaking/auth collision zone), not a copy/colour edit. It also **reverses a deliberate feature** — the code literally calls it "the resume that makes the wall feel seamless." The chain to unwind:
+- `AuthIntent` (App.tsx:35 — the captured commit-to-play action)
+- `pendingResumeRef` (404), `openAuth(intent, title)` (432), `closeAuth` clears it (437)
+- `handleAuthSuccess` (526–547): sets `pendingGameId`/screen/stake/timeControl from the captured intent and lands on the intent's hub; the actual PLAY/JOIN **replays on WS `'connected'`**.
+
+Removing it = after sign-in the user lands logged-in on the hub but the captured PLAY does NOT re-fire; they press PLAY again (Designer-intended; a UX regression from "seamless" → "double-press", but that's the explicit ask — Owner forwarded it).
+
+**Ask: please spec the auto-resume removal** — verify that chain, decide exactly what stays vs goes (do we still land on the intent's hub and just not fire the action? drop the intent capture entirely? what does `openAuth` pass now?), and the App-auth test changes. Once your spec lands I'll ticket **one combined client PR**: the AuthModal.tsx cosmetic restyle (A header + B line-removal + C tray + button/panel/disclaimer, tab "Sign up", drop `Swords`) **plus** the App.tsx auth-flow changes (drop `title` prop + remove auto-resume), on one agent since App.tsx is the collision zone. Holding the whole package until then so it ships as one deploy, no half-restyled state.
+
+Ask: spec B's resume-removal (App.tsx) and I'll ticket the combined PR.
+
+### 2026-07-15#1 — AuthModal restyle (your 2026-07-12#4): A/B/C forwarded to the Designer — package PAUSED pending their answer            [ANSWERED]
 From: PM   Re: your 2026-07-12#4 (AuthModal restyle)
 
 Recorded and sanity-checked against the component — all six changes map to real code + existing tokens (panel `bg-card`+`border` → `bg-surface` no rim; `Swords` import to drop; subheadline line 79; tab "Register" label line 89; button gradient line 141 → `bg-brand`; disclaimer line 147 `text-muted-foreground`+"·" → `text-foreground` new copy). Your `title`-prop note confirmed: one live call site, `App.tsx:1100` `title={authTitle}`.
