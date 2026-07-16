@@ -32,8 +32,9 @@ import { AuthModal } from './components/AuthModal.js';
 
 type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub' | 'crash-hub' | 'roulette-hub' | 'ships-battle-hub' | 'dice-hub' | 'baccarat-hub' | 'keno-hub' | 'limbo-hub' | 'hilo-hub';
 
-/** A commit-to-play action captured when a logged-out visitor hits the auth wall, replayed
- *  automatically once they register/sign in (the resume that makes the wall feel seamless). */
+/** A commit-to-play action captured when a logged-out visitor hits the auth wall. After sign-in
+ *  the user lands on the intent's hub with the stake armed and presses PLAY to commit — nothing
+ *  auto-fires. */
 type AuthIntent =
   | { action: 'play'; gameId: string; stake: number; timeControlId?: string }
   | { action: 'join'; matchId: string; gameId: string; stake: number };
@@ -392,19 +393,16 @@ export function App() {
   const [wsStatus, setWsStatus] = useState<WsStatus>('connected');
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   // Bumped when the WS client is (re)created so the handler-wiring effect below re-runs
-  // and binds handlers before the socket's async onopen fires the auto-resume.
+  // and binds handlers on the new socket before its async onopen fires.
   const [, setWsEpoch] = useState(0);
   const wsRef = useRef<WsClient | null>(null);
 
   // ── Auth wall (logged-out → commit-to-play) ─────────────────────────────────
   const loggedIn = token !== null;
   const [authOpen, setAuthOpen] = useState(false);
-  const [authTitle, setAuthTitle] = useState('Sign in');
-  // The captured intent to replay once the WS connects after sign-in (resume); cleared on cancel.
+  // The captured commit-to-play intent: after sign-in the user lands on this intent's hub with the
+  // stake pre-armed (nothing auto-fires — they press PLAY to commit); cleared on cancel.
   const pendingResumeRef = useRef<AuthIntent | null>(null);
-  // Set while resuming a 'join' so a CHALLENGE_TAKEN (gone by the time auth finished) falls back
-  // to that Game hub with the stake pre-armed, instead of erroring.
-  const joinFallbackRef = useRef<{ gameId: string; stake: number } | null>(null);
   const [prearmStake, setPrearmStake] = useState<number | undefined>(undefined);
   // #152: true only between an explicit user PLAY this session and the match forming / cancel.
   // Gates onQueueWaiting so a stray/leaked queue.waiting can never auto-enter "Searching…", and
@@ -428,10 +426,9 @@ export function App() {
     setScreen('home');
   }, []);
 
-  /** Open the auth modal. `intent` (if any) is replayed once the WS connects after sign-in. */
-  const openAuth = useCallback((intent: AuthIntent | null, title: string) => {
+  /** Open the auth modal. `intent` (if any) sets where the user lands (stake armed) after sign-in. */
+  const openAuth = useCallback((intent: AuthIntent | null) => {
     pendingResumeRef.current = intent;
-    setAuthTitle(title);
     setAuthOpen(true);
   }, []);
   const closeAuth = useCallback(() => {
@@ -520,9 +517,9 @@ export function App() {
     return () => clearTimeout(t);
   }, [waitingExpiresAt, currentMatchId]);
 
-  // Register/login from the modal: store the token + connect the WS (as handleLogin), keep the
-  // captured intent, and stay on the current hub. The actual replay fires on 'connected' (the
-  // WS must be open before joinQueue/takeChallenge) — see onStatus below.
+  // Register/login from the modal: store the token + connect the WS (as handleLogin), then land the
+  // user on the intent's hub with the stake ARMED — nothing auto-fires. They press PLAY to commit
+  // (a PLAY intent) or post their own challenge (a JOIN intent). No resume runs on connect.
   const handleAuthSuccess = useCallback((tok: string, pid: string, bal: number, name: string) => {
     localStorage.setItem('rc_token', tok);
     localStorage.setItem('rc_playerId', pid);
@@ -533,22 +530,26 @@ export function App() {
     setBalance(bal);
     const ws = new WsClient(tok, {});
     wsRef.current = ws;
-    setWsEpoch((n) => n + 1); // rebind handlers before onopen fires the resume
+    setWsEpoch((n) => n + 1); // rebind handlers on the new socket before its onopen fires
     ws.connect();
     setAuthOpen(false);
 
     const intent = pendingResumeRef.current;
     if (intent) {
-      // Land on the intent's hub so the resumed action resolves in place (Waiting / match).
+      // Land on the intent's hub so the user resumes in place — but with the stake pre-armed (PLAY
+      // ready), NOT auto-searching. For a 'play' intent, initialStake feeds the hub's bet row so it
+      // opens armed; chess also pre-arms the picked time control. A 'join' intent likewise lands the
+      // hub armed at that stake (post-your-own, no auto-join).
       setPendingGameId(intent.gameId);
       setScreen(hubScreenFor(intent.gameId) ?? 'home');
+      setPrearmStake(intent.stake);
       if (intent.action === 'play') {
-        setPendingStake(intent.stake);
         setPendingTimeControl(intent.timeControlId);
       }
     } else if (screen === 'auth') {
       setScreen('home'); // legacy full-screen path
     }
+    pendingResumeRef.current = null; // nothing consumes it on connect anymore
   }, [screen]);
 
   /** Find a challenge (its gameId + stake) by matchId across the home + single-game feeds. */
@@ -681,37 +682,11 @@ export function App() {
           if (screen === 'home' || isGameHubScreen(screen)) {
             for (const id of homeGamesRef.current) wsRef.current?.subscribeChallenges(id);
           }
-          // Resume a captured commit-to-play intent now the socket is open (post-sign-in).
-          const resume = pendingResumeRef.current;
-          if (resume && wsRef.current) {
-            pendingResumeRef.current = null;
-            if (resume.action === 'play') {
-              // A user PLAY captured pre-auth and now replayed → a genuine session search (#152).
-              searchingRef.current = true;
-              searchGameRef.current = resume.gameId;
-              setWaitingExpiresAt(null);
-              setLobbyExpired(false);
-              wsRef.current.joinQueue(resume.gameId, resume.stake, resume.timeControlId);
-            } else {
-              // If the tapped challenge is gone by now, onError(CHALLENGE_TAKEN) falls back below.
-              joinFallbackRef.current = { gameId: resume.gameId, stake: resume.stake };
-              wsRef.current.takeChallenge(resume.matchId);
-            }
-          }
+          // No auto-resume: after sign-in the user has already landed on the intent's hub with the
+          // stake armed (see handleAuthSuccess). They press PLAY to commit — nothing fires here.
         }
       },
       onError(payload) {
-        // Resume-join fallback: the tapped challenge was gone by the time auth finished — don't
-        // error; drop into that Game hub with the stake pre-armed to post a fresh challenge.
-        if (payload.code === 'CHALLENGE_TAKEN' && joinFallbackRef.current) {
-          const fb = joinFallbackRef.current;
-          joinFallbackRef.current = null;
-          setPendingGameId(fb.gameId);
-          setPrearmStake(fb.stake);
-          setScreen(hubScreenFor(fb.gameId) ?? 'home');
-          setChallengeNotice('That challenge was just taken — post your own.');
-          return;
-        }
         // A failed take (CHALLENGE_TAKEN / SELF_TAKE / INSUFFICIENT_BALANCE) → brief notice;
         // the list's `removed` update drops the stale row on its own.
         if (['CHALLENGE_TAKEN', 'SELF_TAKE', 'INSUFFICIENT_BALANCE'].includes(payload.code)) {
@@ -802,9 +777,9 @@ export function App() {
   const handleJoinQueue = useCallback((stake: number, timeControlId?: string) => {
     if (!pendingGameId) return;
     // Auth wall: a logged-out PLAY captures the intent and opens the sign-in modal; on success
-    // the WS connects and the challenge is posted automatically (resume).
+    // the user lands back on this hub with the stake armed and presses PLAY to post (no auto-fire).
     if (!token) {
-      openAuth({ action: 'play', gameId: pendingGameId, stake, timeControlId }, 'Sign in to play');
+      openAuth({ action: 'play', gameId: pendingGameId, stake, timeControlId });
       return;
     }
     if (!wsRef.current) return;
@@ -861,11 +836,11 @@ export function App() {
   }, [pendingGameId]);
 
   const handleTakeChallenge = useCallback((matchId: string) => {
-    // Auth wall: a logged-out JOIN captures the intent (with the challenge's game + stake so a
-    // gone-by-auth challenge can fall back to posting one) and opens the sign-in modal.
+    // Auth wall: a logged-out JOIN captures the intent (with the challenge's game + stake) and opens
+    // the sign-in modal; on success the user lands on that hub with the stake armed to post their own.
     if (!token) {
       const found = lookupChallenge(matchId);
-      openAuth(found ? { action: 'join', matchId, gameId: found.gameId, stake: found.stake } : null, 'Sign in to join');
+      openAuth(found ? { action: 'join', matchId, gameId: found.gameId, stake: found.stake } : null);
       return;
     }
     if (!wsRef.current) return;
@@ -877,11 +852,11 @@ export function App() {
   }, [token, openAuth, lookupChallenge]);
 
   // A JOIN from the logged-out public ticker: the row already carries game + stake, so capture a
-  // full 'join' intent directly (no WS feed to look it up in). On sign-in #111's resume takes it;
-  // if it's gone by then, the CHALLENGE_TAKEN fallback drops into that hub with the stake armed.
+  // full 'join' intent directly (no WS feed to look it up in). On sign-in the user lands on that
+  // hub with the stake armed to post their own — nothing auto-joins.
   const handleTakePublicChallenge = useCallback(
     (c: { matchId: string; gameId: string; stake: number }) => {
-      openAuth({ action: 'join', matchId: c.matchId, gameId: c.gameId, stake: c.stake }, 'Sign in to join');
+      openAuth({ action: 'join', matchId: c.matchId, gameId: c.gameId, stake: c.stake });
     },
     [openAuth],
   );
@@ -944,7 +919,7 @@ export function App() {
   // Wallet chip / Account tab: the profile when signed in, the sign-in modal when logged out.
   const onAccountTap = useCallback(() => {
     if (loggedIn) goToProfile();
-    else openAuth(null, 'Sign in');
+    else openAuth(null);
   }, [loggedIn, goToProfile, openAuth]);
 
   function renderScreen() {
@@ -1097,7 +1072,7 @@ export function App() {
       )}
       {renderScreen()}
       {authOpen && (
-        <AuthModal title={authTitle} onSuccess={handleAuthSuccess} onClose={closeAuth} />
+        <AuthModal onSuccess={handleAuthSuccess} onClose={closeAuth} />
       )}
     </>
   );
