@@ -2,18 +2,18 @@ import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 interface Props {
-  /** menu + games both go to the home/games surface. */
+  /** games → the home/games surface. */
   onGames(): void;
   /** account → profile / wallet. */
   onAccount(): void;
   /** Which item reads as active (default 'games' — the home/games surface). */
-  active?: 'menu' | 'games' | 'account';
+  active?: 'games' | 'account';
 }
 
 /**
  * Bottom navigation — the frame's transparent bar holding one rounded pill with 5 items
- * (Menu · Games · Account · Rewards · Chat). menu/games/account are wired to live surfaces;
- * rewards/chat are reserved and render visibly inactive (greyed, no action) — never a
+ * (Menu · Games · Account · Rewards · Chat). games/account are wired to live surfaces;
+ * menu/rewards/chat are reserved and render visibly inactive (greyed, no action) — never a
  * live-looking button that silently no-ops. Shared across hubs; `position: fixed` at the
  * bottom (#142 keeps the footer fixed while the page body scrolls). The bottom pad clears the
  * home-indicator safe-area under viewport-fit=cover.
@@ -37,7 +37,7 @@ export function HubToolbar({ onGames, onAccount, active = 'games' }: Props) {
       />
       <nav aria-label="Primary" className="fixed bottom-0 left-1/2 z-20 w-full max-w-md -translate-x-1/2 bg-transparent px-3 pb-[calc(0.5rem_+_env(safe-area-inset-bottom))] pt-1">
       <div className="flex items-center justify-between rounded-[26px] bg-surface px-1.5 py-2.5">
-        <ToolbarItem label="Menu" active={active === 'menu'} onClick={onGames} icon={ICON_MENU} />
+        <ToolbarItem label="Menu" comingSoon icon={ICON_MENU} />
         <ToolbarItem label="Games" active={active === 'games'} onClick={onGames} icon={ICON_GAMES} />
         <ToolbarItem label="Account" active={active === 'account'} onClick={onAccount} icon={ICON_ACCOUNT} />
         <ToolbarItem label="Rewards" comingSoon icon={ICON_REWARDS} />
