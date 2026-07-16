@@ -1,5 +1,40 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-07-12#10 — Blackjack: gate the result presentation on reveal-complete (bar fires too early) (Designer)            [OPEN — collision zone: GameHub + BlackjackBoard]
+From: Advisor   Re: Designer "result animation timing fix" (bar lights before the cards finish revealing)
+
+**Diagnosis (verified in code).** The result has **two triggers keyed to different events**, so they desync:
+- **Bar** (`ownBarVerdict`, `GameHub`): `useDelayedFlag(phase==='result', BAR_VERDICT_BEAT_MS=250)`. Blackjack passes **no `holdResultMs`**, so `phase` → `'result'` the instant match-end arrives → the bar lights ~250ms after the *server result*, before the reveal even starts.
+- **Outlines** (`ownFrame`, `BlackjackBoard`): `useDelayedFlag(phase==='result' && isTerminal, FRAME_DELAY_MS=1000)`, where `isTerminal` reads the **paced** view (`usePacedView` holds ~1100ms before the choreography begins). So outlines key off "reveal started", the bar off "data arrived" — the bar wins by ~850ms+.
+- The fixed `FRAME_DELAY_MS` also doesn't scale: it ≈ lands right for a 0–1-hit reveal (why outlines look OK) but a multi-hit reveal finishes later, so even outlines drift on slow reveals.
+- **Balance leak:** the wallet (`liveBalance` → ribbon) updates from the `balance` prop at settlement (match-end), ~2s before the bar — the Designer's "no balance flash".
+
+**Fix — one trigger: reveal-complete, owned by the board.** The board is the only place that knows the choreography timing, so it computes the completion moment and both the local outlines and (via a signal) the hub's bar + balance gate on it. **Purely start-time — no durations/colours/holds/shared components change.**
+
+**1. `BlackjackBoard` — compute `revealComplete` and gate the outlines on it.**
+- Derive the reveal length from the **existing** animation constants (single source of truth, so it can't drift): with `nHits = max(0, oppCards.length - 2)` —
+  `revealMs = nHits === 0 ? FLIP_MS(550) : HIT_DEAL_START_S*1000(450) + (nHits-1)*DEAL_STAGGER_S*1000(220) + CARD_ANIM(550)`
+  (i.e. 550ms for a stand-pat opponent; 1000 / 1220 / 1440… for 1 / 2 / 3 hits).
+- `revealComplete` flips true `revealMs` after `revealed` becomes true (reset when `revealed`/round changes). Replace the fixed-`FRAME_DELAY_MS` `useDelayedFlag` for `ownFrame` **and** the push `pushFrame` with this dynamic gate, so **win/loss outlines and equal-count/double-bust push outlines all wait for the last card to land**.
+- Call a new `onRevealComplete?()` (from `areaArgs`) when `revealComplete` flips true.
+
+**2. `GameHub` — gate the bar + balance on the board's signal (opt-in).**
+- Add `onRevealComplete?()` to `GameAreaArgs`; thread a stable callback that sets a `revealDone` state (reset per `currentMatchId`).
+- Add an opt-in prop (e.g. `gateResultOnReveal`) that Blackjack passes. When set:
+  - `ownBarVerdict` gates on `phase==='result' && revealDone` instead of `phase==='result' + BAR_VERDICT_BEAT_MS`. (Keep the beat path for non-gated games — Coinflip — unchanged; mind the hook-rules when combining.)
+  - **Hold the displayed wallet balance** at its pre-result value until `revealDone`, then apply the settled balance — so the ribbon doesn't flash the win/loss early. (This is the trickiest sub-part; if it proves invasive, it's the lowest-visibility leak, but the Designer did list it — implement if clean.)
+- Non-gated games omit the flag → today's behaviour exactly (regression guard).
+
+**Result:** at reveal-complete — hole flip done AND all hits landed, motionless — the outlines and the bar start on the **same frame** (bar: 0.5s fill → 2s hold → fade to outline, unchanged; outlines: green/red/orange per spec, unchanged). Nothing (bar colour, outline, "You Win" text, or balance) appears before that; the server can deliver the result whenever.
+
+**All outcomes gated:** win (bar fill + green outline), loss (red outline, no fill — unchanged), equal-count push (orange cards), double-bust push (red cards). Pushes keep suppressed bars (`suppressDrawBar`, unchanged) — only their card outlines gate on reveal-complete.
+
+**Tests:** (a) slow reveal — opponent with 3–4 hits — the own bar stays in its neutral in-play state until the **last** hit lands, then bar + outlines fire together; (b) stand-pat opponent (2 cards) — fire after the hole flip; (c) the wallet balance doesn't change until reveal-complete. Keep the existing GameHub remount-continuity test and the count-hidden redaction green.
+
+**Scope:** `BlackjackBoard` (`BlackjackHub.tsx`) + `GameHub.tsx` (shared) — the reveal collision zone. One PR, single agent, careful review; no protocol/module change.
+
+Ask: ticket it. Confirm whether to include the balance-hold now or defer it as a fast-follow (bar + outlines are the visible fix; balance is the subtler leak).
+
 ### 2026-07-12#9 — CORRECTION to #8: the ALL GAMES bolt is NOT aligned — both heading icons sit ~3–4px low            [ANSWERED — live rev 00065]
 From: Advisor   Re: Owner's logo-etalon analysis (correcting my earlier "ALL GAMES is fine")
 (PM note: #8 was never relayed to this mailbox — my ADVISOR entries jump #7 → #9. #9 is self-contained and supersedes it, so acting on #9 directly; flagging the gap for the record.)
