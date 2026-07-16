@@ -1,5 +1,60 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-07-12#6 — Navbar: Menu → reserved/greyed (decision: option B)            [OPEN, one-liner + cleanup]
+From: Advisor   Re: #3 Menu active-state — resolved as "reserved" (no Menu surface exists)
+
+Per the decision, Menu joins the reserved set rather than getting a (nonexistent) active state. In `HubToolbar.tsx`:
+- Change the Menu item to the reserved treatment, exactly like Rewards/Chat: `<ToolbarItem label="Menu" comingSoon icon={ICON_MENU} />` (drop its `active`/`onClick`). It then renders greyed (`opacity-40`, `text-muted-foreground`), `aria-disabled`, no action — matching the toolbar's own stated rule ("never a live-looking button that silently no-ops").
+- Remove the now-dead `active === 'menu'` path and drop `'menu'` from the `active` prop type (`'menu' | 'games' | 'account'` → `'games' | 'account'`). `onGames` stays (Games still uses it).
+- Update the component doc comment: "games/account are wired to live surfaces; **menu/**rewards/chat are reserved."
+
+Result: all five items behave consistently — Games/Account light purple when active, Menu/Rewards/Chat are reserved-grey. When a real Menu surface (a drawer/overlay) exists later, flip Menu back to a live item with its own active state (the earlier option A).
+
+**Test:** assert Menu now renders reserved (`aria-disabled`, greyed) and is not an actionable button.
+
+**Scope:** `HubToolbar.tsx` only; client, cosmetic. Independent of the auth PR — can ride any client PR.
+
+Ask: confirm the JOIN consequence in #5 (or "accept"), then ticket #5 into the combined auth PR and #6 as a small client change.
+
+### 2026-07-12#5 — Auth flow: remove the seamless auto-resume; sign-in lands with stake armed, user presses PLAY (Designer B)            [OPEN — App.tsx half of the combined auth PR]
+From: Advisor   Re: PM routing of "remove the automatic play-on"
+
+**Advisor verdict: yes, remove it — it's a net win, not just the Designer's preference.** The auto-resume is light polish that carries heavy machinery: a captured-intent ref replayed on socket-connect, the `wsEpoch` "rebind handlers before onopen" timing dance, and a `joinFallbackRef` + `CHALLENGE_TAKEN` branch that exists *only* to handle "the tapped challenge vanished mid-sign-in." Dropping the auto-fire deletes that whole edge-case class. And an explicit PLAY *after* sign-in (balance visible) is a cleaner commit moment for a wagering app than auto-committing the instant auth returns. Cost: one extra tap, first play only — and painless, because the modal is an overlay over the still-mounted hub, so the pick + stake are preserved behind it.
+
+**Spec (`App.tsx`):**
+1. **`onStatus('connected')` — delete the resume block.** Remove the `const resume = pendingResumeRef.current; if (resume) { … joinQueue / takeChallenge … }` section entirely. No auto-fire on connect.
+2. **`handleAuthSuccess` — land the user ready, don't fire.** Keep navigating to `hubScreenFor(intent.gameId)`, and **pre-arm the stake** (`setPrearmStake(intent.stake)`) so the hub opens with the bet set; then clear `pendingResumeRef.current = null` (nothing consumes it later now). PLAY path: the hub is already mounted behind the overlay with the user's pick + stake, so it's literally one tap. JOIN path: they land on that game's hub with the stake armed.
+3. **Remove the now-dead join-resume fallback.** Delete `joinFallbackRef` and the `if (payload.code === 'CHALLENGE_TAKEN' && joinFallbackRef.current) { … }` branch in `onError` (it only served the resumed-join-gone case). **Keep** the general `CHALLENGE_TAKEN / SELF_TAKE / INSUFFICIENT_BALANCE` notice branch (still needed for normal logged-in takes).
+4. **Comments:** update the `AuthIntent` doc ("replayed automatically… the resume that makes the wall feel seamless") and the `handleAuthSuccess`/`onStatus` comments to the new model ("after sign-in the user lands on the game with the stake armed and presses PLAY to commit").
+
+**Consequence to confirm (JOIN entry).** A guest who taps a *specific* open challenge then signs in will no longer auto-join *that* challenge — they land on that game's hub with the stake armed and press PLAY to post their own. Robust (removes the vanished-challenge handling) and consistent with "press again," but it's a real change to the public-ticker join path. Recommend accepting it (the alternative — re-showing the ticker so they can re-tap — is more work and the specific challenge is often gone). Confirm OK.
+
+**Tests:** the auth-resume test (asserts sign-in auto-fires `joinQueue`/`takeChallenge`) flips to: after sign-in the user is on the intent's hub with the stake pre-armed and **no** queue/take fires until an explicit PLAY. Drop the `CHALLENGE_TAKEN`-resume-fallback test.
+
+**Scope:** `App.tsx` (the auth/matchmaking collision zone) — the App-side half of the combined auth PR with the `AuthModal` restyle (2026-07-12#4). Single agent, one deploy, as you planned.
+
+### 2026-07-12#4 — Sign-up/Login modal (`AuthModal.tsx`) restyle to match the site (Designer)            [OPEN, small client PR — A/B/C need confirm]
+From: Advisor   Re: Designer "sign up / login popup — restyle"
+
+**Judgement:** all six are sane, low-risk, and land in one file — `apps/web/src/components/AuthModal.tsx` (the mid-play auth gate; the full-screen `Auth.tsx` is a separate surface, untouched). Every colour maps to an **existing token** (no hardcoded hex): the Designer's `#1A1A2E` is `--rc-surface` → `bg-surface` (the hub panels' surface), and "brand purple / same as PLAY" is `bg-brand` (`#8140e2`). Three consequences the spec glossed are flagged for Designer confirmation below — default is "as written."
+
+**The six changes (verified against the current component):**
+1. **Panel fill → solid surface, no rim.** The modal panel is `… rounded-2xl border border-border bg-card p-6 …`. Change `bg-card` → **`bg-surface`** (that's `--rc-surface` = `#1A1A2E`, the "PLAY / bet / Play-a-Friend" panel colour) and **remove `border border-border`**. Keep `rounded-2xl`, keep the `bg-black/70 backdrop-blur-sm` scrim behind it. (Inputs stay `bg-background` `#0b0b0b` — still contrasts against the lighter panel.)
+2. **Header row.** Remove the `<Swords … />` icon (and its `Swords` import). Change the header text to a fixed **"Create an account or Login"** (see confirm **A** — this replaces the dynamic `title` prop). Keep the `X` close button as-is.
+3. **Remove the subheadline.** Delete the `<p>Create an account (you get 1,000 play-money credits) … automatically.</p>` entirely; nothing replaces it (see confirm **B**).
+4. **Toggle label.** Change the first tab's label **"Register" → "Sign up"** (tabs read `Sign up | Login`, left→right as now). Internal state/testids unchanged — only the visible label. Update any test asserting the "Register" text.
+5. **Action button → solid brand purple.** Replace `bg-gradient-to-r from-brand to-indigo-600 … hover:to-indigo-500` with solid **`bg-brand hover:bg-brand/90`** (the same purple as PLAY / other primary buttons). Keep shape/size and the `shadow-lg shadow-brand/20` glow ("only the fill changes"). Labels stay dynamic: Login → "Sign In", Sign up → "Create Account".
+6. **Disclaimer → white, exact copy.** Change `text-muted-foreground` → **`text-foreground`** (the site's near-white text token; use `text-white` only if the Designer wants pure `#fff`). Text becomes exactly: **`Play-money demo credits only, no real-money wagering.`** — note the removed "·" (now one phrase "demo credits only"). Keep it centered `text-xs`.
+
+**Confirm with the Designer (default = as written):**
+- **A — fixed header drops the contextual cue.** The header is currently the `title` prop the caller sets to say *why* the wall fired ("Sign in to play" / "Sign in to join"). A fixed "Create an account or Login" loses that. If OK, hardcode it and **remove the now-unused `title` prop + the titles passed at the 2–3 call sites** (App-level auth-wall triggers) for cleanliness — small caller touch.
+- **B — the deleted subheadline carries two messages.** It's the only place the modal states "you get 1,000 play-money credits" (a conversion nudge) *and* "your move continues automatically" (a real reassurance at the commit-to-play moment that their in-progress action resumes after auth). Confirm the Designer accepts losing both.
+- **C — the toggle tray blends into the new panel.** The Sign-up/Login tray is `bg-surface` — the colour the panel is becoming — so the tray container disappears (selected purple pill still shows; unselected tab is text on the panel). Clean "floating pill" look; confirm that's intended, or give the tray a hair of contrast (e.g. `bg-background`).
+
+**Scope:** one client component, colour/copy only; all tokens (`bg-surface`, `bg-brand`, `text-foreground`) already exist. Remove the unused `Swords` import; if A is accepted, drop the `title` prop and update its call sites. Update the auth-modal tests for the new labels/copy (tab label "Sign up", header text, disclaimer string).
+
+Ask: confirm A/B/C (or "proceed as written"); then ticket the one PR.
+
 ### 2026-07-12#3 — Two heading alignment fixes + navbar Menu active state (Designer)            [#1/#2 OPEN; #3 NEEDS DECISION]
 From: Advisor   Re: Designer "three small UI fixes"
 

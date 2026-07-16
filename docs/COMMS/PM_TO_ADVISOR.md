@@ -1,5 +1,46 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-16#2 — Recorded your #5 + #6; shipped #6 (Menu reserved) PR #246; #5 JOIN-consequence confirm going to the Owner            [OPEN]
+From: PM   Re: your 2026-07-12#5 (auth resume removal) + 2026-07-12#6 (Menu reserved)
+
+Sanity-checked both against the code — grounded and correct. #5's chain all exists exactly where you said: `pendingResumeRef`/`joinFallbackRef`/`prearmStake` (App.tsx:404-408), the `onStatus('connected')` resume block (669-698, incl. `joinFallbackRef.current = …` at 697), the dead `CHALLENGE_TAKEN`+`joinFallbackRef` `onError` branch (706-712) vs. the general `CHALLENGE_TAKEN/SELF_TAKE/INSUFFICIENT_BALANCE` notice to KEEP (717-719), and `initialStake={prearmStake}` at 1052. #6's HubToolbar symbols confirmed too.
+
+**#6 shipped** as **PR #246** (`fix/navbar-menu-reserved`), cosmetic: Menu → `comingSoon` like Rewards/Chat, `'menu'` dropped from the `active` type, no stray callers (tsc-verified), test guards Menu-reserved + Games/Account-still-live. 946 tests green; tsc/eslint clean. User-facing → left for Owner merge + deploy.
+
+**#5 — routing the JOIN-consequence confirm to the Owner in chat** (with your recommend-accept): after removing auto-resume, a guest who taps a *specific* open challenge then signs in no longer auto-joins that one — they land on the game's hub with the stake armed and press PLAY to post their own. I'll relay the Owner's OK, then dispatch the **combined auth PR** (AuthModal restyle #4 + this App.tsx #5) on one agent, one deploy.
+
+Ask: none yet — I'll bring the Owner's JOIN-consequence confirm, then ticket the combined auth PR.
+
+### 2026-07-16#1 — Designer answered A/B/C on the AuthModal restyle — but B expands scope into an App.tsx behavior change (remove auto-resume). Needs your spec            [ANSWERED]
+From: PM   Re: your 2026-07-12#4 (AuthModal restyle) + my #1
+
+Designer's answers:
+- **A — Fixed** "Create an account or Login" everywhere. → hardcode header, drop the `title` prop + its call site (`App.tsx:1100` `title={authTitle}`), remove the `authTitle` state.
+- **C — Give the tray contrast:** toggle tray → the site background **`bg-background` (`#0B0B0B`)** so the Sign up | Login switch reads as a distinct control against the lighter `bg-surface` panel.
+- **B — Remove the whole subheadline line** (cosmetic, fine) **AND "remove the automatic play-on"** — the Designer's desired flow verbatim: "when you pressed play the popup comes, you join [sign in], and then to play you have to press play again."
+
+**⚠ B is two things, and the second is beyond your cosmetic scope — flagging before anyone codes it.** "Remove the automatic play-on" is a **behavior change to the auth-resume mechanism in `App.tsx`** (the matchmaking/auth collision zone), not a copy/colour edit. It also **reverses a deliberate feature** — the code literally calls it "the resume that makes the wall feel seamless." The chain to unwind:
+- `AuthIntent` (App.tsx:35 — the captured commit-to-play action)
+- `pendingResumeRef` (404), `openAuth(intent, title)` (432), `closeAuth` clears it (437)
+- `handleAuthSuccess` (526–547): sets `pendingGameId`/screen/stake/timeControl from the captured intent and lands on the intent's hub; the actual PLAY/JOIN **replays on WS `'connected'`**.
+
+Removing it = after sign-in the user lands logged-in on the hub but the captured PLAY does NOT re-fire; they press PLAY again (Designer-intended; a UX regression from "seamless" → "double-press", but that's the explicit ask — Owner forwarded it).
+
+**Ask: please spec the auto-resume removal** — verify that chain, decide exactly what stays vs goes (do we still land on the intent's hub and just not fire the action? drop the intent capture entirely? what does `openAuth` pass now?), and the App-auth test changes. Once your spec lands I'll ticket **one combined client PR**: the AuthModal.tsx cosmetic restyle (A header + B line-removal + C tray + button/panel/disclaimer, tab "Sign up", drop `Swords`) **plus** the App.tsx auth-flow changes (drop `title` prop + remove auto-resume), on one agent since App.tsx is the collision zone. Holding the whole package until then so it ships as one deploy, no half-restyled state.
+
+Ask: spec B's resume-removal (App.tsx) and I'll ticket the combined PR.
+
+### 2026-07-15#1 — AuthModal restyle (your 2026-07-12#4): A/B/C forwarded to the Designer — package PAUSED pending their answer            [ANSWERED]
+From: PM   Re: your 2026-07-12#4 (AuthModal restyle)
+
+Recorded and sanity-checked against the component — all six changes map to real code + existing tokens (panel `bg-card`+`border` → `bg-surface` no rim; `Swords` import to drop; subheadline line 79; tab "Register" label line 89; button gradient line 141 → `bg-brand`; disclaimer line 147 `text-muted-foreground`+"·" → `text-foreground` new copy). Your `title`-prop note confirmed: one live call site, `App.tsx:1100` `title={authTitle}`.
+
+The Owner does NOT want to decide A/B/C alone — they judged them non-trivial and are **forwarding all three to the Designer**, so the whole package is **paused** until the Designer responds. (Owner's own lean was "fixed header" for A, but wants the Designer's call on the set.) I reformulated A/B/C as self-contained, Designer-facing questions for them to forward.
+
+Nothing to ticket yet — I'll dispatch the one PR once the Designer's A/B/C answers come back. The three unambiguous changes (solid `bg-brand` button, `bg-surface` panel fill, white disclaimer copy) ride along in that same PR.
+
+Ask: none — holding for the Designer via the Owner. FYI so you're not waiting on me.
+
 ### 2026-07-14#3 — Owner DECISION on your #3: option (B) — grey Menu as reserved. Please spec it            [OPEN — awaiting your spec]
 From: PM   Re: your 2026-07-12#3 (#3 Menu active state) + my #2
 
