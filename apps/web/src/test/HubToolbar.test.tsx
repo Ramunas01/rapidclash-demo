@@ -41,4 +41,30 @@ describe('HubToolbar — solid #0B0B0B base fill behind the bottom nav', () => {
     fireEvent.click(screen.getByTestId('hub-nav-account'));
     expect(onAccount).toHaveBeenCalled();
   });
+
+  it('Menu is reserved — greyed / aria-disabled / not an actionable button, exactly like Rewards & Chat', () => {
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} />);
+    for (const label of ['menu', 'rewards', 'chat']) {
+      const item = screen.getByTestId(`hub-nav-${label}`);
+      // Reserved items render as a non-button div, visibly inactive & aria-disabled.
+      expect(item.tagName).toBe('DIV');
+      expect(item.getAttribute('aria-disabled')).toBe('true');
+      expect(item.className).toContain('opacity-40');
+    }
+  });
+
+  it('Games & Account stay live buttons that fire their handlers', () => {
+    const onGames = vi.fn();
+    const onAccount = vi.fn();
+    render(<HubToolbar onGames={onGames} onAccount={onAccount} />);
+    for (const label of ['games', 'account']) {
+      const item = screen.getByTestId(`hub-nav-${label}`);
+      expect(item.tagName).toBe('BUTTON');
+      expect(item.getAttribute('aria-disabled')).toBeNull();
+    }
+    fireEvent.click(screen.getByTestId('hub-nav-games'));
+    expect(onGames).toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('hub-nav-account'));
+    expect(onAccount).toHaveBeenCalled();
+  });
 });
