@@ -1,5 +1,38 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-07-12#6 — Navbar: Menu → reserved/greyed (decision: option B)            [OPEN, one-liner + cleanup]
+From: Advisor   Re: #3 Menu active-state — resolved as "reserved" (no Menu surface exists)
+
+Per the decision, Menu joins the reserved set rather than getting a (nonexistent) active state. In `HubToolbar.tsx`:
+- Change the Menu item to the reserved treatment, exactly like Rewards/Chat: `<ToolbarItem label="Menu" comingSoon icon={ICON_MENU} />` (drop its `active`/`onClick`). It then renders greyed (`opacity-40`, `text-muted-foreground`), `aria-disabled`, no action — matching the toolbar's own stated rule ("never a live-looking button that silently no-ops").
+- Remove the now-dead `active === 'menu'` path and drop `'menu'` from the `active` prop type (`'menu' | 'games' | 'account'` → `'games' | 'account'`). `onGames` stays (Games still uses it).
+- Update the component doc comment: "games/account are wired to live surfaces; **menu/**rewards/chat are reserved."
+
+Result: all five items behave consistently — Games/Account light purple when active, Menu/Rewards/Chat are reserved-grey. When a real Menu surface (a drawer/overlay) exists later, flip Menu back to a live item with its own active state (the earlier option A).
+
+**Test:** assert Menu now renders reserved (`aria-disabled`, greyed) and is not an actionable button.
+
+**Scope:** `HubToolbar.tsx` only; client, cosmetic. Independent of the auth PR — can ride any client PR.
+
+Ask: confirm the JOIN consequence in #5 (or "accept"), then ticket #5 into the combined auth PR and #6 as a small client change.
+
+### 2026-07-12#5 — Auth flow: remove the seamless auto-resume; sign-in lands with stake armed, user presses PLAY (Designer B)            [OPEN — App.tsx half of the combined auth PR]
+From: Advisor   Re: PM routing of "remove the automatic play-on"
+
+**Advisor verdict: yes, remove it — it's a net win, not just the Designer's preference.** The auto-resume is light polish that carries heavy machinery: a captured-intent ref replayed on socket-connect, the `wsEpoch` "rebind handlers before onopen" timing dance, and a `joinFallbackRef` + `CHALLENGE_TAKEN` branch that exists *only* to handle "the tapped challenge vanished mid-sign-in." Dropping the auto-fire deletes that whole edge-case class. And an explicit PLAY *after* sign-in (balance visible) is a cleaner commit moment for a wagering app than auto-committing the instant auth returns. Cost: one extra tap, first play only — and painless, because the modal is an overlay over the still-mounted hub, so the pick + stake are preserved behind it.
+
+**Spec (`App.tsx`):**
+1. **`onStatus('connected')` — delete the resume block.** Remove the `const resume = pendingResumeRef.current; if (resume) { … joinQueue / takeChallenge … }` section entirely. No auto-fire on connect.
+2. **`handleAuthSuccess` — land the user ready, don't fire.** Keep navigating to `hubScreenFor(intent.gameId)`, and **pre-arm the stake** (`setPrearmStake(intent.stake)`) so the hub opens with the bet set; then clear `pendingResumeRef.current = null` (nothing consumes it later now). PLAY path: the hub is already mounted behind the overlay with the user's pick + stake, so it's literally one tap. JOIN path: they land on that game's hub with the stake armed.
+3. **Remove the now-dead join-resume fallback.** Delete `joinFallbackRef` and the `if (payload.code === 'CHALLENGE_TAKEN' && joinFallbackRef.current) { … }` branch in `onError` (it only served the resumed-join-gone case). **Keep** the general `CHALLENGE_TAKEN / SELF_TAKE / INSUFFICIENT_BALANCE` notice branch (still needed for normal logged-in takes).
+4. **Comments:** update the `AuthIntent` doc ("replayed automatically… the resume that makes the wall feel seamless") and the `handleAuthSuccess`/`onStatus` comments to the new model ("after sign-in the user lands on the game with the stake armed and presses PLAY to commit").
+
+**Consequence to confirm (JOIN entry).** A guest who taps a *specific* open challenge then signs in will no longer auto-join *that* challenge — they land on that game's hub with the stake armed and press PLAY to post their own. Robust (removes the vanished-challenge handling) and consistent with "press again," but it's a real change to the public-ticker join path. Recommend accepting it (the alternative — re-showing the ticker so they can re-tap — is more work and the specific challenge is often gone). Confirm OK.
+
+**Tests:** the auth-resume test (asserts sign-in auto-fires `joinQueue`/`takeChallenge`) flips to: after sign-in the user is on the intent's hub with the stake pre-armed and **no** queue/take fires until an explicit PLAY. Drop the `CHALLENGE_TAKEN`-resume-fallback test.
+
+**Scope:** `App.tsx` (the auth/matchmaking collision zone) — the App-side half of the combined auth PR with the `AuthModal` restyle (2026-07-12#4). Single agent, one deploy, as you planned.
+
 ### 2026-07-12#4 — Sign-up/Login modal (`AuthModal.tsx`) restyle to match the site (Designer)            [OPEN, small client PR — A/B/C need confirm]
 From: Advisor   Re: Designer "sign up / login popup — restyle"
 
