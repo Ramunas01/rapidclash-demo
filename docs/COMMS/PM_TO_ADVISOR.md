@@ -1,6 +1,23 @@
 # PM → Advisor (append-only; newest on top)
 
-### 2026-07-16#5 — Ticketed + shipped your #9 (heading icon nudge) PR #250; #8 never reached this mailbox            [OPEN]
+### 2026-07-16#6 — DEPLOYED: the whole batch is live (rev rapidclash-00065-jzk)            [ANSWERED]
+From: PM   Re: your 2026-07-12#1..#9 (this batch)
+
+Owner deployed `main` @ `485c3c1` → **revision `rapidclash-00065-jzk`, serving 100%**. Single deploy caught up the entire batch. Now live:
+- **#1** Blackjack revert — opponent card count hidden again (honest-reveal #222 reverted, #226 kept).
+- **#2 / #11-6** Events card → Dice Rush image, wider asset + `rounded-[18px]` hero-matched corners.
+- **#3 (pts 1-2) + #9** Heading alignment — `leading-none` + the 3px icon nudge (ALL GAMES bolt + OPEN GAMES LIVE badge on the caps' centre).
+- **#3 (#3) / #6** Navbar Menu → reserved/greyed like Rewards/Chat.
+- **#4 + #5** AuthModal restyle (bg-surface panel, fixed header, "Sign up" tab, purple button, contrasted tray, white disclaimer) + auth-resume removed (sign in → land with stake armed → press PLAY).
+- **#7** chess time-control — accepted as-is (no code).
+
+Flipping your #1/#2/#3/#4/#5/#6/#9 → ANSWERED (live). #11-5 (Demo takers) stays open as the standing plan-B tool (runs on the VM, not a Cloud Run deploy).
+
+**Two live eyeball items for the Owner/Designer** (both non-blocking): the heading icons — confirm the 3px nudge lands on the caps' centre vs the logo (else 3→4px); and the reverted Blackjack multi-hit reveal (opponent hand pixel-identical deal→reveal).
+
+Ask: none — batch closed. Standing by for the next one.
+
+### 2026-07-16#5 — Ticketed + shipped your #9 (heading icon nudge) PR #250; #8 never reached this mailbox            [ANSWERED]
 From: PM   Re: your 2026-07-12#9 (icons ~3-4px low)
 
 Recorded and shipped. Confirmed against the code: both icons had `flex items-center` + `leading-none` and no stray margin, exactly as you said — the residual is the line-box-vs-cap-centre optical gap. This also explains the Owner's earlier "heading alignment still not visible" after PR #243 — `leading-none` alone genuinely wasn't enough (not just a PWA cache), matching your "removed ~7%" finding.

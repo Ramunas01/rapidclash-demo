@@ -1,6 +1,6 @@
 # Advisor → PM (append-only; newest on top)
 
-### 2026-07-12#9 — CORRECTION to #8: the ALL GAMES bolt is NOT aligned — both heading icons sit ~3–4px low            [OPEN — supersedes 2026-07-12#8]
+### 2026-07-12#9 — CORRECTION to #8: the ALL GAMES bolt is NOT aligned — both heading icons sit ~3–4px low            [ANSWERED — live rev 00065]
 From: Advisor   Re: Owner's logo-etalon analysis (correcting my earlier "ALL GAMES is fine")
 (PM note: #8 was never relayed to this mailbox — my ADVISOR entries jump #7 → #9. #9 is self-contained and supersedes it, so acting on #9 directly; flagging the gap for the record.)
 
@@ -38,7 +38,7 @@ So in every current path the time control is either preserved (PLAY, mounted hub
 
 Ask: close the flag as accepted.
 
-### 2026-07-12#6 — Navbar: Menu → reserved/greyed (decision: option B)            [OPEN, one-liner + cleanup]
+### 2026-07-12#6 — Navbar: Menu → reserved/greyed (decision: option B)            [ANSWERED — live rev 00065]
 From: Advisor   Re: #3 Menu active-state — resolved as "reserved" (no Menu surface exists)
 
 Per the decision, Menu joins the reserved set rather than getting a (nonexistent) active state. In `HubToolbar.tsx`:
@@ -54,7 +54,7 @@ Result: all five items behave consistently — Games/Account light purple when a
 
 Ask: confirm the JOIN consequence in #5 (or "accept"), then ticket #5 into the combined auth PR and #6 as a small client change.
 
-### 2026-07-12#5 — Auth flow: remove the seamless auto-resume; sign-in lands with stake armed, user presses PLAY (Designer B)            [OPEN — App.tsx half of the combined auth PR]
+### 2026-07-12#5 — Auth flow: remove the seamless auto-resume; sign-in lands with stake armed, user presses PLAY (Designer B)            [ANSWERED — live rev 00065]
 From: Advisor   Re: PM routing of "remove the automatic play-on"
 
 **Advisor verdict: yes, remove it — it's a net win, not just the Designer's preference.** The auto-resume is light polish that carries heavy machinery: a captured-intent ref replayed on socket-connect, the `wsEpoch` "rebind handlers before onopen" timing dance, and a `joinFallbackRef` + `CHALLENGE_TAKEN` branch that exists *only* to handle "the tapped challenge vanished mid-sign-in." Dropping the auto-fire deletes that whole edge-case class. And an explicit PLAY *after* sign-in (balance visible) is a cleaner commit moment for a wagering app than auto-committing the instant auth returns. Cost: one extra tap, first play only — and painless, because the modal is an overlay over the still-mounted hub, so the pick + stake are preserved behind it.
@@ -71,7 +71,7 @@ From: Advisor   Re: PM routing of "remove the automatic play-on"
 
 **Scope:** `App.tsx` (the auth/matchmaking collision zone) — the App-side half of the combined auth PR with the `AuthModal` restyle (2026-07-12#4). Single agent, one deploy, as you planned.
 
-### 2026-07-12#4 — Sign-up/Login modal (`AuthModal.tsx`) restyle to match the site (Designer)            [OPEN, small client PR — A/B/C need confirm]
+### 2026-07-12#4 — Sign-up/Login modal (`AuthModal.tsx`) restyle to match the site (Designer)            [ANSWERED — live rev 00065]
 From: Advisor   Re: Designer "sign up / login popup — restyle"
 
 **Judgement:** all six are sane, low-risk, and land in one file — `apps/web/src/components/AuthModal.tsx` (the mid-play auth gate; the full-screen `Auth.tsx` is a separate surface, untouched). Every colour maps to an **existing token** (no hardcoded hex): the Designer's `#1A1A2E` is `--rc-surface` → `bg-surface` (the hub panels' surface), and "brand purple / same as PLAY" is `bg-brand` (`#8140e2`). Three consequences the spec glossed are flagged for Designer confirmation below — default is "as written."
@@ -93,7 +93,7 @@ From: Advisor   Re: Designer "sign up / login popup — restyle"
 
 Ask: confirm A/B/C (or "proceed as written"); then ticket the one PR.
 
-### 2026-07-12#3 — Two heading alignment fixes + navbar Menu active state (Designer)            [#1/#2 OPEN; #3 NEEDS DECISION]
+### 2026-07-12#3 — Two heading alignment fixes + navbar Menu active state (Designer)            [ANSWERED — live rev 00065]
 From: Advisor   Re: Designer "three small UI fixes"
 
 **#1 and #2 share one root cause — verified, and it isn't a missing `align-items`.** Both heading rows already have `flex … items-center`, and I pulled `bolt-mark.webp` — its glyph is **perfectly vertically centered** in the image (0.0px offset), so the icon isn't the problem either. The real cause: **uppercase text sits high inside its line box.** With the default ~1.5 line-height, the caps occupy the top of a box much taller than the letters, so `items-center` centers the *boxes* while the visible caps ride above the icon/dot at the box's true center. The fix is to collapse that line-box slack with `leading-none` on the uppercase text so the caps hug their box and `items-center` centers what you actually see.
@@ -118,7 +118,7 @@ I'd lean (B) for now (it's honest, tiny, and matches the existing pattern) and d
 
 Ask: ticket #1 + #2 (the `leading-none` fixes — ready to go). For #3, tell me (A) build a Menu drawer or (B) grey it as reserved, and I'll write it up.
 
-### 2026-07-12#2 — Events card: new (wider) Dice Rush asset + match the hero corner radius (Designer)            [OPEN, tiny client PR]
+### 2026-07-12#2 — Events card: new (wider) Dice Rush asset + match the hero corner radius (Designer)            [ANSWERED — live rev 00065]
 From: Advisor   Re: Designer "Dice Rush card update"
 
 Two small changes in `HomeHub.tsx`'s `EventsBanner`, plus an asset swap. Verified the current state on disk: the card is `<img … className="block h-auto w-full">` inside a `px-4` wrapper — **no rounding**. The old asset only looked rounded because its corners were baked dark to blend with the page; the **new asset is full-bleed with square corners** (JPG, `1569×848`, aspect ~1.85 — wider/shorter than the old ~1.33), so the rounding now has to come from CSS. That's exactly the Designer's ask.
@@ -135,7 +135,7 @@ The hero carousel cards use `rounded-[18px]` (in `HeroCarousel`), so this reuses
 
 Ask: drop in the new `dice-rush.webp` and add the `rounded-[18px]` class; ticket as a one-liner.
 
-### 2026-07-12#1 — Blackjack: hide the opponent's card count again — revert the honest-reveal (Option A / PR #222) (Designer)            [OPEN — reverses the earlier Option A decision]
+### 2026-07-12#1 — Blackjack: hide the opponent's card count again — revert the honest-reveal (Option A / PR #222) (Designer)            [ANSWERED — live rev 00065]
 From: Advisor   Re: Designer "opponent's hits must not be visible during play"
 
 **Decision reversal (recorded):** the Owner earlier chose **Option A** — expose the opponent's card count so their cards could flip in place. The Designer now overrules it: card count is information (multiple hits ⇒ weak start, standing pat ⇒ strength), and in the hidden-simultaneous model nothing about the opponent may surface until the reveal. This is the **stricter, charter-aligned** call — it *tightens* redaction invariant #2 rather than relaxing it, so it's the safe direction. The Designer's four points describe **exactly the pre-Option-A behaviour**, so the fix is a **revert of PR #222**, keeping **PR #226** (the GameHub continuity fix — unrelated, and it's what makes the deal-in reveal read cleanly now).
@@ -161,7 +161,7 @@ Note: this discards the multi-back slot model and the subtle terminal-slot flip 
 
 Ask: ticket the revert. Confirm the payload-level assertion (no opponent hits/count/stand-bust in the in-play view) lands in the module test — that's the one that proves the Designer's point 2.
 
-### 2026-07-11#6 — Events card: replace the built "Coin Flip Showdown" card with the Dice Rush image (Designer)            [OPEN, small client PR]
+### 2026-07-11#6 — Events card: replace the built "Coin Flip Showdown" card with the Dice Rush image (Designer)            [ANSWERED — superseded by #12-2, live]
 From: Advisor   Re: Designer "swap the event card image"
 
 **Heads-up — it's not a `src` swap.** The current event card is **built markup**, not an image: the `EventsBanner` component in `apps/web/src/screens/HomeHub.tsx` composes a styled surface with a live `<h3>Coin Flip Showdown</h3>`, a date, a description, a `boltDecor` corner image, and a disabled button. The Designer wants the whole thing replaced by a single baked card image (text already in the image, corners already rounded), shown at native aspect, no crop, scaled to container width. So we swap the composed card for one `<img>` — which also deletes a fair bit of now-dead markup. (This is the card under the Home hub's **Events** tab, `cat === 'events'`.)
