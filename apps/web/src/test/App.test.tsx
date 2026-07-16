@@ -351,7 +351,7 @@ describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
     expect(sockets.length).toBe(0); // the WS (auth) is not opened until sign-in
   });
 
-  it('JOIN a public challenge while logged-out → auth modal → on register the take resumes over the freshly-connected WS', async () => {
+  it('JOIN a public challenge while logged-out → auth modal → on register the user LANDS on that hub with the stake armed and nothing auto-fires', async () => {
     render(<App />);
     await waitFor(() => screen.getByTestId('home-hub'));
 
@@ -368,20 +368,23 @@ describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
     fireEvent.click(screen.getByTestId('auth-submit'));
     await waitFor(() => expect(sockets.length).toBe(1));
 
-    // Open the socket → the captured JOIN intent replays as a challenge.take (the resume).
+    // Open the socket. With auto-resume removed NOTHING fires on connect — the user has landed on
+    // the intent's hub with the stake pre-armed and must press PLAY (post-your-own, no auto-join).
     act(() => {
       sockets[0].readyState = 1;
       sockets[0].onopen?.();
     });
-    const takes = sockets[0].send.mock.calls
+    const fired = sockets[0].send.mock.calls
       .map((c) => JSON.parse(String(c[0])))
-      .filter((m: { type: string }) => m.type === 'challenge.take');
-    expect(takes).toHaveLength(1);
-    expect(takes[0].payload).toMatchObject({ matchId: 'pub-1' });
+      .filter((m: { type: string }) => m.type === 'challenge.take' || m.type === 'queue.join');
+    expect(fired).toHaveLength(0); // no take / no join — nothing auto-fires post-sign-in
+
     expect(screen.queryByTestId('auth-modal')).toBeNull(); // modal dismissed on success
+    // Landed on the Coinflip hub with the stake armed → PLAY is ready to commit.
+    await waitFor(() => expect(screen.getByTestId('hub-play')).toBeEnabled());
   });
 
-  it('PLAY while logged-out → auth modal → on register the post resumes over the freshly-connected WS', async () => {
+  it('PLAY while logged-out → auth modal → on register the user LANDS on the hub with the stake armed and nothing auto-fires', async () => {
     render(<App />);
     await waitFor(() => screen.getByTestId('home-tile-coinflip'));
 
@@ -401,7 +404,8 @@ describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
     fireEvent.click(screen.getByTestId('auth-submit'));
     await waitFor(() => expect(sockets.length).toBe(1));
 
-    // Open the socket → the captured PLAY intent replays as a queue.join (the resume).
+    // Open the socket. Auto-resume is gone → NO queue.join fires on connect. The user is back on the
+    // Coinflip hub with the stake pre-armed and presses PLAY to post (an explicit user action).
     act(() => {
       sockets[0].readyState = 1;
       sockets[0].onopen?.();
@@ -409,9 +413,11 @@ describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
     const joins = sockets[0].send.mock.calls
       .map((c) => JSON.parse(String(c[0])))
       .filter((m: { type: string }) => m.type === 'queue.join');
-    expect(joins).toHaveLength(1);
-    expect(joins[0].payload).toMatchObject({ gameId: 'coinflip', stake: 10 });
+    expect(joins).toHaveLength(0); // nothing auto-fires post-sign-in
+
     expect(screen.queryByTestId('auth-modal')).toBeNull(); // modal dismissed on success
+    // Landed back on the Coinflip hub with the 10 stake armed → PLAY is ready.
+    await waitFor(() => expect(screen.getByTestId('hub-play')).toBeEnabled());
   });
 });
 

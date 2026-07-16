@@ -1,24 +1,24 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { motion } from 'framer-motion';
-import { AlertCircle, Loader2, Lock, Swords, User, X } from 'lucide-react';
+import { AlertCircle, Loader2, Lock, User, X } from 'lucide-react';
 import { api } from '../api.js';
 import { cn } from '@/lib/utils';
 
 interface Props {
-  /** Same shape as AuthScreen.onLogin — App stores the token, connects the WS, resumes intent. */
+  /** Same shape as AuthScreen.onLogin — App stores the token and connects the WS. After sign-in
+   *  the user lands on the intent's hub with the stake armed and presses PLAY to commit. */
   onSuccess(token: string, playerId: string, balance: number, username: string): void;
   onClose(): void;
-  /** Why the wall fired, e.g. "Sign in to play" / "Sign in to join". Plain "Sign in" by default. */
-  title?: string;
 }
 
 /**
  * Compact register-or-login step shown as a MODAL over the current hub (not a full-screen
  * detour) — the auth wall that fires only at the commit-to-play action. Reuses Auth.tsx's
- * alias+password → token logic (api.register / api.login); on success the App stores the token,
- * connects the WS, and resumes the captured intent. A new registrant gets the 1000-credit grant.
+ * alias+password → token logic (api.register / api.login); on success the App stores the token
+ * and connects the WS, then lands the user on the game with the stake armed (they press PLAY to
+ * commit — nothing auto-fires). A new registrant gets the 1000-credit grant.
  */
-export function AuthModal({ onSuccess, onClose, title = 'Sign in to play' }: Props) {
+export function AuthModal({ onSuccess, onClose }: Props) {
   const [tab, setTab] = useState<'register' | 'login'>('register');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -65,20 +65,18 @@ export function AuthModal({ onSuccess, onClose, title = 'Sign in to play' }: Pro
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
         onClick={(ev) => ev.stopPropagation()}
-        className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 shadow-2xl"
+        className="w-full max-w-sm rounded-2xl bg-surface p-6 shadow-2xl"
       >
         <div className="mb-4 flex items-center justify-between">
           <span className="flex items-center gap-2 text-base font-bold">
-            <Swords className="h-4 w-4 text-brand" /> {title}
+            Create an account or Login
           </span>
           <button type="button" onClick={onClose} aria-label="Dismiss" className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:text-foreground">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <p className="mb-4 text-xs text-muted-foreground">Create an account (you get 1,000 play-money credits) or sign in — then your move continues automatically.</p>
-
-        <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-surface p-1">
+        <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-background p-1">
           <button
             type="button"
             onClick={() => { setTab('register'); setError(''); }}
@@ -86,7 +84,7 @@ export function AuthModal({ onSuccess, onClose, title = 'Sign in to play' }: Pro
             data-testid="auth-tab-register"
             className={cn('rounded-lg py-2 text-sm font-semibold transition-all', tab === 'register' ? 'bg-brand text-white' : 'text-muted-foreground hover:text-foreground')}
           >
-            Register
+            Sign up
           </button>
           <button
             type="button"
@@ -138,13 +136,13 @@ export function AuthModal({ onSuccess, onClose, title = 'Sign in to play' }: Pro
             type="submit"
             disabled={loading}
             data-testid="auth-submit"
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand to-indigo-600 py-3 text-sm font-bold text-white shadow-lg shadow-brand/20 transition-all hover:to-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand py-3 text-sm font-bold text-white shadow-lg shadow-brand/20 transition-all hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading ? (<><Loader2 className="h-4 w-4 animate-spin" /> Please wait…</>) : tab === 'register' ? 'Create Account' : 'Sign In'}
           </button>
         </form>
 
-        <p className="mt-4 text-center text-xs text-muted-foreground">Play-money demo · credits only, no real-money wagering.</p>
+        <p className="mt-4 text-center text-xs text-foreground">Play-money demo credits only, no real-money wagering.</p>
       </motion.div>
     </div>
   );
