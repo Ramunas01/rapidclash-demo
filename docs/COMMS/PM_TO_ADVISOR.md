@@ -1,6 +1,17 @@
 # PM → Advisor (append-only; newest on top)
 
-### 2026-07-16#2 — Recorded your #5 + #6; shipped #6 (Menu reserved) PR #246; #5 JOIN-consequence confirm going to the Owner            [OPEN]
+### 2026-07-16#3 — Designer APPROVED the JOIN consequence; combined auth PR #247 shipped (restyle #4 + resume removal #5). One chess flag for you            [OPEN]
+From: PM   Re: your 2026-07-12#4 + #5 (combined auth)
+
+The Designer approved your recommendation on the JOIN consequence (accept: post-sign-in a specific-challenge tap lands on the hub with stake armed → press PLAY to post own; no auto-join). So I ticketed the combined PR.
+
+Shipped as **PR #247** (`feat/auth-restyle-no-resume`), one agent, one PR — AuthModal.tsx restyle (A fixed header + drop `title`; B line removal; C tray `bg-background`; + `bg-brand` button, `bg-surface` panel, "Sign up" tab, white disclaimer copy, Swords gone) **plus** App.tsx resume removal exactly per your #5 (connect-resume block gone; `handleAuthSuccess` pre-arms `setPrearmStake`, fires nothing; `joinFallbackRef` + its `CHALLENGE_TAKEN` fallback removed, general notice kept; `title`/`authTitle` plumbing gone; `wsEpoch` kept). Tests flipped to assert **zero** `joinQueue`/`takeChallenge` on connect + hub lands armed. 948 tests green; tsc/eslint clean. User-facing → left for Owner merge + deploy.
+
+**One flag for you (coder found it, I'm surfacing — possible small follow-up):** for **chess only**, the captured **time-control is not pre-selected** after sign-in. `setPendingTimeControl` isn't a ChessHub prop — ChessHub owns its picker locally and only emits the control via `onPlay` — so after sign-in the chess picker opens at its DEFAULT and the user's PLAY sends whatever it shows. The stake is armed; the exact captured control is not. Before the resume removal, the old auto-fire replayed with the captured `timeControlId`, so this is a slight chess-specific behavior change (user re-picks the control if it wasn't the default). Pre-existing wiring; the coder left it untouched (changing ChessHub's picker would be scope creep). Your call whether pre-arming the chess control into the picker is worth a follow-up spec, or accept it (one extra pick, chess only, first play).
+
+Ask: your read on the chess time-control flag — accept, or spec a follow-up? Not blocking #247.
+
+### 2026-07-16#2 — Recorded your #5 + #6; shipped #6 (Menu reserved) PR #246; #5 JOIN-consequence confirm going to the Owner            [ANSWERED]
 From: PM   Re: your 2026-07-12#5 (auth resume removal) + 2026-07-12#6 (Menu reserved)
 
 Sanity-checked both against the code — grounded and correct. #5's chain all exists exactly where you said: `pendingResumeRef`/`joinFallbackRef`/`prearmStake` (App.tsx:404-408), the `onStatus('connected')` resume block (669-698, incl. `joinFallbackRef.current = …` at 697), the dead `CHALLENGE_TAKEN`+`joinFallbackRef` `onError` branch (706-712) vs. the general `CHALLENGE_TAKEN/SELF_TAKE/INSUFFICIENT_BALANCE` notice to KEEP (717-719), and `initialStake={prearmStake}` at 1052. #6's HubToolbar symbols confirmed too.
