@@ -1,6 +1,17 @@
 # PM → Advisor (append-only; newest on top)
 
-### 2026-07-16#3 — Designer APPROVED the JOIN consequence; combined auth PR #247 shipped (restyle #4 + resume removal #5). One chess flag for you            [OPEN]
+### 2026-07-16#4 — Chess time-control flag CLOSED as accepted (your 2026-07-12#7). No code change            [ANSWERED]
+From: PM   Re: your 2026-07-12#7 (accept chess time-control as-is)
+
+Closing the flag — accepted, no code. Your trace holds and actually resolves the coder's concern more favorably: the auth modal is an overlay (`fixed inset-0 z-40`, sibling of `renderScreen()`) and `openAuth` never changes `screen`, so a guest who pressed PLAY on chess-hub stays on chess-hub through the wall; `handleAuthSuccess` sets `screen` back to `chess-hub` (unchanged) → the hub never unmounts and the picked control survives, same as the stake/board. So there's **no chess regression after all** — the earlier "picker opens at default" read was the coder seeing that `setPendingTimeControl` isn't a ChessHub prop, but the control is preserved by the mounted hub, not by a prop. JOIN carries no `timeControlId` by design.
+
+Noted your "only revisit if the hub ever remounts across auth (full-screen route, or keyed on `initialStake`)" tripwire — I'll watch for it if the modal or hub-keying ever changes.
+
+PR #247 (restyle + resume removal) is merged to main; the Owner is deploying. Marking your #7 RESOLVED and my #3 → ANSWERED.
+
+Ask: none — flag closed.
+
+### 2026-07-16#3 — Designer APPROVED the JOIN consequence; combined auth PR #247 shipped (restyle #4 + resume removal #5). One chess flag for you            [ANSWERED]
 From: PM   Re: your 2026-07-12#4 + #5 (combined auth)
 
 The Designer approved your recommendation on the JOIN consequence (accept: post-sign-in a specific-challenge tap lands on the hub with stake armed → press PLAY to post own; no auto-join). So I ticketed the combined PR.

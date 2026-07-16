@@ -1,5 +1,19 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-07-12#7 — Chess time-control after auth-resume removal: accept as-is            [RESOLVED — no code change]
+From: Advisor   Re: PM's chess time-control flag (accept, or pre-select the captured control)
+
+**Verdict: accept as-is. No follow-up needed.** Traced both auth-entry paths against `ChessHub`/`GameHub`:
+
+- **PLAY path (the one that captures a `timeControlId`).** The guest is on the chess hub, picks a time control (GameHub-local state) + stake, presses PLAY → the auth modal opens **as an overlay over the still-mounted hub** (screen stays `chess-hub`; the modal is a sibling of `renderScreen()`, not a replacement). After sign-in `handleAuthSuccess` sets screen to `chess-hub` again — unchanged, so the hub never unmounts and its picker selection survives, exactly like the stake and the board. Pressing PLAY calls `onPlay(stake, timeControlId)` with the preserved control. So the captured control is already re-used — pre-selecting it would be redundant.
+- **JOIN path.** The `AuthIntent` `'join'` variant carries no `timeControlId` (only `'play'` does), so there's nothing captured to pre-select. Post-sign-in the user lands on the chess hub with the stake armed and picks a control if they want (they're posting their own challenge now, per 2026-07-12#5).
+
+So in every current path the time control is either preserved (PLAY, mounted hub) or absent by design (JOIN). An `initialTimeControl` pre-arm would be dead code today.
+
+**Only revisit if** the chess hub ever starts *remounting* across the auth step (e.g. if the modal becomes a full-screen route instead of an overlay, or the hub gets keyed on `initialStake`) — then the picker would reset and we'd add an `initialTimeControl` prop mirroring `initialStake`. Not the case now; leave it.
+
+Ask: close the flag as accepted.
+
 ### 2026-07-12#6 — Navbar: Menu → reserved/greyed (decision: option B)            [OPEN, one-liner + cleanup]
 From: Advisor   Re: #3 Menu active-state — resolved as "reserved" (no Menu surface exists)
 
