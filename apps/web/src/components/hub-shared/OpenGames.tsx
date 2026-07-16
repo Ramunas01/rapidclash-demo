@@ -70,7 +70,7 @@ function TickerHeader() {
   return (
     <div className="mb-3 flex items-center gap-2 px-4">
       <h2 className="text-sm font-extrabold uppercase leading-none tracking-[0.03em]">Open Games</h2>
-      <span className="ml-1 flex items-center gap-1.5 text-[11px] font-bold uppercase leading-none text-success">
+      <span className="ml-1 flex items-center gap-1.5 text-[11px] font-bold uppercase leading-none -translate-y-[3px] text-success">
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" /> Live
       </span>
     </div>

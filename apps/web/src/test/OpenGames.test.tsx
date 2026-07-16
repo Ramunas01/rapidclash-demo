@@ -58,6 +58,8 @@ describe('OpenGames — header leading (Advisor #3)', () => {
     const live = screen.getByText('Live');
     expect(live.className).toContain('leading-none');
     expect(live.className).toContain('items-center'); // dot alignment preserved
+    // Advisor #9: badge nudged up ~3px to sit on the caps' optical centre.
+    expect(live.className).toContain('-translate-y-[3px]');
   });
 });
 

@@ -144,7 +144,7 @@ export function HomeHubScreen({
               sort={sort} onSort={setSort}
             />
             <div className="mb-3 mt-5 flex items-center gap-2.5 px-4">
-              <img src={boltMark} alt="" aria-hidden="true" className="h-5 w-5 object-contain" />
+              <img src={boltMark} alt="" aria-hidden="true" className="h-5 w-5 -translate-y-[3px] object-contain" />
               <h2 className="text-[15px] font-black uppercase leading-none tracking-[0.04em]">{CAT_TITLE[cat]}</h2>
               {cat !== 'events' && (
                 <span className="ml-auto text-xs text-muted-foreground">{shownTiles.length} games</span>
