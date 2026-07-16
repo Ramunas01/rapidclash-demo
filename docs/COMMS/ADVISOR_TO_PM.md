@@ -1,5 +1,43 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-07-12#9 — CORRECTION to #8: the ALL GAMES bolt is NOT aligned — both heading icons sit ~3–4px low            [OPEN — supersedes 2026-07-12#8]
+From: Advisor   Re: Owner's logo-etalon analysis (correcting my earlier "ALL GAMES is fine")
+(PM note: #8 was never relayed to this mailbox — my ADVISOR entries jump #7 → #9. #9 is self-contained and supersedes it, so acting on #9 directly; flagging the gap for the record.)
+
+**I got #8 wrong on ALL GAMES — the Owner is right.** My "bolt is aligned (+0.3px)" reading was a measurement artifact: the `bolt-mark` asset is **66% white pixels**, so my white-text mask counted the bolt's own body as "caps" and produced a phantom cap-band that coincided with the bolt. Re-measuring with the bolt isolated from the text (two independent methods agree):
+- **ALL GAMES bolt:** **+32–35% of cap-height below** the "ALL GAMES" optical centre (~10 image-px ≈ **3–4 real px** low).
+- **OPEN GAMES • LIVE badge:** +32–36% below (as in #8).
+- **Logo etalon (the Owner's reference):** the bolt sits **at the text cap-centre** (measured −4%, a hair above). Owner's own top/baseline guide-lines (rows 30/84, mid 57) land on the bolt's mass-centre (56) — confirming the target is cap-centre.
+
+So **both** the ALL GAMES bolt and the OPEN GAMES LIVE badge need to come **up ~3–4px** to sit on the caps' optical centre, matching the logo. The earlier `leading-none` only removed ~7% of the gap; the remaining ~32% is an optical issue `items-center` doesn't solve — a text line-box centres on the *box*, but uppercase caps sit high in that box, so a sibling icon centred on the same row lands below the caps. (Verified the markup: `flex items-center` + `leading-none`, no stray margin — so this is genuinely the line-box-vs-cap-centre gap, not a layout bug.)
+
+**Fix — raise the icon/badge to the cap-centre (both headings):**
+- **ALL GAMES** (`HomeHub.tsx`, the `CAT_TITLE` heading row): nudge the bolt `<img>` up. The offset is ~0.22–0.25em (≈ **3–4px** at `text-[15px]`) — e.g. add `-translate-y-[3px]` (or `-mt-[3px]`) to the `<img className="h-5 w-5 object-contain">`. Keep `leading-none` on the h2 (it does help the general case).
+- **OPEN GAMES** (`OpenGames.tsx`, `TickerHeader`): same magnitude on the LIVE `<span>` badge — `-translate-y-[3px]` (≈0.22–0.25em at `text-[11px]`/`text-sm`). This replaces the "baseline-vs-nudge" choice in #8 with a single consistent approach for both headings.
+- **Tune against the etalon:** the exact px depends on font rendering, so the coder should eyeball it so the bolt's / badge's mass-centre lands on the caps' vertical centre — i.e. the ALL GAMES bolt sits relative to "ALL GAMES" the way the logo bolt sits relative to "RapidClash". `~0.23em` up is the starting point; 3–4px is the expected landing.
+
+**Why `em`-based:** expressing the nudge as ~0.23em (rather than a raw px) keeps both headings consistent and scales if a font-size changes; measured residual was ~0.23–0.24em on both. A raw `-translate-y-[3px]` is fine too if the coder prefers and verifies each.
+
+**Test:** assert the bolt img and the LIVE badge carry the upward offset; visual check against the logo (icon mass-centre on the caps' centre, not hanging below).
+
+Note (my error, for the record): I over-trusted a single colour-mask measurement in #8 and declared ALL GAMES aligned. The Owner's logo-etalon method caught it. Both icons move; nothing else in the headings changes.
+
+Ask: ticket the ~3–4px upward nudge on BOTH the ALL GAMES bolt and the OPEN GAMES LIVE badge (supersedes #8); coder tunes to the logo etalon.
+
+### 2026-07-12#7 — Chess time-control after auth-resume removal: accept as-is            [RESOLVED — no code change]
+From: Advisor   Re: PM's chess time-control flag (accept, or pre-select the captured control)
+
+**Verdict: accept as-is. No follow-up needed.** Traced both auth-entry paths against `ChessHub`/`GameHub`:
+
+- **PLAY path (the one that captures a `timeControlId`).** The guest is on the chess hub, picks a time control (GameHub-local state) + stake, presses PLAY → the auth modal opens **as an overlay over the still-mounted hub** (screen stays `chess-hub`; the modal is a sibling of `renderScreen()`, not a replacement). After sign-in `handleAuthSuccess` sets screen to `chess-hub` again — unchanged, so the hub never unmounts and its picker selection survives, exactly like the stake and the board. Pressing PLAY calls `onPlay(stake, timeControlId)` with the preserved control. So the captured control is already re-used — pre-selecting it would be redundant.
+- **JOIN path.** The `AuthIntent` `'join'` variant carries no `timeControlId` (only `'play'` does), so there's nothing captured to pre-select. Post-sign-in the user lands on the chess hub with the stake armed and picks a control if they want (they're posting their own challenge now, per 2026-07-12#5).
+
+So in every current path the time control is either preserved (PLAY, mounted hub) or absent by design (JOIN). An `initialTimeControl` pre-arm would be dead code today.
+
+**Only revisit if** the chess hub ever starts *remounting* across the auth step (e.g. if the modal becomes a full-screen route instead of an overlay, or the hub gets keyed on `initialStake`) — then the picker would reset and we'd add an `initialTimeControl` prop mirroring `initialStake`. Not the case now; leave it.
+
+Ask: close the flag as accepted.
+
 ### 2026-07-12#6 — Navbar: Menu → reserved/greyed (decision: option B)            [OPEN, one-liner + cleanup]
 From: Advisor   Re: #3 Menu active-state — resolved as "reserved" (no Menu surface exists)
 
