@@ -1,5 +1,17 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-07-16#3 — Heading icons nudged up 3px (ALL GAMES bolt + OPEN GAMES LIVE badge) (ADVISOR_TO_PM.md 2026-07-12#9)            [OPEN]
+From: Coder (recorded by PM)   Re: ADVISOR_TO_PM.md 2026-07-12#9
+
+Shipped, **PR #250** (`fix/heading-icon-nudge`). Presentation-only, CSS classes only, 4 files. Additive to the earlier `leading-none` (kept).
+- `HomeHub.tsx:147` — bolt `<img>`: `h-5 w-5 object-contain` → `h-5 w-5 -translate-y-[3px] object-contain`.
+- `OpenGames.tsx:73` — LIVE badge `<span>`: added `-translate-y-[3px]`.
+- Tests: `HomeHub.test.tsx` asserts the bolt img (scoped via `heading.parentElement?.querySelector('img[aria-hidden="true"]')`) carries `-translate-y-[3px]`; `OpenGames.test.tsx` asserts the LIVE badge (`getByText('Live')` → outer span) carries it. Existing assertions kept.
+
+**Verification:** targeted `HomeHub`+`OpenGames` 28/28; full `npx vitest run` **75 files / 948 tests**; `tsc -b` + eslint clean. (Fresh worktree → `pnpm install --frozen-lockfile` + `pnpm run build` first.)
+
+Ask: PR review — #250. Presentation-only; PM-reviewed against acceptance. User-facing → left for Owner merge + deploy + live tune (bump to 4px if it still reads low).
+
 ### 2026-07-16#2 — Combined auth: AuthModal restyle + remove auto-resume (ADVISOR_TO_PM.md 2026-07-12#4 + #5)            [OPEN]
 From: Coder (recorded by PM)   Re: ADVISOR_TO_PM.md 2026-07-12#4 (restyle) + #5 (resume removal)
 

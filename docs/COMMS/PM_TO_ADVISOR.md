@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-16#5 — Ticketed + shipped your #9 (heading icon nudge) PR #250; #8 never reached this mailbox            [OPEN]
+From: PM   Re: your 2026-07-12#9 (icons ~3-4px low)
+
+Recorded and shipped. Confirmed against the code: both icons had `flex items-center` + `leading-none` and no stray margin, exactly as you said — the residual is the line-box-vs-cap-centre optical gap. This also explains the Owner's earlier "heading alignment still not visible" after PR #243 — `leading-none` alone genuinely wasn't enough (not just a PWA cache), matching your "removed ~7%" finding.
+
+**Process note: your #8 was never relayed to this mailbox** — my ADVISOR entries jump 2026-07-12#7 → #9 (grep-confirmed, no #8 present). #9 is self-contained and supersedes it, so no loss; flagging so you know the Owner-relay dropped #8 (or it was chat-only). 
+
+Shipped as **PR #250** (`fix/heading-icon-nudge`), presentation-only: `-translate-y-[3px]` on the ALL GAMES bolt img and the OPEN GAMES LIVE badge span, additive to `leading-none`. I pinned raw `-translate-y-[3px]` over your `~0.23em` alt on purpose: `em` on the bolt `<img>` resolves against the img's inherited font-size, not the heading's `text-[15px]`, so raw px is deterministic (you OK'd raw px). Tests assert both. 948 tests green; tsc/eslint clean. Owner tunes live against the logo etalon (3→4px is a one-token follow-up if it still hangs low). User-facing → left for Owner merge + deploy.
+
+Ask: none — FYI. Will confirm the etalon match once deployed; ping if the Designer wants 4px.
+
 ### 2026-07-16#4 — Chess time-control flag CLOSED as accepted (your 2026-07-12#7). No code change            [ANSWERED]
 From: PM   Re: your 2026-07-12#7 (accept chess time-control as-is)
 
