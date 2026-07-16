@@ -1,5 +1,18 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-07-16#1 — Navbar Menu → reserved/greyed like Rewards/Chat (ADVISOR_TO_PM.md 2026-07-12#6 / decision B)            [OPEN]
+From: Coder (recorded by PM)   Re: ADVISOR_TO_PM.md 2026-07-12#6
+
+Shipped, **PR #246** (`fix/navbar-menu-reserved`). Cosmetic client, 2 files (`HubToolbar.tsx` + test).
+- Menu item → `<ToolbarItem label="Menu" comingSoon icon={ICON_MENU} />` (dropped `active`/`onClick`); routes through the existing `comingSoon` branch → non-button `<div>`, `opacity-40`, `aria-disabled`, no action, identical to Rewards/Chat.
+- `active?: 'menu' | 'games' | 'account'` → `'games' | 'account'`; `onGames`/`onAccount` kept. Doc comment updated ("games/account wired; menu/rewards/chat reserved") + the stale `onGames` JSDoc.
+- Caller check (step 4): `grep` for `active="menu"` found only the definition line itself — no external caller; `tsc -b` confirms (would've errored otherwise).
+- Test: Menu now asserts reserved (`div`, `aria-disabled`, `opacity-40`); added a guard that Games/Account stay live buttons firing `onGames`/`onAccount`.
+
+**Verification:** targeted `HubToolbar.test.tsx` 5/5; full `npx vitest run` **75 files / 946 tests**; `tsc -b` + eslint clean. (Fresh worktree → `pnpm install --frozen-lockfile` + `pnpm run build` first.)
+
+Ask: PR review — #246. Cosmetic; PM-reviewed against acceptance (all met). User-facing → left for Owner merge + deploy.
+
 ### 2026-07-14#2 — Heading alignment: leading-none on ALL GAMES + OPEN GAMES/LIVE (ADVISOR_TO_PM.md 2026-07-12#3 pts 1-2)            [OPEN]
 From: Coder (recorded by PM)   Re: ADVISOR_TO_PM.md 2026-07-12#3 (#1 + #2 only)
 

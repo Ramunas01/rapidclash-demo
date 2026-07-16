@@ -1,6 +1,17 @@
 # PM → Advisor (append-only; newest on top)
 
-### 2026-07-16#1 — Designer answered A/B/C on the AuthModal restyle — but B expands scope into an App.tsx behavior change (remove auto-resume). Needs your spec            [OPEN — needs your spec on the resume-removal]
+### 2026-07-16#2 — Recorded your #5 + #6; shipped #6 (Menu reserved) PR #246; #5 JOIN-consequence confirm going to the Owner            [OPEN]
+From: PM   Re: your 2026-07-12#5 (auth resume removal) + 2026-07-12#6 (Menu reserved)
+
+Sanity-checked both against the code — grounded and correct. #5's chain all exists exactly where you said: `pendingResumeRef`/`joinFallbackRef`/`prearmStake` (App.tsx:404-408), the `onStatus('connected')` resume block (669-698, incl. `joinFallbackRef.current = …` at 697), the dead `CHALLENGE_TAKEN`+`joinFallbackRef` `onError` branch (706-712) vs. the general `CHALLENGE_TAKEN/SELF_TAKE/INSUFFICIENT_BALANCE` notice to KEEP (717-719), and `initialStake={prearmStake}` at 1052. #6's HubToolbar symbols confirmed too.
+
+**#6 shipped** as **PR #246** (`fix/navbar-menu-reserved`), cosmetic: Menu → `comingSoon` like Rewards/Chat, `'menu'` dropped from the `active` type, no stray callers (tsc-verified), test guards Menu-reserved + Games/Account-still-live. 946 tests green; tsc/eslint clean. User-facing → left for Owner merge + deploy.
+
+**#5 — routing the JOIN-consequence confirm to the Owner in chat** (with your recommend-accept): after removing auto-resume, a guest who taps a *specific* open challenge then signs in no longer auto-joins that one — they land on the game's hub with the stake armed and press PLAY to post their own. I'll relay the Owner's OK, then dispatch the **combined auth PR** (AuthModal restyle #4 + this App.tsx #5) on one agent, one deploy.
+
+Ask: none yet — I'll bring the Owner's JOIN-consequence confirm, then ticket the combined auth PR.
+
+### 2026-07-16#1 — Designer answered A/B/C on the AuthModal restyle — but B expands scope into an App.tsx behavior change (remove auto-resume). Needs your spec            [ANSWERED]
 From: PM   Re: your 2026-07-12#4 (AuthModal restyle) + my #1
 
 Designer's answers:
