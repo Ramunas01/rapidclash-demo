@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import { BlackjackHubScreen } from '../screens/BlackjackHub.js';
 import type { BlackjackView } from '../App.js';
 import type { OpenChallenge } from '@rapidclash/shared';
@@ -376,9 +376,12 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       });
       // Both hands fully revealed — no face-down during a push.
       expect(screen.queryByTestId('card-back')).toBeNull();
-      // Both-bust → red (destructive) card outlines on every card, both hands.
-      for (const c2 of within(screen.getByTestId('own-hand')).getAllByTestId('card')) expect(c2.className).toMatch(/ring-destructive/);
-      for (const c2 of within(screen.getByTestId('opp-hand')).getAllByTestId('card')) expect(c2.className).toMatch(/ring-destructive/);
+      // Both-bust → red (destructive) card outlines on every card, both hands. The outline waits for
+      // the reveal to finish (revealComplete, Advisor #10) — assert it once the last card has landed.
+      await waitFor(() => {
+        for (const c2 of within(screen.getByTestId('own-hand')).getAllByTestId('card')) expect(c2.className).toMatch(/ring-destructive/);
+        for (const c2 of within(screen.getByTestId('opp-hand')).getAllByTestId('card')) expect(c2.className).toMatch(/ring-destructive/);
+      }, { timeout: 2000 });
       // The reversal: Blackjack's draw surface is CARDS + an orange "Push" label — NOT an orange bar.
       const push = screen.getByTestId('push-label');
       expect(push.textContent).toMatch(/push/i);
@@ -407,14 +410,17 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       await waitFor(() => {
         expect(within(screen.getByTestId('own-hand')).getAllByTestId('card')).toHaveLength(2);
       });
-      // Equal non-bust totals → orange (amber) card outlines, NOT red — both hands.
-      for (const c2 of within(screen.getByTestId('own-hand')).getAllByTestId('card')) {
-        expect(c2.className).toMatch(/ring-amber-400/);
-        expect(c2.className).not.toMatch(/ring-destructive/);
-      }
-      for (const c2 of within(screen.getByTestId('opp-hand')).getAllByTestId('card')) {
-        expect(c2.className).toMatch(/ring-amber-400/);
-      }
+      // Equal non-bust totals → orange (amber) card outlines, NOT red — both hands. The outline waits
+      // for the reveal to finish (revealComplete, Advisor #10) — assert once the last card has landed.
+      await waitFor(() => {
+        for (const c2 of within(screen.getByTestId('own-hand')).getAllByTestId('card')) {
+          expect(c2.className).toMatch(/ring-amber-400/);
+          expect(c2.className).not.toMatch(/ring-destructive/);
+        }
+        for (const c2 of within(screen.getByTestId('opp-hand')).getAllByTestId('card')) {
+          expect(c2.className).toMatch(/ring-amber-400/);
+        }
+      }, { timeout: 2000 });
       // Orange "Push" overlay; bars show nothing (the reversal).
       expect(screen.getByTestId('push-label').textContent).toMatch(/push/i);
       expect(screen.getByTestId('hub-slot-own').className).not.toMatch(/ring-amber-400|ring-destructive|ring-success/);
@@ -642,6 +648,98 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       const z = within(screen.getByTestId('opp-hand')).getAllByTestId('card').map((el) => Number(el.style.zIndex));
       expect(z[0]).toBeLessThan(z[1]); // revealed hole over the first card
       expect(z[1]).toBeLessThan(z[2]); // hit over the hole, in deal order
+    });
+  });
+
+  // ── Advisor #10: the result bar + balance are gated on the board's reveal-complete signal ──
+  // The bug: the own result BAR (and the ribbon balance) fired ~850ms+ BEFORE the card reveal
+  // finished, because the bar keyed off a fixed beat while the cards keyed off the choreography.
+  // Fix: ONE reveal-complete signal (computed by the board, which alone knows the timing) gates the
+  // outlines, and — via onRevealComplete → gateResultOnReveal — the hub's bar and balance.
+  describe('Advisor #10: result bar + balance gated on reveal-complete', () => {
+    it('(a) slow reveal (opponent hits) — the own result bar stays neutral until the last hit lands (~revealMs), then fires', async () => {
+      vi.useFakeTimers();
+      try {
+        // Opponent wins with FIVE cards → 3 hits → revealMs = 450 + (3-1)·220 + 550 = 1440ms.
+        const terminal = inPlayView({
+          hands: {
+            pid: { cards: [c('K'), c('7', '♥')], done: true }, // 17 (loses)
+            bob: { cards: [c('2'), c('3'), c('4'), c('5'), c('6')], done: true }, // 20, five cards
+          },
+          winner: 'bob',
+        });
+        const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
+        // The real decisive-terminal transition: currentMatchId clears to null with the outcome.
+        rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, legalMoves: [], lastOutcome: { type: 'win', winner: 'bob' }, lastSettlement: { delta: -10, newBalance: 990 } })} />);
+
+        // Before the last hit lands (< revealMs), the own bar shows NO verdict outline — in-play look.
+        await act(async () => { await vi.advanceTimersByTimeAsync(1400); });
+        expect(screen.getByTestId('hub-slot-own').className).not.toMatch(/ring-destructive|ring-success|ring-amber-400/);
+
+        // Just past revealMs (1440) the loss outline fires — bar and cards settle together.
+        await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+        expect(screen.getByTestId('hub-slot-own').className).toMatch(/ring-destructive/);
+        for (const card of within(screen.getByTestId('own-hand')).getAllByTestId('card')) {
+          expect(card.className).toMatch(/ring-destructive/);
+        }
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('(b) stand-pat opponent (no hits) — the own bar win reveal fires after the hole flip (~FLIP_MS)', async () => {
+      vi.useFakeTimers();
+      try {
+        // Opponent stands pat (two cards) → no hits → revealMs = CARD_ANIM_MS ≈ 550ms (just the flip).
+        const terminal = inPlayView({
+          hands: {
+            pid: { cards: [c('K'), c('Q', '♥')], done: true }, // 20 (wins)
+            bob: { cards: [c('9', '♣'), c('8', '♦')], done: true }, // 17, two cards
+          },
+          winner: 'pid',
+        });
+        const { rerender } = render(<BlackjackHubScreen {...baseProps({ username: 'me', currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
+        rerender(<BlackjackHubScreen {...baseProps({ username: 'me', currentMatchId: null, gameState: terminal, legalMoves: [], lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
+
+        // Before the flip completes, the win reveal ("You Win" verdict) has NOT started on the bar.
+        await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+        expect(screen.queryByTestId('hub-slot-own-verdict')).toBeNull();
+
+        // Just past FLIP_MS (~550) the shared win reveal begins on the bar.
+        await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+        expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you win/i);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('(c) balance-hold — the ribbon balance holds its pre-settlement value until reveal-complete, then updates', async () => {
+      vi.useFakeTimers();
+      try {
+        // Stand-pat opponent → revealMs ≈ 550ms. Balance settles 1000 → 1019 at match end.
+        const terminal = inPlayView({
+          hands: {
+            pid: { cards: [c('K'), c('Q', '♥')], done: true }, // 20 (wins)
+            bob: { cards: [c('9', '♣'), c('8', '♦')], done: true }, // 17
+          },
+          winner: 'pid',
+        });
+        const { rerender } = render(<BlackjackHubScreen {...baseProps({ balance: 1000, currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
+        expect(screen.getByTestId('hub-balance').textContent).toBe('1,000¢');
+
+        // Match ends: the settled balance (1019) arrives with the null currentMatchId.
+        rerender(<BlackjackHubScreen {...baseProps({ balance: 1019, currentMatchId: null, gameState: terminal, legalMoves: [], lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
+
+        // Before reveal-complete the ribbon HOLDS the pre-settlement balance (no jump ahead).
+        await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+        expect(screen.getByTestId('hub-balance').textContent).toBe('1,000¢');
+
+        // Once the reveal completes (~revealMs) the settled balance applies, in lockstep with the bar.
+        await act(async () => { await vi.advanceTimersByTimeAsync(120); });
+        expect(screen.getByTestId('hub-balance').textContent).toBe('1,019¢');
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });
