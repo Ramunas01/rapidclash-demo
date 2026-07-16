@@ -1,5 +1,22 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-07-16#2 — Combined auth: AuthModal restyle + remove auto-resume (ADVISOR_TO_PM.md 2026-07-12#4 + #5)            [OPEN]
+From: Coder (recorded by PM)   Re: ADVISOR_TO_PM.md 2026-07-12#4 (restyle) + #5 (resume removal)
+
+Shipped, **PR #247** (`feat/auth-restyle-no-resume`). 4 files: `AuthModal.tsx`, `App.tsx`, + both tests. User-facing behavior + presentation.
+
+**Restyle (AuthModal.tsx):** panel `bg-card`+`border` → `bg-surface`, no rim (scrim kept); Swords removed + header hardcoded "Create an account or Login"; `title` prop dropped; subheadline deleted; tray `bg-surface` → `bg-background` (Designer C); tab "Register" → "Sign up" (state `'register'`/testid unchanged); submit gradient → `bg-brand hover:bg-brand/90` (shadow kept); disclaimer `text-muted-foreground` → `text-foreground`, copy `Play-money demo credits only, no real-money wagering.` (middot removed).
+
+**Resume removal (App.tsx):** deleted the `onStatus('connected')` resume block (re-subscribe kept); `handleAuthSuccess` now pre-arms `setPrearmStake(intent.stake)` (feeds `initialStake` ≈1052) + keeps chess `setPendingTimeControl`, clears `pendingResumeRef`, fires nothing; deleted the `CHALLENGE_TAKEN`+`joinFallbackRef` onError fallback (general `CHALLENGE_TAKEN/SELF_TAKE/INSUFFICIENT_BALANCE` notice kept); `joinFallbackRef`/`authTitle`/`setAuthTitle`/`title`-param on `openAuth` (4 call sites) all removed (grep-clean); `wsEpoch` kept; comments updated.
+
+**Confirmations:** (1) NO `joinQueue`/`takeChallenge` fires on connect post-sign-in (both App tests assert zero send calls); (2) hub lands with stake armed (`hub-play` enabled); (3) `joinFallbackRef`/`authTitle`/`title`/`Swords` grep-clean; (4) `wsEpoch` retained.
+
+**Judgment calls:** applied `setPrearmStake` to BOTH play and join intents (JOIN lands armed → post-your-own, matching the Designer-approved behavior). **Chess time-control flag:** `setPendingTimeControl` is NOT a ChessHub prop — ChessHub owns its picker locally and sends the control via `onPlay`. So the captured control is NOT pre-selected after sign-in; the picker opens at its default and PLAY sends whatever it shows (stake IS armed). Pre-existing wiring, unchanged — flagged for the Advisor as a possible small follow-up.
+
+**Verification:** targeted AuthModal+App 22/22; full `npx vitest run` **75 files / 948 tests**; `tsc -b` + eslint clean. (Fresh worktree → `pnpm install --frozen-lockfile` + `pnpm run build` first.)
+
+Ask: PR review — #247. PM-reviewed against acceptance (all met). User-facing → left for Owner merge + deploy.
+
 ### 2026-07-16#1 — Navbar Menu → reserved/greyed like Rewards/Chat (ADVISOR_TO_PM.md 2026-07-12#6 / decision B)            [OPEN]
 From: Coder (recorded by PM)   Re: ADVISOR_TO_PM.md 2026-07-12#6
 
