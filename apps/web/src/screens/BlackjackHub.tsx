@@ -22,9 +22,13 @@ const TERMINAL_HOLD_MS = 1100;
  *  (player, opponent, player, opponent) rather than snapping in together. */
 const DEAL_STAGGER_S = 0.22;
 
-/** Delay (ms) from the terminal reveal to the win/lose card frame — a beat after the cards land,
- *  per the designer ("~0.5s after all cards are revealed"). Covers the ~0.55s flip + a short hold. */
-const FRAME_DELAY_MS = 1000;
+/** The card deal-in travel AND the hole-card flip take this long (single source of truth): a dealt
+ *  PlayingCard slides/flips into place over CARD_ANIM_S, and the hole card flips face-up over the
+ *  same duration (the Advisor's FLIP_MS ≈ CARD_ANIM ≈ 550ms). The reveal-complete timing (revealMs)
+ *  is derived from these real constants, never a separate magic number, so the result presentation
+ *  (card frames + the hub's result bar/balance) lands exactly when the last card settles. */
+const CARD_ANIM_S = 0.55;
+const CARD_ANIM_MS = CARD_ANIM_S * 1000;
 
 /** Cards fan with the NEWEST card ON TOP (standard overlapping fan): each card's z-order is fixed
  *  BEFORE its deal animation, ASCENDING with index (`CARD_Z_BASE + index`). The ONE exception is the
@@ -89,7 +93,7 @@ function PlayingCard({ card, index, delay = 0, frame = null }: { card: Blackjack
       data-testid="card"
       initial={{ x: CARD_TRAVEL_PX, y: -12, opacity: 0, rotateY: 90 }}
       animate={{ x: 0, y: 0, opacity: 1, rotateY: 0 }}
-      transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1], delay }}
+      transition={{ duration: CARD_ANIM_S, ease: [0.22, 1, 0.36, 1], delay }}
       style={{ marginLeft: index === 0 ? 0 : -22, zIndex: CARD_Z_BASE + index }}
       className={cn(
         'relative flex h-20 w-14 flex-col items-center justify-center rounded-lg border border-black/10 bg-white font-bold shadow-lg transition-shadow duration-300',
@@ -131,7 +135,7 @@ function OppHoleCard({ card, revealed, index, delay = 0, active = false, frame =
         className="relative h-full w-full"
         style={{ transformStyle: 'preserve-3d' }}
         animate={{ rotateY: revealed ? 0 : 180 }}
-        transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+        transition={{ duration: CARD_ANIM_S, ease: [0.22, 1, 0.36, 1] }}
       >
         {/* Front — the revealed card value (hidden by backface-visibility until the flip lands). */}
         <div
@@ -244,18 +248,6 @@ function usePacedView(incoming: BlackjackView | null, gapMs: number): BlackjackV
   return shown;
 }
 
-/** Returns false, then true `delayMs` after `active` becomes true; resets when `active` goes false.
- *  Used to hold the win/lose card frame a beat after the terminal cards land. */
-function useDelayedFlag(active: boolean, delayMs: number): boolean {
-  const [on, setOn] = useState(false);
-  useEffect(() => {
-    if (!active) { setOn(false); return; }
-    const id = setTimeout(() => setOn(true), delayMs);
-    return () => clearTimeout(id);
-  }, [active, delayMs]);
-  return on;
-}
-
 /**
  * The live Blackjack table (item 3/8) — also the persistent post-match table in the result phase.
  * Redaction: own hand in full, exactly ONE opponent card shown (a face-down card stands in for the
@@ -264,7 +256,7 @@ function useDelayedFlag(active: boolean, delayMs: number): boolean {
  * the decisive end the cards stay on the table and a green/red frame (server outcome only) rings
  * the player's own cards a beat after the reveal; it persists until a new game starts.
  */
-function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, phase, outcome, drawBeat }: GameAreaArgs) {
+function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, phase, outcome, drawBeat, onRevealComplete }: GameAreaArgs) {
   // Pace the server's frames so the terminal reveal doesn't snap in instantly (presentation only —
   // the live gameState/legalMoves still drive turn state; this only spaces the displayed cards).
   const view = usePacedView(gameState as BlackjackView | null, TERMINAL_HOLD_MS);
@@ -300,8 +292,9 @@ function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, phase, ou
   // A push is exhaustively both-bust (Case 1 → red cards) or equal non-bust totals (Case 2 → orange
   // cards); both hands take the SAME outline. The red card outline keeps its bust meaning even in a
   // push (BLACKJACK.md), so the card-level story stays truthful. Totals are server-authoritative.
+  // (Gated on the reveal-complete signal below, so the push outline waits for the last card to land.)
   const isBust = (total?: number) => (total ?? 0) > 21;
-  const pushFrame: CardFrame = showPush
+  const pushFrameKind: CardFrame = showPush
     ? (isBust(lastResult!.hands[playerId ?? '']?.total) && isBust(lastResult!.hands[opponentId ?? '']?.total) ? 'bust' : 'draw')
     : null;
 
@@ -321,6 +314,32 @@ function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, phase, ou
   const ownFinal = isTerminal || showPush || ownDone;
   const oppFinal = isTerminal || showPush;
 
+  // ── Reveal-complete choreography (ONE source of truth for the result presentation timing) ──
+  // The reveal animates the opponent's cards: the hole card flips (CARD_ANIM_MS), then any HIT cards
+  // deal in one-by-one (each after HIT_DEAL_START_S + j·DEAL_STAGGER_S, itself CARD_ANIM_MS long). The
+  // LAST card lands at `revealMs`. Derived from the real animation constants, never a fixed guess:
+  //   stand-pat (no hits) → just the flip; k hits → the last hit's start + its own travel.
+  const nHits = Math.max(0, oppCards.length - 2);
+  const revealMs = nHits === 0
+    ? CARD_ANIM_MS
+    : HIT_DEAL_START_S * 1000 + (nHits - 1) * DEAL_STAGGER_S * 1000 + CARD_ANIM_MS;
+
+  // `revealComplete` flips true `revealMs` after the reveal starts (`revealed`), re-arming per round
+  // (keyRound) and resetting whenever the reveal unwinds. It gates the on-board card frames AND — for
+  // a decisive terminal — signals the hub (onRevealComplete) so the result bar/balance settle in
+  // lockstep with the last card, never ahead of it (Advisor #10). Pushes gate the card outline
+  // locally but never signal the hub (the bars stay silent on a push; suppressDrawBar).
+  const [revealComplete, setRevealComplete] = useState(false);
+  useEffect(() => {
+    if (!revealed) { setRevealComplete(false); return; }
+    const id = setTimeout(() => {
+      setRevealComplete(true);
+      if (isTerminal) onRevealComplete?.();
+    }, revealMs);
+    return () => clearTimeout(id);
+    // keyRound re-arms the timer for each fresh reveal (a new round / the terminal after a push).
+  }, [revealed, revealMs, keyRound, isTerminal, onRevealComplete]);
+
   // Opening deal (item 4): the four initial cards arrive one-by-one — own[0], opp[0], own[1],
   // opp-hidden — via a per-card stagger. Only the opening frame staggers; a later Hit / the
   // terminal reveal / a held push mount alone with no delay (deal order is meaningless then).
@@ -335,7 +354,10 @@ function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, phase, ou
     outcome && outcome.type !== 'draw' && outcome.type !== 'void'
       ? (outcome.winner === playerId ? 'win' : 'lose')
       : null;
-  const ownFrame = useDelayedFlag(phase === 'result' && isTerminal && frameKind != null, FRAME_DELAY_MS) ? frameKind : null;
+  // Both the win/lose (terminal) and push (bust/tie) card outlines wait for the reveal to finish —
+  // ONE dynamic gate (revealComplete), replacing the old fixed FRAME_DELAY_MS beat.
+  const pushFrame: CardFrame = revealComplete ? pushFrameKind : null;
+  const ownFrame: CardFrame = revealComplete && phase === 'result' && isTerminal && frameKind != null ? frameKind : null;
 
   return (
     <TableSurface>
@@ -461,6 +483,9 @@ export function BlackjackHubScreen(props: GameHubScreenProps) {
       renderGameArea={BlackjackPanel}
       renderSlotAside={(args, side) => (side === 'own' && args.phase === 'in-match' ? <BlackjackSlotControls {...args} /> : null)}
       suppressResultOverlay
+      // Gate the result bar + balance on the board's reveal-complete signal (Advisor #10): the bar/
+      // balance settle exactly when the last card lands, not on a fixed beat ahead of the reveal.
+      gateResultOnReveal
       // The bar speaks ONLY on decided rounds: a win plays the shared win animation, a loss shows a
       // red outline (BLACKJACK.md). ownBarResult drives that at the result phase.
       ownBarResult

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { Trophy, X } from 'lucide-react';
@@ -78,6 +78,12 @@ export interface GameAreaArgs {
    *  reveal (e.g. Limbo/Keno's `lastResult`, Coinflip's flip) while the bars show the orange outline,
    *  before the fresh round takes over. Generic (driven by the `replays` signal); games ignore it. */
   drawBeat?: boolean;
+  /** OPT-IN reveal-complete signal (games that also set `gateResultOnReveal`). The game area alone
+   *  knows its reveal choreography timing (e.g. Blackjack's hole-card flip + hit deal-in), so it
+   *  calls this ONCE when the last card of the terminal reveal has landed. The hub then lights the
+   *  result bar (and, when the balance-hold is enabled, applies the settled balance) in lockstep
+   *  with the on-board reveal instead of on a fixed beat. Undefined for games that don't gate. */
+  onRevealComplete?(): void;
 }
 
 /** The generic, per-game-agnostic props the App feeds every Game hub (Coinflip, RPS, …). */
@@ -180,6 +186,13 @@ interface GameHubProps extends GameHubScreenProps {
    *  reveal a human beat; it never delays settlement or changes any state. Omitted → the overlay
    *  shows immediately (unchanged for every other game). */
   holdResultMs?: number;
+  /** Opt in (Blackjack) to gating the RESULT PRESENTATION on the board's reveal-complete signal
+   *  instead of a fixed beat. When set, the own result bar (and the ribbon balance) only settle once
+   *  the game area calls `areaArgs.onRevealComplete()` — i.e. when the last card of the terminal
+   *  reveal has landed — so the bar/balance never jump ahead of the on-board reveal. Requires the
+   *  game area to fire `onRevealComplete`. Omitted → the bar lights on the fixed BAR_VERDICT_BEAT_MS
+   *  beat and the balance syncs immediately (byte-identical to today for every other game). */
+  gateResultOnReveal?: boolean;
 }
 
 /** A 1s ticking clock for countdowns (cosmetic; expiry is server-authoritative). */
@@ -204,7 +217,7 @@ function useNow(active: boolean): number {
  */
 export function GameHub(props: GameHubProps) {
   const {
-    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, ownBarResult, suppressDrawBar,
+    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar,
     token, playerId, username, opponentId, opponentName, serverClockOffset = 0, balance, currentMatchId, gameState, legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
     onPlay, onCancel, onTakeChallenge, onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, onTrackChallenges,
@@ -213,14 +226,23 @@ export function GameHub(props: GameHubProps) {
   } = props;
 
   // ── Live wallet balance ─────────────────────────────────────────────────────
+  // The `balance`→`liveBalance` sync effect lives after `phase` is derived (it can HOLD on the
+  // reveal-complete signal when gateResultOnReveal is set); the mount fetch stays here.
   const [liveBalance, setLiveBalance] = useState(balance);
-  useEffect(() => { setLiveBalance(balance); }, [balance]);
   useEffect(() => {
     if (!loggedIn) return; // wallet is auth-only; logged out shows the "Sign in" chip
     let alive = true;
     api.wallet(token).then((w) => { if (alive) setLiveBalance(w.balance); }).catch(() => {});
     return () => { alive = false; };
   }, [token, loggedIn]);
+
+  // ── Reveal-complete gate (opt-in via gateResultOnReveal) ─────────────────────
+  // The game area (which alone knows its reveal choreography timing) calls onRevealComplete when the
+  // last card of the terminal reveal has landed; we flip `revealDone` and gate the result bar (and,
+  // when enabled, the ribbon balance) on it. Reset to "not yet revealed" for each new match.
+  const [revealDone, setRevealDone] = useState(false);
+  useEffect(() => { setRevealDone(false); }, [currentMatchId]);
+  const handleRevealComplete = useCallback(() => setRevealDone(true), []);
 
   // ── Games roster (drives the time control, related rail, and feed labels) ─────
   const [games, setGames] = useState<GameMeta[]>([]);
@@ -346,6 +368,17 @@ export function GameHub(props: GameHubProps) {
     : hasFreshResult ? (holdResultMs && holdResultMs > 0 ? 'in-match' : 'result')
     : 'idle';
 
+  // Balance-hold (opt-in, paired with gateResultOnReveal): while a gated result is still revealing on
+  // the board, HOLD the displayed balance at its pre-settlement value; apply the settled `balance`
+  // only once the board signals reveal-complete (revealDone). `holdBalance` is constant-false for
+  // non-gated games, so the effect's dependency set collapses to `[balance]` and its behaviour is
+  // byte-identical to the previous `setLiveBalance(balance)` sync (the regression guard).
+  const holdBalance = gateResultOnReveal === true && phase === 'result' && !revealDone;
+  useEffect(() => {
+    if (holdBalance) return;
+    setLiveBalance(balance);
+  }, [balance, holdBalance]);
+
   function dismissResult() {
     clearPendingResult();
     setOverlay(null);
@@ -433,7 +466,7 @@ export function GameHub(props: GameHubProps) {
 
   // Built once and fed to the game area, the per-game slot asides (chess clocks) and the play action.
   const timeControlBaseMs = timeControl?.options.find((o) => o.id === selectedControl)?.baseMs;
-  const areaArgs: GameAreaArgs = { phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, playerId, opponentId, username, opponentName, serverClockOffset, timeControlBaseMs, outcome: overlay?.outcome ?? null, drawBeat };
+  const areaArgs: GameAreaArgs = { phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, playerId, opponentId, username, opponentName, serverClockOffset, timeControlBaseMs, outcome: overlay?.outcome ?? null, drawBeat, onRevealComplete: handleRevealComplete };
   // The bar-level draw outline: on for every game EXCEPT the ones that carry the draw on their own
   // surface (Blackjack → cards + "Push" label). The board still gets the full `drawBeat` via areaArgs.
   const barDrawBeat = suppressDrawBar ? false : drawBeat;
@@ -441,10 +474,16 @@ export function GameHub(props: GameHubProps) {
   // Bar-level result (opt-in, Coinflip-style). Fires BAR_VERDICT_BEAT_MS after the result phase
   // starts so the board's flip/reveal animation plays first. Generic derivation from server outcome.
   const ownBarFrameKind = outlineForOutcome(areaArgs.outcome, playerId);
-  const ownBarVerdictLit = useDelayedFlag(
+  // The hook is ALWAYS called (hook-rule safe); the fixed-beat flag drives the non-gated path.
+  const ownBarVerdictBeat = useDelayedFlag(
     ownBarResult === true && phase === 'result' && ownBarFrameKind != null,
     BAR_VERDICT_BEAT_MS,
   );
+  // Gated games light the bar on the board's reveal-complete signal instead of the fixed beat, so it
+  // never fires ahead of the last card landing (Advisor #10). Non-gated games keep the beat exactly.
+  const ownBarVerdictLit = gateResultOnReveal
+    ? (phase === 'result' && revealDone)
+    : ownBarVerdictBeat;
   const ownBarVerdict: Verdict | null = (ownBarResult && ownBarVerdictLit) ? ownBarFrameKind : null;
 
   return (
