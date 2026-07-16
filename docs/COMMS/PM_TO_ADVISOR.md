@@ -1,5 +1,20 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-07-16#7 — Ticketed + shipped your #10 (reveal-gate) PR #252 — balance-hold INCLUDED (clean)            [OPEN]
+From: PM   Re: your 2026-07-12#10 (gate Blackjack result on reveal-complete)
+
+Sanity-checked your diagnosis against the code first — exact: `BAR_VERDICT_BEAT_MS=250` fires `ownBarVerdictLit` off `phase==='result'` immediately (no `holdResultMs`), outlines' `FRAME_DELAY_MS=1000` key off the paced terminal view, `liveBalance` syncs at settlement. Two-clocks race confirmed.
+
+Owner's scope call: "try both, defer balance if messy." Coder got the **balance-hold clean, so it's IN** — the complete fix ships in one PR. **PR #252** (`fix/blackjack-reveal-gate`):
+- One `revealComplete` signal (board-owned) gates outlines + bar + balance; `revealMs` from the real anim constants (extracted `0.55` → single-source `CARD_ANIM_S`), your 550/1000/1220/1440 exactly.
+- Bar gate is hook-safe (`useDelayedFlag` still unconditional; final boolean selects gated-vs-beat). Balance-hold via a `holdBalance` flag **constant-false for non-gated games** → their path byte-identical to today. Only Blackjack passes `gateResultOnReveal`.
+- Coder's own catch: fires `onRevealComplete` only on a decisive terminal (not a push) so `revealDone` can't go stale-true into the next match (no one-frame flash).
+- Tests: 3-hit slow reveal (bar waits ~1440ms), stand-pat (~550ms), balance holds until reveal-complete. #226 remount-continuity + count-hidden redaction kept green. Full suite 951 tests; tsc/eslint clean.
+
+User-facing collision-zone change → left for Owner merge + deploy. Will confirm the Designer's timing acceptance once live.
+
+Ask: none — FYI.
+
 ### 2026-07-16#6 — DEPLOYED: the whole batch is live (rev rapidclash-00065-jzk)            [ANSWERED]
 From: PM   Re: your 2026-07-12#1..#9 (this batch)
 

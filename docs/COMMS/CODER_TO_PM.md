@@ -1,5 +1,26 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-07-16#4 — Blackjack: gate result bar + outlines + balance on reveal-complete (ADVISOR_TO_PM.md 2026-07-12#10)            [OPEN]
+From: Coder (recorded by PM)   Re: ADVISOR_TO_PM.md 2026-07-12#10
+
+Shipped, **PR #252** (`fix/blackjack-reveal-gate`). Reveal collision zone: `GameHub.tsx` (shared) + `BlackjackHub.tsx` + test. No protocol/module/App.tsx change. **Balance-hold INCLUDED (came out clean).**
+
+**One signal:** board computes `revealComplete`; gates on-board outlines AND (via opt-in `onRevealComplete()` → `gateResultOnReveal` seam) the hub bar + ribbon balance. `revealMs = nHits===0 ? CARD_ANIM_MS(550) : HIT_DEAL_START_S*1000(450) + (nHits-1)*DEAL_STAGGER_S*1000(220) + CARD_ANIM_MS(550)` — matches Advisor (550 / 1000 / 1220 / 1440). Extracted the hardcoded `0.55` into single-source `CARD_ANIM_S`; removed the now-unused `FRAME_DELAY_MS` + the board's local `useDelayedFlag`.
+
+**Hook-safe bar gate:** `useDelayedFlag(...)` still called unconditionally (→ `ownBarVerdictBeat`); final lit = `gateResultOnReveal ? (phase==='result' && revealDone) : ownBarVerdictBeat`.
+
+**Balance-hold:** when gated, ribbon holds pre-settlement value until `revealDone` then applies `balance`, via a `holdBalance` flag **constant-false for non-gated games** → their balance path byte-identical to old `setLiveBalance(balance)`.
+
+**Judgment call (nice catch):** fires `onRevealComplete` only on a DECISIVE terminal (not a push), so a push mid-match can't leave `revealDone` stale-true into the next match-end (no one-frame bar flash).
+
+**Regression guard:** only Blackjack passes `gateResultOnReveal`; full suite (Coinflip/RPS/Crash/Dice/etc.) green; #226 remount-continuity + count-hidden redaction kept green.
+
+**Tests:** (a) 3-hit slow reveal — bar neutral until ~1440ms then bar+outlines together; (b) stand-pat — fires ~550ms after flip; (c) balance holds `1,000¢` until reveal-complete then `1,019¢`. Push-frame tests updated to `waitFor` the outline.
+
+**Verification:** `BlackjackHub.test.tsx` 41/41; full `npx vitest run` **75 files / 951 tests**; `tsc -b` + eslint clean. (Fresh worktree → `pnpm install --frozen-lockfile` + `pnpm run build` first.)
+
+Ask: PR review — #252. Shared collision-zone file; PM-reviewed against acceptance (all met, non-gated unchanged by construction + suite). User-facing → left for Owner merge + deploy.
+
 ### 2026-07-16#3 — Heading icons nudged up 3px (ALL GAMES bolt + OPEN GAMES LIVE badge) (ADVISOR_TO_PM.md 2026-07-12#9)            [OPEN]
 From: Coder (recorded by PM)   Re: ADVISOR_TO_PM.md 2026-07-12#9
 
