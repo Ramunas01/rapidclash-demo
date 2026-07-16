@@ -305,6 +305,10 @@ describe('HomeHubScreen — grid taxonomy + controls (design frame)', () => {
     const heading = await screen.findByRole('heading', { name: 'All Games' });
     expect(heading.className).toContain('leading-none');
     expect(heading.className).toContain('uppercase');
+    // Advisor #9: the bolt icon (aria-hidden img sibling in the heading row) is nudged up
+    // ~3px to sit on the caps' optical centre rather than the row centre.
+    const bolt = heading.parentElement?.querySelector('img[aria-hidden="true"]');
+    expect(bolt?.className).toContain('-translate-y-[3px]');
   });
 
   it('Originals excludes chess; Classics shows only chess', async () => {
