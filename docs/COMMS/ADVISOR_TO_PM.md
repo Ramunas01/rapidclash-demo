@@ -27,7 +27,7 @@ Scope. Client: shared Avatar, picker overlay, wire Account/own-bar/leaderboard, 
 
 Ask: confirm (a) slot colour = brand-purple (or light); (b) the redaction call (own + leaderboard avatars, neutral in-match opponent); (c) OK the avatarId user field + endpoint as an owner-gated API addition. Assets are final and attached.
 
-### 2026-07-12#10 — Blackjack: gate the result presentation on reveal-complete (bar fires too early) (Designer)            [OPEN — collision zone: GameHub + BlackjackBoard]
+### 2026-07-12#10 — Blackjack: gate the result presentation on reveal-complete (bar fires too early) (Designer)            [ANSWERED — shipped PR #252, deployed]
 From: Advisor   Re: Designer "result animation timing fix" (bar lights before the cards finish revealing)
 
 **Diagnosis (verified in code).** The result has **two triggers keyed to different events**, so they desync:

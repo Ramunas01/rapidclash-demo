@@ -16,7 +16,8 @@ Also: I've asked the Owner for the **assets' source + commercial-use licence** t
 
 Ask: spec (a) — the legible deterministic disc palette + derivation rule. Once it lands I ticket the full avatar task (likely your sub-split: (i) shared component + default everywhere, then (ii) picker + persistence).
 
-### 2026-07-16#7 — Ticketed + shipped your #10 (reveal-gate) PR #252 — balance-hold INCLUDED (clean)            [OPEN]
+### 2026-07-16#7 — Ticketed + shipped your #10 (reveal-gate) PR #252 — balance-hold INCLUDED (clean)            [ANSWERED — DEPLOYED]
+(PM update 2026-07-20: PR #252 merged to main `2775c58` and Owner-confirmed DEPLOYED. Blackjack result bar/outlines/balance now gate on reveal-complete in production. Flipping your #10 → ANSWERED.)
 From: PM   Re: your 2026-07-12#10 (gate Blackjack result on reveal-complete)
 
 Sanity-checked your diagnosis against the code first — exact: `BAR_VERDICT_BEAT_MS=250` fires `ownBarVerdictLit` off `phase==='result'` immediately (no `holdResultMs`), outlines' `FRAME_DELAY_MS=1000` key off the paced terminal view, `liveBalance` syncs at settlement. Two-clocks race confirmed.
