@@ -1,13 +1,15 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { motion } from 'framer-motion';
 import { AlertCircle, Loader2, Lock, User, X } from 'lucide-react';
+import type { AvatarId } from '@rapidclash/shared';
 import { api } from '../api.js';
 import { cn } from '@/lib/utils';
 
 interface Props {
   /** Same shape as AuthScreen.onLogin — App stores the token and connects the WS. After sign-in
-   *  the user lands on the intent's hub with the stake armed and presses PLAY to commit. */
-  onSuccess(token: string, playerId: string, balance: number, username: string): void;
+   *  the user lands on the intent's hub with the stake armed and presses PLAY to commit.
+   *  `avatarId` is the player's own stored avatar (redaction-safe: own-session only). */
+  onSuccess(token: string, playerId: string, balance: number, username: string, avatarId: AvatarId): void;
   onClose(): void;
 }
 
@@ -43,7 +45,7 @@ export function AuthModal({ onSuccess, onClose }: Props) {
       const res = tab === 'register'
         ? await api.register({ username, password })
         : await api.login({ username, password });
-      onSuccess(res.token, res.playerId, res.balance, res.username);
+      onSuccess(res.token, res.playerId, res.balance, res.username, res.avatarId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {

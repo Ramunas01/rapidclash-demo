@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  Check,
   Gift,
   LogOut,
   Receipt,
@@ -9,9 +11,10 @@ import {
   Sparkles,
   Trophy,
   Wallet as WalletIcon,
+  X,
   type LucideIcon,
 } from 'lucide-react';
-import type { GameMeta, LedgerEntry, LedgerEntryType, LeaderboardEntry } from '@rapidclash/shared';
+import type { AvatarId, GameMeta, LedgerEntry, LedgerEntryType, LeaderboardEntry } from '@rapidclash/shared';
 import { api } from '../api.js';
 import { formatCredits } from '../format.js';
 import { formatStat } from './Leaderboard.js';
@@ -26,6 +29,11 @@ interface Props {
   token: string;
   /** The signed-in player's own alias (#34); null only on a legacy session. */
   username: string | null;
+  /** The player's OWN stored avatar. Drives the header disc; the picker sets a new one. */
+  avatarId?: AvatarId;
+  /** Save-picker callback — App mirrors the choice into its own state + localStorage so the own
+   *  game bar + a reload reflect it. The endpoint already persisted it server-side. */
+  onAvatarChange?(avatarId: AvatarId): void;
   balance: number;
   onLogout(): void;
   /** Logo / Games nav → Home. */
@@ -33,6 +41,9 @@ interface Props {
   /** Wallet chip / Account → stays on Profile (self). */
   onOpenProfile(): void;
 }
+
+/** The selectable avatars in the picker: default + the four presets (presets-only, no upload). */
+const PICKER_AVATARS: AvatarId[] = ['default', 'boy-light', 'girl-light', 'boy-brown', 'boy-dark'];
 
 // ── Ledger presentation (lifted from Wallet.tsx, restyled to v2 tokens) ──────
 const ENTRY_ART: Record<LedgerEntryType, { icon: LucideIcon; credit: boolean }> = {
@@ -62,10 +73,11 @@ function formatDate(iso: string): string {
  * leaderboard with a live-games picker. Read-only / play-money — no hidden info. Stays
  * simplified per HUB_TRANSITION_ANALYSIS §8 (wallet + ledger + leaderboard, no stats endpoint).
  */
-export function ProfileHubScreen({ token, username, balance, onLogout, onHome, onOpenProfile }: Props) {
+export function ProfileHubScreen({ token, username, avatarId = 'default', onAvatarChange, balance, onLogout, onHome, onOpenProfile }: Props) {
   const [liveBalance, setLiveBalance] = useState(balance);
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loadingLedger, setLoadingLedger] = useState(true);
+  const [pickerOpen, setPickerOpen] = useState(false);
   useEffect(() => { setLiveBalance(balance); }, [balance]);
   useEffect(() => {
     let alive = true;
@@ -82,9 +94,17 @@ export function ProfileHubScreen({ token, username, balance, onLogout, onHome, o
 
       <main data-testid="profile-hub">
         <div className={cn('mx-auto flex max-w-md flex-col gap-5 px-4', HUB_BODY)}>
-          {/* 1 — Profile header: avatar + alias + log out. */}
+          {/* 1 — Profile header: avatar (tap → picker) + alias + log out. */}
           <section data-testid="profile-header" className="flex items-center gap-3 rounded-2xl border border-border bg-card p-4">
-            <Avatar username={username} avatarId="default" size={56} className="shadow-lg" />
+            <button
+              type="button"
+              onClick={() => setPickerOpen(true)}
+              data-testid="profile-avatar-button"
+              aria-label="Change avatar"
+              className="shrink-0 rounded-full outline-none ring-offset-2 ring-offset-card transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:ring-brand"
+            >
+              <Avatar username={username} avatarId={avatarId} size={56} className="shadow-lg" />
+            </button>
             <div className="min-w-0 flex-1">
               <p className="truncate text-lg font-bold leading-tight" data-testid="profile-username">
                 {username ?? 'Player'}
@@ -148,6 +168,122 @@ export function ProfileHubScreen({ token, username, balance, onLogout, onHome, o
       </main>
 
       <HubToolbar onGames={onHome} onAccount={onOpenProfile} active="account" />
+
+      {pickerOpen && (
+        <AvatarPicker
+          token={token}
+          username={username}
+          current={avatarId}
+          onSaved={(id) => { onAvatarChange?.(id); setPickerOpen(false); }}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * §3 avatar picker — an overlay panel (the auth-popup `bg-surface` treatment, no rim) with the
+ * default + 4 presets rendered via the shared Avatar (so the disc matches the user's). Tapping a
+ * preset shows the purple selection ring; the solid Save button calls `api.setAvatar`, and on
+ * success bubbles the id up (App mirrors it into state + localStorage). Presets-only — no upload.
+ */
+function AvatarPicker({
+  token,
+  username,
+  current,
+  onSaved,
+  onClose,
+}: {
+  token: string;
+  username: string | null;
+  current: AvatarId;
+  onSaved(id: AvatarId): void;
+  onClose(): void;
+}) {
+  const [selected, setSelected] = useState<AvatarId>(current);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  // Lock body scroll while the overlay is open (same pattern as AuthModal).
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
+  async function handleSave() {
+    setError('');
+    setSaving(true);
+    try {
+      const res = await api.setAvatar(selected, token);
+      onSaved(res.avatarId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save avatar');
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Choose your avatar"
+      data-testid="avatar-picker"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: -12, scale: 0.96 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+        onClick={(ev) => ev.stopPropagation()}
+        className="w-full max-w-sm rounded-2xl bg-surface p-6 shadow-2xl"
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <span className="text-base font-bold">Choose your avatar</span>
+          <button type="button" onClick={onClose} aria-label="Dismiss" className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:text-foreground">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3" role="group" aria-label="Avatar presets">
+          {PICKER_AVATARS.map((id) => {
+            const isSel = selected === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setSelected(id)}
+                aria-pressed={isSel}
+                data-testid={`avatar-option-${id}`}
+                className={cn(
+                  'flex items-center justify-center rounded-2xl bg-background p-3 transition-colors',
+                  isSel ? 'ring-[3px] ring-brand' : 'ring-1 ring-border hover:ring-white/20',
+                )}
+              >
+                <Avatar avatarId={id} username={username} size={56} />
+              </button>
+            );
+          })}
+        </div>
+
+        {error && (
+          <p className="mt-4 flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert" data-testid="avatar-picker-error">
+            {error}
+          </p>
+        )}
+
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          data-testid="avatar-picker-save"
+          className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-brand py-3 text-sm font-bold text-white shadow-lg shadow-brand/20 transition-all hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <Check className="h-4 w-4" /> {saving ? 'Saving…' : 'Save'}
+        </button>
+      </motion.div>
     </div>
   );
 }
@@ -233,8 +369,8 @@ function ProfileLeaderboard({ token }: { token: string }) {
             return (
               <div key={e.playerId} data-testid={`profile-rank-${e.playerId}`} className="flex items-center gap-3 rounded-lg bg-surface px-3 py-2">
                 <span className="w-5 text-center text-sm font-bold text-muted-foreground">{e.rank}</span>
-                {/* Public leaderboard alias → the shared per-user disc, mirroring Leaderboard.tsx rows. */}
-                <Avatar username={e.displayName} avatarId="default" size={36} />
+                {/* Public leaderboard alias + its stored avatar, mirroring Leaderboard.tsx rows. */}
+                <Avatar username={e.displayName} avatarId={e.avatarId} size={36} />
                 <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{e.displayName}</span>
                 <span className={cn('text-sm font-bold tabular-nums', neg ? 'text-destructive' : 'text-foreground/80')}>{formatStat(e)}</span>
               </div>

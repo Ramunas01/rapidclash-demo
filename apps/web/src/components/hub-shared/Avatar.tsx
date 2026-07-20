@@ -1,14 +1,15 @@
 import type { CSSProperties } from 'react';
+import type { AvatarId } from '@rapidclash/shared';
 import { cn } from '@/lib/utils';
 import boyLight from '../../assets/avatars/avatar-boy-light.png';
 import girlLight from '../../assets/avatars/avatar-girl-light.png';
 import boyBrown from '../../assets/avatars/avatar-boy-brown.png';
 import boyDark from '../../assets/avatars/avatar-boy-dark.png';
 
-/** The avatar identity. `'default'` = the derived disc + person glyph (the only value used in this
- *  PR — no persistence yet, sub-split (ii) supplies the real ids). The four presets are wired but
- *  inert; extend this union when new presets land. */
-export type AvatarId = 'default' | 'boy-light' | 'girl-light' | 'boy-brown' | 'boy-dark';
+/** `AvatarId` is the canonical shared contract type (`@rapidclash/shared`) — the single source of
+ *  truth for client + server. Re-exported here so existing `Avatar`-relative imports keep working.
+ *  `'default'` = the derived disc + person glyph; the four presets map to bundled PNGs below. */
+export type { AvatarId };
 
 /** avatarId → preset PNG. Licence PENDING (see assets/avatars/CREDITS.md); inert until sub-split (ii). */
 const PRESETS: Record<Exclude<AvatarId, 'default'>, string> = {

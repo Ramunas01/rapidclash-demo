@@ -135,7 +135,7 @@ function Row({ entry, index }: { entry: LeaderboardEntry; index: number }) {
         <RankBadge rank={entry.rank} />
       </div>
       <div className="flex min-w-0 items-center gap-3">
-        <Avatar username={entry.displayName} avatarId="default" size={36} />
+        <Avatar username={entry.displayName} avatarId={entry.avatarId} size={36} />
         <span className="truncate text-sm font-medium text-white">{entry.displayName}</span>
       </div>
       <StatCell entry={entry} />

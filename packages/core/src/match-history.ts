@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import type {
+  AvatarId,
   EloLeaderboardEntry,
   LeaderboardEntry,
   NetWinningsLeaderboardEntry,
@@ -7,7 +8,7 @@ import type {
   WinRateLeaderboardEntry,
 } from '@rapidclash/shared';
 import { PLATFORM_ACCOUNT } from './ledger.js';
-import type { UsernameLookup } from './identity.js';
+import type { AvatarLookup, UsernameLookup } from './identity.js';
 
 /** Back-compat alias: a win_rate row used to be the only leaderboard shape. */
 export type WinRateEntry = WinRateLeaderboardEntry;
@@ -52,8 +53,12 @@ export function createMatchHistory(
   /** Shared playerId → username lookup (same one the open-challenge feed uses). When
    *  omitted, displayName falls back to the playerId — the historical placeholder. */
   lookupUsername?: UsernameLookup,
+  /** Shared playerId → avatarId lookup (same seam as lookupUsername). When omitted, every entry
+   *  falls back to `'default'`. The board is PUBLIC, so surfacing avatarId here is not a leak. */
+  lookupAvatar?: AvatarLookup,
 ): MatchHistory {
   const displayNameFor = (playerId: string): string => lookupUsername?.(playerId) ?? playerId;
+  const avatarFor = (playerId: string): AvatarId => lookupAvatar?.(playerId) ?? 'default';
   db.exec(`
     CREATE TABLE IF NOT EXISTS match_results (
       match_id   TEXT PRIMARY KEY,
@@ -180,6 +185,7 @@ export function createMatchHistory(
       rank: i + 1,
       playerId: e.playerId,
       displayName: displayNameFor(e.playerId),
+      avatarId: avatarFor(e.playerId),
       score: e.winRate,
       kind: 'win_rate',
       gamesPlayed: e.gamesPlayed,
@@ -202,6 +208,7 @@ export function createMatchHistory(
       rank: i + 1,
       playerId: r.account_id,
       displayName: displayNameFor(r.account_id),
+      avatarId: avatarFor(r.account_id),
       score: r.net,
       kind: 'net_winnings',
       netWinnings: r.net,
@@ -259,6 +266,7 @@ export function createMatchHistory(
       rank: i + 1,
       playerId,
       displayName: displayNameFor(playerId),
+      avatarId: avatarFor(playerId),
       score: r,
       kind: 'elo',
       rating: r,

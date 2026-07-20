@@ -21,11 +21,11 @@ const LEDGER: LedgerEntry[] = [
 ];
 
 const CF_BOARD: LeaderboardEntry[] = [
-  { rank: 1, playerId: 'p1', displayName: 'alice', score: 90, kind: 'net_winnings', netWinnings: 90 },
-  { rank: 2, playerId: 'p2', displayName: 'bob', score: -10, kind: 'net_winnings', netWinnings: -10 },
+  { rank: 1, playerId: 'p1', displayName: 'alice', avatarId: 'boy-light', score: 90, kind: 'net_winnings', netWinnings: 90 },
+  { rank: 2, playerId: 'p2', displayName: 'bob', avatarId: 'default', score: -10, kind: 'net_winnings', netWinnings: -10 },
 ];
 const CHESS_BOARD: LeaderboardEntry[] = [
-  { rank: 1, playerId: 'p3', displayName: 'carol', score: 1516, kind: 'elo', rating: 1516 },
+  { rank: 1, playerId: 'p3', displayName: 'carol', avatarId: 'default', score: 1516, kind: 'elo', rating: 1516 },
 ];
 
 function baseProps(over: Partial<Props> = {}): Props {
@@ -118,6 +118,77 @@ describe('ProfileHubScreen', () => {
     await waitFor(() => expect(screen.getByTestId('profile-rank-p1')).toBeInTheDocument());
     expect(within(screen.getByTestId('profile-rank-p1')).getByTestId('avatar')).toBeInTheDocument();
     expect(within(screen.getByTestId('profile-rank-p2')).getByTestId('avatar')).toBeInTheDocument();
+  });
+
+  it('header renders the player\'s OWN avatar preset (avatarId prop → header disc)', () => {
+    render(<ProfileHubScreen {...baseProps({ avatarId: 'boy-brown' })} />);
+    const header = within(screen.getByTestId('profile-header'));
+    expect(header.getByTestId('avatar').getAttribute('data-avatar-id')).toBe('boy-brown');
+    expect(header.getByTestId('avatar-img')).toBeInTheDocument(); // a preset image, not the glyph
+  });
+
+  it('each leaderboard row honours entry.avatarId (public board carries the stored avatar)', async () => {
+    render(<ProfileHubScreen {...baseProps()} />);
+    // p1 (alice) has a 'boy-light' preset in the fixture → its row shows the preset image…
+    await waitFor(() => expect(screen.getByTestId('profile-rank-p1')).toBeInTheDocument());
+    const p1 = within(screen.getByTestId('profile-rank-p1'));
+    expect(p1.getByTestId('avatar').getAttribute('data-avatar-id')).toBe('boy-light');
+    expect(p1.getByTestId('avatar-img')).toBeInTheDocument();
+    // …while p2 (bob, 'default') falls back to the derived glyph, no preset image.
+    const p2 = within(screen.getByTestId('profile-rank-p2'));
+    expect(p2.getByTestId('avatar').getAttribute('data-avatar-id')).toBe('default');
+    expect(p2.queryByTestId('avatar-img')).toBeNull();
+  });
+
+  describe('avatar picker (Advisor #12 ii)', () => {
+    it('tapping the header avatar opens the bg-surface overlay with the default + 4 presets', () => {
+      render(<ProfileHubScreen {...baseProps()} />);
+      expect(screen.queryByTestId('avatar-picker')).toBeNull();
+      fireEvent.click(screen.getByTestId('profile-avatar-button'));
+      const picker = screen.getByTestId('avatar-picker');
+      expect(picker).toBeInTheDocument();
+      // the auth-popup treatment: an inner bg-surface panel (no rim).
+      expect(picker.querySelector('.bg-surface')).not.toBeNull();
+      // default + 4 presets are offered.
+      for (const id of ['default', 'boy-light', 'girl-light', 'boy-brown', 'boy-dark']) {
+        expect(screen.getByTestId(`avatar-option-${id}`)).toBeInTheDocument();
+      }
+    });
+
+    it('selecting a preset shows the purple ring-brand selection ring', () => {
+      render(<ProfileHubScreen {...baseProps({ avatarId: 'default' })} />);
+      fireEvent.click(screen.getByTestId('profile-avatar-button'));
+      const option = screen.getByTestId('avatar-option-boy-dark');
+      fireEvent.click(option);
+      expect(option.getAttribute('aria-pressed')).toBe('true');
+      expect(option.className).toContain('ring-brand');
+    });
+
+    it('Save calls api.setAvatar, bubbles the id via onAvatarChange, and closes the overlay', async () => {
+      const setAvatarCalls: string[] = [];
+      vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+        const u = String(url);
+        if (u.includes('/auth/avatar')) {
+          const sent = JSON.parse(String(init?.body)).avatarId as string;
+          setAvatarCalls.push(sent);
+          return { ok: true, json: async () => ({ avatarId: sent }) } as Response;
+        }
+        if (u.includes('/games')) return { ok: true, json: async () => GAMES } as Response;
+        if (u.includes('/leaderboard/coinflip')) return { ok: true, json: async () => CF_BOARD } as Response;
+        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: 1009, entries: LEDGER }) } as Response;
+        return { ok: true, json: async () => ({}) } as Response;
+      }));
+      const onAvatarChange = vi.fn();
+      render(<ProfileHubScreen {...baseProps({ avatarId: 'default', onAvatarChange })} />);
+
+      fireEvent.click(screen.getByTestId('profile-avatar-button'));
+      fireEvent.click(screen.getByTestId('avatar-option-girl-light'));
+      fireEvent.click(screen.getByTestId('avatar-picker-save'));
+
+      await waitFor(() => expect(setAvatarCalls).toEqual(['girl-light']));
+      expect(onAvatarChange).toHaveBeenCalledWith('girl-light');
+      await waitFor(() => expect(screen.queryByTestId('avatar-picker')).toBeNull());
+    });
   });
 
   it('is sanitized: no $ anywhere on the hub', async () => {

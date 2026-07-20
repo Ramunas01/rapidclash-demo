@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { GameMeta, Move, Outcome, SettlementSummary, OpenChallenge, PlayerClocks } from '@rapidclash/shared';
+import type { GameMeta, Move, Outcome, SettlementSummary, OpenChallenge, PlayerClocks, AvatarId } from '@rapidclash/shared';
 import { WsClient, hasStoredMatch, readStoredGameId, writeStoredGameId, type WsStatus } from './ws.js';
 import { applyChallengesUpdate } from './screens/OpenChallengesList.js';
 import { AuthScreen } from './screens/Auth.js';
@@ -330,16 +330,25 @@ export interface BaccaratView {
  *  which screen renders it) is tracked separately in `activeGameId`. */
 export type GameView = RpsView | CoinflipView | ChessView | BlackjackView | MinesView | CrashView | RouletteView | ShipsBattleView | DiceView | BaccaratView | KenoView | LimboView | HiloView;
 
+/** Coerce a persisted avatar id back to a valid AvatarId (defensive — an old/edited store could
+ *  carry anything). Defaults to `'default'`. Kept local so App has no runtime dep on the enum list. */
+function loadAvatarId(): AvatarId {
+  const v = localStorage.getItem('rc_avatarId');
+  const VALID: AvatarId[] = ['default', 'boy-light', 'girl-light', 'boy-brown', 'boy-dark'];
+  return (VALID as string[]).includes(v ?? '') ? (v as AvatarId) : 'default';
+}
+
 function loadAuth() {
   return {
     token: localStorage.getItem('rc_token'),
     playerId: localStorage.getItem('rc_playerId'),
     username: localStorage.getItem('rc_username'),
+    avatarId: loadAvatarId(),
   };
 }
 
 export function App() {
-  const { token: savedToken, playerId: savedPlayerId, username: savedUsername } = loadAuth();
+  const { token: savedToken, playerId: savedPlayerId, username: savedUsername, avatarId: savedAvatarId } = loadAuth();
   // A match persisted across a reload restores straight to the play view; match.state
   // (active) keeps us there, match.end (terminal) redirects to the result screen. A stored
   // coinflip match resumes onto the hub (in-place flow), not the standalone play screen.
@@ -353,6 +362,10 @@ export function App() {
   // The player's own alias — shown so they always know "who you are" (#34). Persisted
   // in lockstep with playerId so a reload still knows the alias before any WS traffic.
   const [username, setUsername] = useState<string | null>(savedUsername);
+  // The player's OWN avatar (preset id or 'default'), persisted in lockstep with username so a
+  // reload shows it before any traffic. Own-session only — the opponent's avatar is never on the
+  // wire (redaction, Charter #2). Set from AuthResponse on auth and by handleSetAvatar on picker save.
+  const [avatarId, setAvatarId] = useState<AvatarId>(savedAvatarId);
   const [balance, setBalance] = useState(0);
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
   const [opponentId, setOpponentId] = useState<string | null>(null);
@@ -411,13 +424,15 @@ export function App() {
   const searchingRef = useRef(false);
   const searchGameRef = useRef<string | null>(null);
 
-  const handleLogin = useCallback((tok: string, pid: string, bal: number, name: string) => {
+  const handleLogin = useCallback((tok: string, pid: string, bal: number, name: string, avatar: AvatarId) => {
     localStorage.setItem('rc_token', tok);
     localStorage.setItem('rc_playerId', pid);
     localStorage.setItem('rc_username', name);
+    localStorage.setItem('rc_avatarId', avatar);
     setToken(tok);
     setPlayerId(pid);
     setUsername(name);
+    setAvatarId(avatar);
     setBalance(bal);
 
     const ws = new WsClient(tok, {});
@@ -520,13 +535,15 @@ export function App() {
   // Register/login from the modal: store the token + connect the WS (as handleLogin), then land the
   // user on the intent's hub with the stake ARMED — nothing auto-fires. They press PLAY to commit
   // (a PLAY intent) or post their own challenge (a JOIN intent). No resume runs on connect.
-  const handleAuthSuccess = useCallback((tok: string, pid: string, bal: number, name: string) => {
+  const handleAuthSuccess = useCallback((tok: string, pid: string, bal: number, name: string, avatar: AvatarId) => {
     localStorage.setItem('rc_token', tok);
     localStorage.setItem('rc_playerId', pid);
     localStorage.setItem('rc_username', name);
+    localStorage.setItem('rc_avatarId', avatar);
     setToken(tok);
     setPlayerId(pid);
     setUsername(name);
+    setAvatarId(avatar);
     setBalance(bal);
     const ws = new WsClient(tok, {});
     wsRef.current = ws;
@@ -719,12 +736,21 @@ export function App() {
     localStorage.removeItem('rc_token');
     localStorage.removeItem('rc_playerId');
     localStorage.removeItem('rc_username');
+    localStorage.removeItem('rc_avatarId');
     wsRef.current?.disconnect();
     wsRef.current = null;
     setToken(null);
     setPlayerId(null);
     setUsername(null);
+    setAvatarId('default');
     setScreen('home'); // logged-out Home (the single entry for everyone), not the full auth screen
+  }, []);
+
+  // Picker save (ProfileHub): the endpoint already persisted it server-side; mirror it into App
+  // state + localStorage so the Account header, own game bar, and a reload all reflect the choice.
+  const handleSetAvatar = useCallback((avatar: AvatarId) => {
+    localStorage.setItem('rc_avatarId', avatar);
+    setAvatarId(avatar);
   }, []);
 
   const goToHome = useCallback(() => setScreen('home'), []);
@@ -944,6 +970,8 @@ export function App() {
         return <ProfileHubScreen
           token={token!}
           username={username}
+          avatarId={avatarId}
+          onAvatarChange={handleSetAvatar}
           balance={balance}
           onLogout={handleLogout}
           onHome={goToHome}
@@ -996,6 +1024,7 @@ export function App() {
           token={token ?? ''}
           playerId={playerId}
           username={username}
+          avatarId={avatarId}
           opponentId={opponentId}
           opponentName={opponentName}
           serverClockOffset={serverClockOffset}

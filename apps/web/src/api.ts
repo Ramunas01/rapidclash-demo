@@ -1,4 +1,4 @@
-import type { AuthRegisterBody, AuthLoginBody, AuthResponse, WalletResponse, GameMeta, LeaderboardEntry, PublicOpenChallenge } from '@rapidclash/shared';
+import type { AuthRegisterBody, AuthLoginBody, AuthResponse, WalletResponse, GameMeta, LeaderboardEntry, PublicOpenChallenge, AvatarId, SetAvatarResponse } from '@rapidclash/shared';
 
 const BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -32,4 +32,8 @@ export const api = {
     req<PublicOpenChallenge[]>('GET', '/open-challenges'),
   leaderboard: (gameId: string, token: string) =>
     req<LeaderboardEntry[]>('GET', `/leaderboard/${gameId}`, undefined, token),
+  /** Set the signed-in player's OWN avatar (presets-only). Auth-required; the server validates
+   *  the id and only ever mutates the token-holder's avatar. */
+  setAvatar: (avatarId: AvatarId, token: string) =>
+    req<SetAvatarResponse>('POST', '/auth/avatar', { avatarId }, token),
 };

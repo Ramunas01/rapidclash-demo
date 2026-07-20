@@ -15,7 +15,7 @@ describe('LeaderboardScreen — render by ranking kind', () => {
 
   it('renders a win_rate row as a percentage with a wins/games subline', async () => {
     mockEntries([
-      { rank: 1, playerId: 'alice', displayName: 'alice', score: 1, kind: 'win_rate', gamesPlayed: 2, wins: 2, winRate: 1 },
+      { rank: 1, playerId: 'alice', displayName: 'alice', avatarId: 'default', score: 1, kind: 'win_rate', gamesPlayed: 2, wins: 2, winRate: 1 },
     ]);
     render(<LeaderboardScreen token="tok" gameId="rps" onBack={() => {}} />);
     await waitFor(() => expect(screen.getByText('100% win rate')).toBeInTheDocument());
@@ -27,7 +27,7 @@ describe('LeaderboardScreen — render by ranking kind', () => {
 
   it('renders an elo row as a rounded rating with a "rating" subline', async () => {
     mockEntries([
-      { rank: 1, playerId: 'alice', displayName: 'alice', score: 1531.26, kind: 'elo', rating: 1531.26 },
+      { rank: 1, playerId: 'alice', displayName: 'alice', avatarId: 'default', score: 1531.26, kind: 'elo', rating: 1531.26 },
     ]);
     render(<LeaderboardScreen token="tok" gameId="chess" onBack={() => {}} />);
     await waitFor(() => expect(screen.getByText('1531 ELO')).toBeInTheDocument());
@@ -38,8 +38,8 @@ describe('LeaderboardScreen — render by ranking kind', () => {
 
   it('renders net_winnings rows as signed credits (positive and negative)', async () => {
     mockEntries([
-      { rank: 1, playerId: 'alice', displayName: 'alice', score: 9, kind: 'net_winnings', netWinnings: 9 },
-      { rank: 2, playerId: 'bob', displayName: 'bob', score: -10, kind: 'net_winnings', netWinnings: -10 },
+      { rank: 1, playerId: 'alice', displayName: 'alice', avatarId: 'default', score: 9, kind: 'net_winnings', netWinnings: 9 },
+      { rank: 2, playerId: 'bob', displayName: 'bob', avatarId: 'default', score: -10, kind: 'net_winnings', netWinnings: -10 },
     ]);
     render(<LeaderboardScreen token="tok" gameId="coinflip" onBack={() => {}} />);
     await waitFor(() => expect(screen.getByText('+9¢')).toBeInTheDocument());
@@ -52,7 +52,7 @@ describe('LeaderboardScreen — render by ranking kind', () => {
   // #46 — the board fetched is the ACTIVE game's, not hardcoded 'rps'.
   it('fetches the active game\'s board (coinflip → /leaderboard/coinflip)', async () => {
     mockEntries([
-      { rank: 1, playerId: 'alice', displayName: 'alice', score: 9, kind: 'net_winnings', netWinnings: 9 },
+      { rank: 1, playerId: 'alice', displayName: 'alice', avatarId: 'default', score: 9, kind: 'net_winnings', netWinnings: 9 },
     ]);
     render(<LeaderboardScreen token="tok" gameId="coinflip" onBack={() => {}} />);
     await waitFor(() => expect(fetch).toHaveBeenCalled());
@@ -69,7 +69,7 @@ describe('LeaderboardScreen — render by ranking kind', () => {
   // Play-money guard: no crypto/deposit/buy-chips framing in the rendered board.
   it('keeps play-money framing (no deposit / crypto / buy-chips copy)', async () => {
     mockEntries([
-      { rank: 1, playerId: 'alice', displayName: 'alice', score: 9, kind: 'net_winnings', netWinnings: 9 },
+      { rank: 1, playerId: 'alice', displayName: 'alice', avatarId: 'default', score: 9, kind: 'net_winnings', netWinnings: 9 },
     ]);
     const { container } = render(<LeaderboardScreen token="tok" gameId="coinflip" onBack={() => {}} />);
     await waitFor(() => expect(screen.getByText('+9¢')).toBeInTheDocument());
@@ -80,19 +80,19 @@ describe('LeaderboardScreen — render by ranking kind', () => {
 describe('formatStat', () => {
   it('formats win_rate as a rounded percentage', () => {
     expect(
-      formatStat({ rank: 1, playerId: 'a', displayName: 'a', score: 0.5, kind: 'win_rate', gamesPlayed: 2, wins: 1, winRate: 0.5 }),
+      formatStat({ rank: 1, playerId: 'a', displayName: 'a', avatarId: 'default', score: 0.5, kind: 'win_rate', gamesPlayed: 2, wins: 1, winRate: 0.5 }),
     ).toBe('50% win rate');
   });
 
   it('formats net_winnings with an explicit sign', () => {
-    const base = { rank: 1, playerId: 'a', displayName: 'a', kind: 'net_winnings' as const };
+    const base = { rank: 1, playerId: 'a', displayName: 'a', avatarId: 'default' as const, kind: 'net_winnings' as const };
     expect(formatStat({ ...base, score: 9, netWinnings: 9 })).toBe('+9¢');
     expect(formatStat({ ...base, score: -10, netWinnings: -10 })).toBe('-10¢');
     expect(formatStat({ ...base, score: 0, netWinnings: 0 })).toBe('0¢');
   });
 
   it('formats elo as a rounded rating', () => {
-    const base = { rank: 1, playerId: 'a', displayName: 'a', kind: 'elo' as const };
+    const base = { rank: 1, playerId: 'a', displayName: 'a', avatarId: 'default' as const, kind: 'elo' as const };
     expect(formatStat({ ...base, score: 1500, rating: 1500 })).toBe('1500 ELO');
     expect(formatStat({ ...base, score: 1531.26, rating: 1531.26 })).toBe('1531 ELO');
   });

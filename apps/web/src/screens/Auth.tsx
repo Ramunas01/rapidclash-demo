@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from 'react';
 import { motion } from 'framer-motion';
 import { AlertCircle, Loader2, Lock, Shield, Swords, User, Users, Zap } from 'lucide-react';
+import type { AvatarId } from '@rapidclash/shared';
 import { api } from '../api.js';
 import { cn } from '@/lib/utils';
 
 interface Props {
-  onLogin(token: string, playerId: string, balance: number, username: string): void;
+  onLogin(token: string, playerId: string, balance: number, username: string, avatarId: AvatarId): void;
 }
 
 /** Play-money trust cues lifted from the Base44 Home hero (no crypto/deposit framing). */
@@ -30,7 +31,7 @@ export function AuthScreen({ onLogin }: Props) {
       const res = tab === 'register'
         ? await api.register({ username, password })
         : await api.login({ username, password });
-      onLogin(res.token, res.playerId, res.balance, res.username);
+      onLogin(res.token, res.playerId, res.balance, res.username, res.avatarId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {

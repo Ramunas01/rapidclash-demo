@@ -115,6 +115,25 @@ describe('createMatchHistory', () => {
     expect(byId['bob-id']).toBe('bob-id'); // unknown → playerId placeholder
   });
 
+  it('resolves each entry\'s avatarId via the shared avatar lookup, "default" as fallback', () => {
+    const lookup = (id: string) => (id === 'alice-id' ? 'Alice' : undefined);
+    const avatar = (id: string) => (id === 'alice-id' ? ('boy-light' as const) : ('default' as const));
+    const mh = createMatchHistory(freshDb(), new Map(), lookup, avatar);
+    mh.recordResult('m1', 'rps', ['alice-id', 'bob-id'], 'win', 'alice-id', 100);
+
+    const board = winRateBoard(mh, 'rps');
+    const byId = Object.fromEntries(board.map((e) => [e.playerId, e.avatarId]));
+    expect(byId['alice-id']).toBe('boy-light'); // resolved
+    expect(byId['bob-id']).toBe('default'); // unknown → default
+  });
+
+  it('defaults avatarId to "default" when no avatar lookup is injected', () => {
+    const mh = createMatchHistory(freshDb());
+    mh.recordResult('m1', 'rps', ['alice', 'bob'], 'win', 'alice', 100);
+    const board = winRateBoard(mh, 'rps');
+    expect(board.every((e) => e.avatarId === 'default')).toBe(true);
+  });
+
   it('tags win_rate rows with kind and exposes score = winRate (generalized shape)', () => {
     const mh = createMatchHistory(freshDb(), new Map([['rps', RPS_WIN_RATE]]));
     mh.recordResult('m1', 'rps', ['alice', 'bob'], 'win', 'alice', 100);

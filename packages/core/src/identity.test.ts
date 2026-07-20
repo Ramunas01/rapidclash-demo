@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import Database from 'better-sqlite3';
 import { createLedger, GRANT_AMOUNT } from './ledger.js';
-import { createIdentity } from './identity.js';
+import { createIdentity, isAvatarId } from './identity.js';
 
 function makeServices() {
   const db = new Database(':memory:');
@@ -103,6 +103,87 @@ describe('identity.clearPassword (soft reset)', () => {
     const { identity } = makeServices();
     await identity.register('ivan', 'pw');
     await expect(identity.register('ivan', 'other')).rejects.toThrow(/already taken/i);
+  });
+});
+
+describe('identity avatar persistence (Advisor #12 ii)', () => {
+  it('a new registrant defaults to the "default" avatar', async () => {
+    const { identity } = makeServices();
+    const res = await identity.register('nora', 'pw');
+    expect(res.avatarId).toBe('default');
+    expect(identity.getAvatarId(res.playerId)).toBe('default');
+  });
+
+  it('setAvatarId persists and is echoed by a subsequent login (survives a "reload")', async () => {
+    const { db, ledger } = makeServices();
+    // First identity instance: register + set an avatar.
+    const id1 = createIdentity(db, ledger);
+    const { playerId } = await id1.register('olive', 'pw');
+    id1.setAvatarId(playerId, 'boy-brown');
+    expect(id1.getAvatarId(playerId)).toBe('boy-brown');
+
+    // Simulate a process restart / restored snapshot: a fresh identity over the SAME db.
+    const id2 = createIdentity(db, ledger);
+    expect(id2.getAvatarId(playerId)).toBe('boy-brown');
+    const login = await id2.login('olive', 'pw');
+    expect(login.avatarId).toBe('boy-brown');
+  });
+
+  it('a soft-reset re-claim preserves the stored avatar', async () => {
+    const { identity } = makeServices();
+    const { playerId } = await identity.register('pia', 'pw');
+    identity.setAvatarId(playerId, 'girl-light');
+    identity.clearPassword(playerId);
+    const reclaim = await identity.register('pia', 'new-pw');
+    expect(reclaim.playerId).toBe(playerId);
+    expect(reclaim.avatarId).toBe('girl-light');
+  });
+
+  it('getAvatarId returns "default" for an unknown playerId', () => {
+    const { identity } = makeServices();
+    expect(identity.getAvatarId('no-such-id')).toBe('default');
+  });
+
+  it('isAvatarId validates the enum (rejects anything else)', () => {
+    for (const ok of ['default', 'boy-light', 'girl-light', 'boy-brown', 'boy-dark']) {
+      expect(isAvatarId(ok)).toBe(true);
+    }
+    for (const bad of ['', 'boy', 'evil', 42, null, undefined, {}]) {
+      expect(isAvatarId(bad)).toBe(false);
+    }
+  });
+
+  it('the migration is idempotent — re-initialising over the same db does not throw or reset avatars', async () => {
+    const { db, ledger } = makeServices();
+    const id1 = createIdentity(db, ledger);
+    const { playerId } = await id1.register('quinn', 'pw');
+    id1.setAvatarId(playerId, 'boy-dark');
+    // Running init again (as a snapshot restore / second buildApp would) is a no-op on data.
+    const id2 = createIdentity(db, ledger);
+    const id3 = createIdentity(db, ledger);
+    expect(id3.getAvatarId(playerId)).toBe('boy-dark');
+    expect(id2.getAvatarId(playerId)).toBe('boy-dark');
+  });
+
+  it('an account row predating the avatar_id column reads "default" after migration (snapshot-safe)', () => {
+    const db = new Database(':memory:');
+    const ledger = createLedger(db);
+    // Simulate a RESTORED OLD SNAPSHOT: an accounts table WITHOUT avatar_id, with a legacy row.
+    db.exec(`
+      CREATE TABLE accounts (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE,
+        password_hash TEXT,
+        role TEXT NOT NULL DEFAULT 'player'
+      )
+    `);
+    db.prepare(`INSERT INTO accounts (id, username, password_hash, role) VALUES (?, ?, ?, ?)`)
+      .run('legacy-id', 'legacy', 'hash', 'player');
+    // createIdentity runs the ALTER migration on the existing table; the old row inherits DEFAULT.
+    const identity = createIdentity(db, ledger);
+    expect(identity.getAvatarId('legacy-id')).toBe('default');
+    // And the column now exists (no duplicate-column throw on a second init).
+    expect(() => createIdentity(db, ledger)).not.toThrow();
   });
 });
 
