@@ -1,5 +1,23 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-07-20#2 — Avatar sub-split (ii): Account picker + avatarId persistence (ADVISOR_TO_PM.md 2026-07-12#12 ii)            [OPEN — owner-gated contract/docs]
+From: Coder (recorded by PM)   Re: ADVISOR_TO_PM.md 2026-07-12#12 sub-split (ii)
+
+Shipped, **PR #256** (`feat/avatar-picker-persistence`). Full-stack: shared + server + client + PROTOCOL. Owner-gated (touches `protocol.ts` + `docs/PROTOCOL.md`).
+
+**Shared:** `AvatarId` + `AVATAR_IDS` canonical in `protocol.ts`; `avatarId` added to `AuthResponse` + `LeaderboardEntryBase`; `SetAvatarBody`/`SetAvatarResponse`. `Avatar.tsx` now imports `AvatarId` from shared.
+**Server:** snapshot-safe idempotent migration (`PRAGMA table_info(accounts)` gate → `ALTER TABLE accounts ADD COLUMN avatar_id TEXT NOT NULL DEFAULT 'default'`); `getAvatarId`/`setAvatarId`; register/login SELECT + return `avatarId`; `POST /auth/avatar` (`requireAuth`, `isAvatarId`-validated → 400, sets ONLY `request.player.id` — can't set others', 401 unauth); leaderboard entries carry per-player `avatarId`.
+**Client:** `rc_avatarId` localStorage in lockstep with `rc_username` (read on boot via `loadAuth`, set from `AuthResponse`, updated on picker save, cleared on logout); threaded into own game bar + Account header; `api.setAvatar`; `AvatarPicker` overlay (`bg-surface`, default+4 presets via shared Avatar, `ring-[3px] ring-brand` selection, `bg-brand` Save); leaderboard rows use `entry.avatarId`.
+**PROTOCOL.md:** documented the field additions + endpoint + presets-only + opponent-avatar-never-in-match.
+
+**REDACTION (verified):** `avatarId` added to EXACTLY `AuthResponse` (own) + `LeaderboardEntryBase` (public). Grepped ws/, matches.ts, matchmaking.ts, game-contract.ts → ZERO `avatarId`/`avatar_id`. Opponent bar renders neutral `<Avatar avatarId="default">` no username; client test asserts opponent stays neutral even when own avatar is a preset.
+
+**Judgment calls:** did NOT add avatarId to `AdminPlayerSummary` (admin-only, not public); threaded `AuthResponse.avatarId` as a 5th arg through `onLogin`/`onSuccess` (minimal blast radius, all call sites updated); no prettier (baseline mismatch).
+
+**Verification:** full `npx vitest run` **76 files / 979 tests**; server (identity migration-idempotency + pre-column-snapshot default, auth set/echo/400/401, leaderboard avatarId), client (picker flow, opponent-redaction); `tsc -b` + eslint (21 files) clean. (Fresh worktree → `pnpm install --frozen-lockfile` + `pnpm run build` first.)
+
+Ask: PR review — #256. Owner-gated (contract + PROTOCOL.md); PM-reviewed against acceptance (all met, redaction verified). Left for Owner merge + deploy. Completes the avatar system (i + ii).
+
 ### 2026-07-20#1 — Avatar sub-split (i): shared Avatar + per-user light disc, default everywhere (ADVISOR_TO_PM.md 2026-07-12#12 i)            [OPEN]
 From: Coder (recorded by PM)   Re: ADVISOR_TO_PM.md 2026-07-12#12 sub-split (i)
 
