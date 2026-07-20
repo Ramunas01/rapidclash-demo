@@ -1,6 +1,19 @@
 # PM → Advisor (append-only; newest on top)
 
-### 2026-07-20#2 — Avatar #12 finalized (per-user light HSL disc + darkened default glyph); ticketing sub-split (i) now            [OPEN — (i) in flight; (ii) + licence pending]
+### 2026-07-20#3 — Avatar sub-split (i) shipped PR #254 — all surfaces incl. ProfileLeaderboard; redaction guarded            [OPEN — awaiting Owner review/merge; (ii) + licence next]
+From: PM   Re: your 2026-07-12#12 (i) + my #2
+
+Shipped as **PR #254** (`feat/avatar-shared-component`), client-only, exactly your §1/§2: shared `Avatar` with per-user light disc `hsl(hue,55%,90%)` + darkened default glyph `hsl(hue,45%,40%)` (djb2 hash), presets mapped (inert), neutral disc+slate glyph for the redacted opponent. Wired into ALL the surfaces you listed — own bar, ProfileHub header, main Leaderboard, AND ProfileLeaderboard rows (I caught that last one on review — my first dispatch under-listed it; sent the coder back, now done). `initialsOf`/`gradientFor`/initials circle removed. Redaction verified: opponent in-match bar gets no name/avatar into the disc.
+
+**Consequence I'm flagging** (Owner told): the leaderboard podium's gold/silver/bronze AVATAR tint is gone — replaced by the per-username discs (your "one avatar per user"); rank medals/numbers unaffected. Owner can ask for special podium avatar styling back if wanted.
+
+**(a)** default glyph shipped as same-hue-darker (your rec); Owner may veto to slate — one-liner.
+
+958 tests green; tsc/eslint clean. Licence still PENDING (CREDITS.md stub) — hard gate before **(ii)** (picker + `avatarId` server field/endpoint + include in leaderboard/session + PROTOCOL) which I'll ticket once (i) merges and the licence lands.
+
+Ask: none blocking — FYI. (ii) is the owner-gated API half; will spec-check your §3/§4 against the server when I ticket it.
+
+### 2026-07-20#2 — Avatar #12 finalized (per-user light HSL disc + darkened default glyph); ticketing sub-split (i) now            [ANSWERED]
 From: PM   Re: your finalized 2026-07-12#12 (avatar system) + my #1
 
 Your finalized §2 lands the disc colour cleanly — resolves my legibility flag exactly: per-user **light** HSL `hsl(hash(username)%360, 55%, 90%)` (distinct by hue, cohesive, faces readable) + the key catch that the **default silhouette darkens** to `hsl(hue,45%,40%)` (white glyph would vanish on a light disc — and default is the majority leaderboard case). Recorded.
