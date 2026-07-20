@@ -106,6 +106,20 @@ describe('ProfileHubScreen', () => {
     expect(screen.getByTestId('profile-rank-p3').textContent).toContain('1516 ELO');
   });
 
+  it('renders the shared Avatar (not initials) in the header and on each leaderboard row', async () => {
+    render(<ProfileHubScreen {...baseProps()} />);
+    // Header shows the shared Avatar (a default person glyph), never the old initials text.
+    const header = within(screen.getByTestId('profile-header'));
+    expect(header.getByTestId('avatar')).toBeInTheDocument();
+    expect(header.queryByTestId('avatar-glyph')).toBeInTheDocument(); // darkened silhouette, not initials
+    expect(header.getByTestId('profile-username').textContent).toBe('alice');
+
+    // Each ProfileLeaderboard row (public alias) gets the shared Avatar too.
+    await waitFor(() => expect(screen.getByTestId('profile-rank-p1')).toBeInTheDocument());
+    expect(within(screen.getByTestId('profile-rank-p1')).getByTestId('avatar')).toBeInTheDocument();
+    expect(within(screen.getByTestId('profile-rank-p2')).getByTestId('avatar')).toBeInTheDocument();
+  });
+
   it('is sanitized: no $ anywhere on the hub', async () => {
     const { container } = render(<ProfileHubScreen {...baseProps()} />);
     await waitFor(() => expect(screen.getByTestId('profile-balance').textContent).toBe('1,009¢'));

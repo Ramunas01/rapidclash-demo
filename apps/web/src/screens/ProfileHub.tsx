@@ -233,6 +233,8 @@ function ProfileLeaderboard({ token }: { token: string }) {
             return (
               <div key={e.playerId} data-testid={`profile-rank-${e.playerId}`} className="flex items-center gap-3 rounded-lg bg-surface px-3 py-2">
                 <span className="w-5 text-center text-sm font-bold text-muted-foreground">{e.rank}</span>
+                {/* Public leaderboard alias → the shared per-user disc, mirroring Leaderboard.tsx rows. */}
+                <Avatar username={e.displayName} avatarId="default" size={36} />
                 <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{e.displayName}</span>
                 <span className={cn('text-sm font-bold tabular-nums', neg ? 'text-destructive' : 'text-foreground/80')}>{formatStat(e)}</span>
               </div>
