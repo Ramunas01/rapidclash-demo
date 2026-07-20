@@ -1,14 +1,15 @@
 import { describe, beforeEach, afterEach, it, expect } from 'vitest';
 import Database from 'better-sqlite3';
 import type { FastifyInstance } from 'fastify';
-import { createServices, buildApp } from '../server.js';
+import { createServices, buildApp, type AppServices } from '../server.js';
 import { GRANT_AMOUNT } from '@rapidclash/core';
+import type { AuthResponse, LeaderboardEntry } from '@rapidclash/shared';
 
-function makeApp(): { app: FastifyInstance } {
+function makeApp(): { app: FastifyInstance; services: AppServices } {
   const db = new Database(':memory:');
   const services = createServices(db, []);
   const app = buildApp(services, [], { seedAdmin: false });
-  return { app };
+  return { app, services };
 }
 
 describe('POST /auth/register', () => {
@@ -103,6 +104,87 @@ describe('POST /auth/login', () => {
       payload: { username: 'nobody', password: 'pw' },
     });
     expect(res.statusCode).toBe(401);
+  });
+});
+
+describe('avatar — AuthResponse field + POST /auth/avatar (Advisor #12 ii)', () => {
+  let app: FastifyInstance;
+  let services: AppServices;
+
+  beforeEach(() => {
+    ({ app, services } = makeApp());
+  });
+  afterEach(async () => {
+    await app.close();
+  });
+
+  async function registerPlayer(username: string): Promise<{ token: string; body: AuthResponse }> {
+    const res = await app.inject({ method: 'POST', url: '/auth/register', payload: { username, password: 'pw' } });
+    const body = res.json<AuthResponse>();
+    return { token: body.token, body };
+  }
+
+  it('register returns avatarId "default" for a new account', async () => {
+    const { body } = await registerPlayer('ada');
+    expect(body.avatarId).toBe('default');
+  });
+
+  it('POST /auth/avatar sets the caller\'s avatar and login echoes it back (survives "reload")', async () => {
+    const { token } = await registerPlayer('bea');
+    const set = await app.inject({
+      method: 'POST',
+      url: '/auth/avatar',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { avatarId: 'girl-light' },
+    });
+    expect(set.statusCode).toBe(200);
+    expect(set.json<{ avatarId: string }>().avatarId).toBe('girl-light');
+
+    // A fresh login returns the stored avatar (persisted server-side).
+    const login = await app.inject({ method: 'POST', url: '/auth/login', payload: { username: 'bea', password: 'pw' } });
+    expect(login.json<AuthResponse>().avatarId).toBe('girl-light');
+  });
+
+  it('rejects an invalid avatarId with 400 and does not change the stored value', async () => {
+    const { token } = await registerPlayer('cid');
+    const bad = await app.inject({
+      method: 'POST',
+      url: '/auth/avatar',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { avatarId: 'evil-hacker' },
+    });
+    expect(bad.statusCode).toBe(400);
+    const login = await app.inject({ method: 'POST', url: '/auth/login', payload: { username: 'cid', password: 'pw' } });
+    expect(login.json<AuthResponse>().avatarId).toBe('default'); // unchanged
+  });
+
+  it('requires auth — no token → 401 (a user cannot set an avatar unauthenticated)', async () => {
+    const res = await app.inject({ method: 'POST', url: '/auth/avatar', payload: { avatarId: 'boy-dark' } });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('leaderboard entries carry each player\'s stored avatarId (public board)', async () => {
+    // Two players; give the winner a preset avatar.
+    const { token, body } = await registerPlayer('dot');
+    await registerPlayer('eli');
+    const winnerId = body.playerId;
+    await app.inject({
+      method: 'POST',
+      url: '/auth/avatar',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { avatarId: 'boy-brown' },
+    });
+    // Record a finished match so both appear on the (win_rate default) board.
+    const eliReg = await app.inject({ method: 'POST', url: '/auth/login', payload: { username: 'eli', password: 'pw' } });
+    const eliPlayerId = eliReg.json<AuthResponse>().playerId;
+    services.matchHistory.recordResult('m1', 'rps', [winnerId, eliPlayerId], 'win', winnerId, 10);
+
+    const res = await app.inject({ method: 'GET', url: '/leaderboard/rps' });
+    const entries = res.json<LeaderboardEntry[]>();
+    const winner = entries.find((e) => e.playerId === winnerId)!;
+    const loser = entries.find((e) => e.playerId === eliPlayerId)!;
+    expect(winner.avatarId).toBe('boy-brown');
+    expect(loser.avatarId).toBe('default');
   });
 });
 

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { RpsHubScreen } from '../screens/RpsHub.js';
 import type { RpsView } from '../App.js';
 
@@ -81,6 +81,31 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     expect(screen.getByTestId('hub-opponent-pick').textContent).toBe('🤫');
     fireEvent.click(screen.getByTestId('hub-move-rock'));
     expect(onMakeMove).toHaveBeenCalledWith('rock');
+  });
+
+  it('own slot renders the player\'s chosen avatar preset (avatarId threaded into the own bar)', () => {
+    const gameState: RpsView = { players: ['pid', 'bob'], choices: {} };
+    render(<RpsHubScreen {...baseProps({ avatarId: 'boy-light', currentMatchId: 'm1', gameState, legalMoves: ['rock'] })} />);
+    const own = within(screen.getByTestId('hub-slot-own'));
+    const ownAvatar = own.getByTestId('avatar');
+    expect(ownAvatar.getAttribute('data-avatar-id')).toBe('boy-light');
+    // A preset shows its <img>, not the default glyph.
+    expect(own.getByTestId('avatar-img')).toBeInTheDocument();
+    expect(own.queryByTestId('avatar-glyph')).toBeNull();
+  });
+
+  it('REDACTION: the in-match opponent bar stays the neutral silhouette regardless of MY avatar (opponent avatarId is never on the wire)', () => {
+    const gameState: RpsView = { players: ['pid', 'bob'], choices: {} };
+    // I picked a colourful preset; the opponent slot must NOT reflect any avatar — it has no avatarId
+    // source at all (the opponent's stored avatar is never sent in-match, Charter #2).
+    render(<RpsHubScreen {...baseProps({ avatarId: 'girl-light', currentMatchId: 'm1', gameState, legalMoves: ['rock'] })} />);
+    const opp = within(screen.getByTestId('hub-slot-opponent'));
+    const oppAvatar = opp.getByTestId('avatar');
+    expect(oppAvatar.getAttribute('data-avatar-id')).toBe('default'); // never a preset
+    expect(opp.queryByTestId('avatar-img')).toBeNull(); // no preset image
+    expect(opp.getByTestId('avatar-glyph')).toBeInTheDocument(); // the neutral silhouette
+    // NEUTRAL disc (no username) — distinct from any per-user disc.
+    expect(oppAvatar.getAttribute('data-disc')).toBe('hsl(230, 10%, 88%)');
   });
 
   it('In-match: picks stay enabled and mutable for the whole window (timer-only-resolve #164)', () => {

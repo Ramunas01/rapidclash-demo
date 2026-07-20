@@ -199,12 +199,34 @@ export interface AuthLoginBody {
   password: string;
 }
 
+/** The canonical avatar identity — the single source of truth shared by client and server.
+ *  `'default'` = the derived disc + person glyph (no stored preset); the four presets are the
+ *  selectable PNG avatars. Presets-only (a string id, no file storage). The client `Avatar`
+ *  component imports this and maps each preset id → its bundled asset. */
+export type AvatarId = 'default' | 'boy-light' | 'girl-light' | 'boy-brown' | 'boy-dark';
+
+/** Every valid AvatarId, for server-side validation of the set-avatar endpoint. */
+export const AVATAR_IDS: readonly AvatarId[] = ['default', 'boy-light', 'girl-light', 'boy-brown', 'boy-dark'];
+
 export interface AuthResponse {
   token: string;
   playerId: PlayerId;
   balance: number;
   /** The player's own alias, so the client can show "who you are" (#34). */
   username: string;
+  /** The player's own stored avatar (preset id or `'default'`). Own-session only — the opponent's
+   *  avatarId is NEVER surfaced in-match (redaction, Charter #2). Persisted like `username`. */
+  avatarId: AvatarId;
+}
+
+/** Body of `POST /auth/avatar` — set the authenticated player's own avatar (presets-only). */
+export interface SetAvatarBody {
+  avatarId: AvatarId;
+}
+
+/** Response of `POST /auth/avatar` — the stored avatar after the update. */
+export interface SetAvatarResponse {
+  avatarId: AvatarId;
 }
 
 export type LedgerEntryType =
@@ -239,6 +261,9 @@ interface LeaderboardEntryBase {
   rank: number;
   playerId: PlayerId;
   displayName: string;
+  /** The player's stored avatar (preset id or `'default'`). Public — the leaderboard is a public
+   *  board, so surfacing it here is not a redaction leak (unlike the in-match opponent). */
+  avatarId: AvatarId;
   /** Sort key. Interpretation depends on `kind`. */
   score: number;
   kind: RankingKind;

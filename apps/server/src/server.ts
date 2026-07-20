@@ -95,7 +95,7 @@ export function buildApp(
   app.register(FastifyWs);
 
   const auth = makeAuthMiddleware(identity);
-  registerAuthRoutes(app, identity);
+  registerAuthRoutes(app, auth, identity);
   registerAdminRoutes(app, auth, ledger, identity);
   registerGamesRoutes(app, matchmaking);
   registerOpenChallengesRoutes(app, matchmaking);
@@ -144,10 +144,12 @@ export function createServices(
   // One shared username lookup (#40 / ADR-008): owner names in the open-challenge
   // feed AND the leaderboard's displayName resolve through the same function.
   const lookupUsername = identity.getUsername;
+  // Sibling per-entry avatar lookup for the PUBLIC leaderboard (same seam as lookupUsername).
+  const lookupAvatar = identity.getAvatarId;
   // Seed the leaderboard with each game's declared RankingType so it can dispatch
   // generically by kind (ADR-007) — no game-specific code in the core.
   const rankingByGame = new Map(gameModules.map((m) => [m.meta.id, m.meta.ranking]));
-  const matchHistory = createMatchHistory(db, rankingByGame, lookupUsername);
+  const matchHistory = createMatchHistory(db, rankingByGame, lookupUsername, lookupAvatar);
   const matchmaking = createMatchmaking(ledger, gameModules, matchHistory, {
     lookupUsername,
     onSettled: opts.onSettled,

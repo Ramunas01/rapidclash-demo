@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { motion } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { Trophy, X } from 'lucide-react';
-import type { GameMeta, OpenChallenge, Outcome, SettlementSummary } from '@rapidclash/shared';
+import type { AvatarId, GameMeta, OpenChallenge, Outcome, SettlementSummary } from '@rapidclash/shared';
 import type { GameView } from '../App.js';
 import { api } from '../api.js';
 import { formatCredits, formatClock } from '../format.js';
@@ -92,6 +92,10 @@ export interface GameHubScreenProps {
   token: string;
   playerId: string | null;
   username: string | null;
+  /** The player's OWN avatar (preset id or 'default'), threaded into the own slot bar. Own-session
+   *  only — the opponent slot NEVER receives an avatarId (it stays the neutral silhouette, per
+   *  Charter #2 redaction). Defaults to 'default'. */
+  avatarId?: AvatarId;
   opponentId: string | null;
   /** The real opponent's display name, known only when we JOINed their open challenge (the owner
    *  name from the feed). Null on the PLAY/post path (the joiner's name never reaches the client)
@@ -219,7 +223,7 @@ function useNow(active: boolean): number {
 export function GameHub(props: GameHubProps) {
   const {
     gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar,
-    token, playerId, username, opponentId, opponentName, serverClockOffset = 0, balance, currentMatchId, gameState, legalMoves,
+    token, playerId, username, avatarId = 'default', opponentId, opponentName, serverClockOffset = 0, balance, currentMatchId, gameState, legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
     onPlay, onCancel, onTakeChallenge, onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, onTrackChallenges,
     onUntrackChallenges, onSelectGame, onOpenWallet, onOpenGameList, onResultDismiss,
@@ -504,6 +508,7 @@ export function GameHub(props: GameHubProps) {
             <OwnSlot
               label={loggedIn ? (username || 'You') : 'Sign in'}
               username={loggedIn ? username : null}
+              avatarId={loggedIn ? avatarId : 'default'}
               isOwn={loggedIn}
               aside={renderSlotAside?.(areaArgs, 'own')}
               barVerdict={ownBarVerdict}
@@ -662,7 +667,7 @@ function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat }: { pha
  *  plays the SHARED win animation (`useWinReveal`): a green fill + "You Win" kept ALONGSIDE the
  *  username (never swapped out), the green a background layer — 0.5 s fill-in → 2 s hold → 0.5 s
  *  fade-out → the persistent green outline. Loss/draw are outline-only (no fill/text). */
-function OwnSlot({ label, username, isOwn, aside, barVerdict, drawBeat }: { label: string; username?: string | null; isOwn: boolean; aside?: ReactNode; barVerdict?: Verdict | null; drawBeat?: boolean }) {
+function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdict, drawBeat }: { label: string; username?: string | null; avatarId?: AvatarId; isOwn: boolean; aside?: ReactNode; barVerdict?: Verdict | null; drawBeat?: boolean }) {
   const win = barVerdict === 'win';
   const { contentVisible, fillShown, settled } = useWinReveal(win);
 
@@ -692,7 +697,7 @@ function OwnSlot({ label, username, isOwn, aside, barVerdict, drawBeat }: { labe
       )}
       {/* Own avatar — per-user LIGHT disc + darkened glyph, derived from the username (no username →
           NEUTRAL, e.g. logged out / legacy session). Sits above the win-fill layer (z-10). */}
-      <Avatar username={username} avatarId="default" className="relative z-10" />
+      <Avatar username={username} avatarId={avatarId} className="relative z-10" />
       {/* Username stays put in every state; white over the green fill, back to normal once it fades. */}
       <span
         className={cn('relative z-10 min-w-0 flex-1 truncate text-sm font-bold transition-colors duration-300', contentVisible ? 'text-white' : isOwn ? 'text-foreground' : 'text-muted-foreground')}
