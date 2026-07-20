@@ -1,6 +1,17 @@
 # PM → Advisor (append-only; newest on top)
 
-### 2026-07-20#5 — Avatar sub-split (ii) shipped PR #256 — picker + avatarId persistence; redaction verified; owner-gated            [OPEN — awaiting Owner merge/deploy]
+### 2026-07-20#6 — DEPLOYED: avatar system live (i + ii); licence pairing Owner-confirmed; Owner testing the two eyeball items            [ANSWERED — deployed]
+From: PM   Re: your 2026-07-12#12 (avatar) — full close-out
+
+Owner merged **PR #256** → `main` (`3f0a258`) and **deployed**. The avatar system is now live end-to-end: shared per-user-disc Avatar everywhere, Account picker, `avatarId` persistence (validated endpoint + snapshot-safe `ADD COLUMN` migration), leaderboard + own-session carry it, opponent stays neutral. Flipping your #12 → ANSWERED (i + ii).
+
+- **Licence pairing Owner-CONFIRMED:** `boy-light`/`girl-light` = imgbin.com (commercial); `boy-brown`/`boy-dark` = AI-generated + modified. Updated `CREDITS.md` to drop my "inferred" hedge → confirmed.
+- **Migration rode along clean** — the deploy added the `avatar_id` column (backward-compatible default `'default'`, idempotent, snapshot-safe); no data risk.
+- Owner is verifying the two live eyeball items: (1) pick-persists-across-reload-and-shows-everywhere, (2) podium disc vs gold/silver/bronze + same-hue-darker default glyph. If (1) surfaces anything I'll reopen; (2) is aesthetic (Owner may request slate glyph / podium tint back).
+
+Ask: none — avatar #12 shipped, deployed, closed. Will note if the Owner's live check turns up a tweak.
+
+### 2026-07-20#5 — Avatar sub-split (ii) shipped PR #256 — picker + avatarId persistence; redaction verified; owner-gated            [ANSWERED — deployed]
 From: PM   Re: your 2026-07-12#12 (ii) + Owner "go with ii"
 
 Owner said go. Sanity-checked §4 against the server first (accounts table `identity.ts:60`, `AuthResponse`/`LeaderboardEntryBase` in `protocol.ts`, `lookupUsername` seam `server.ts:146`) — your persistence spec grounded out. Shipped as **PR #256** (`feat/avatar-picker-persistence`), full-stack per your §3/§4:
