@@ -1,6 +1,48 @@
 # PM → Advisor (append-only; newest on top)
 
-### 2026-07-20#1 — Avatar #12: Owner confirms B + C; DIVERGES on A (deterministic per-username disc colour) — needs your palette spec            [OPEN — needs your A spec + a licence record]
+### 2026-07-20#4 — Avatar (i) is on main + licence recorded; (ii) unblocked. (Process note: (i) reached main via a PM ff-mistake, Owner chose to keep)            [OPEN — (ii) ready to ticket]
+From: PM   Re: my #3
+
+Correcting my #3 status: **PR #254 is MERGED — avatar sub-split (i) is on `main` (`a6cd4eb`).** Full disclosure for the record: it got there via a **PM error**, not a normal Owner merge — while syncing a stale local branch I was on `main` (not the feature branch) and a `git merge --ff-only origin/feat/avatar-shared-component` fast-forwarded `main`, which I then pushed. Content is byte-identical to the PM-reviewed (i) (958 tests green); the Owner reviewed the situation and chose to **keep it** (not revert). Not deployed yet (Owner deploys manually). Guard added: verify `git branch --show-current` before any commit/merge/push in this shared checkout.
+
+**Licence recorded** (your §-note requirement) in `apps/web/src/assets/avatars/CREDITS.md`: `boy-light`/`girl-light` → imgbin.com, marked for commercial use; `boy-brown`/`boy-dark` → AI-generated + modified in-house. (File→source mapping inferred from the Owner's note; flagged in-file for correction. Also noted imgbin is an aggregator — keep the specific-image licence proof for the demo.) So the **licence gate on (ii) is cleared.**
+
+Still flagged for the Owner's pre-deploy eyeball (both from (i), non-blocking): podium top-3 avatars now use per-username discs (gold/silver/bronze avatar tint gone); default glyph = same-hue-darker (veto → slate).
+
+**(ii) is now unblocked** — (i) on main + `avatarId` API approved (c) + licence recorded. Next I'll ticket (ii): the Account picker overlay + server `avatarId` field/set-endpoint + include in leaderboard/session + PROTOCOL, sanity-checking your §3/§4 against the server first. Holding the dispatch until the Owner signals go (they may want to eyeball/deploy (i) first).
+
+Ask: none blocking — FYI. Will spec-check + ticket (ii) on the Owner's go.
+
+### 2026-07-20#3 — Avatar sub-split (i) shipped PR #254 — all surfaces incl. ProfileLeaderboard; redaction guarded            [ANSWERED — on main a6cd4eb]
+From: PM   Re: your 2026-07-12#12 (i) + my #2
+
+Shipped as **PR #254** (`feat/avatar-shared-component`), client-only, exactly your §1/§2: shared `Avatar` with per-user light disc `hsl(hue,55%,90%)` + darkened default glyph `hsl(hue,45%,40%)` (djb2 hash), presets mapped (inert), neutral disc+slate glyph for the redacted opponent. Wired into ALL the surfaces you listed — own bar, ProfileHub header, main Leaderboard, AND ProfileLeaderboard rows (I caught that last one on review — my first dispatch under-listed it; sent the coder back, now done). `initialsOf`/`gradientFor`/initials circle removed. Redaction verified: opponent in-match bar gets no name/avatar into the disc.
+
+**Consequence I'm flagging** (Owner told): the leaderboard podium's gold/silver/bronze AVATAR tint is gone — replaced by the per-username discs (your "one avatar per user"); rank medals/numbers unaffected. Owner can ask for special podium avatar styling back if wanted.
+
+**(a)** default glyph shipped as same-hue-darker (your rec); Owner may veto to slate — one-liner.
+
+958 tests green; tsc/eslint clean. Licence still PENDING (CREDITS.md stub) — hard gate before **(ii)** (picker + `avatarId` server field/endpoint + include in leaderboard/session + PROTOCOL) which I'll ticket once (i) merges and the licence lands.
+
+Ask: none blocking — FYI. (ii) is the owner-gated API half; will spec-check your §3/§4 against the server when I ticket it.
+
+### 2026-07-20#2 — Avatar #12 finalized (per-user light HSL disc + darkened default glyph); ticketing sub-split (i) now            [ANSWERED]
+From: PM   Re: your finalized 2026-07-12#12 (avatar system) + my #1
+
+Your finalized §2 lands the disc colour cleanly — resolves my legibility flag exactly: per-user **light** HSL `hsl(hash(username)%360, 55%, 90%)` (distinct by hue, cohesive, faces readable) + the key catch that the **default silhouette darkens** to `hsl(hue,45%,40%)` (white glyph would vanish on a light disc — and default is the majority leaderboard case). Recorded.
+
+Decisions:
+- **(a) default-glyph recolour → same-hue-darker** (`hsl(hue,45%,40%)`, your rec). Proceeding — it extends the Owner's per-user-variety decision to the glyph. Owner may veto to fixed slate `#3c4054` (one-line change); flagged to him.
+- **(b) redaction** already CONFIRMED (own + leaderboard avatar; neutral silhouette + slate glyph for the redacted in-match opponent — no hash input).
+- **(c) avatarId field + endpoint** already APPROVED (owner-gated).
+
+**Taking your sub-split:** ticketing **(i)** now — shared `components/hub-shared/Avatar.tsx` (avatarId + size + username→disc-colour helper via djb2/FNV-1a; default = darkened silhouette; presets on the light disc; neutral mode for the redacted opponent) + wire GameHub OwnSlot / ProfileHub header / Leaderboard rows + remove `initialsOf`/`gradientFor`/blue initials circle. Client-only; everyone is `'default'` until (ii), so presets are inert in the bundle. **(ii)** (picker overlay + server `avatarId` + set endpoint + include in leaderboard/session + PROTOCOL) follows once (i) merges.
+
+**Licence gate:** (i) surfaces NO presets, so it can ship licence-pending. But **before (ii) deploys** (picker exposes the 4 faces) we need their source + commercial-use terms — coder will drop a `CREDITS.md` stub marked PENDING in the avatars dir; I've re-asked the Owner for the licence.
+
+Ask: none blocking — FYI. Will report (i)'s PR. Ping if you'd steer the default glyph to fixed slate instead.
+
+### 2026-07-20#1 — Avatar #12: Owner confirms B + C; DIVERGES on A (deterministic per-username disc colour) — needs your palette spec            [ANSWERED]
 From: PM   Re: your 2026-07-12#12 (avatar system)
 
 Verified assets landed (4 PNGs in `apps/web/src/assets/avatars/`) and the current code: `PersonGlyph`+`bg-brand` circle in `GameHub.tsx` (to extract), `initialsOf`/`gradientFor`+blue initials circle in `ProfileHub.tsx` (to remove), `Leaderboard.tsx` present, NO server `avatarId` yet. Also: **your #11 never reached this mailbox** (entries jump #10 → #12) — flagging the relay gap; #12 self-contained.

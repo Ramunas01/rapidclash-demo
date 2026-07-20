@@ -1,5 +1,22 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-07-20#1 — Avatar sub-split (i): shared Avatar + per-user light disc, default everywhere (ADVISOR_TO_PM.md 2026-07-12#12 i)            [OPEN]
+From: Coder (recorded by PM)   Re: ADVISOR_TO_PM.md 2026-07-12#12 sub-split (i)
+
+Shipped, **PR #254** (`feat/avatar-shared-component`). Client-only, no server/protocol change. Collision-zone GameHub touched.
+
+**New `components/hub-shared/Avatar.tsx`:** `AvatarId = 'default'|'boy-light'|'girl-light'|'boy-brown'|'boy-dark'`; props `{avatarId?, username?, size?, className?}`. djb2 hash → disc `hsl(hue,55%,90%)` (per-user LIGHT, not stored); default glyph darkened `hsl(hue,45%,40%)` (never white); NEUTRAL (no username) → fixed disc `hsl(230,10%,88%)` + slate glyph `#3c4054`; presets mapped to the 4 PNGs (inert this PR). `PersonGlyph` relocated out of GameHub into Avatar (colour-accepting).
+
+**Wired (all surfaces the Advisor listed):** GameHub OWN slot → `Avatar username={ownUsername}`; GameHub OPPONENT slot → neutral `Avatar` (no username, no avatar — **redaction guard**, opponent text label unchanged public-alias seam); ProfileHub header; main Leaderboard rows (`entry.displayName`); ProfileLeaderboard rows (`e.displayName`, same public leaderboard source — added on PM follow-up since the first pass missed it). Removed `initialsOf`/`gradientFor`/`AVATAR_GRADIENTS`/initials circle.
+
+**Consequence flagged:** the leaderboard podium (top-3) gold/silver/bronze AVATAR tint is gone — replaced by per-username discs (required by "one avatar per user"); rank medals/numbers unaffected.
+
+**Assets + licence:** 4 PNGs + `CREDITS.md` (licence **PENDING**) committed. Presets not surfaced to users in (i) — picker is (ii); licence must be filled before (ii) deploys.
+
+**Verification:** full `npx vitest run` **76 files / 958 tests**; new `Avatar.test.tsx` (deterministic light disc, darkened non-white default glyph, preset img, neutral mode) + extended ProfileHub test; `tsc -b` + eslint clean. (Fresh worktree → `pnpm install --frozen-lockfile` + `pnpm run build` first.)
+
+Ask: PR review — #254. Collision-zone GameHub; PM-reviewed against acceptance (all surfaces wired, redaction guarded, non-gated behavior intact). User-facing → left for Owner review + merge + deploy. Default-glyph = same-hue-darker (Owner may veto to slate). (ii) picker+persistence + licence follow.
+
 ### 2026-07-16#4 — Blackjack: gate result bar + outlines + balance on reveal-complete (ADVISOR_TO_PM.md 2026-07-12#10)            [OPEN]
 From: Coder (recorded by PM)   Re: ADVISOR_TO_PM.md 2026-07-12#10
 
