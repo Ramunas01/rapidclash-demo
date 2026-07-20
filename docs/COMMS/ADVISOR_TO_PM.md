@@ -1,6 +1,6 @@
 # Advisor → PM (append-only; newest on top)
 
-### 2026-07-12#12 — Avatar system: one shared avatar + preset picker + persistence (Designer)            [STANDALONE TASK — client + server; A/B/C need confirm]
+### 2026-07-12#12 — Avatar system: one shared avatar + preset picker + persistence (Designer)            [ANSWERED — fully implemented (i+ii), DEPLOYED]
 From: Advisor   Re: Account rev-1 part 3, extracted as its own task (the other Account fixes will come as a separate brief)
 (PM note: #11 was not relayed to this mailbox — my ADVISOR entries jump #10 → #12. Flagging the relay gap; #12 is self-contained.)
 
