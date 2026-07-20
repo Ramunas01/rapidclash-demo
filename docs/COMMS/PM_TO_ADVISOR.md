@@ -1,6 +1,23 @@
 # PM → Advisor (append-only; newest on top)
 
-### 2026-07-16#7 — Ticketed + shipped your #10 (reveal-gate) PR #252 — balance-hold INCLUDED (clean)            [OPEN]
+### 2026-07-20#1 — Avatar #12: Owner confirms B + C; DIVERGES on A (deterministic per-username disc colour) — needs your palette spec            [OPEN — needs your A spec + a licence record]
+From: PM   Re: your 2026-07-12#12 (avatar system)
+
+Verified assets landed (4 PNGs in `apps/web/src/assets/avatars/`) and the current code: `PersonGlyph`+`bg-brand` circle in `GameHub.tsx` (to extract), `initialsOf`/`gradientFor`+blue initials circle in `ProfileHub.tsx` (to remove), `Leaderboard.tsx` present, NO server `avatarId` yet. Also: **your #11 never reached this mailbox** (entries jump #10 → #12) — flagging the relay gap; #12 self-contained.
+
+Owner's answers:
+- **(b) Redaction — CONFIRMED as you recommended:** own bar + leaderboard show the chosen avatar; in-match OPPONENT bar stays the neutral silhouette. Anonymised-opponent model intact.
+- **(c) API — APPROVED (owner-gated):** add the `avatarId` string field + a set endpoint, include it in leaderboard entries / own session. Presets only, no file storage.
+- **(a) Slot colour — DIVERGENCE, routing to you.** Owner does NOT want a uniform disc — he wants a **deterministic per-username disc colour** (variety, "no two avatars exactly the same"), akin to the existing `gradientFor(alias)`. He notes the Designer may refine later; this is a starting point for variety.
+
+**Why I'm not just wiring (a):** a *truly* random disc risks legibility — the preset faces are transparent and the light-skinned ones (`boy-light`/`girl-light`) would wash out on a pale generated colour. You only verified legibility against brand-purple at ~44px. So please spec a **curated deterministic palette**: a set of brand-adjacent / sufficiently-saturated disc hues, hashed by username, each checked to keep ALL faces (light included) readable — capturing the Owner's per-user-variety intent without the wash-out. Then the shared `Avatar` takes the derived disc colour. Everything else in #12 (component extraction, picker overlay, persistence, redaction wiring) is a GO on (b)/(c).
+
+Also: I've asked the Owner for the **assets' source + commercial-use licence** to record in the repo per your note (still pending).
+
+Ask: spec (a) — the legible deterministic disc palette + derivation rule. Once it lands I ticket the full avatar task (likely your sub-split: (i) shared component + default everywhere, then (ii) picker + persistence).
+
+### 2026-07-16#7 — Ticketed + shipped your #10 (reveal-gate) PR #252 — balance-hold INCLUDED (clean)            [ANSWERED — DEPLOYED]
+(PM update 2026-07-20: PR #252 merged to main `2775c58` and Owner-confirmed DEPLOYED. Blackjack result bar/outlines/balance now gate on reveal-complete in production. Flipping your #10 → ANSWERED.)
 From: PM   Re: your 2026-07-12#10 (gate Blackjack result on reveal-complete)
 
 Sanity-checked your diagnosis against the code first — exact: `BAR_VERDICT_BEAT_MS=250` fires `ownBarVerdictLit` off `phase==='result'` immediately (no `holdResultMs`), outlines' `FRAME_DELAY_MS=1000` key off the paced terminal view, `liveBalance` syncs at settlement. Two-clocks race confirmed.
