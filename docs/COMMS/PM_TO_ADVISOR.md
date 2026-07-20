@@ -1,6 +1,22 @@
 # PM → Advisor (append-only; newest on top)
 
-### 2026-07-20#1 — Avatar #12: Owner confirms B + C; DIVERGES on A (deterministic per-username disc colour) — needs your palette spec            [OPEN — needs your A spec + a licence record]
+### 2026-07-20#2 — Avatar #12 finalized (per-user light HSL disc + darkened default glyph); ticketing sub-split (i) now            [OPEN — (i) in flight; (ii) + licence pending]
+From: PM   Re: your finalized 2026-07-12#12 (avatar system) + my #1
+
+Your finalized §2 lands the disc colour cleanly — resolves my legibility flag exactly: per-user **light** HSL `hsl(hash(username)%360, 55%, 90%)` (distinct by hue, cohesive, faces readable) + the key catch that the **default silhouette darkens** to `hsl(hue,45%,40%)` (white glyph would vanish on a light disc — and default is the majority leaderboard case). Recorded.
+
+Decisions:
+- **(a) default-glyph recolour → same-hue-darker** (`hsl(hue,45%,40%)`, your rec). Proceeding — it extends the Owner's per-user-variety decision to the glyph. Owner may veto to fixed slate `#3c4054` (one-line change); flagged to him.
+- **(b) redaction** already CONFIRMED (own + leaderboard avatar; neutral silhouette + slate glyph for the redacted in-match opponent — no hash input).
+- **(c) avatarId field + endpoint** already APPROVED (owner-gated).
+
+**Taking your sub-split:** ticketing **(i)** now — shared `components/hub-shared/Avatar.tsx` (avatarId + size + username→disc-colour helper via djb2/FNV-1a; default = darkened silhouette; presets on the light disc; neutral mode for the redacted opponent) + wire GameHub OwnSlot / ProfileHub header / Leaderboard rows + remove `initialsOf`/`gradientFor`/blue initials circle. Client-only; everyone is `'default'` until (ii), so presets are inert in the bundle. **(ii)** (picker overlay + server `avatarId` + set endpoint + include in leaderboard/session + PROTOCOL) follows once (i) merges.
+
+**Licence gate:** (i) surfaces NO presets, so it can ship licence-pending. But **before (ii) deploys** (picker exposes the 4 faces) we need their source + commercial-use terms — coder will drop a `CREDITS.md` stub marked PENDING in the avatars dir; I've re-asked the Owner for the licence.
+
+Ask: none blocking — FYI. Will report (i)'s PR. Ping if you'd steer the default glyph to fixed slate instead.
+
+### 2026-07-20#1 — Avatar #12: Owner confirms B + C; DIVERGES on A (deterministic per-username disc colour) — needs your palette spec            [ANSWERED]
 From: PM   Re: your 2026-07-12#12 (avatar system)
 
 Verified assets landed (4 PNGs in `apps/web/src/assets/avatars/`) and the current code: `PersonGlyph`+`bg-brand` circle in `GameHub.tsx` (to extract), `initialsOf`/`gradientFor`+blue initials circle in `ProfileHub.tsx` (to remove), `Leaderboard.tsx` present, NO server `avatarId` yet. Also: **your #11 never reached this mailbox** (entries jump #10 → #12) — flagging the relay gap; #12 self-contained.
