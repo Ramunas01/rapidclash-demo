@@ -1,5 +1,32 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-07-12#12 — Avatar system: one shared avatar + preset picker + persistence (Designer)            [STANDALONE TASK — client + server; A/B/C need confirm]
+From: Advisor   Re: Account rev-1 part 3, extracted as its own task (the other Account fixes will come as a separate brief)
+(PM note: #11 was not relayed to this mailbox — my ADVISOR entries jump #10 → #12. Flagging the relay gap; #12 is self-contained.)
+
+Goal. Replace the client-side initials/gradient avatar with one shared avatar component used everywhere a user is shown, plus a preset picker on the Account page and server-side persistence so a choice sticks and appears to others. One source of truth: Account header, the player's own in-game slot bar, and leaderboard rows all render the same avatar for the same user.
+
+Finished assets (attached, drop-in). Four cartoon presets, 512×512, transparent, uniform framing/scale — plus the existing default silhouette:
+- avatar-boy-light.png, avatar-girl-light.png, avatar-boy-brown.png, avatar-boy-dark.png → place under apps/web/src/assets/avatars/.
+- avatarId enum: 'default' | 'boy-light' | 'girl-light' | 'boy-brown' | 'boy-dark'. 'default' = the current purple-circle + white silhouette (the unset/initial value). Presets are transparent faces; the slot's background colour is the disc (see treatment) — so all avatars, default included, share one circle.
+- (These four are the whole set for now; more may be added later — the enum should be easy to extend. Licence: record the source/commercial-use licence for the files in the repo when they land.)
+
+1 — Shared Avatar component. Extract the in-game bar avatar (the bg-brand circle + PersonGlyph, currently local to GameHub.tsx) into one component, e.g. components/hub-shared/Avatar.tsx, taking avatarId (+ size). It renders the silhouette for 'default', else the preset image, always inside the circular slot. Use it in: GameHub OwnSlot, ProfileHub header, and Leaderboard/ProfileLeaderboard rows. Remove ProfileHub's initialsOf / gradientFor / the blue initials circle.
+
+2 — Disc / slot treatment. Render presets on a brand-purple (bg-brand #8140e2) circular slot — the same purple the default silhouette already uses, so the whole set is one family (verified legible at ~44px in the player bars). Light (#E9EBF2) is the fallback if the Designer prefers the faces to pop against the purple UI. It's one decision applied uniformly to the shared component.
+
+3 — Picker overlay (Account page). Tapping the Account avatar opens a picker: overlay panel bg-surface (#1A1A2E, no rim — the auth-popup treatment). Grid of the default + 4 presets. Tapping one shows the purple selection ring (ring-[3px] ring-brand, the existing pill-selection pattern); a solid bg-brand confirm button saves. No custom upload — presets only.
+
+4 — Persistence (server, owner-gated). Store the chosen avatarId on the user profile with a set endpoint; include it wherever a user is surfaced (own session, leaderboard entries). Contract/API change → owner-gated. "Presets only" keeps this a small avatarId string field — no file storage. After save, every surface reflects the new avatar.
+
+5 — Redaction call (confirm). In-match the opponent shows as a neutral "Opponent" with the silhouette (name hidden on the PLAY path — Charter #2). Recommend: render the chosen avatar for the player's own bar + on the leaderboard (names already public there), but keep the in-match opponent bar the neutral silhouette — so "same avatar for the same user" holds wherever the user is identified, and the anonymised-opponent model stays intact. Confirm before wiring the opponent bar.
+
+Tests. (a) Avatar renders the silhouette for 'default' and the correct preset image otherwise; (b) selecting + confirming in the picker persists (survives reload) and updates the Account header, own game bar, and leaderboard row; (c) the in-match opponent bar stays the neutral silhouette regardless of the opponent's saved avatar (redaction guard); (d) the picker panel is bg-surface, selection ring is ring-brand.
+
+Scope. Client: shared Avatar, picker overlay, wire Account/own-bar/leaderboard, remove the initials circle. Server: avatarId field + set endpoint. Natural sub-split if wanted — (i) shared component + default everywhere (client-only, removes initials), (ii) picker + avatarId persistence (client + server). One concern (avatars), no protocol change beyond the user field.
+
+Ask: confirm (a) slot colour = brand-purple (or light); (b) the redaction call (own + leaderboard avatars, neutral in-match opponent); (c) OK the avatarId user field + endpoint as an owner-gated API addition. Assets are final and attached.
+
 ### 2026-07-12#10 — Blackjack: gate the result presentation on reveal-complete (bar fires too early) (Designer)            [OPEN — collision zone: GameHub + BlackjackBoard]
 From: Advisor   Re: Designer "result animation timing fix" (bar lights before the cards finish revealing)
 
