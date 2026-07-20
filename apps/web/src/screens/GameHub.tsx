@@ -14,6 +14,7 @@ import { TILE_ART, COMING_SOON, titleCase } from '../components/hub-shared/tiles
 import { OpenGamesTicker } from '../components/hub-shared/OpenGames.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
+import { Avatar } from '../components/hub-shared/Avatar.js';
 import { outlineClasses, outlineForOutcome, replaysOf, useDelayedFlag, useWinReveal, WIN_FILL_IN_MS, type Verdict } from './hub-shared/slotReveal.js';
 
 /** How long after the result phase starts before the own-bar verdict lights (ms). */
@@ -502,6 +503,7 @@ export function GameHub(props: GameHubProps) {
             {renderGameArea(areaArgs)}
             <OwnSlot
               label={loggedIn ? (username || 'You') : 'Sign in'}
+              username={loggedIn ? username : null}
               isOwn={loggedIn}
               aside={renderSlotAside?.(areaArgs, 'own')}
               barVerdict={ownBarVerdict}
@@ -600,16 +602,6 @@ export function GameHub(props: GameHubProps) {
   );
 }
 
-/** A person glyph for the slot pills (no alias is ever fabricated for the opponent). */
-function PersonGlyph({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
-    </svg>
-  );
-}
-
 /** A fast, decorative name scan over real online players (~3–4/sec). Returns null when there are
  *  no online names — the slot then shows just "Searching…", never a fabricated alias. */
 function useNameScan(active: boolean, names: string[]): string | null {
@@ -640,9 +632,8 @@ function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat }: { pha
         drawBeat && outlineClasses('draw'),
       )}
     >
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#2a2a4a] text-muted-foreground">
-        <PersonGlyph className="h-[18px] w-[18px]" />
-      </span>
+      {/* NEUTRAL avatar — the in-match opponent stays redacted: never their name/avatar (Charter #2). */}
+      <Avatar avatarId="default" />
       {searching ? (
         <span className="flex min-w-0 flex-1 items-center gap-2 text-sm font-bold">
           <span className="animate-pulse text-muted-foreground">Searching…</span>
@@ -671,7 +662,7 @@ function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat }: { pha
  *  plays the SHARED win animation (`useWinReveal`): a green fill + "You Win" kept ALONGSIDE the
  *  username (never swapped out), the green a background layer — 0.5 s fill-in → 2 s hold → 0.5 s
  *  fade-out → the persistent green outline. Loss/draw are outline-only (no fill/text). */
-function OwnSlot({ label, isOwn, aside, barVerdict, drawBeat }: { label: string; isOwn: boolean; aside?: ReactNode; barVerdict?: Verdict | null; drawBeat?: boolean }) {
+function OwnSlot({ label, username, isOwn, aside, barVerdict, drawBeat }: { label: string; username?: string | null; isOwn: boolean; aside?: ReactNode; barVerdict?: Verdict | null; drawBeat?: boolean }) {
   const win = barVerdict === 'win';
   const { contentVisible, fillShown, settled } = useWinReveal(win);
 
@@ -699,9 +690,9 @@ function OwnSlot({ label, isOwn, aside, barVerdict, drawBeat }: { label: string;
           className="pointer-events-none absolute inset-0 rounded-full bg-success"
         />
       )}
-      <span className={cn('relative z-10 grid h-8 w-8 shrink-0 place-items-center rounded-full', isOwn ? 'bg-brand text-white' : 'bg-[#2a2a4a] text-muted-foreground')}>
-        <PersonGlyph className="h-[18px] w-[18px]" />
-      </span>
+      {/* Own avatar — per-user LIGHT disc + darkened glyph, derived from the username (no username →
+          NEUTRAL, e.g. logged out / legacy session). Sits above the win-fill layer (z-10). */}
+      <Avatar username={username} avatarId="default" className="relative z-10" />
       {/* Username stays put in every state; white over the green fill, back to normal once it fades. */}
       <span
         className={cn('relative z-10 min-w-0 flex-1 truncate text-sm font-bold transition-colors duration-300', contentVisible ? 'text-white' : isOwn ? 'text-foreground' : 'text-muted-foreground')}

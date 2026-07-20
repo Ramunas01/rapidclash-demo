@@ -16,6 +16,7 @@ import type { LeaderboardEntry, RankingKind } from '@rapidclash/shared';
 import { api } from '../api.js';
 import { formatCredits } from '../format.js';
 import { cn } from '@/lib/utils';
+import { Avatar } from '../components/hub-shared/Avatar.js';
 
 interface Props {
   token: string;
@@ -69,27 +70,6 @@ function RankBadge({ rank }: { rank: number }) {
   if (rank === 2) return <Medal className="h-5 w-5 text-gray-300" aria-label="2nd" />;
   if (rank === 3) return <Award className="h-5 w-5 text-amber-600" aria-label="3rd" />;
   return <span className="w-5 text-center text-sm font-bold text-white/40">{rank}</span>;
-}
-
-const AVATAR_GRADIENTS = [
-  'from-yellow-500 to-amber-600',
-  'from-gray-300 to-gray-500',
-  'from-amber-600 to-orange-700',
-];
-
-function Avatar({ name, index }: { name: string; index: number }) {
-  const gradient = AVATAR_GRADIENTS[index] ?? 'from-purple-700 to-indigo-900';
-  return (
-    <div
-      className={cn(
-        'flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-xs font-bold text-white',
-        gradient,
-      )}
-      aria-hidden="true"
-    >
-      {name.charAt(0).toUpperCase()}
-    </div>
-  );
 }
 
 function StatCell({ entry }: { entry: LeaderboardEntry }) {
@@ -155,7 +135,7 @@ function Row({ entry, index }: { entry: LeaderboardEntry; index: number }) {
         <RankBadge rank={entry.rank} />
       </div>
       <div className="flex min-w-0 items-center gap-3">
-        <Avatar name={entry.displayName} index={index} />
+        <Avatar username={entry.displayName} avatarId="default" size={36} />
         <span className="truncate text-sm font-medium text-white">{entry.displayName}</span>
       </div>
       <StatCell entry={entry} />

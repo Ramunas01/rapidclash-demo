@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
 import { MuteToggle } from '../components/hub-chrome/MuteToggle.js';
+import { Avatar } from '../components/hub-shared/Avatar.js';
 import { HUB_SHELL, HUB_BODY } from '../components/hub-chrome/layout.js';
 
 interface Props {
@@ -54,29 +55,6 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-/** Client-side initials avatar (the platform stores no avatars). */
-function initialsOf(alias: string | null): string {
-  if (!alias) return '?';
-  const parts = alias.trim().split(/\s+/).filter(Boolean);
-  const letters = parts.length > 1 ? parts[0][0] + parts[parts.length - 1][0] : alias.slice(0, 2);
-  return letters.toUpperCase();
-}
-
-/** Deterministic gradient per alias so the avatar colour is stable across sessions. */
-const AVATAR_GRADIENTS = [
-  'from-violet-500 to-purple-600',
-  'from-purple-500 to-fuchsia-600',
-  'from-indigo-500 to-purple-600',
-  'from-fuchsia-500 to-pink-600',
-  'from-blue-500 to-indigo-600',
-];
-function gradientFor(alias: string | null): string {
-  if (!alias) return AVATAR_GRADIENTS[0];
-  let sum = 0;
-  for (let i = 0; i < alias.length; i++) sum += alias.charCodeAt(i);
-  return AVATAR_GRADIENTS[sum % AVATAR_GRADIENTS.length];
-}
-
 /**
  * Profile hub — the Account toolbar / wallet-chip target. Composes the account surface on
  * one screen under the shared chrome (no route nav between sections): profile header
@@ -98,9 +76,6 @@ export function ProfileHubScreen({ token, username, balance, onLogout, onHome, o
     return () => { alive = false; };
   }, [token]);
 
-  const initials = useMemo(() => initialsOf(username), [username]);
-  const gradient = useMemo(() => gradientFor(username), [username]);
-
   return (
     <div className={HUB_SHELL}>
       <HubRibbon balance={liveBalance} onLogo={onHome} onWallet={onOpenProfile} />
@@ -109,12 +84,7 @@ export function ProfileHubScreen({ token, username, balance, onLogout, onHome, o
         <div className={cn('mx-auto flex max-w-md flex-col gap-5 px-4', HUB_BODY)}>
           {/* 1 — Profile header: avatar + alias + log out. */}
           <section data-testid="profile-header" className="flex items-center gap-3 rounded-2xl border border-border bg-card p-4">
-            <div
-              className={cn('flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-lg font-bold text-white shadow-lg', gradient)}
-              aria-hidden="true"
-            >
-              {initials}
-            </div>
+            <Avatar username={username} avatarId="default" size={56} className="shadow-lg" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-lg font-bold leading-tight" data-testid="profile-username">
                 {username ?? 'Player'}
