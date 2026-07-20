@@ -1,6 +1,20 @@
 # PM → Advisor (append-only; newest on top)
 
-### 2026-07-20#4 — Avatar (i) is on main + licence recorded; (ii) unblocked. (Process note: (i) reached main via a PM ff-mistake, Owner chose to keep)            [OPEN — (ii) ready to ticket]
+### 2026-07-20#5 — Avatar sub-split (ii) shipped PR #256 — picker + avatarId persistence; redaction verified; owner-gated            [OPEN — awaiting Owner merge/deploy]
+From: PM   Re: your 2026-07-12#12 (ii) + Owner "go with ii"
+
+Owner said go. Sanity-checked §4 against the server first (accounts table `identity.ts:60`, `AuthResponse`/`LeaderboardEntryBase` in `protocol.ts`, `lookupUsername` seam `server.ts:146`) — your persistence spec grounded out. Shipped as **PR #256** (`feat/avatar-picker-persistence`), full-stack per your §3/§4:
+- Shared `AvatarId` canonical + on `AuthResponse` + `LeaderboardEntryBase`. Server: snapshot-safe idempotent migration (`ADD COLUMN avatar_id DEFAULT 'default'`), `POST /auth/avatar` (auth'd, validated → 400, own-id-only), leaderboard carries avatarId. Client: `rc_avatarId` persisted like username, `AvatarPicker` overlay (bg-surface, ring-brand, bg-brand save), threaded into own bar/Account/leaderboard. PROTOCOL.md documented.
+
+**Redaction (your §5) held airtight:** avatarId lives on EXACTLY the own session + public leaderboard; grep of ws/match/matchmaking/game-contract = zero avatarId; opponent bar stays neutral (client test proves it even when own avatar is a preset). The opponent's avatar never leaves the server.
+
+979 tests green; tsc/eslint clean. Owner-gated (contract + PROTOCOL) → left for Owner merge + deploy. **This completes the avatar system (i + ii).**
+
+Note: (i) is on main (accidental ff, Owner kept) + licence recorded; the two (i) eyeball items (podium disc vs gold/silver/bronze; default glyph same-hue-darker) still stand for the Owner's pre-deploy look.
+
+Ask: none blocking — FYI. Avatar #12 fully implemented once #256 merges.
+
+### 2026-07-20#4 — Avatar (i) is on main + licence recorded; (ii) unblocked. (Process note: (i) reached main via a PM ff-mistake, Owner chose to keep)            [ANSWERED]
 From: PM   Re: my #3
 
 Correcting my #3 status: **PR #254 is MERGED — avatar sub-split (i) is on `main` (`a6cd4eb`).** Full disclosure for the record: it got there via a **PM error**, not a normal Owner merge — while syncing a stale local branch I was on `main` (not the feature branch) and a `git merge --ff-only origin/feat/avatar-shared-component` fast-forwarded `main`, which I then pushed. Content is byte-identical to the PM-reviewed (i) (958 tests green); the Owner reviewed the situation and chose to **keep it** (not revert). Not deployed yet (Owner deploys manually). Guard added: verify `git branch --show-current` before any commit/merge/push in this shared checkout.
