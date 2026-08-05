@@ -25,11 +25,13 @@ You own implementation under `packages/` and `apps/` for RapidClash — a play-m
 
 ## Working rules
 
-- Branch: `feature/<issue-number>-<slug>`. `main` is protected — no direct pushes.
+- **Before touching any file:** check `git status` and `git branch --show-current` — confirm you're starting from a clean, expected state. Then create your branch, `feature/<issue-number>-<slug>`, as your *first* action. `main` is protected — no direct pushes, and no edits made while checked out on it either, even uncommitted ones.
+- **If the PM's dispatch might share this physical checkout with another agent or a human session** (the ≤2-concurrent-agent case is exactly this), don't just branch in place — use an isolated `git worktree` instead: `git worktree add <path> -b feature/<issue-number>-<slug>`. Branch-switching alone doesn't isolate a working tree that two processes are both writing into; a worktree gives you your own files, so nobody's uncommitted edits collide with someone else's `checkout`/`pull`/`merge`. If your dispatch didn't say whether the checkout is shared, assume it might be and use a worktree — it's cheap insurance, not overhead.
 - **One PR, one concern.** Split contract changes from feature work.
 - CI (build + tests) must pass before review.
 - Stay inside your assigned files. **`apps/web/src/App.tsx` (matchmaking / waiting / pick / reveal) is a shared collision zone** — if your ticket touches it, expect to be the only agent there, sequentially.
 - Don't invent the cause of a reported bug — reproduce and verify against the actual code before changing behaviour.
+- **After your PR merges: clean up.** Delete the remote branch (`gh pr merge --delete-branch` covers this). If you used a worktree, remove it (`git worktree remove <path>`) and delete the local branch — a worktree left behind blocks the branch from being deleted later and clutters `git worktree list` for the next agent.
 
 ## How you communicate (see `COMMS_PROTOCOL.md`)
 
