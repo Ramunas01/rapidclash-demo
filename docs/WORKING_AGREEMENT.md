@@ -13,10 +13,13 @@ How three contributors — one human and three AI assistants — collaborate thr
 
 - `main` is protected. No direct pushes. It is always in a demoable state.
 - Work happens on `feature/<issue-number>-<slug>` branches.
+- **Branch before you edit, not after.** Create the feature branch as your first action, before touching any file. Never make changes while checked out on `main` — a shared checkout with uncommitted changes on `main` is a collision waiting to happen for the next `git checkout`/`pull`/`merge` anyone runs there (this has bitten the project twice: an accidental fast-forward push in a stale-branch PM session, and a Programmer editing directly on `main` in a shared WSL checkout).
+- **Isolate the working directory when a checkout might be shared.** If more than one agent could touch the same physical clone (the ≤2-concurrent-agent case, or a human and an agent sharing one WSL checkout), each agent works in its own `git worktree` (`git worktree add <path> -b feature/<issue>-<slug>`), not a branch-switch in a shared directory — branching alone doesn't isolate a working tree two processes are both writing into. Before your first commit, sanity-check `git status` and `git branch --show-current` actually show what you expect.
 - Every PR references the issue it closes and states which acceptance criteria it satisfies.
 - CI must pass (build + tests) before review.
 - A PR touching `docs/`, `CODEOWNERS`, or the shared contract requires owner approval. Implementation-only PRs can merge on PM approval.
 - One PR, one concern. A PR that changes the contract *and* implements a feature is split.
+- **Clean up after merge.** Delete the remote branch on merge (`gh pr merge --delete-branch` or equivalent). If you worked in a `git worktree`, remove it (`git worktree remove <path>`) and delete the local branch — a leftover worktree keeps the branch un-deletable and clutters the next agent's `git worktree list`.
 
 ## Issues
 
