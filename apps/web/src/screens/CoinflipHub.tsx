@@ -93,29 +93,31 @@ function CountdownRing({ seconds }: { seconds: number }) {
   );
 }
 
-/** Hero shown in Idle/Waiting — the flat heads coin (no glow), one line. Nothing else. */
-function CoinflipIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
-  return (
-    <div
-      className="flex min-h-[260px] flex-col items-center justify-center gap-4 py-3"
-      data-testid="hub-board"
-    >
-      <Coin size={COIN_SIZE_PX} />
-      <p className="text-xs font-semibold text-muted-foreground">
-        {phase === 'waiting' ? 'Finding a rival…' : 'Place your bet and play.'}
-      </p>
-    </div>
-  );
-}
-
 /**
- * The live coin area. Pick window: the flat coin + the circular countdown (H/T selection lives in
- * the player's own slot pill — see renderSlotAside). At terminal the coin flips to the revealed
- * face. The opponent's pick and the flip never exist on the client before match.end (redaction is
- * server-side); the client only choreographs the reveal beats. Scroll-safety: when the round
- * resolves the board scrolls itself into view (replacing the old self-dismissing overlay's reach).
+ * The Coinflip game-area slot: ONE persistent `<Coin>` for every phase (idle/waiting/in-match/result).
+ *
+ * Issue #262. The panel used to ternary-swap between a separate `CoinflipIdle` and `CoinflipBoard`,
+ * each independently rendering its own `<Coin>` — separate mounts, separate WebGL scenes rebuilt on
+ * every idle↔in-match transition, and no captions to remove them here made pixel-identical centering
+ * unguaranteed. Now the whole board — the fixed-min-height `items-center justify-center` box, the
+ * countdown ring, the single `<Coin>` — is one JSX subtree that renders unconditionally; only the
+ * ring's presence and the coin's `face` prop vary by phase, so the coin's element identity (and its
+ * Three.js scene, built once in `Coin.tsx`'s mount-only effect) never changes across a phase
+ * transition — only on true mount/unmount of the whole hub. This is also what makes the one-time intro
+ * animation (Part 3, `Coin.tsx`) correct: it fires once per hub mount, not once per phase transition.
+ *
+ * No caption renders in any state (idle/waiting/in-match/result) — matchmaking feedback already lives
+ * elsewhere (opponent bar "PLAYING…"/"Opponent", PLAY button "WAITING FOR AN OPPONENT…").
+ *
+ * Pick window: the coin + the circular countdown (H/T selection lives in the player's own slot pill —
+ * see renderSlotAside). At terminal the coin flips to the revealed face. The opponent's pick and the
+ * flip never exist on the client before match.end (redaction is server-side); the client only
+ * choreographs the reveal beats. Scroll-safety: when the round resolves the board scrolls itself into
+ * view (replacing the old self-dismissing overlay's reach). Borderless navy.
  */
-function CoinflipBoard({ gameState, serverClockOffset = 0, drawBeat }: GameAreaArgs) {
+function CoinflipPanel(args: GameAreaArgs) {
+  const { phase, gameState, serverClockOffset = 0, drawBeat } = args;
+  const live = phase === 'in-match' || phase === 'result';
   const view = gameState as CoinflipView | null;
   const terminal = isTerminal(view);
   const result = (view?.result as 'heads' | 'tails' | undefined) ?? null;
@@ -126,15 +128,18 @@ function CoinflipBoard({ gameState, serverClockOffset = 0, drawBeat }: GameAreaA
     ? ((view?.lastResult?.result as 'heads' | 'tails' | undefined) ?? null)
     : null;
   const revealing = terminal || drawFlip != null;
+  // Resting (null → idle heads, and intro-eligible — Coin.tsx) everywhere except an active reveal.
   const coinFace = terminal ? result : drawFlip;
 
   // Cosmetic countdown, driven by the server's authoritative window close (`windowEndsAt`) when
   // present — so it is accurate and RESTARTS automatically on each tie-replay round (windowEndsAt is
-  // re-stamped). Falls back to a plain local count if the field is absent. Stops at the lock.
+  // re-stamped). Falls back to a plain local count if the field is absent. Stops at the lock. The
+  // effect is unconditional (hook rules — this component now renders every phase) but no-ops outside
+  // the live pick window.
   const windowEndsAt = view?.windowEndsAt;
   const [seconds, setSeconds] = useState(PICK_SECONDS);
   useEffect(() => {
-    if (terminal) return;
+    if (!live || terminal) return;
     const tick = () => {
       if (windowEndsAt && windowEndsAt > 0) {
         const remaining = (windowEndsAt - (Date.now() + serverClockOffset)) / 1000;
@@ -146,38 +151,36 @@ function CoinflipBoard({ gameState, serverClockOffset = 0, drawBeat }: GameAreaA
     tick();
     const id = setInterval(tick, 250);
     return () => clearInterval(id);
-  }, [terminal, windowEndsAt, serverClockOffset]);
+  }, [live, terminal, windowEndsAt, serverClockOffset]);
 
   // Scroll-safety: a round can resolve (win/lose OR draw) while the player is scrolled down at Open
   // Games. Bring the board into view on any reveal so the flip/outline reaches them (no-op if in view).
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (revealing) ref.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [revealing]);
+    if (live && revealing) ref.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [live, revealing]);
 
-  return (
-    <div
-      ref={ref}
-      className="relative flex min-h-[260px] items-center justify-center py-3"
-      data-testid="hub-board"
-    >
-      {!revealing && (
-        <div className="absolute left-3 top-1/2 -translate-y-1/2">
-          <CountdownRing seconds={seconds} />
-        </div>
-      )}
-      <Coin face={coinFace} size={COIN_SIZE_PX} />
-    </div>
-  );
-}
-
-/** The Coinflip game-area slot: flat-coin hero in idle/waiting, the live coin board in-match and at
- *  the held result frame (so the flip animates before the board returns to PLAY). Borderless navy. */
-function CoinflipPanel(args: GameAreaArgs) {
-  const live = args.phase === 'in-match' || args.phase === 'result';
   return (
     <div className="rounded-2xl bg-surface p-4">
-      {live ? <CoinflipBoard {...args} /> : <CoinflipIdle phase={args.phase} />}
+      {/* Single fixed-min-height, centred box for every phase — the coin's centre never moves. The
+       *  ring is `absolute … -translate-y-1/2` (non-displacing) and only shown during the live pick
+       *  window; the pick pills live in the slot-aside mechanism (renderSlotAside), entirely outside
+       *  this box — neither ever shifts the coin. */}
+      <div
+        ref={ref}
+        className="relative flex min-h-[260px] items-center justify-center py-3"
+        data-testid="hub-board"
+      >
+        {live && !revealing && (
+          <div className="absolute left-3 top-1/2 -translate-y-1/2">
+            <CountdownRing seconds={seconds} />
+          </div>
+        )}
+        {/* The one persistent coin — mounted once for the whole hub visit. `intro` plays its one-time
+         *  tease-and-spin the first time it settles at rest (see Coin.tsx); it never replays while this
+         *  element stays mounted, including returning to idle after a result. */}
+        <Coin face={coinFace} size={COIN_SIZE_PX} intro />
+      </div>
     </div>
   );
 }

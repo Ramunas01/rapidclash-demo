@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, act } from '@testing-library/react';
 import {
   Coin,
   COIN_FACE_TOKENS,
   COIN_EDGE_TOKEN,
   planFlip,
   easeOutCubic,
+  planIntro,
+  introRotationAt,
+  easeInOutCubic,
 } from '../components/coin/Coin.js';
 import {
   resetThreeStub,
@@ -17,6 +20,7 @@ import {
   rendererDisposed,
   geometryDisposed,
   sceneAdded,
+  capturedMeshes,
   AmbientLight,
   DirectionalLight,
 } from './three-stub.js';
@@ -53,6 +57,41 @@ function installFakeAnimationClock(stepMs = 220) {
   });
   vi.stubGlobal('cancelAnimationFrame', (id: number) => clearTimeout(id));
   vi.stubGlobal('performance', { now: () => clock });
+}
+
+/** A fully manual animation clock — unlike {@link installFakeAnimationClock}, nothing self-schedules
+ *  via a real macrotask; `requestAnimationFrame` just parks its callback until `advance()` invokes it
+ *  synchronously. This is what the intro tests below need: the intro's own tick loop re-schedules
+ *  itself so fast (a handful of 0ms macrotasks) that even `waitFor` can't reliably catch it mid-flight
+ *  with the self-chaining clock — by the time any poll runs, the whole ~1.35s sequence has often
+ *  already finished for real. Driving frames one at a time by hand removes the race entirely. */
+function installManualAnimationClock() {
+  let clock = 0;
+  let pending: FrameRequestCallback | null = null;
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+    pending = cb;
+    return 1;
+  });
+  vi.stubGlobal('cancelAnimationFrame', () => {
+    pending = null;
+  });
+  vi.stubGlobal('performance', { now: () => clock });
+  return {
+    /** Advance the clock by `ms` and, if a frame is pending, invoke it synchronously (which may itself
+     *  park a new pending frame — the intro/flip loops both re-request every tick). Wrapped in `act()`
+     *  because the callback can call a React state setter (`setDisplayFace` on landing) from outside
+     *  React's own event/`act` scope — without this, React 18 may not flush that update to the DOM
+     *  before the next synchronous assertion runs. */
+    advance(ms: number) {
+      clock += ms;
+      const cb = pending;
+      pending = null;
+      act(() => {
+        cb?.(clock);
+      });
+    },
+    hasPending: () => pending != null,
+  };
 }
 
 beforeEach(() => {
@@ -124,6 +163,57 @@ describe('planFlip / easeOutCubic — pure flip math (no live Three.js needed)',
     expect(deltas[0]).toBeGreaterThan(deltas[1]);
     expect(deltas[1]).toBeGreaterThan(deltas[2]);
     expect(deltas[2]).toBeGreaterThan(deltas[3]);
+  });
+});
+
+describe('planIntro / introRotationAt / easeInOutCubic — pure intro math (issue #262 Part 3)', () => {
+  it('easeInOutCubic: starts at 0, ends at 1, symmetric around the midpoint', () => {
+    expect(easeInOutCubic(0)).toBeCloseTo(0);
+    expect(easeInOutCubic(1)).toBeCloseTo(1);
+    expect(easeInOutCubic(0.5)).toBeCloseTo(0.5);
+    // Symmetric: the gain over the first half mirrors the gain over the second half.
+    expect(easeInOutCubic(0.25)).toBeCloseTo(1 - easeInOutCubic(0.75), 9);
+  });
+
+  it('three segments — tease 0→~0.7rad, return ~0.7rad→0, full spin 0→2π — chained front-to-back', () => {
+    const segs = planIntro();
+    expect(segs).toHaveLength(3);
+    const [tease, ret, spin] = segs;
+    expect(tease.from).toBe(0);
+    expect(tease.to).toBeCloseTo(0.7, 5);
+    expect(ret.from).toBe(tease.to); // chained: each segment starts where the previous ended
+    expect(ret.to).toBe(0);
+    expect(spin.from).toBe(0);
+    expect(spin.to).toBeCloseTo(2 * Math.PI, 9); // ≡ 0 (mod 2π) — lands on heads
+  });
+
+  it('total duration is within the ~1.3–1.5s spec window', () => {
+    const total = planIntro().reduce((sum, seg) => sum + seg.durationMs, 0);
+    expect(total).toBeGreaterThanOrEqual(1300);
+    expect(total).toBeLessThanOrEqual(1500);
+  });
+
+  it("introRotationAt: starts exactly at the first segment's `from`, interpolates within a segment, and lands on rotationY=0/done=true only at/after the total duration", () => {
+    const segs = planIntro();
+    const total = segs.reduce((sum, seg) => sum + seg.durationMs, 0);
+
+    const start = introRotationAt(segs, 0);
+    expect(start.rotationY).toBe(0);
+    expect(start.done).toBe(false);
+
+    // Midway through the tease segment: strictly between 0 and the tease's target (monotonic ease-out).
+    const midTease = introRotationAt(segs, segs[0].durationMs / 2);
+    expect(midTease.rotationY).toBeGreaterThan(0);
+    expect(midTease.rotationY).toBeLessThan(segs[0].to);
+    expect(midTease.done).toBe(false);
+
+    // Just before the end: not yet done.
+    const justBefore = introRotationAt(segs, total - 1);
+    expect(justBefore.done).toBe(false);
+
+    // At/after the total: done, and snapped to the canonical resting angle (not a raw eased sample).
+    expect(introRotationAt(segs, total)).toEqual({ rotationY: 0, done: true });
+    expect(introRotationAt(segs, total + 500)).toEqual({ rotationY: 0, done: true });
   });
 });
 
@@ -298,5 +388,102 @@ describe('Coin — reduced motion', () => {
         timeout: 500,
       }
     );
+  });
+});
+
+describe('Coin — one-time intro animation (issue #262 Part 3)', () => {
+  it('off by default: no `intro` prop means no intro rAF loop, even while resting', () => {
+    const rafSpy = vi.spyOn(window, 'requestAnimationFrame');
+    render(<Coin />);
+    expect(capturedMeshes[0].rotation.y).toBe(0);
+    expect(rafSpy).not.toHaveBeenCalled();
+  });
+
+  it('intro=true plays a multi-tick tease/return/spin sequence, then lands flat on heads (rotation.y = 0) and stops', () => {
+    const clock = installManualAnimationClock();
+    render(<Coin intro />);
+    const mesh = capturedMeshes[0];
+    expect(mesh.rotation.y).toBe(0); // hasn't ticked yet — the first frame hasn't been driven
+
+    clock.advance(100); // one frame into the tease
+    expect(mesh.rotation.y).not.toBe(0); // proves the sequence actually moved the coin, not a no-op
+    expect(clock.hasPending()).toBe(true); // it re-scheduled itself — not a one-shot
+
+    // Drive the rest of the ~1.35s sequence to completion (a generous cap of steps well past the
+    // total duration; the loop will have already reported `done` and stopped re-scheduling by then).
+    for (let i = 0; i < 30 && clock.hasPending(); i++) clock.advance(100);
+
+    expect(clock.hasPending()).toBe(false); // no lingering render loop once landed
+    expect(mesh.rotation.y).toBe(0); // lands exactly flat — the canonical resting angle
+    expect(screen.getByTestId('coin-face').getAttribute('data-face')).toBe('heads');
+
+    // Advancing further does nothing more — the loop is genuinely stopped, not just between ticks.
+    const rendersAtLanding = rendererRenderCalls.count;
+    clock.advance(500);
+    expect(rendererRenderCalls.count).toBe(rendersAtLanding);
+  });
+
+  it('skips the intro entirely under prefers-reduced-motion (no rotation change, no render loop)', () => {
+    stubMatchMedia(true);
+    const rafSpy = vi.spyOn(window, 'requestAnimationFrame');
+    render(<Coin intro />);
+    expect(capturedMeshes[0].rotation.y).toBe(0);
+    expect(rafSpy).not.toHaveBeenCalled();
+  });
+
+  it('a match starting mid-intro cancels it, snaps rotation.y to 0 instantly, then the normal flip lands cleanly on the target face', () => {
+    const clock = installManualAnimationClock();
+    const { rerender } = render(<Coin intro face={null} />);
+    const mesh = capturedMeshes[0];
+    clock.advance(100); // one frame into the tease
+    expect(mesh.rotation.y).not.toBe(0);
+
+    rerender(<Coin intro face="tails" />);
+    // The cancel + snap runs synchronously inside the flip effect (during the rerender), strictly
+    // before the flip's own rAF loop takes its first tick — so the coin already reads flat here, and
+    // the flip's `from` (which reads this same value) starts from 0, not the mid-tease angle.
+    expect(mesh.rotation.y).toBe(0);
+    expect(clock.hasPending()).toBe(true); // the flip claimed the next frame slot
+
+    // Drive the flip (≤2400ms full-motion duration) to completion.
+    for (let i = 0; i < 30 && clock.hasPending(); i++) clock.advance(300);
+    expect(screen.getByTestId('coin-face').getAttribute('data-face')).toBe('tails');
+  });
+
+  it("does not replay after a full round returns to idle (mount-only — relies on Part 2's single persistent mount)", () => {
+    const clock = installManualAnimationClock();
+    const { rerender } = render(<Coin intro face={null} />);
+    const mesh = capturedMeshes[0];
+    // Let the intro finish naturally.
+    for (let i = 0; i < 30 && clock.hasPending(); i++) clock.advance(100);
+    expect(mesh.rotation.y).toBe(0);
+
+    // A full round: flips to a result, then the caller (CoinflipHub) returns to idle (face → null)
+    // without ever unmounting this same <Coin> instance.
+    rerender(<Coin intro face="heads" />);
+    for (let i = 0; i < 30 && clock.hasPending(); i++) clock.advance(300);
+    expect(screen.getByTestId('coin-face').getAttribute('data-face')).toBe('heads');
+    rerender(<Coin intro face={null} />);
+
+    // Back at rest: the plain reset path snaps straight to 0 — no second tease/spin sequence fires,
+    // so there's nothing left to advance (no pending frame at all).
+    expect(mesh.rotation.y).toBe(0);
+    expect(clock.hasPending()).toBe(false);
+  });
+
+  it('unmounting mid-intro cancels its render loop cleanly (no post-unmount rAF/render calls)', () => {
+    const clock = installManualAnimationClock();
+    const { unmount } = render(<Coin intro />);
+    const mesh = capturedMeshes[0];
+    clock.advance(100); // one frame into the tease
+    expect(mesh.rotation.y).not.toBe(0);
+    const rendersBeforeUnmount = rendererRenderCalls.count;
+
+    unmount();
+    expect(clock.hasPending()).toBe(false); // the effect cleanup cancelled the pending frame
+
+    // Even if something tried to fire another frame, there's nothing pending to invoke — and the
+    // render count hasn't moved since teardown.
+    expect(rendererRenderCalls.count).toBe(rendersBeforeUnmount);
   });
 });

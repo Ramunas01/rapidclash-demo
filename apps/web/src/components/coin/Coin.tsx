@@ -54,6 +54,13 @@ function prefersReducedMotion(): boolean {
  *  variance, exact landing angle, and the ease-out shape — see `Coin.test.tsx`). */
 export const easeOutCubic = (p: number): number => 1 - Math.pow(1 - p, 3);
 
+/** Symmetric accelerate-then-decelerate curve — the intro's return-to-rest and full-spin segments use
+ *  this (a soft start AND a soft landing); the tease's initial rise uses {@link easeOutCubic} instead
+ *  (an immediate, snappier start reads better for a quick "notice me" tilt). Exported alongside
+ *  `easeOutCubic` for the same unit-testability reason. */
+export const easeInOutCubic = (p: number): number =>
+  p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+
 /** Random 5–7 full turns (10–14 half-turns) per COINFLIP_COIN.md's "chance feel" requirement. */
 function randomHalfTurns(): number {
   return 10 + Math.floor(Math.random() * 5);
@@ -86,6 +93,65 @@ export function planFlip(
   const to = base + remainder;
   const durationMs = reduce ? REDUCED_DUR_MS : randomDurationMs();
   return { halfTurns, to, durationMs };
+}
+
+// ---- One-time intro (issue #262, Part 3) — a scripted rotation on the resting coin: tease tilt →
+// return to flat → one full spin landing back on heads. Reuses `mesh.rotation.y` + the same rAF render
+// loop the flip already uses (no new visual path); the sequence math is split out pure (mirrors
+// `planFlip` above) so it's directly unit-testable without a live Three.js scene. ----
+
+/** Tease tilt amplitude (rad, ~40°) — a brief "notice me" lean before the coin returns flat and spins. */
+const INTRO_TEASE_RAD = 0.7;
+const INTRO_TEASE_MS = 350;
+const INTRO_RETURN_MS = 300;
+const INTRO_SPIN_MS = 700;
+
+export type IntroSegment = {
+  from: number;
+  to: number;
+  durationMs: number;
+  ease: (p: number) => number;
+};
+
+/**
+ * The intro's three segments, in order: tease 0→~0.7rad (easeOut, snappy start), return ~0.7rad→0
+ * (easeInOut), then a full 2π turn back to 0 — i.e. `rotation.y ≡ 0 (mod 2π)`, landing on heads, same
+ * convention as `planFlip` (easeInOut, its natural deceleration into the landing is the spec's "slight
+ * end deceleration"). Total ≈ {@link INTRO_TEASE_MS} + {@link INTRO_RETURN_MS} + {@link INTRO_SPIN_MS}
+ * = 1350ms, inside the ~1.3–1.5s target. Not reduced-motion-aware itself — the component skips calling
+ * this entirely under `prefersReducedMotion()` (the intro is decorative, not the outcome-bearing flip,
+ * so unlike `planFlip` there's no reduced settle variant — it's just skipped).
+ */
+export function planIntro(): IntroSegment[] {
+  return [
+    { from: 0, to: INTRO_TEASE_RAD, durationMs: INTRO_TEASE_MS, ease: easeOutCubic },
+    { from: INTRO_TEASE_RAD, to: 0, durationMs: INTRO_RETURN_MS, ease: easeInOutCubic },
+    { from: 0, to: 2 * Math.PI, durationMs: INTRO_SPIN_MS, ease: easeInOutCubic },
+  ];
+}
+
+/**
+ * Given the intro's segments and elapsed ms since it started, the current `rotation.y` and whether the
+ * whole sequence has finished. Pure (no Three.js/DOM/clock reads) — the component's rAF tick just
+ * calls this with `performance.now() - startT`. Landing (`done`) snaps to exactly `0`, not whatever the
+ * last eased sample computed to (floating-point easeInOut at `p=1` is already ~2π, but `rotationY: 0`
+ * is the canonical resting value the rest of the component/tests compare against).
+ */
+export function introRotationAt(
+  segments: IntroSegment[],
+  elapsedMs: number
+): { rotationY: number; done: boolean } {
+  const total = segments.reduce((sum, seg) => sum + seg.durationMs, 0);
+  if (elapsedMs >= total) return { rotationY: 0, done: true };
+  let acc = 0;
+  for (const seg of segments) {
+    if (elapsedMs < acc + seg.durationMs) {
+      const p = Math.max(0, Math.min(1, (elapsedMs - acc) / seg.durationMs));
+      return { rotationY: seg.from + (seg.to - seg.from) * seg.ease(p), done: false };
+    }
+    acc += seg.durationMs;
+  }
+  return { rotationY: 0, done: true }; // unreachable given the `elapsedMs >= total` guard above
 }
 
 /** Cap texture size (px) — a canvas this small is plenty for a coin rendered at typical hub sizes. */
@@ -189,14 +255,24 @@ type FlipState = {
  * `face` null → resting heads (perfect circle, no spin, no running render loop). `face` set → spins
  * to that side, one-shot per transition into a flip (mirrors the old Coin contract so the board's
  * idle / in-match / terminal / draw-flip choreography — `CoinflipHub.tsx` — is unchanged).
+ *
+ * `intro` (opt-in, default off — issue #262 Part 3): plays the one-time tease/return/spin sequence
+ * (`planIntro`/`introRotationAt` above) once, on mount, while resting. It never repeats while this
+ * component stays mounted — callers that want "once per page entry" (not "once per phase transition")
+ * must mount `<Coin>` exactly once per visit (see `CoinflipHub.tsx`'s Part 2 hoist, which is why these
+ * two parts shipped together). Skipped entirely under `prefers-reduced-motion`. If `face` transitions
+ * to a value mid-intro, the intro is cancelled and the coin snaps flat before the normal flip takes
+ * over — never both animating at once.
  */
 export function Coin({
   face = null,
   size = 128,
+  intro = false,
   className,
 }: {
   face?: CoinFace | null;
   size?: number;
+  intro?: boolean;
   className?: string;
 }) {
   const flipping = face != null;
@@ -213,6 +289,10 @@ export function Coin({
     target: 'heads',
   });
   const rafRef = useRef<number | null>(null);
+  // Whether the one-time intro's own rAF loop currently owns `rafRef`/`mesh.rotation.y`. Only the flip
+  // effect below reads this (to cancel + snap flat if a match starts mid-intro); the intro effect owns
+  // writing it.
+  const introRef = useRef<{ active: boolean }>({ active: false });
   // The one bit of React-visible state: which face is currently "true" — resting immediately, or the
   // just-landed face once a flip settles. Everything else (rotation) is driven imperatively so we
   // don't re-render on every animation frame.
@@ -310,6 +390,21 @@ export function Coin({
       return;
     }
 
+    // A match just started (`flipping` went true). If the one-time intro (Part 3, below) is still
+    // mid-sequence, cancel it immediately and snap flat — the flip below always starts `from` wherever
+    // `mesh.rotation.y` currently reads, and per spec the snap is instant (not "continue from the
+    // tease angle"). `introRef` is the only other owner of `rafRef` besides this flip loop, so
+    // cancelling here (before the flip claims it below) is sufficient — the intro effect's own tick
+    // also checks `introRef.current.active` and no-ops if it fires again regardless.
+    if (introRef.current.active) {
+      introRef.current.active = false;
+      if (rafRef.current != null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      s.mesh.rotation.y = 0;
+    }
+
     if (flipRef.current.animating) return; // a flip is already underway to somewhere — let it land.
 
     const reduce = prefersReducedMotion();
@@ -350,6 +445,47 @@ export function Coin({
     // No extra cleanup needed here: a running flip either lands (clearing rafRef itself) or gets
     // cancelled by the next `!flipping` transition / unmount effect above.
   }, [flipping, target]);
+
+  // ---- One-time intro (Part 3, issue #262): tease tilt → return flat → full spin, once, on mount,
+  // while resting. Deliberately mount-only (`[]` deps) — `intro` is a static opt-in prop and this must
+  // fire exactly once per hub visit, never again while the component stays mounted (see the doc
+  // comment above `Coin`). Declared AFTER the flip/reset effect above on purpose: that effect's mount-
+  // time `!flipping` branch unconditionally cancels `rafRef` and zeroes rotation — if this effect ran
+  // first it would win the race and get its own just-started rAF loop killed a tick later. ----
+  useEffect(() => {
+    const s = sceneRef.current;
+    if (!s || !intro || flipping || prefersReducedMotion()) return;
+
+    const segments = planIntro();
+    introRef.current.active = true;
+    const startT = performance.now();
+
+    const tick = () => {
+      const current = sceneRef.current;
+      if (!current || !introRef.current.active) return; // cancelled mid-flight (match start / unmount)
+      const { rotationY, done } = introRotationAt(segments, performance.now() - startT);
+      current.mesh.rotation.y = rotationY;
+      current.renderer.render(current.scene, current.camera);
+      if (done) {
+        introRef.current.active = false;
+        rafRef.current = null;
+        return;
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      // Unmount mid-intro: stop the loop. (Rotation itself doesn't need resetting here — the scene is
+      // being torn down by the mount effect's own cleanup right alongside this one.) The mid-flip
+      // cancel path is handled separately, above, by the flip effect reading/clearing this same flag.
+      introRef.current.active = false;
+      if (rafRef.current != null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+    };
+  }, []);
 
   return (
     <div
