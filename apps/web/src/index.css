@@ -146,24 +146,8 @@
   }
 }
 
-/* Open-games ticker auto-scroll (home-hub). Rows are duplicated so the -50% travel loops
- * seamlessly; pauses on hover, and respects reduced-motion. */
-@keyframes rc-ticker-scroll {
-  from {
-    transform: translateY(0);
-  }
-  to {
-    transform: translateY(-50%);
-  }
-}
-.rc-ticker-anim {
-  animation: rc-ticker-scroll 22s linear infinite;
-}
-.rc-ticker-anim:hover {
-  animation-play-state: paused;
-}
-@media (prefers-reduced-motion: reduce) {
-  .rc-ticker-anim {
-    animation: none;
-  }
-}
+/* The old continuous-marquee open-games ticker (`.rc-ticker-anim` / `@keyframes rc-ticker-scroll`,
+ * clone-row trick) was replaced by the JS-driven stepped top-down motion in
+ * `hub-shared/OpenGames.tsx` (issue #259) — no CSS animation left to define here. The old 22s
+ * loop duration lives on only as the derivation basis for the new step timing (see that file's
+ * `OLD_MARQUEE_LOOP_MS` comment). */
