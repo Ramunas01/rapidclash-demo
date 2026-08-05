@@ -229,11 +229,67 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     expect(screen.getByTestId('hub-move-heads')).toHaveAttribute('aria-pressed', 'false');
   });
 
-  it('Idle: no H/T pills on the tile or in the slot (selection only happens in-play)', () => {
+  it('Idle: no H/T pills on the tile or in the slot (selection only happens in-play); no caption under the coin (#262)', () => {
     render(<CoinflipHubScreen {...baseProps()} />);
     expect(screen.queryByTestId('hub-move-heads')).toBeNull();
     expect(screen.queryByTestId('hub-move-tails')).toBeNull();
-    expect(screen.getByTestId('hub-board').textContent).toMatch(/place your bet and play/i);
+    // #262 Part 1: the old "Place your bet and play." caption is gone — the board carries no text.
+    expect(screen.getByTestId('hub-board').textContent).toBe('');
+  });
+
+  it('#262: no caption in ANY phase (idle/waiting/in-match/result), and the coin container + coin element are the SAME DOM node throughout — one persistent coin, no WebGL rebuild on phase transitions', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const { rerender } = render(<CoinflipHubScreen {...baseProps()} />);
+    const boardIdle = screen.getByTestId('hub-board');
+    const coinIdle = screen.getByTestId('coin-face');
+    expect(boardIdle.textContent).toBe('');
+
+    // → waiting (the old "Finding a rival…" caption is also gone)
+    rerender(<CoinflipHubScreen {...baseProps({ waitingExpiresAt: Date.now() + 30_000 })} />);
+    expect(screen.getByTestId('hub-board')).toBe(boardIdle);
+    expect(screen.getByTestId('coin-face')).toBe(coinIdle);
+    expect(screen.getByTestId('hub-board').textContent).toBe('');
+
+    // → in-match
+    const gameState: CoinflipView = { players: ['pid', 'bob'], choices: {} };
+    rerender(
+      <CoinflipHubScreen
+        {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['heads', 'tails'] })}
+      />
+    );
+    expect(screen.getByTestId('hub-board')).toBe(boardIdle);
+    expect(screen.getByTestId('coin-face')).toBe(coinIdle);
+
+    // → result (terminal, held)
+    const terminalState: CoinflipView = {
+      ...gameState,
+      choices: { pid: 'heads', bob: 'tails' },
+      result: 'heads',
+    };
+    rerender(
+      <CoinflipHubScreen
+        {...baseProps({
+          currentMatchId: null,
+          gameState: terminalState,
+          lastOutcome: { type: 'win', winner: 'pid' },
+          lastSettlement: { delta: 90, newBalance: 1090 },
+        })}
+      />
+    );
+    expect(screen.getByTestId('hub-board')).toBe(boardIdle);
+    expect(screen.getByTestId('coin-face')).toBe(coinIdle); // same coin element — never remounted
+  });
+
+  it('#262: betting/PLAY stay live and pressable while the one-time intro is playing (decorative-only, never gates interaction)', () => {
+    // The hub mounts with the intro opted in (CoinflipPanel passes `intro` to the persistent <Coin>);
+    // this assertion runs synchronously right after mount — i.e. while the intro's tease is (or would
+    // be) mid-flight — and PLAY/betting must work exactly as any other idle render.
+    const onPlay = vi.fn();
+    render(<CoinflipHubScreen {...baseProps({ onPlay })} />);
+    expect(screen.getByTestId('hub-play')).toBeEnabled();
+    fireEvent.click(screen.getByTestId('hub-bet-10'));
+    fireEvent.click(screen.getByTestId('hub-play'));
+    expect(onPlay).toHaveBeenCalledWith(10);
   });
 
   it('Result: no pop-up overlay — the flip + opponent reveal stage on the board, then the own pill lights', async () => {

@@ -726,7 +726,8 @@ describe('App — round-scoped state wiped as one unit on the destroy events (PL
 
     expect(screen.queryByTestId('coin-own-pick')).toBeNull();
     expect(screen.queryByTestId('coin-opp-pick')).toBeNull();
-    expect(screen.getByTestId('hub-board').textContent).toMatch(/place your bet/i); // idle prompt
+    // #262: the idle caption is gone — the board carries no text in any state.
+    expect(screen.getByTestId('hub-board').textContent).toBe('');
   });
 
   it('the idle post-round result view PERSISTS between a finished round and the next PLAY/leave', async () => {

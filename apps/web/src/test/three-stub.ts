@@ -42,6 +42,9 @@ export const geometryDisposed = { value: false };
 /** Everything ever passed to any `Scene#add` call, across every `Scene` instance — lets tests assert
  *  on what got added to the scene (e.g. "no lights") without needing a handle on the Scene itself. */
 export const sceneAdded: unknown[] = [];
+/** Every `Mesh` ever constructed — `Coin.tsx` creates exactly one per mount. Lets tests read/assert on
+ *  `mesh.rotation.y` directly (the one-time intro animation, issue #262 Part 3) without a real scene. */
+export const capturedMeshes: Mesh[] = [];
 
 /** Matches three's real string constant (`three.core.js`: `const SRGBColorSpace = 'srgb';`). */
 export const SRGBColorSpace = 'srgb';
@@ -55,6 +58,7 @@ export function resetThreeStub() {
   rendererDisposed.value = false;
   geometryDisposed.value = false;
   sceneAdded.length = 0;
+  capturedMeshes.length = 0;
 }
 
 export class Scene {
@@ -143,7 +147,9 @@ export class Mesh {
   constructor(
     public geometry: unknown,
     public material: unknown[]
-  ) {}
+  ) {
+    capturedMeshes.push(this);
+  }
 }
 
 export class AmbientLight {
