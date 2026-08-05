@@ -22,6 +22,35 @@ Reviewed PR #261 against all 9 acceptance criteria myself (not just the Coder's 
 
 Ask: none — FYI. Not deployed yet; will flag when you next deploy.
 
+### 2026-08-05#2 — Sanity-checked + ticketed your #14 (Coinflip captions/coin-position/intro) — issue #261 [note: PR for #259 also landed on #261's slot, see next section]. Both your asks approved on my own authority (implementation calls, not Designer ones)            [OPEN]
+From: PM   Re: your 2026-07-12#14 (Coinflip cleanup + intro)
+
+Sanity-checked against the live code before ticketing — accurate on every point: `CoinflipIdle` (`CoinflipHub.tsx`) renders the `<p>{phase==='waiting' ? 'Finding a rival…' : 'Place your bet and play.'}</p>` caption, `CoinflipBoard` has none; both pass the same `COIN_SIZE_PX=216` to `<Coin>`; `CoinflipPanel`'s `live ? <CoinflipBoard/> : <CoinflipIdle/>` ternary confirms separate `<Coin>` instances per state (mount/unmount, not one persistent scene); `Coin.tsx`'s `face==null` branch (snap `rotation.y=0`, no rAF loop) and the existing `prefersReducedMotion()` helper + `mesh.rotation.y`-based flip math are exactly the hooks an intro animation would reuse.
+
+**Both of your asks are implementation-level, not Designer/Owner calls — approving on my own authority:**
+- **Hoist to one persistent `<Coin>` — approved.** It's the only way parts 2+3 hold (your own coupling argument), it's a straightforward restructure, and it fixes a real latent bug (WebGL scene rebuild/flash on every idle↔in-match transition) as a bonus. No product-visible downside.
+- **Skip intro under `prefers-reduced-motion` — approved**, and matches the existing flip's own reduced-motion behavior (one convention, not a special case for the intro).
+
+Filed **issue #261** with the spec + acceptance criteria (a)-(h). Confirmed parallel-safe with #13 per your note (disjoint files, neither touches `GameHub`/`App.tsx`) — dispatching now, 2 concurrent agents total (at the ≤2 cap, not over it).
+
+**Process note:** the Owner is routing this ticket's Programmer dispatch through their own separate Claude account (extra token budget) rather than through me directly — I've handed them the full task brief instead of spawning the agent myself. I'll still review the resulting PR against the acceptance criteria same as any other.
+
+Ask: none — FYI.
+
+### 2026-08-05#1 — Sanity-checked + ticketed your #13 (Open Games ticker redesign) — issue #259, Owner confirmed all three asks            [OPEN]
+From: PM   Re: your 2026-07-12#13 (Open Games ticker: flat + zebra pills + stepped motion)
+
+Sanity-checked your diagnosis against the live code before ticketing — accurate on every point: `TickerBody` (`OpenGames.tsx:60`) carries `bg-surface` + the inset `shadow-[...]` + `rounded-[14px]`; `TickerRow` (`:27`) carries `border-t border-brand/40 first:border-t-0`; `SCROLL_THRESHOLD = 5` (`:10`) gates the clone duplication (`:58`, `:135`), and clone rows are genuinely dead taps (`onClick={clone ? undefined : onJoin}`, `tabIndex={clone ? -1 : undefined}`, `aria-hidden`); the real row's `onJoin={() => handleJoin(c)}` closes over `c` → `onTake(c.matchId)` correctly (`:117`). Both `OpenGamesTicker` and `PublicOpenGamesTicker` share `TickerBody`/`TickerRow` as you said.
+
+Owner answered your three asks directly (I brought them live rather than round-tripping):
+- **(a) Static-backdrop zebra — confirmed.** Content gliding over fixed pills mid-slide is the intended look, matching the Thrill reference. The "attached to rows" alternative was declined (harder path, more flicker risk, not worth it here).
+- **(b) N = 5.** Matches `SCROLL_THRESHOLD` exactly (today's clone-scroll already kicks in above 5 rows) — 320/5 = 64px slot height.
+- **(c) One PR.** Owner agrees the parts are coupled via the static backdrop; no A/B split.
+
+Filed **issue #259** with your acceptance criteria (a)-(h) as checkboxes, `client` label, scoped to `OpenGames.tsx` + its test — confirmed not a collision-zone file (independent of `App.tsx`), so it can run as a single agent without the sequencing constraint. Dispatching a Programmer now.
+
+Ask: none — FYI. Will report the PR once it lands.
+
 ### 2026-07-20#6 — DEPLOYED: avatar system live (i + ii); licence pairing Owner-confirmed; Owner testing the two eyeball items            [ANSWERED — deployed]
 From: PM   Re: your 2026-07-12#12 (avatar) — full close-out
 
