@@ -1,5 +1,38 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-07-12#13 — Open Games ticker: flat + zebra pills + stepped top-down motion (Designer)            [OPEN — client-only, ticker re-architecture]
+From: Advisor   Re: Designer "Open Games list — visual & motion redesign" (reference: Thrill)
+
+Borrow the *look* (zebra pills + stepped feed), not the content — our rows stay `¢`, no crypto (the spec leaves row content unchanged, so this holds). All in `components/hub-shared/OpenGames.tsx`; both variants (`OpenGamesTicker` signed-in + `PublicOpenGamesTicker` logged-out) share `TickerBody`/`TickerRow`, so the redesign covers both.
+
+**Current state (verified).** `TickerBody` = `bg-surface` + `shadow-[inset_0_0_24px_8px_...]` + `rounded-[14px]`, maxHeight 320 (the recessed navy panel). `TickerRow` = `border-t border-brand/40` (the purple dividers). Motion = continuous CSS `rc-ticker-anim`; above 5 rows it **duplicates rows as non-interactive `clone`s** for the loop — so a JOIN on a scrolling clone is a dead tap today. JOIN on a real row closes over the challenge `c` → `onTake(c.matchId)` (correct).
+
+## 1 — Remove the panel (simple)
+`TickerBody`: drop `bg-surface`, the inset `shadow-[…]`, and `rounded-[14px]` — but **keep `overflow-hidden`** (still needed to clip the ticker to a fixed height). `TickerRow`: drop `border-t border-brand/40 first:border-t-0`. Rows sit on `#0B0B0B`. Header (`TickerHeader`) unchanged. Reconcile `EmptyTicker` to match (flat text on `#0B0B0B`, no panel).
+
+## 2 — Zebra rows (recommend a STATIC slot backdrop — this is the flicker-free trick)
+Fixed slot height ~70px (tune to content, identical for both row types). Even slots = `#1A1A2E` full pill (`rounded-full` since height is fixed ⇒ radius = half height), odd = transparent. Flush, 0 gap. Padding identical both types: ~10px vertical; left ~20–24px so content clears the pill's rounded end, mirrored right; **same left padding on transparent rows** so icon/name/stake/JOIN columns align across the list.
+
+**Implementation:** paint the zebra as a **static backdrop of N fixed slots** behind the row content (even = pill, odd = transparent), fixed to the list window; the row content slides *over* it. This makes the zebra inherently "always intact" and "swaps at the moment content lands in a slot, never mid-slide with a flicker" — because the pills never move or re-render; only content moves between them. (Alternative — each row carrying its own pill and swapping treatment at landing — is flicker-prone; avoid.) **Confirm the mid-slide look is acceptable:** during the fast step, a row's content briefly glides across a pill edge (it's in motion, matches the Thrill reference). If the Designer instead wants pills to feel "attached" to rows, that's the harder path — flag now.
+
+## 3 — Stepped top-down ticker (the real work)
+**Mechanism (shift-register):** the window is `overflow-hidden`, fixed height = N × rowHeight (N = whole number of visible rows; pick to match today's ~320px ≈ 4–5 rows). Each step: render `[incoming, …visible]` (N+1 rows), start at `translateY(-rowHeight)` (looks like `visible`), animate to `translateY(0)` — incoming enters slot 0, all shift down one, the last row slides past slot N-1 into the clipped region. On completion: commit `visible = [incoming, …visible.slice(0, N-1)]`, reset transform to 0 **instantly (no transition)** — seamless. Hold **0.8s** static. Repeat. Step duration = one row-height at the **current marquee speed** (read the px/s from the existing `rc-ticker-anim`). Direction inverted: newest enters top, oldest exits bottom.
+
+**CRITICAL — tap resolves to the game, not the slot.** Drop the clone trick entirely; render every row as a **real, interactive row keyed by `matchId`**, each JOIN closing over its own challenge `c`. Animate with `transform` only — a transformed node still hit-tests at its visual position, so a tap during the slide lands on that row's node → its handler → correct `matchId`, even mid-motion. Do **not** recycle nodes by slot or swap content into fixed slot-nodes (that's what would misroute a tap). This is the requirement's crux and the current clone approach fails it.
+
+**Live set reconciliation.** The signed-in feed changes as challenges open/close (WS). Apply adds/removes at **step boundaries (during the 0.8s hold)**, not mid-slide, so the set never mutates under a moving row. A newly-opened challenge becomes the next `incoming`; a taken/closed one is dropped at the next hold.
+
+**Static when small.** Animate only when open games > N; with ≤ N rows the list is static (zebra still applies, no motion) — the common demo case (few open games) shows a still zebra list. Empty → `EmptyTicker`.
+
+**No layout shift** outside the list (height constant = N × rowHeight). **Reduced motion:** honor `prefers-reduced-motion` — pause stepping, show a static snapshot.
+
+## Scope & risk
+Client-only, contained to `OpenGames.tsx` (not a play-path collision zone), but a genuine component rewrite — the motion, tap-correctness, and live-set reconciliation are the risk, not the CSS. Optional de-risking split: **PR-A** = parts 1+2 (flat panel + zebra, list left static or on the existing motion); **PR-B** = part 3 (stepped motion, remove clones, tap-correctness). They're coupled via the static backdrop, so one careful PR is also fine — single agent either way.
+
+**Tests:** (a) no panel bg/shadow/border, no row dividers; (b) zebra by position — even slot has the `#1A1A2E` pill, odd transparent — and re-resolves after a step; (c) a step moves exactly one row-height, newest enters top, bottom row is clipped (not left half-visible during the 0.8s hold); (d) **tap a JOIN mid-slide → fires the pressed row's `matchId`**, not the slot's; (e) ≤ N rows → no animation; (f) list height constant (no outside layout shift); (g) `prefers-reduced-motion` → static; (h) update the tests that assumed clones/`home-row` scrolling.
+
+Ask: (a) confirm the static-backdrop zebra (content glides over fixed pills mid-slide) is the intended look; (b) confirm N (visible row count) — keep ~today's, as a whole number; (c) one PR or the A/B split.
+
 ### 2026-07-12#12 — Avatar system: one shared avatar + preset picker + persistence (Designer)            [ANSWERED — fully implemented (i+ii), DEPLOYED]
 From: Advisor   Re: Account rev-1 part 3, extracted as its own task (the other Account fixes will come as a separate brief)
 (PM note: #11 was not relayed to this mailbox — my ADVISOR entries jump #10 → #12. Flagging the relay gap; #12 is self-contained.)
