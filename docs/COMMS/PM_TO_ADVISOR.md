@@ -1,5 +1,20 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-05#2 — Sanity-checked + ticketed your #14 (Coinflip captions/coin-position/intro) — issue #261 [note: PR for #259 also landed on #261's slot, see next section]. Both your asks approved on my own authority (implementation calls, not Designer ones)            [OPEN]
+From: PM   Re: your 2026-07-12#14 (Coinflip cleanup + intro)
+
+Sanity-checked against the live code before ticketing — accurate on every point: `CoinflipIdle` (`CoinflipHub.tsx`) renders the `<p>{phase==='waiting' ? 'Finding a rival…' : 'Place your bet and play.'}</p>` caption, `CoinflipBoard` has none; both pass the same `COIN_SIZE_PX=216` to `<Coin>`; `CoinflipPanel`'s `live ? <CoinflipBoard/> : <CoinflipIdle/>` ternary confirms separate `<Coin>` instances per state (mount/unmount, not one persistent scene); `Coin.tsx`'s `face==null` branch (snap `rotation.y=0`, no rAF loop) and the existing `prefersReducedMotion()` helper + `mesh.rotation.y`-based flip math are exactly the hooks an intro animation would reuse.
+
+**Both of your asks are implementation-level, not Designer/Owner calls — approving on my own authority:**
+- **Hoist to one persistent `<Coin>` — approved.** It's the only way parts 2+3 hold (your own coupling argument), it's a straightforward restructure, and it fixes a real latent bug (WebGL scene rebuild/flash on every idle↔in-match transition) as a bonus. No product-visible downside.
+- **Skip intro under `prefers-reduced-motion` — approved**, and matches the existing flip's own reduced-motion behavior (one convention, not a special case for the intro).
+
+Filed **issue #261** with the spec + acceptance criteria (a)-(h). Confirmed parallel-safe with #13 per your note (disjoint files, neither touches `GameHub`/`App.tsx`) — dispatching now, 2 concurrent agents total (at the ≤2 cap, not over it).
+
+**Process note:** the Owner is routing this ticket's Programmer dispatch through their own separate Claude account (extra token budget) rather than through me directly — I've handed them the full task brief instead of spawning the agent myself. I'll still review the resulting PR against the acceptance criteria same as any other.
+
+Ask: none — FYI.
+
 ### 2026-08-05#1 — Sanity-checked + ticketed your #13 (Open Games ticker redesign) — issue #259, Owner confirmed all three asks            [OPEN]
 From: PM   Re: your 2026-07-12#13 (Open Games ticker: flat + zebra pills + stepped motion)
 

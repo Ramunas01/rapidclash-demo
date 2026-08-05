@@ -1,5 +1,38 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-07-12#14 — Coinflip: remove captions + one panel/coin position + intro animation (Designer)            [OPEN — client-only, parallel-safe with #13]
+From: Advisor   Re: Designer "Coinflip — preview/search cleanup + intro animation"
+
+Parallelizable with the Open Games redesign (#13): yes. #13 is `OpenGames.tsx`; this is `CoinflipHub.tsx` + `components/coin/Coin.tsx`. No shared file, neither touches `GameHub`/`App.tsx` → two agents, within the ≤2 cap.
+
+## 1 — Remove the captions (simple)
+Both strings live in one place: `CoinflipIdle` renders `<p>{phase==='waiting' ? 'Finding a rival…' : 'Place your bet and play.'}</p>`. `CoinflipBoard` (in-match/result) has no caption. Delete that `<p>`. Matchmaking feedback is already elsewhere — the opponent bar ("Searching…") and the transformed PLAY button ("PLAYING…") — verified in the screenshots, so nothing is lost.
+
+## 2 — One panel size, one coin position (needs a small restructure)
+Coin size is already `COIN_SIZE_PX` (216) in both states, and the countdown ring is `absolute … -translate-y-1/2` — it does not displace the coin (spec point 3 ✓). But the coin does move today: `CoinflipIdle` is a `flex-col … gap-4` with the caption below, so the coin sits above centre; `CoinflipBoard` is `items-center justify-center`, coin centred. Removing the caption (part 1) mostly closes this, but the two states are still separate components rendering separate `<Coin>`s.
+
+Recommended: hoist one persistent `<Coin>` into `CoinflipPanel`. Render the coin once, in a single fixed-min-h `items-center justify-center` box, for all states; let the state-specific elements (ring, pick pills — already in the bars/absolute) layer around it without displacing it. This guarantees identical panel dimensions + a truly identical coin centre in every state (zero movement), and it removes a latent cost: today `CoinflipPanel` swaps `CoinflipIdle`↔`CoinflipBoard` on the live flip, which unmounts/remounts the coin's whole WebGL scene on every preview↔in-match transition (a rebuild/flash). One mounted coin fixes that too — and it's required for part 3 (below).
+
+## 3 — Intro animation (one-time on entry) — in `Coin.tsx`
+A scripted rotation on the resting coin, reusing the existing `mesh.rotation.y` + rAF render + flat/edge/faces rendering (no new visual path). Sequence (single Y-axis rotation, same as the match flip):
+- Tease tilt 0 → ~0.7rad (~40°), easeOut ~0.35s (edge band + a sliver of the other face show).
+- Return → 0, easeInOut ~0.3s.
+- Full 360° (→ 2π ≡ 0, lands on the starting face/heads), easeInOut ~0.7s with slight end deceleration.
+- Rest flat. Total ~1.3–1.5s.
+
+Implementation notes:
+- Add an opt-in (e.g. `intro` prop) played once on the coin's mount while resting (`face == null`) — so it fires on every page entry and never repeats while you stay. Gate strictly on `face == null`: never during in-match/terminal, so it can't run before a reveal or after a result.
+- Cancelable / non-blocking: it's a decorative rAF on the mesh — React interaction (bet, PLAY, matchmaking) is unaffected and never gated on it. If a match starts mid-intro (`face` → a value), cancel the intro, snap `rotation.y = 0` instantly, then let the existing flip effect run (it reads `from = mesh.rotation.y`, so the snap-to-0 keeps the flip clean). Unmount cancels too.
+- Reduced motion: the coin already honours `prefers-reduced-motion` for the flip; the intro is purely decorative — skip it entirely under reduce.
+
+**COUPLING — do parts 2 and 3 together.** Part 3's trigger rules ("every page entry; no repeat while staying; never after a result or on auto-rematch") only hold with part 2's single persistent coin. With today's remounting structure, returning to the idle/preview after a result remounts the coin → the intro would replay on every result-return/rematch, violating the spec. So: hoist the coin (part 2), then key the intro to that coin's mount (part 3).
+
+**Tests:** (a) no caption under the coin in any state (preview/searching/in-play/result); (b) panel dimensions and the coin's centre are identical across idle/in-match/result (coin never shifts); (c) ring present without displacing the coin; (d) intro plays once on entering the Coinflip page, rests flat on heads; (e) a match starting mid-intro snaps the coin flat and the normal flip proceeds; (f) intro does not replay when returning to preview after a result within the same page; (g) intro skipped under `prefers-reduced-motion`; (h) bet/PLAY/matchmaking all work during the intro.
+
+**Scope:** client-only — `CoinflipHub.tsx` (caption delete + hoist the coin) + `Coin.tsx` (intro). Parallel-safe with #13; single agent for this ticket.
+
+Ask: OK to hoist the coin into one persistent instance (parts 2+3 want it); confirm the intro is skipped under reduced-motion.
+
 ### 2026-07-12#13 — Open Games ticker: flat + zebra pills + stepped top-down motion (Designer)            [OPEN — client-only, ticker re-architecture]
 From: Advisor   Re: Designer "Open Games list — visual & motion redesign" (reference: Thrill)
 
