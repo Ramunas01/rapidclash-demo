@@ -1,5 +1,27 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-05#4 — Process fix: WORKING_AGREEMENT.md + CODER_BRIEF.md now cover branch-before-edit, worktree isolation, and post-merge cleanup — a real gap, not a hypothetical            [ANSWERED — Owner-directed]
+From: PM   Re: Owner, live — a Programmer editing directly on `main` in a shared checkout
+
+While issue #262 (Coinflip cleanup) was in flight, its dispatched Programmer edited `CoinflipHub.tsx`/`Coin.tsx` directly in a shared WSL checkout, on `main`, uncommitted — not a feature branch, not an isolated worktree. Caught it via `git status` before it could collide with any of my own git operations in that same directory. This is the second time this exact class of bug has surfaced (the first: my own accidental fast-forward push to `main` from a stale branch, recorded 2026-07-20#4 — at the time fixed with an ad-hoc personal guard, never generalized into the protocol docs).
+
+Owner directed the fix. Added to `WORKING_AGREEMENT.md` (Branching & PRs) and `CODER_BRIEF.md` (Working rules), same substance in each doc's voice:
+- **Branch before you edit, not after** — create the feature branch as the first action; never edit while checked out on `main`, even uncommitted.
+- **Isolate the working directory whenever the checkout might be shared** (the ≤2-concurrent-agent case, or a human + agent sharing one WSL checkout) — use a `git worktree` per agent, not a branch-switch in place. A branch alone doesn't isolate a working tree two processes are both writing into.
+- **Sanity-check `git status`/`git branch --show-current`** before the first commit.
+- **Clean up after merge** — delete the remote branch and, if a worktree was used, `git worktree remove` it + delete the local branch. (This is also why `gh pr merge --delete-branch` failed on PR #261 minutes earlier — the branch was still checked out in the dispatching agent's own worktree.)
+
+Scope: doc-only, both files are Owner-approved-doc-change per `COMMS_PROTOCOL.md`'s brief-editing rule. No code change, no ticket needed.
+
+Ask: none — FYI, Owner-directed and already applied.
+
+### 2026-08-05#3 — DEPLOYED-equivalent: Open Games ticker redesign (your #13) merged to main — PR #261, issue #259 closed            [ANSWERED — merged, not yet deployed]
+From: PM   Re: your 2026-07-12#13 (Open Games ticker) + my 2026-08-05#1
+
+Reviewed PR #261 against all 9 acceptance criteria myself (not just the Coder's self-report) — confirmed the tap-correctness crux directly in the diff: `TickerRows` renders real, `matchId`-keyed rows and transforms the wrapper via `translateY`, never recycling slot-nodes; two dedicated tests fire JOIN mid-slide on both the incoming and outgoing rows and assert the correct `matchId` lands. Also verified the static zebra backdrop never re-renders (a DOM-node-identity test), live-set reconciliation applies only at hold boundaries (a dedicated test simulating a mid-slide WS update), and `prefers-reduced-motion` shows a static 5-row snapshot. CI green (76 files / 993 tests, tsc/eslint clean), not owner-gated (client-only). Squash-merged; issue #259 auto-closed.
+
+Ask: none — FYI. Not deployed yet; will flag when you next deploy.
+
 ### 2026-08-05#2 — Sanity-checked + ticketed your #14 (Coinflip captions/coin-position/intro) — issue #261 [note: PR for #259 also landed on #261's slot, see next section]. Both your asks approved on my own authority (implementation calls, not Designer ones)            [OPEN]
 From: PM   Re: your 2026-07-12#14 (Coinflip cleanup + intro)
 
