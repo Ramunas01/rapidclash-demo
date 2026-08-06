@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import Fastify, { type FastifyInstance } from 'fastify';
 import FastifyWs from '@fastify/websocket';
 import FastifyStatic from '@fastify/static';
+import FastifyRateLimit from '@fastify/rate-limit';
 import type Database from 'better-sqlite3';
 import {
   createLedger,
@@ -111,10 +112,20 @@ export function buildApp(
   });
 
   app.register(FastifyWs);
+  // `global: false` — this plugin only limits routes that opt in via a `config.rateLimit`
+  // block (currently just POST /auth/guest, issue #270). No other route is affected.
+  app.register(FastifyRateLimit, { global: false });
 
   const auth = makeAuthMiddleware(identity);
   registerAuthRoutes(app, auth, identity);
-  registerGuestAuthRoutes(app, identity, guest);
+  // Same reason as the `/ws` comment below: a direct `app.post()` call here would run
+  // synchronously, before avvio has booted the FastifyRateLimit plugin registered above —
+  // its `onRoute` hook wouldn't exist yet, so the route's `config.rateLimit` would silently
+  // never apply. The nested plugin defers this route's registration into avvio's boot queue,
+  // after FastifyRateLimit has loaded and attached its hook.
+  app.register(async (instance) => {
+    registerGuestAuthRoutes(instance, identity, guest);
+  });
   registerAdminRoutes(app, auth, ledger, identity);
   registerGamesRoutes(app, matchmaking);
   registerOpenChallengesRoutes(app, matchmaking);
