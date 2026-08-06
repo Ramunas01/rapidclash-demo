@@ -194,6 +194,71 @@ describe('guest mode over the real WS gateway (issue #267)', () => {
     expect(services.matchmaking.getActiveMatch(start.matchId)).toBeUndefined();
     expect(services.matchmaking.getCompletedMatch(start.matchId)).toBeUndefined();
   });
+
+  it('a real subscriber to the shared Open Games channel receives ZERO events from a guest match (PM review #268)', async () => {
+    // A real player, subscribed to the REAL coinflip feed — the exact channel a guest's queue
+    // activity must never touch, since challengeSubscribers/pushChallengesUpdate are one shared,
+    // module-scope channel for every connection, real and guest alike.
+    const reg = await app.inject({ method: 'POST', url: '/auth/register', payload: { username: 'realplayer', password: 'pw' } });
+    const real = reg.json<AuthResponse>();
+    const realSock = await openSocket(port, real.token);
+    sockets.push(realSock);
+    realSock.send('challenges.subscribe', { gameId: 'coinflip' });
+    await realSock.waitFor('challenges.list'); // confirms the subscription round-trip completed
+
+    const guest = await mintGuest();
+    const guestSock = await openSocket(port, guest.token);
+    sockets.push(guestSock);
+    guestSock.send('queue.join', { gameId: 'coinflip', stake: GUEST_COINFLIP_STAKE });
+    await guestSock.waitFor('match.start');
+    await guestSock.waitFor('match.end', 5000); // give the whole round + its sweep-driven resolve time to fire any leak
+
+    const leaked = realSock.received.filter((e) => e.type === 'challenges.update');
+    expect(leaked).toEqual([]);
+  });
+
+  it('an off-stake guest join (the exact tamper scenario flagged in review) rests without leaking a phantom entry into the real feed', async () => {
+    // A guest whose join stake does NOT match GUEST_COINFLIP_STAKE never finds the bot resting
+    // (it only rests at the one fixed stake) — it hits the 'waiting' branch instead of matching.
+    // Server-side nothing enforces the fixed stake (the client just always sends it); this proves
+    // the tampered/off-stake path is still safe.
+    const reg = await app.inject({ method: 'POST', url: '/auth/register', payload: { username: 'realplayer2', password: 'pw' } });
+    const real = reg.json<AuthResponse>();
+    const realSock = await openSocket(port, real.token);
+    sockets.push(realSock);
+    realSock.send('challenges.subscribe', { gameId: 'coinflip' });
+    await realSock.waitFor('challenges.list');
+
+    const guest = await mintGuest();
+    const guestSock = await openSocket(port, guest.token);
+    sockets.push(guestSock);
+    const offStake = GUEST_COINFLIP_STAKE - 1;
+    guestSock.send('queue.join', { gameId: 'coinflip', stake: offStake });
+    const waiting = (await guestSock.waitFor('queue.waiting')).payload as { gameId: string };
+    expect(waiting.gameId).toBe('coinflip'); // confirms it actually rested (not matched)
+
+    await new Promise((r) => setTimeout(r, 300)); // let any leak arrive
+    expect(realSock.received.filter((e) => e.type === 'challenges.update')).toEqual([]);
+  });
+
+  it('a guest subscribed to challenges.subscribe never receives REAL players’ Open Games activity (mirror-image leak)', async () => {
+    const guest = await mintGuest();
+    const guestSock = await openSocket(port, guest.token);
+    sockets.push(guestSock);
+    guestSock.send('challenges.subscribe', { gameId: 'coinflip' });
+    await guestSock.waitFor('challenges.list');
+
+    // A real player posts a resting bet on the SAME gameId string.
+    const regA = await app.inject({ method: 'POST', url: '/auth/register', payload: { username: 'realA', password: 'pw' } });
+    const realA = regA.json<AuthResponse>();
+    const realSockA = await openSocket(port, realA.token);
+    sockets.push(realSockA);
+    realSockA.send('queue.join', { gameId: 'coinflip', stake: 5 });
+    await realSockA.waitFor('queue.waiting'); // rests — announced via pushChallengesUpdate
+
+    await new Promise((r) => setTimeout(r, 300));
+    expect(guestSock.received.filter((e) => e.type === 'challenges.update')).toEqual([]);
+  });
 });
 
 describe('guest session cleanup on WS disconnect (issue #267 §"session lifetime")', () => {

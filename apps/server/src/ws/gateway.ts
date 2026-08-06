@@ -165,17 +165,22 @@ export function registerWsGateway(
   // guest one — critical for guest mode, not cosmetic: Coinflip's pick window resolves ONLY via
   // the timed-out-move sweep (`scheduledDeadlines` + `timeoutMove`), so without also sweeping
   // `guest.matchmaking` here, a guest's round would never lock/resolve past the 10s window.
-  function runSweeps(mm: Matchmaking): void {
+  function runSweeps(mm: Matchmaking, isGuestMm: boolean): void {
     const expired = mm.sweepExpired(Date.now());
     for (const ex of expired) {
       const ownerSocket = connections.get(ex.ownerId);
       if (ownerSocket?.readyState === 1) {
         send<ChallengeExpiredPayload>(ownerSocket, 'challenge.expired', { matchId: ex.matchId });
       }
-      pushChallengesUpdate(ex.gameId, {
-        gameId: ex.gameId,
-        removed: { matchId: ex.matchId, reason: 'expired' },
-      });
+      // The guest instance's queue reuses real gameId strings (e.g. "coinflip") — never publish
+      // its activity into the real, shared challenge-feed channel (see the pushChallengesUpdate
+      // guards in the message handler below for the full rationale).
+      if (!isGuestMm) {
+        pushChallengesUpdate(ex.gameId, {
+          gameId: ex.gameId,
+          removed: { matchId: ex.matchId, reason: 'expired' },
+        });
+      }
     }
 
     // Server-authoritative move-timeout sweep (#31): resolve matches stuck past their
@@ -249,8 +254,22 @@ export function registerWsGateway(
   }
 
   const sweepTimer = setInterval(() => {
-    runSweeps(matchmaking);
-    if (guest) runSweeps(guest.matchmaking);
+    // Each instance's sweep is isolated in its own try/catch: an uncaught exception inside a
+    // setInterval callback crashes the whole process (Node's default), which would let a fault
+    // in the newer, less-proven guest/Demo-Opponent path take the real platform's sweep down
+    // with it. A fault here is logged and skipped for this tick; the next tick tries again.
+    try {
+      runSweeps(matchmaking, false);
+    } catch (err) {
+      console.error('[gateway] real matchmaking sweep failed', err);
+    }
+    if (guest) {
+      try {
+        runSweeps(guest.matchmaking, true);
+      } catch (err) {
+        console.error('[gateway] guest matchmaking sweep failed', err);
+      }
+    }
   }, SWEEP_INTERVAL_MS);
   // Don't keep the event loop alive on the sweeper alone; clear it on shutdown (tests).
   sweepTimer.unref?.();
@@ -337,7 +356,9 @@ export function registerWsGateway(
           queuedStake = null;
           try {
             const refund = mm.leaveQueue(playerId, g, s);
-            if (refund.matchId) {
+            // Guest activity must never publish into the real, shared challenge-feed channel
+            // (see the pushChallengesUpdate guards below for the full rationale).
+            if (refund.matchId && !isGuest) {
               pushChallengesUpdate(g, { gameId: g, removed: { matchId: refund.matchId, reason: 'cancelled' } });
             }
           } catch {
@@ -412,11 +433,18 @@ export function registerWsGateway(
                   since: result.since,
                   expiresAt: result.expiresAt, // OC7
                 });
-                // A new resting bet appeared — announce it to the feed (OC8) with its resolved control.
-                pushChallengesUpdate(gameId, {
-                  gameId,
-                  added: openChallengeOf(result.matchId, playerId, stake, result.since, result.expiresAt, result.timeControlId),
-                });
+                // A new resting bet appeared — announce it to the feed (OC8) with its resolved
+                // control. NEVER for a guest: the guest queue reuses real gameId strings (e.g.
+                // "coinflip"), and `challengeSubscribers`/`pushChallengesUpdate` are a SINGLE
+                // shared channel for every connection, real and guest alike — a guest connection
+                // has no legitimate reason to touch it (a tampered/off-stake guest join would
+                // otherwise publish a phantom entry into the real Open Games list).
+                if (!isGuest) {
+                  pushChallengesUpdate(gameId, {
+                    gameId,
+                    added: openChallengeOf(result.matchId, playerId, stake, result.since, result.expiresAt, result.timeControlId),
+                  });
+                }
               } else {
                 // Match formed via the FIFO path — the waiter's resting bet is consumed.
                 queuedGameId = null;
@@ -429,10 +457,12 @@ export function registerWsGateway(
                   guest.onDemoBotMatched(result.matchId, Date.now());
                 }
                 deliverMatchStart(playerId, socket, result, gameId);
-                pushChallengesUpdate(gameId, {
-                  gameId,
-                  removed: { matchId: result.matchId, reason: 'taken' },
-                });
+                if (!isGuest) {
+                  pushChallengesUpdate(gameId, {
+                    gameId,
+                    removed: { matchId: result.matchId, reason: 'taken' },
+                  });
+                }
               }
               break;
             }
@@ -448,8 +478,8 @@ export function registerWsGateway(
               queuedGameId = null;
               queuedStake = null;
               send(socket, 'queue.left', { gameId });
-              // The owner cancelled — drop it from the feed (OC8).
-              if (refund.matchId) {
+              // The owner cancelled — drop it from the feed (OC8). Never for a guest (see above).
+              if (refund.matchId && !isGuest) {
                 pushChallengesUpdate(gameId, {
                   gameId,
                   removed: { matchId: refund.matchId, reason: 'cancelled' },
@@ -460,12 +490,18 @@ export function registerWsGateway(
 
             case 'challenges.subscribe': {
               const { gameId } = msg.payload as ChallengeSubscribePayload;
-              let subs = challengeSubscribers.get(gameId);
-              if (!subs) {
-                subs = new Set();
-                challengeSubscribers.set(gameId, subs);
+              // A guest is never registered into the shared, real subscriber set — the mirror
+              // image of the pushChallengesUpdate guards above: without this, a guest socket
+              // would start receiving REAL players' Open Games activity too. Still answers with
+              // its own (guest-scoped, isolated) snapshot, same as any subscribe.
+              if (!isGuest) {
+                let subs = challengeSubscribers.get(gameId);
+                if (!subs) {
+                  subs = new Set();
+                  challengeSubscribers.set(gameId, subs);
+                }
+                subs.add(socket);
               }
-              subs.add(socket);
               const { entries, more } = mm.listOpenChallenges(gameId, playerId, Date.now());
               send<ChallengesListPayload>(socket, 'challenges.list', { gameId, entries, more });
               break;
@@ -473,7 +509,7 @@ export function registerWsGateway(
 
             case 'challenges.unsubscribe': {
               const { gameId } = msg.payload as ChallengeSubscribePayload;
-              challengeSubscribers.get(gameId)?.delete(socket);
+              if (!isGuest) challengeSubscribers.get(gameId)?.delete(socket);
               break;
             }
 
@@ -494,11 +530,15 @@ export function registerWsGateway(
               queuedGameId = null;
               queuedStake = null;
               deliverMatchStart(playerId, socket, result, gameId);
-              // The claimed bet leaves the feed (OC8).
-              pushChallengesUpdate(gameId, {
-                gameId,
-                removed: { matchId: result.matchId, reason: 'taken' },
-              });
+              // The claimed bet leaves the feed (OC8). Never for a guest (see above) — unreachable
+              // today (the curated client never calls challenge.take), but the guest matchmaking
+              // instance still answers this message type, so guard it like every other site.
+              if (!isGuest) {
+                pushChallengesUpdate(gameId, {
+                  gameId,
+                  removed: { matchId: result.matchId, reason: 'taken' },
+                });
+              }
               break;
             }
 
