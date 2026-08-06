@@ -46,5 +46,13 @@ The charter, the ADR log, and the game contract are deliberately rigid. Changing
 
 The AI agents act through Git identities configured on the WSL machine; CODEOWNERS entries point at the human owner as the accountable reviewer, since GitHub's review gate ultimately rests on accounts the owner controls. Treat CODEOWNERS as "who must approve," not "who typed it." Commit messages should still attribute the agent that produced the work for traceability.
 
+## Guest mode: the two-repo rule
+
+Guest mode spans two repositories — `rapidclash-demo` (this repo) and `rapidclash-landing` (the marketing/landing site that embeds it). The boundary is the versioned `GUEST_MODE_CONTRACT.md`:
+
+- **`rapidclash-demo` owns all game behaviour** — the guest session type, the Demo-Opponent, ephemeral credits, curated surface, chrome flags, and the embeddability of the entry point.
+- **`rapidclash-landing` may only configure and frame it** — the embedding shell, surrounding marketing/CTA, and the contract's config params. It never modifies game logic or styling.
+- The moment the landing repo reaches into game logic, the fork this rule exists to prevent has begun. Contract changes are announced at the seam, not made in shared source.
+
 ## Comms
 Async non-code coordination uses the repo mailbox and role briefs — see COMMS_PROTOCOL.md.

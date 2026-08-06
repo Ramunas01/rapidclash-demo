@@ -22,6 +22,17 @@ These hold for every game and every code path. A pull request that violates one 
 
 Empty lobbies are the obvious risk at low player counts. We solve it **outside the core**: a demo is run with two browsers / two devices, or a clearly-labelled automated client connects through *exactly the same WebSocket API as any human*. The core must never gain a special "play the house" branch. The production rule (humans vs humans) and the demo convenience stay separate.
 
+### Guest mode: a documented, board-approved exception to invariant #1
+
+Guest mode (the anonymous, unregistered preview surfaced to potential platform users — see `GUEST_MODE_STRATEGY.md` and `GUEST_MODE_CONTRACT.md`) is a deliberate, **Board-approved** exception to "humans play humans, never the house": the guest's opponent is an **in-app Demo-Opponent**, a server actor, not a human. This applies to exactly one surface — the curated, unregistered preview — never to the registered platform or the investor demo. Recorded on these conditions:
+
+- The opponent is **honestly labelled** as a demo bot (the existing `🤖` convention), never disguised as a real player.
+- **Play-money `¢` only**, ephemeral, no real-world value — no real-money framing anywhere in the preview.
+- It is a **solo preview**, explicitly distinct from both the registered platform and the investor demo, never presented as live multiplayer.
+- The Demo-Opponent is server-authoritative — `viewFor` redaction (invariant #2) holds unchanged; the guest client never sees more than a real client would.
+
+Board approval covers the product decision; counsel should be informed of the "app as opponent" + anonymous/no-PII framing before public exposure — non-blocking given the play-money/no-PII posture, but a conscious sign-off, not a skipped one.
+
 ## Game roster
 
 Games are grouped in the UI as **Originals** (PvP-native and PvP-redefined signature games), **Classics** (traditional skill games — Chess and Ships Battle today, more later), and surfaced alongside **Events** (tournaments). See `SCREENS.md` for the display taxonomy.
