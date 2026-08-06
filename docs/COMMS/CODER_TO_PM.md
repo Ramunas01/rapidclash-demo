@@ -1,5 +1,30 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-06#7 — DemoGuest PR 3a (server): Chess Demo-Opponent — PR #282 (issue #278)            [OPEN]
+From: Coder   Re: your dispatch (2026-08-06)
+
+Shipped, **PR #282** (`feature/278-chess-demo-bot`, isolated worktree at `.wt/278-chess-demo-bot`). Server-only, not owner-gated (no protocol change), didn't touch `App.tsx`. Read `guest/index.ts` in full and the issue's architecture reasoning before starting, per the dispatch.
+
+Generalized `onDemoBotMatched`/`ensureDemoBotResting` to dispatch on `MatchRecord.gameId` — Coinflip's branch is byte-for-byte its old logic, just wrapped. Added the chess pool (`demo-bot:chess:0..2`), the capture-value + 50/50-gate heuristic (`selectChessMove`), and the 1-5s thinking delay.
+
+**Two bugs caught while implementing, neither in the dispatch itself:**
+1. **Pool self-pairing.** Resting all 3 chess bot identities simultaneously lets the core's ordinary FIFO queue match them against EACH OTHER — any two distinct playerIds resting at the same `(gameId, stake, timeControlId)` key pair up, and the pool shares one key by design (so a human's single fixed-stake join can reach any of them). Caught this empirically: `sweepExpired` returned 2 entries where I expected 4, because two bots had already self-paired into a fake "match" at startup, consuming each other's queue slots. Fixed by only ever resting ONE pool bot at a time — the instant it's taken, `onDemoBotMatched` marks it busy and calls `ensureDemoBotResting()` again synchronously (mirrors Coinflip's own immediate re-rest), so the next idle sibling is resting well before any other guest's WS message can be processed. Still get 3 concurrent guest games; they just never observe 3 simultaneously-resting bots.
+2. **Ephemeral-ledger idempotency collision.** `EphemeralLedger.adminCredit`'s idempotency key dedups by the key string ALONE, not key+account. The original Coinflip code's literal `'demo-bot:init'` only ever had one caller, so this never mattered; reusing it across the new pool would have silently left 3 of 4 bots at 0 balance (only the first credit call would have landed). Fixed with a per-bot key. Flagging this since it's a real footgun for the ledger's dedup contract that's easy to hit again — worth a Advisor/PM note if any future work adds more `adminCredit` call sites for the same conceptual account family.
+
+**Heuristic (issue §3), chose the no-new-dependency approach:** score each candidate by a speculative `chessModule.applyMove` (pure, never touches the real match) and diff the opponent's material parsed straight from the resulting FEN — no `chess.js` added as a direct `apps/server` dependency. `packages/games/chess/src/index.ts` now also exports the `ChessMove` type (previously only `chessModule` itself), needed to type the heuristic.
+
+**Thinking delay (issue §4):** since submission can't be synchronous, `gateway.ts` schedules it via a new `pendingBotMoves` map — same cancelable-timer pattern as the existing `pendingForfeits`/`pendingGuestEvictions`. Cancelled at every point a chess match can end while a bot is "thinking": explicit forfeit, socket-close forfeit, draw acceptance, and both sweep resolution loops (stale-match and timed-out-move/flag-on-time).
+
+**Test coverage**, one file per concern in `apps/server/src/guest/`:
+- `chess-bot-heuristic.test.ts` — seeded-random statistical proof the capture-value move is played roughly half the time (not ~0% or ~100%), a spy on `chessModule.applyMove` proving the full evaluation runs every call regardless of gate outcome, the sole-legal-move override, and tie-breaking variety.
+- `chess-bot-pool.test.ts` — core-level: no self-pairing, 3 concurrent matches with 3 distinct opponents and no cross-contamination, a 4th guest rests in FIFO and pairs once a slot frees, pool idempotency.
+- `chess-demo-bot.gateway.test.ts` — live WS: bot's delayed opening move arrives and broadcasts correctly, `viewFor` genuinely unchanged (compared against the live gateway, not assumed), 3 concurrent live sockets never cross-receive each other's `match.state`, and a forfeit mid-"think" settles cleanly with the bot's now-stale pending move never re-applying (verified by advancing real time PAST the bot's original delay window after the forfeit and confirming the settlement is unchanged). `GUEST_BOT_THINK_MIN_MS`/`MAX_MS` env-tunable (same pattern as `RC_PICK_WINDOW_MS`) so these don't wait out real 1-5s delays — **note for future coders**: I originally made these module-top-level constants and they silently ignored `beforeEach`'s env override because Node caches the module after first import; moved the read inside `createGuestServices()` itself, matching how `forfeitDelayMs` is already read inside `registerWsGateway` rather than at `gateway.ts`'s module scope.
+- Updated 3 pre-existing assertions in `guest.test.ts` that hardcoded "exactly 1 resting bot total" — now legitimately 2 (Coinflip's + the chess pool's one resting slot), not a regression.
+
+**Verification:** full suite **85 files / 1090 tests** green, `tsc -b` clean, `eslint` clean.
+
+Ask: PR review — #282, against the 9 acceptance criteria in the issue (all met, itemized in the PR description). Will clean up the worktree/branch after merge per the working rules.
+
 ### 2026-08-06#6 — DemoGuest PR 2: postMessage Events emitter + framability CSP — PR #277 (issue #271)            [OPEN]
 From: Coder   Re: your dispatch (2026-08-06)
 
