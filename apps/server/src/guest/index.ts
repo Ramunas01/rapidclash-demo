@@ -42,9 +42,21 @@ export interface GuestServices {
    *  queue so the next guest is paired instantly. Coinflip-specific for this PR; PR 2 (chess)
    *  generalises this hook per game. */
   onDemoBotMatched(matchId: string, now: number): void;
+  /** Idempotent: (re-)post the Demo-Opponent into its resting queue slot if it isn't there
+   *  already. Called once at startup, after every match (via `onDemoBotMatched`), AND — this is
+   *  the fix for a production lockout — once per gateway sweep tick, regardless of match
+   *  activity. The bot's resting entry is an ordinary `joinQueue` bet, so it carries the SAME TTL
+   *  (`CHALLENGE_TTL_MS`, default 90s) as any real resting bet; `sweepExpired` doesn't
+   *  distinguish bot from human and expires it like anything else once idle that long. Before
+   *  this method existed, the only re-posting hook was `onDemoBotMatched` — which can never fire
+   *  once the bot is absent, since no guest can pair with a bot that isn't resting. That was a
+   *  permanent lockout (no self-heal short of a server restart); calling this every sweep tick
+   *  (`gateway.ts`, alongside `runSweeps(guest.matchmaking, true)`) re-asserts the bot's presence
+   *  every ~1s, so an expiry-driven removal self-heals within one sweep interval instead. */
+  ensureDemoBotResting(): void;
 }
 
-export function createGuestServices(opts: { now?: () => number } = {}): GuestServices {
+export function createGuestServices(opts: { now?: () => number; ttlMs?: number } = {}): GuestServices {
   const ledger = createEphemeralLedger();
   ledger.adminCredit(DEMO_BOT_COINFLIP_ID, DEMO_BOT_NOTIONAL_BALANCE, 'demo-bot:init');
 
@@ -61,12 +73,12 @@ export function createGuestServices(opts: { now?: () => number } = {}): GuestSer
   const matchmaking = createMatchmaking(ledger, [coinflipModule], undefined, {
     lookupUsername: usernameFor,
     now: opts.now,
+    ttlMs: opts.ttlMs,
   });
 
-  function restDemoBot(): void {
+  function ensureDemoBotResting(): void {
     // joinQueue is idempotent for a player already resting at this exact key (it returns the
-    // existing entry rather than duplicating) — safe to call unconditionally at startup and
-    // after every match.
+    // existing entry rather than duplicating) — safe to call unconditionally, as often as we like.
     matchmaking.joinQueue(DEMO_BOT_COINFLIP_ID, 'coinflip', GUEST_COINFLIP_STAKE);
   }
 
@@ -79,12 +91,12 @@ export function createGuestServices(opts: { now?: () => number } = {}): GuestSer
         matchmaking.applyMove(matchId, DEMO_BOT_COINFLIP_ID, pick, now);
       }
     }
-    restDemoBot(); // keep exactly one resting entry so the NEXT guest pairs instantly too
+    ensureDemoBotResting(); // keep exactly one resting entry so the NEXT guest pairs instantly too
   }
 
-  restDemoBot(); // once at startup
+  ensureDemoBotResting(); // once at startup
 
-  return { ledger, matchmaking, usernameFor, onDemoBotMatched };
+  return { ledger, matchmaking, usernameFor, onDemoBotMatched, ensureDemoBotResting };
 }
 
 export { GUEST_ID_PREFIX, DEMO_BOT_COINFLIP_ID, GUEST_CURATED_GAMES, GUEST_COINFLIP_STAKE };

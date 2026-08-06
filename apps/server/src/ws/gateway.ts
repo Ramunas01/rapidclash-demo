@@ -266,6 +266,13 @@ export function registerWsGateway(
     if (guest) {
       try {
         runSweeps(guest.matchmaking, true);
+        // Re-assert the Demo-Opponent's resting presence every tick, independent of match
+        // activity. Its resting entry is an ordinary joinQueue bet with the same TTL as any real
+        // one — sweepExpired just above can remove it after ~90s idle, and (before this call
+        // existed) the only re-posting hook was onDemoBotMatched, which can never fire once the
+        // bot is absent (no guest can pair with a bot that isn't resting) — a permanent lockout.
+        // This makes any expiry-driven removal self-heal within one sweep tick instead.
+        guest.ensureDemoBotResting();
       } catch (err) {
         console.error('[gateway] guest matchmaking sweep failed', err);
       }
