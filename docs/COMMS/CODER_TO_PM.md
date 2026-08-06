@@ -76,6 +76,25 @@ Generalized `onDemoBotMatched`/`ensureDemoBotResting` to dispatch on `MatchRecor
 
 Ask: PR review — #282, against the 9 acceptance criteria in the issue (all met, itemized in the PR description). Will clean up the worktree/branch after merge per the working rules.
 
+### 2026-08-06#8 — DemoGuest PR 3b: guest game picker (Coinflip/Chess) + chess-hub guest wiring — PR #281 (issue #279)            [OPEN]
+From: Coder   Re: your dispatch (2026-08-06)
+
+Shipped, **PR #281** (`feature/279-guest-game-picker`, isolated worktree at `.wt/279-guest-game-picker`). Confirmed no other agent/worktree was touching `App.tsx` before starting.
+
+**Flag, please read first: #278 is NOT actually merged.** Your dispatch said it "should already be merged to main by the time you start" — checked (`gh issue view 278`), it's still **OPEN**, no PR filed for it at all. `GUEST_CURATED_GAMES` on `main` is still coinflip-only and there's no chess bot pool in `apps/server/src/guest/index.ts`. Per the issue's own scoping note ("the picker UI and routing logic can be built and unit-tested independently"), I proceeded rather than blocking — but I could not do a real end-to-end pairing test against a live chess bot. To still verify the chess-specific wiring genuinely works (not just "looks like it should"), I added a dedicated test file that mocks `GUEST_CURATED_GAMES` to include `'chess'` ahead of time and drives the full flow through the real `App` component — picker shows both tiles, picking Chess sends the correct `queue.join` payload, a simulated chess win fires `firstWin`. This should be re-verified against the real thing once #278 actually ships. **You may want to check with whoever's picking up #278** — it hasn't been dispatched yet as far as I can tell from the issue tracker.
+
+**What shipped:** replaced the guest-auth-success direct jump into the Coinflip hub with a new minimal picker (`GuestGamePicker`, new file), data-driven off `GUEST_CURATED_GAMES` — never hardcodes the game list. **Judgment call — new component vs. gating `GameListScreen`:** checked first as asked; gating the real screen would mean stripping out its `/games` roster fetch, full-roster "coming soon" tiles, and marketing hero/back-button — more invasive than a small new component reusing the same `TILE_ART`/`titleCase` primitive `GameHub`'s `RelatedRail` already uses.
+
+**A real bug found while verifying (not assuming) the guest chrome gates generalize to chess:** they do — confirmed directly against `ChessHubScreen` with a new test block mirroring `CoinflipHub.test.tsx`'s existing guest-chrome coverage. But a DIFFERENT thing broke: `GameHub.tsx` skips the `/games` roster fetch entirely for guest sessions (comment: "coinflip has no time control") — true for Coinflip, false the instant a curated game *does* have one. Without a fix, a guest on the chess hub would have `selectedControl` stuck at `undefined` forever, and PLAY would silently omit `timeControlId` altogether — never `'blitz5'`. Fixed by adding `initialTimeControl?: string` to `GameHubScreenProps` (mirrors the existing `initialStake`) — this is exactly the mechanism `ADVISOR_TO_PM.md` 2026-07-12#7 flagged as a possible future need ("we'd add an `initialTimeControl` prop mirroring `initialStake`" if the hub ever needed to pre-arm a control on a fresh mount). Seeded `selectedControl` from it, guarded the roster-sync effect to non-guest sessions, and changed PLAY's send condition to "is a control actually armed" instead of "did the full picker descriptor load" — behavior-identical for every existing game/session.
+
+**A second bug this ticket's own change would have introduced:** the `ready`/`requestFullscreen` postMessage effect (#271) gated on `screen === 'coinflip-hub'` specifically — dead the moment guest entry lands on the picker first instead. Broadened it to fire on `isGuest` alone (the picker is already "the guest surface mounted and interactive"); both emit calls are self-guarded to fire at most once regardless.
+
+**Stake constant:** reused `GUEST_COINFLIP_STAKE` for chess's pre-armed stake rather than adding a new one — chess's own `maxStake` is also 100, and #278's spec never defines a second guest stake, only the time control. Kept `GUEST_CHESS_TIME_CONTROL = 'blitz5'` local to `App.tsx`, not `packages/shared` — #279's own scope note is client-only files, and #278 owns `GUEST_CURATED_GAMES`/shared guest constants server-side; avoids a same-file collision once #278 lands.
+
+**Verification:** full suite **85 files / 1091 tests** green (was 81/1073 before #277 — some of that growth is #276/#277 landing since, this PR adds 4 new test files + one block), `tsc -b` clean, `eslint` clean.
+
+Ask: PR review — #281. Separately: can you confirm #278's dispatch status? It's referenced as a hard dependency by #279 but doesn't appear to be in flight anywhere I can see.
+
 ### 2026-08-06#6 — DemoGuest PR 2: postMessage Events emitter + framability CSP — PR #277 (issue #271)            [OPEN]
 From: Coder   Re: your dispatch (2026-08-06)
 
