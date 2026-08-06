@@ -1,5 +1,22 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-06#4 — Demo-Opponent permanent lockout after idle TTL — fixed, PR #274 (issue #267)            [OPEN]
+From: Coder   Re: your bug report (2026-08-06)
+
+Shipped, **PR #274** (`fix/demo-bot-queue-expiry`, isolated worktree). Root cause confirmed exactly as you diagnosed: `restDemoBot()` used the ordinary `joinQueue`, so the bot's resting entry got the same `CHALLENGE_TTL_MS` (90s) as any real bet; `gateway.ts:168-169`'s periodic sweep already ran `sweepExpired()` against the guest instance (needed for Coinflip's own pick-window resolution — unrelated to this bug but the same code path); `onDemoBotMatched` was the only re-post hook and can never fire with no bot to pair against. Confirmed the permanent-lockout mechanism, not just the symptom.
+
+Fix as specified: renamed `restDemoBot` → `ensureDemoBotResting`, added it to the `GuestServices` interface, call it once per sweep tick in `gateway.ts` right after `runSweeps(guest.matchmaking, true)` (same try/catch, keeping it inside the guest-sweep failure domain from the #268 review fix).
+
+**Regression tests, both layers:**
+- Core-level (`guest.test.ts`) — injectable clock + short `ttlMs`, the exact `open-challenges.test.ts` pattern you pointed at. Reproduces the expiry + lockout, proves the self-heal, and additionally proves a guest already stuck resting when the bot reappears gets matched immediately via the ordinary FIFO path (no special-case code needed for that).
+- Live WS-level (`guest.gateway.test.ts`) — real wall-clock idle time past a short `CHALLENGE_TTL_MS` override, then proves the REAL periodic sweep timer (not a manual call) self-heals it before any guest attempts to join. **Verified this test actually catches the regression**: temporarily deleted the `ensureDemoBotResting()` line from `gateway.ts`, re-ran it, watched it time out waiting for `match.start` — the exact experience a stuck production user would have — then restored the fix.
+
+**Verification:** full suite **79 files / 1057 tests** green, `tsc -b` clean, `eslint` clean.
+
+Housekeeping: deleted the merged `fix/guest-auth-empty-body` remote branch (PR #273) per the working rules.
+
+Ask: PR review — #274.
+
 ### 2026-08-06#3 — Production "Bad request" on "Play as guest" — fixed, PR #273 (issue #267)            [OPEN]
 From: Coder   Re: your urgent bug report (2026-08-06)
 

@@ -353,3 +353,67 @@ describe('guest session cleanup on WS disconnect (issue #267 §"session lifetime
     expect(services.guest.ledger.accountExists(guest.playerId)).toBe(false); // this one is genuinely done
   });
 });
+
+describe('Demo-Opponent queue-expiry self-heal over the real gateway sweep (production lockout)', () => {
+  let app: FastifyInstance;
+  let services: AppServices;
+  let port: number;
+  let prevTtl: string | undefined;
+  const sockets: SocketRecorder[] = [];
+
+  beforeEach(async () => {
+    // CHALLENGE_TTL_MS is read fresh inside createMatchmaking at createGuestServices/buildApp
+    // time (unlike the module-scoped sweep interval, which stays the default ~1s), so overriding
+    // it short here reproduces the 90s idle expiry within the test's wait budget. The bot's
+    // resting entry is an ordinary joinQueue bet under this SAME TTL — that's the bug.
+    prevTtl = process.env.CHALLENGE_TTL_MS;
+    process.env.CHALLENGE_TTL_MS = '400';
+
+    const db = new Database(':memory:');
+    services = createServices(db, [coinflipModule]);
+    app = buildApp(services, [coinflipModule], { seedAdmin: false });
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const addr = app.server.address();
+    port = typeof addr === 'object' && addr ? addr.port : 0;
+  });
+
+  afterEach(async () => {
+    for (const s of sockets) s.close();
+    sockets.length = 0;
+    await app.close();
+    if (prevTtl === undefined) delete process.env.CHALLENGE_TTL_MS;
+    else process.env.CHALLENGE_TTL_MS = prevTtl;
+  });
+
+  async function mintGuest(): Promise<AuthResponse> {
+    const res = await app.inject({ method: 'POST', url: '/auth/guest' });
+    return res.json<AuthResponse>();
+  }
+
+  it("the bot's resting entry actually expires when idle past the TTL — no guest played during the window", async () => {
+    // Confirmed directly against the guest matchmaking instance the real gateway wires up
+    // (not a fresh test-only one) — this is the exact object the periodic sweep operates on.
+    await new Promise((r) => setTimeout(r, 700)); // > 400ms TTL, no queue.join sent by anyone
+    const { entries } = services.guest.matchmaking.listOpenChallenges('coinflip', 'nobody', Date.now());
+    expect(entries).toHaveLength(0); // the bot's own resting entry is gone
+  });
+
+  it('self-heals within the sweep interval: a guest queue.join AFTER the idle expiry still pairs instantly (proves the periodic sweep itself re-posts the bot, not just that the method works when called directly)', async () => {
+    // Idle past the TTL — the sweep's sweepExpired removes the bot's resting entry — then idle a
+    // bit LONGER so at least one more real sweep tick (the module-default ~1s interval) has a
+    // chance to run ensureDemoBotResting() before any guest ever attempts to join. This is the
+    // exact production timeline: nobody plays for 90s+, the next sweep tick re-posts the bot
+    // before the NEXT real guest ever presses PLAY.
+    await new Promise((r) => setTimeout(r, 1500));
+
+    const guest = await mintGuest();
+    const sock = await openSocket(port, guest.token);
+    sockets.push(sock);
+    sock.send('queue.join', { gameId: 'coinflip', stake: GUEST_COINFLIP_STAKE });
+    // A generous but bounded wait — if the old bug were still present, the bot would be absent
+    // and this guest would receive queue.waiting instead, so match.start would never arrive and
+    // this would time out (waitFor's own failure mode), failing the test.
+    const start = (await sock.waitFor('match.start', 3000)).payload as MatchStartPayload;
+    expect(start.opponent).toBe(DEMO_BOT_COINFLIP_ID);
+  });
+});
