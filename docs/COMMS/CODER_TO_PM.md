@@ -1,6 +1,6 @@
 # Coder → PM (append-only; newest on top)
 
-### 2026-08-07#1 — Guest-mode embed entry point: ?mode=guest URL route — PR #286 (issue #284)            [OPEN]
+### 2026-08-07#2 — Guest-mode embed entry point: ?mode=guest URL route — PR #286 (issue #284)            [OPEN]
 From: Coder   Re: your dispatch (2026-08-07)
 
 Shipped, **PR #286** (`feature/284-guest-mode-url-entry`, isolated worktree at `.wt/284-guest-mode-url-entry`). Read `docs/GUEST_MODE_CONTRACT.md` v0.2 §1 first.
@@ -16,6 +16,25 @@ Shipped, **PR #286** (`feature/284-guest-mode-url-entry`, isolated worktree at `
 **Verification:** full suite **86 files / 1096 tests** green, `tsc -b` clean, `eslint` clean.
 
 Ask: PR review — #286, with the iframe-verification caveat above front and center.
+
+### 2026-08-07#1 — Guest stuck-hub bug fixed, PR #285 (issue #283)            [OPEN]
+From: Coder   Re: your dispatch (2026-08-07)
+
+Shipped, **PR #285** (`feature/283-guest-stuck-hub-fix`, isolated worktree at `.wt/283-guest-stuck-hub-fix`). Client-only, not owner-gated. Checked #279/PR #281 first per the dispatch: still open/unmerged, touches the same `App.tsx`/`GameHub.tsx` area — no actual collision, since #281 hasn't landed, this fix targets the current direct-jump-to-Coinflip flow still on `main`.
+
+**Exact trigger, found by exercising every clickable element reachable from the guest Coinflip hub (acceptance criterion 1):** `GameHub.tsx`'s related-games rail, footer, and bottom nav were all already correctly gated on `isGuest` — none of those were it. It was `HubRibbon`'s top-left logo button — rendered unconditionally, the one piece of hub chrome NOT gated. Tap it → `onLogo` → `App.tsx`'s `goToHome()` → the full, unrestricted Home hub (never passed `isGuest`, no concept of guest mode). Its game grid routes through the ordinary `handleSelectGame`, which explicitly sets `prearmStake` to `undefined` ("normal selection: no pre-armed bet") — landing a guest on e.g. chess-hub with `isGuest` still `true` (never resets mid-session, so `betLocked=true`) but nothing ever pre-arming a stake for that game. PLAY permanently fails "Select a bet amount to play" — exactly the reported dead end.
+
+**Fix at the source:** `HubRibbon.tsx` renders the logo as a plain, non-interactive image for a guest — no `<button>`, no `onClick`. Mirrors the EXISTING `isGuest` pattern already on the same component (the non-tappable "Demo" badge instead of the live Wallet chip) — not a new mechanism.
+
+**Defense-in-depth (issue's explicit ask #3):** a new `App.tsx` guard, independent of the specific trigger — whenever `isGuest` is true and the current screen is a hub for a game outside `GUEST_CURATED_GAMES`, snap back to the guest's curated entry point. Wrote this against the DATA-DRIVEN constant (not a hardcoded screen check), so it doesn't need touching again once #281's picker adds chess to the curated set.
+
+**Verified the two layers are genuinely independent**, not "the same fix asserted twice": temporarily reverted ONLY the `HubRibbon` change (guard left in place) — both its own test and the App-level regression test failed with the exact pre-fix button back in the DOM. Restored it, then separately short-circuited ONLY the `App.tsx` guard (fix left in place) — the defense-in-depth test (which injects a WS `match.start` for an uncurated game, a different code path than the ribbon click) timed out waiting for the snap-back. Restored, full pair green again. This is the "prove the fix" half of acceptance criterion 4, done for both layers separately.
+
+**Note left in the PR for whoever picks up #279/PR #281 next**, per the dispatch's own ask: its picker + `handleGuestSelectGame` should be the only way a guest ever changes games — this fix + guard close the stray path independently of that PR landing, no coordination needed, but worth a sanity check once #281 merges that the guard's `GUEST_CURATED_GAMES` check still lines up with the picker's routing.
+
+**Verification:** full suite **85 files / 1093 tests** green (4 new tests: 1 in `HubRibbon.test.tsx`, a new describe block in `App.test.tsx`), `tsc -b` clean, `eslint` clean.
+
+Ask: PR review — #285, against the 4 acceptance criteria in the issue (all met, itemized in the PR description). Will clean up the worktree/branch after merge per the working rules.
 
 ### 2026-08-06#7 — DemoGuest PR 3a (server): Chess Demo-Opponent — PR #282 (issue #278)            [OPEN]
 From: Coder   Re: your dispatch (2026-08-06)
