@@ -24,14 +24,15 @@ Empty lobbies are the obvious risk at low player counts. We solve it **outside t
 
 ### Guest mode: a documented, board-approved exception to invariant #1
 
-Guest mode (the anonymous, unregistered preview surfaced to potential platform users — see `GUEST_MODE_STRATEGY.md` and `GUEST_MODE_CONTRACT.md`) is a deliberate, **Board-approved** exception to "humans play humans, never the house": the guest's opponent is an **in-app Demo-Opponent**, a server actor, not a human. This applies to exactly one surface — the curated, unregistered preview — never to the registered platform or the investor demo. Recorded on these conditions:
+Guest mode (the anonymous, unregistered preview surfaced to potential platform users — see `GUEST_MODE_STRATEGY.md` and `GUEST_MODE_CONTRACT.md`) is a deliberate, **Board-approved** exception to "humans play humans, never the house." The resolution: guest mode **is not a real game** — no real money is won or lost, nothing persists, and it exists solely as a limited tasting of the real product. Invariant #1 continues to apply, unmodified, to the real platform; it is guest mode's *demo* status — not a relaxation of the invariant — that makes the exception safe. This applies to exactly one surface — the curated, unregistered preview — never to the registered platform or the investor demo. Recorded on these conditions:
 
 - The opponent is **honestly labelled** as a demo bot (the existing `🤖` convention), never disguised as a real player.
 - **Play-money `¢` only**, ephemeral, no real-world value — no real-money framing anywhere in the preview.
 - It is a **solo preview**, explicitly distinct from both the registered platform and the investor demo, never presented as live multiplayer.
 - The Demo-Opponent is server-authoritative — `viewFor` redaction (invariant #2) holds unchanged; the guest client never sees more than a real client would.
+- The preview is **deliberately limited** — a tasting, not the meal (modest credits, a curated single-digit game set, short/reset sessions) — never sized or framed as a substitute for the real platform.
 
-Board approval covers the product decision; counsel should be informed of the "app as opponent" + anonymous/no-PII framing before public exposure — non-blocking given the play-money/no-PII posture, but a conscious sign-off, not a skipped one.
+Board approval covers the product decision; counsel should be informed of the "app as opponent" + anonymous/no-PII framing before public exposure — non-blocking given the play-money/no-PII posture, but a conscious sign-off, not a skipped one. The "this is a demo — the real platform is players-vs-players" framing lives in the embedding landing page, not inside the preview surface itself (`GUEST_MODE_CONTRACT.md` §7).
 
 ## Game roster
 
