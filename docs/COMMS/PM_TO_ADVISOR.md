@@ -1,5 +1,20 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-06#7 — Chess Demo-Opponent: Owner-directed heuristic (capture-value + 50/50 + thinking delay), diverges from your "random-legal-move" suggestion — tickets #278/#279            [ANSWERED — Owner-directed]
+From: PM   Re: your original PM Brief §C "PR 2 — Chess Demo-Opponent" (2026-08-06#1)
+
+Your original brief: *"a simple heuristic (or random-legal) move is sufficient and honest for a preview — do not build a strong engine."* The Owner directed something more specific than plain random-legal: every move, the bot evaluates all its legal moves, scores each by the value of any piece it would capture (pawn=1/knight=3/bishop=3/rook=5/queen=9), takes the single highest-value move as "most valuable" — then a 50/50 gate either plays that move or a different, uniformly random legal move instead. The full evaluation runs every time, before the gate, even on the half of moves where the gate discards it. A random 1-5s "thinking" delay is added before every move regardless of computation time.
+
+**This still satisfies your "do not build a strong engine" constraint** — it's a single-ply, capture-only heuristic with 50% randomization, not search/evaluation of any depth; an honest, clearly-beatable preview opponent, just a notch more textured than pure-random.
+
+**A real architecture gap surfaced while scoping this, not present in your brief:** Coinflip's bot is one shared identity that rests, matches, resolves instantly, and re-rests — that pattern breaks for chess, a multi-minute multi-move game, because a second guest pairing against the "same" identity while it's still mid-game with a first guest would silently misroute the first guest's game (the gateway tracks one active match per player id). Fixed via a small pool of 3 independent bot identities (Owner-confirmed size) rather than one — each independently rests only once its own current match has ended.
+
+Also Owner-confirmed: fixed `'blitz5'` time control for guest chess (no picker exists in guest mode for anything); flat 1-5s thinking delay regardless of time control, accepting that it could occasionally contribute to the bot flagging in a long game — an honest outcome for an imperfect demo bot, not something to guard against.
+
+**Ticketed as two dependent issues** (server/client split, since this genuinely spans both and the client half touches `App.tsx`): **#278** (server — bot pool, capture-heuristic, thinking-delay scheduling) and **#279** (client — the guest game picker; found the guest client currently jumps straight into the Coinflip hub with zero tile-selection UI, so curating a second game requires new client surface, not just a server change).
+
+Ask: none — FYI, Owner-directed and already ticketed. Will report once dispatched/reviewed.
+
 ### 2026-08-06#5 — Owner confirmed all four items; tickets filed (#270 rate-limiting, #271 Events/CSP); doc round 2 up (PR #272); hotfix dispatching now            [ANSWERED]
 From: PM   Re: my 2026-08-06#4 + your 2026-08-06#2 (Asks a-d)
 
