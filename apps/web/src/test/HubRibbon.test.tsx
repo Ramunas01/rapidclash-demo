@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 
 describe('HubRibbon — tight-cropped wordmark, shrunk logo box (Advisor #2)', () => {
@@ -46,6 +46,19 @@ describe('HubRibbon — solid full-width bg + below-header gap (Advisor #7)', ()
 });
 
 describe('HubRibbon — guest mode (issue #267)', () => {
+  it('isGuest renders the logo as a plain, non-tappable image — not a button, never calls onLogo (issue #283)', () => {
+    // Regression: this was the actual trigger for a guest getting stuck on an unplayable hub —
+    // the logo used to be a live button, unconditionally, and tapping it routed a guest to the
+    // full Home hub's unrestricted game grid (no guest concept there at all).
+    const onLogo = vi.fn();
+    render(<HubRibbon balance={200} onLogo={onLogo} onWallet={vi.fn()} loggedIn isGuest />);
+    const logo = screen.getByAltText('RapidClash');
+    expect(logo.closest('button')).toBeNull();
+    expect(screen.queryByLabelText('RapidClash — home')).toBeNull();
+    fireEvent.click(logo);
+    expect(onLogo).not.toHaveBeenCalled();
+  });
+
   it('isGuest renders a plain "Demo" badge with the balance, not the tappable Wallet chip', () => {
     render(<HubRibbon balance={200} onLogo={vi.fn()} onWallet={vi.fn()} loggedIn isGuest />);
     expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument();
