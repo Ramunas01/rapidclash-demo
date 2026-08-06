@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
+import { GUEST_COINFLIP_STAKE } from '@rapidclash/shared';
 import { App } from '../App.js';
 
 // The Coinflip hub's coin is a real Three.js cylinder now (COINFLIP_COIN.md); jsdom has no WebGL
@@ -794,5 +795,113 @@ describe('App — round-scoped state wiped as one unit on the destroy events (PL
     expect(screen.getByTestId('hub-no-opponent').textContent ?? '').not.toContain(
       'No opponent found'
     );
+  });
+});
+
+describe('App — guest mode never gets stuck on an uncurated hub (issue #283)', () => {
+  // A guest got stuck on a Chess screen with no armed stake and a locked bet control — a dead
+  // end. Root cause: HubRibbon's top-ribbon logo button was the ONE clickable element in the
+  // guest hub chrome not gated on `isGuest` (every other exit — related-games rail, footer,
+  // bottom nav, the wallet chip — already was). Tapping it called `onLogo` -> `goToHome` ->
+  // the full, unrestricted Home hub, whose game grid has no concept of guest mode at all.
+  type MockSock = {
+    url: string;
+    readyState: number;
+    onopen: (() => void) | null;
+    onmessage: ((ev: { data: string }) => void) | null;
+    onclose: (() => void) | null;
+    send: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
+  };
+  let sockets: MockSock[];
+
+  beforeEach(() => {
+    sockets = [];
+    const ctor = vi.fn((url: string) => {
+      const s: MockSock = {
+        url, readyState: 0, onopen: null, onmessage: null, onclose: null,
+        send: vi.fn(), close: vi.fn(),
+      };
+      sockets.push(s);
+      return s;
+    });
+    vi.stubGlobal('WebSocket', Object.assign(ctor, { OPEN: 1, CONNECTING: 0, CLOSING: 2, CLOSED: 3 }));
+    // NO token → logged out, same as a fresh visitor picking "Play as guest".
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes('/open-challenges')) return { ok: true, json: async () => [] } as Response;
+        if (u.includes('/auth/guest')) {
+          return {
+            ok: true,
+            json: async () => ({
+              token: 'GT', playerId: 'guest:G1', balance: 300,
+              username: 'Guest', avatarId: 'default', isGuest: true,
+            }),
+          } as Response;
+        }
+        return { ok: true, json: async () => ({ balance: 300, entries: [] }) } as Response;
+      })
+    );
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    vi.unstubAllGlobals();
+  });
+
+  /** Land a fresh guest session on the curated Coinflip hub via the real "Play as guest" flow. */
+  async function enterAsGuest() {
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('hub-signin-chip'));
+    await waitFor(() => expect(screen.getByTestId('auth-modal')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('auth-guest'));
+    await waitFor(() => expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument());
+  }
+
+  it('regression: the identified trigger (the top-ribbon logo) no longer routes a guest off their curated hub', async () => {
+    await enterAsGuest();
+    expect(screen.getByLabelText('Coinflip')).toBeInTheDocument(); // on the curated hub
+
+    // The fix: for a guest the logo is a plain, non-interactive image — no enclosing <button>,
+    // no aria-label, no onClick. Pre-fix, this exact click landed on the Home hub's unrestricted
+    // game grid, from which any tile reached a hub with no stake pre-armed and a locked control.
+    expect(screen.queryByLabelText('RapidClash — home')).toBeNull();
+    fireEvent.click(screen.getByAltText('RapidClash'));
+
+    // Still on the guest's curated Coinflip hub — never routed to Home.
+    expect(screen.getByLabelText('Coinflip')).toBeInTheDocument();
+    expect(screen.queryByTestId('home-hub')).toBeNull();
+    // And still playable — not the dead end from the bug report.
+    expect(screen.getByTestId(`hub-bet-${GUEST_COINFLIP_STAKE}`)).toBeInTheDocument();
+  });
+
+  it('defense-in-depth: whatever the trigger, a guest who lands on an uncurated hub is snapped back to their curated entry — never a dead end', async () => {
+    await enterAsGuest();
+    const sock = sockets[0];
+
+    // Independent of the specific bug found/fixed above: simulate a guest somehow reaching a
+    // match.start for a game outside GUEST_CURATED_GAMES (today just Coinflip) — the "whatever
+    // the trigger" scenario the App-level guard exists for, exercised through a different
+    // injection point (the WS message handler, not the ribbon click) than the fix above.
+    const env = {
+      type: 'match.start',
+      matchId: 'm1',
+      payload: {
+        matchId: 'm1', opponent: 'bob', opponentName: 'Bob', gameId: 'rps',
+        state: { players: ['guest:G1', 'bob'], choices: {} },
+      },
+    };
+    act(() => { sock.onmessage?.({ data: JSON.stringify(env) }); });
+
+    // The guard (isGuest on a hub screen outside GUEST_CURATED_GAMES) fires and snaps back —
+    // never left sitting on the uncurated RPS hub.
+    await waitFor(() => expect(screen.getByLabelText('Coinflip')).toBeInTheDocument());
+    expect(screen.queryByTestId('hub-move-rock')).toBeNull(); // the RPS board never stuck around
+    // Back on a genuinely playable screen — a fresh stake is armed, not a locked, empty control.
+    expect(screen.getByTestId(`hub-bet-${GUEST_COINFLIP_STAKE}`)).toBeInTheDocument();
   });
 });

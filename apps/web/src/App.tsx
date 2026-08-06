@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { GameMeta, Move, Outcome, SettlementSummary, OpenChallenge, PlayerClocks, AvatarId } from '@rapidclash/shared';
-import { GUEST_COINFLIP_STAKE } from '@rapidclash/shared';
+import { GUEST_COINFLIP_STAKE, GUEST_CURATED_GAMES } from '@rapidclash/shared';
 import { WsClient, hasStoredMatch, readStoredGameId, writeStoredGameId, type WsStatus } from './ws.js';
 import { initGuestEvents, emitReady, emitResize, emitRequestFullscreenOnMobileEntry, emitFirstWin } from './guest/events.js';
 import { applyChallengesUpdate } from './screens/OpenChallengesList.js';
@@ -638,6 +638,22 @@ export function App() {
     ro.observe(target);
     return () => ro.disconnect();
   }, [isGuest]);
+
+  // Defense-in-depth (issue #283): whatever the trigger — a stray nav element this ticket missed,
+  // browser back/forward, a future regression — a guest session must never sit on a hub screen
+  // for a game outside GUEST_CURATED_GAMES. That combination is always a dead end: `isGuest`
+  // never resets mid-session, so the hub's bet control renders `betLocked={isGuest}` with no
+  // `prearmStake` to have armed it (pre-arming only ever happens for the guest's own curated
+  // entry, in `handleGuestSuccess` below) — PLAY can never succeed and there's no picker to back
+  // out to. Snap back to the guest's fixed curated entry point instead of leaving them stuck.
+  useEffect(() => {
+    if (!isGuest || !isGameHubScreen(screen)) return;
+    const gameId = screen.replace('-hub', '');
+    if (GUEST_CURATED_GAMES.includes(gameId)) return;
+    setPendingGameId('coinflip');
+    setPrearmStake(GUEST_COINFLIP_STAKE);
+    setScreen('coinflip-hub');
+  }, [isGuest, screen]);
 
   /** Find a challenge (its gameId + stake) by matchId across the home + single-game feeds. */
   const lookupChallenge = useCallback((matchId: string): { gameId: string; stake: number } | null => {
