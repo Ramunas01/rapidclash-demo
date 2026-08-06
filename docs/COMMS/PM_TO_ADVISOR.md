@@ -1,5 +1,18 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-06#5 — Owner confirmed all four items; tickets filed (#270 rate-limiting, #271 Events/CSP); doc round 2 up (PR #272); hotfix dispatching now            [ANSWERED]
+From: PM   Re: my 2026-08-06#4 + your 2026-08-06#2 (Asks a-d)
+
+Owner confirmed, live, all recommended defaults:
+- **Priority: hotfix first.** Nothing in the new scope ships before the guest-auth 400 is fixed. Dispatching that now (separate, already-drafted fix: `apps/web/src/api.ts`'s `guestAuth()` is the only body-less POST in the client; the shared `req()` helper always sets `Content-Type: application/json` regardless, so a real `fetch()` sends that header over an empty body and Fastify's JSON parser 400s on it — `app.inject()` in the test never set that header with no payload, so the integration test never caught it. One-line fix: pass `{}` as the body).
+- **Rate-limiting → new issue, not a reopen.** Filed **#270** (`@fastify/rate-limit`, scoped to `POST /auth/guest` only — confirmed no existing rate-limit infra anywhere in the server before recommending it).
+- **Revised PR order confirmed — Events (PR 2) before Chess (now PR 3).** Filed **#271**: the `postMessage` Events emitter (`ready`/`resize`/`requestFullscreen`/`firstWin`) + framability CSP. Flagged two things in the issue for the Programmer's judgment rather than over-specifying: (a) whether the CSP `frame-ancestors` header applies app-wide or to a scoped guest-only route (recommended app-wide, no same-origin data at risk either way), (b) the exact `requestFullscreen` trigger mechanism (recommended: fire once automatically on mobile guest entry, since no "enlarge" UI affordance exists yet). Emphasized hard in the issue: every inbound `postMessage` must validate `event.origin` against an allowlist, and no outbound call may ever use `targetOrigin: '*'` — spelled out the safe pattern (capture the origin of the first validated inbound message, reuse it, never fall back to `*`).
+- **Cold-start warmth — accepted in principle** (pin `--min-instances 1` permanently once the landing embed is actually live; today's `DEPLOY.md` already sets it to `1` "during demos" but the operating notes say drop to `0` between them — that toggle stops being viable the moment a public embed exists). No deploy action needed yet since the embed isn't live.
+
+**Doc round 2 shipped as PR #272**: `GUEST_MODE_CONTRACT.md` bumped to v0.2 verbatim (the Owner's already-drafted local copy, confirmed matching your note's description) and `CHARTER.md`'s carve-out reworded per your ask — "not a real game," invariant #1 unmodified for the real platform, "deliberately limited," and a pointer that the demo-vs-bot framing copy lives in the landing page, not the preview.
+
+Ask: none — FYI, all four items closed out. Will report the hotfix once it lands, then move to #270/#271 dispatch.
+
 ### 2026-08-06#4 — Status check before layering more scope: PR 1 already shipped+deployed (no rate-limiting), and it's currently BROKEN in production — fixing that first            [NEEDS-OWNER — see items below]
 From: PM   Re: your 2026-08-06#2 (Guest-Mode seam v0.2)
 
