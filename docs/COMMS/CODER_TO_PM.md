@@ -1,5 +1,29 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-06#1 — DemoGuest PR 1 shipped: guest session + ephemeral ledger + Coinflip Demo-Opponent (issue #267)            [OPEN]
+From: Coder   Re: issue #267 / PM_TO_ADVISOR.md 2026-08-06#3
+
+Shipped, **PR #268** (`feature/267-demoguest-coinflip`, isolated worktree at `.wt/267-demoguest-coinflip` per the branch-before-edit/worktree-isolation rules). **⚠️ Owner-gated — touches `PROTOCOL.md`** (new `POST /auth/guest` endpoint). Spans server + client; the `App.tsx` collision zone was touched but no other agent was active there this session.
+
+Verified the dispatch's architecture claims against the actual code before building (`ledger.ts:18`'s `Ledger` interface, `matchmaking.ts:302`'s `createMatchmaking` factory, `matchmaking.ts:402-488`'s PlayerId-agnostic pairing, `identity.ts:128`'s pure `signToken`) — all held up exactly as described. Also checked CHARTER.md's new "Guest mode" subsection is real and board-approved (not a fabricated carve-out) before treating the bot-opponent requirement as legitimate — it is (PR #266, merged).
+
+**What shipped** (packages/core, apps/server/src/guest/, apps/server/src/ws/gateway.ts, apps/server/src/routes/guest-auth.ts, apps/web AuthModal.tsx/App.tsx/GameHub.tsx/HubRibbon.tsx — full breakdown in the PR description):
+- A second, in-memory `Ledger` (`createEphemeralLedger`) and a second, isolated `Matchmaking` instance registered with only `[coinflipModule]`, no `matchHistory` — a guest match structurally cannot reach the real ledger, real `/wallet`, or the real leaderboard.
+- `identity.ts` gained a `'guest'` role + `signGuestToken` (pure, no DB write, verifiable by the SAME `verifyToken` every existing call site uses — no parallel auth path).
+- A permanently-resting Demo-Opponent (`demo-bot:coinflip`) that pairs a guest instantly via the ordinary FIFO queue — zero new pairing logic in `matchmaking.ts` itself, exactly as the dispatch predicted.
+- **Load-bearing fix caught during implementation:** the WS gateway's periodic sweep (`sweepExpired`/`sweepStaleMatches`/`sweepTimedOutMoves`) was previously hardwired to the one real `Matchmaking` instance. Coinflip's pick window resolves ONLY through that sweep (`scheduledDeadlines`/`timeoutMove`, not "both chosen") — without also sweeping the guest instance, a guest's round would form correctly but then **never resolve**. Refactored the sweep body into a shared `runSweeps(mm)` called for both instances.
+
+**Two judgment calls, flagged per the dispatch's explicit asks:**
+1. **Guest stake fixed at `GUEST_COINFLIP_STAKE = 100`, not the dispatch's literal "300¢".** Verified against `coinflip.ts`'s own `meta.bet.maxStake: 100` — a bot resting at 300 would throw `RangeError` on `joinQueue` (300 is the wallet *starting stack*, not a valid per-match stake). Guest mode has no stake picker at all: every round is the one fixed stake the bot rests at (so PLAY always pairs instantly regardless of anything a picker might otherwise offer) — `PlayPanel` gained a `betLocked` prop for this, gated on `isGuest`.
+2. **Session lifetime** (left open in `GUEST_MODE_STRATEGY.md` §8): a guest's ephemeral-ledger entries are evicted `forfeitDelayMs` (default 60s — same grace window as the existing close-forfeit timer) after its WS closes, cancelled on a reconnect within that window. Deliberately not a durable/queryable cleanup system per §7.
+
+**Watch-out from the dispatch, addressed:** every `identity.getUsername` call site in the gateway now routes through a single `resolveUsername(id)` that special-cases the bot/guest ids first — the real `identity`/accounts table is never asked about a guest id.
+
+**Verification:** full suite **79 files / 1045 tests** green (`packages/core/src/ephemeral-ledger.test.ts` 18 new, `identity.test.ts` +2, `apps/server/src/guest/` two new files — 7 core-level + 15 live-WS-gateway tests covering instant pairing, redaction, two-concurrent-guest isolation, ephemeral-only settlement, real-matchmaking non-leakage, and the eviction/reconnect-cancel policy — plus client-side `AuthModal`/`HubRibbon`/`CoinflipHub` guest-chrome tests). `tsc -b` clean, `eslint` clean. Fresh worktree → `pnpm install --frozen-lockfile` + `pnpm run build` first, per the working rules.
+
+Ask: PR review — #268, against the 11 acceptance criteria in the issue (all met, itemized in the PR description). Owner gate applies to the `PROTOCOL.md`/contract-touching part specifically. Will clean up the worktree/branch after merge per the working rules.
+
+
 ### 2026-08-05#2 — Coinflip: remove captions + hoist one persistent coin + one-time intro animation (issue #262)            [OPEN]
 From: Coder   Re: issue #262 / ADVISOR_TO_PM.md 2026-07-12#14 / PM_TO_ADVISOR.md 2026-08-05#2 (PM's sanity-check + approvals)
 
