@@ -32,8 +32,9 @@ import { HomeHubScreen } from './screens/HomeHub.js';
 import { ProfileHubScreen } from './screens/ProfileHub.js';
 import { AuthModal } from './components/AuthModal.js';
 import { api } from './api.js';
+import { GuestGamePicker } from './screens/GuestGamePicker.js';
 
-type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'guest-loading' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub' | 'crash-hub' | 'roulette-hub' | 'ships-battle-hub' | 'dice-hub' | 'baccarat-hub' | 'keno-hub' | 'limbo-hub' | 'hilo-hub';
+type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'guest-loading' | 'guest-picker' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub' | 'crash-hub' | 'roulette-hub' | 'ships-battle-hub' | 'dice-hub' | 'baccarat-hub' | 'keno-hub' | 'limbo-hub' | 'hilo-hub';
 
 /** A commit-to-play action captured when a logged-out visitor hits the auth wall. After sign-in
  *  the user lands on the intent's hub with the stake armed and presses PLAY to commit — nothing
@@ -43,6 +44,13 @@ type AuthIntent =
   | { action: 'join'; matchId: string; gameId: string; stake: number };
 
 const RECONNECT_NOTICE = 'Connection lost — reconnecting. Try again in a moment.';
+
+/** Guest mode's fixed chess time control (issue #279, GUEST_MODE spec — matches #278 §6's
+ *  server-side bot pool, which rests at the same value: `'blitz5'`). Guest mode has no picker for
+ *  anything, so this is the only control a guest chess match ever uses. Kept local (not
+ *  `packages/shared`) — #279 is a client-only ticket per its own scope note, and #278 owns
+ *  `GUEST_CURATED_GAMES`/any shared guest constants touching chess on the server side. */
+const GUEST_CHESS_TIME_CONTROL = 'blitz5';
 
 /** Games that play through the shared one-screen Game hub (vs the multi-screen flow).
  *  Each maps to a `<gameId>-hub` screen. Adding a game here wires it to the hub. */
@@ -393,6 +401,9 @@ export function App() {
   // reload naturally drops it: GUEST_MODE_CONTRACT.md's "resets on reload" is satisfied by
   // construction, not by an explicit clear-on-unload hook.
   const [isGuest, setIsGuest] = useState(false);
+  // Guest mode's pre-armed time control (issue #279) — set when a picker tile is chosen, fixed at
+  // GUEST_CHESS_TIME_CONTROL for chess, undefined for every other curated game (Coinflip has none).
+  const [guestTimeControl, setGuestTimeControl] = useState<string | undefined>(undefined);
   const [balance, setBalance] = useState(0);
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
   const [opponentId, setOpponentId] = useState<string | null>(null);
@@ -598,10 +609,10 @@ export function App() {
 
   // "Play as guest" from the modal (CHARTER.md's guest-mode exception, issue #267): connect the WS
   // exactly like a real sign-in, but store NOTHING in localStorage (a reload must drop the session
-  // — GUEST_MODE_CONTRACT.md), and land directly on the curated Coinflip hub with the stake FIXED
-  // at GUEST_COINFLIP_STAKE (the permanently-resting Demo-Opponent only rests at that one stake —
-  // matching PlayPanel's betLocked in GameHub.tsx keeps the bet grid from offering any other).
-  // No auth intent to resume: guest mode never originates from a captured PLAY/JOIN intent.
+  // — GUEST_MODE_CONTRACT.md). Lands on the guest picker (issue #279) rather than jumping straight
+  // into a game — the curated set is data (GUEST_CURATED_GAMES), so which game(s) exist here is not
+  // this handler's decision. No auth intent to resume: guest mode never originates from a captured
+  // PLAY/JOIN intent.
   const handleGuestSuccess = useCallback((tok: string, pid: string, bal: number) => {
     setToken(tok);
     setPlayerId(pid);
@@ -616,9 +627,21 @@ export function App() {
     setAuthOpen(false);
     pendingResumeRef.current = null;
 
-    setPendingGameId('coinflip');
+    setScreen('guest-picker');
+  }, []);
+
+  // A tile pick on the guest picker (issue #279) routes straight into that game's hub with the
+  // guest's stake FIXED at GUEST_COINFLIP_STAKE — guest mode's one fixed stake, shared across every
+  // curated game (chess's own maxStake is also 100, so this ceiling applies there too; the
+  // permanently-resting/pooled Demo-Opponent(s) only rest at that one stake — matching PlayPanel's
+  // betLocked in GameHub.tsx keeps the bet grid from offering any other). Chess additionally needs
+  // its fixed time control pre-armed (GUEST_CHESS_TIME_CONTROL, 'blitz5' per #278 §6) since guest
+  // mode has no time-control picker either; every other curated game leaves it undefined.
+  const handleGuestSelectGame = useCallback((gameId: string) => {
+    setPendingGameId(gameId);
     setPrearmStake(GUEST_COINFLIP_STAKE);
-    setScreen('coinflip-hub');
+    setGuestTimeControl(gameId === 'chess' ? GUEST_CHESS_TIME_CONTROL : undefined);
+    setScreen(hubScreenFor(gameId) ?? 'guest-picker');
   }, []);
 
   // URL-based guest entry (issue #284, GUEST_MODE_CONTRACT.md §1): `?mode=guest` on initial load
@@ -660,12 +683,16 @@ export function App() {
   // ever arrives, and outbound emit* calls below only ever fire from guest-mode code paths.
   useEffect(() => initGuestEvents(), []);
 
-  // `ready` + the mobile `requestFullscreen` trigger fire once the guest surface is actually up
-  // (the curated Coinflip hub, guest mode's only screen) — not the instant the session is minted,
-  // which is still mid-transition. Both emit* calls are self-guarded to fire at most once per
-  // session, so re-running this effect on every render is harmless.
+  // `ready` + the mobile `requestFullscreen` trigger fire once the guest surface is actually up.
+  // Issue #279 changed guest entry from a direct jump into the Coinflip hub to landing on the
+  // picker first — `ready` no longer waits for one specific hub screen (it used to gate on
+  // `screen === 'coinflip-hub'`, which would never have fired for a guest who only ever visits the
+  // picker + chess-hub); the picker itself is already "the guest surface mounted and interactive".
+  // Gating on isGuest alone is correct here regardless of which screen a guest is currently on.
+  // Both emit* calls are self-guarded to fire at most once per session, so re-running this effect
+  // on every render (e.g. every picker→hub transition) is harmless.
   useEffect(() => {
-    if (!isGuest || screen !== 'coinflip-hub') return;
+    if (!isGuest) return;
     emitReady();
     // Judgment call (issue #271): fire automatically on mobile guest entry rather than requiring
     // a manual "enlarge" tap — no such affordance exists in the UI yet, and the contract's intent
@@ -674,7 +701,7 @@ export function App() {
     // phone-mockup shell), so width alone can't tell mobile and desktop apart from inside the frame.
     const isMobile = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
     emitRequestFullscreenOnMobileEntry(isMobile);
-  }, [isGuest, screen]);
+  }, [isGuest]);
 
   // `resize` — a ResizeObserver on the app root reports genuine content-height changes (not
   // spurious per-render noise) so the landing shell can size to content. Guest-only: the
@@ -1130,6 +1157,8 @@ export function App() {
         // flight, so an embed never flashes the normal Home hub first. Token-driven background,
         // no visible text (the call is typically near-instant).
         return <div data-testid="guest-loading" className="min-h-screen bg-background" aria-busy="true" aria-live="polite" />;
+      case 'guest-picker':
+        return <GuestGamePicker onSelect={handleGuestSelectGame} />;
       case 'coinflip-hub':
       case 'rps-hub':
       case 'blackjack-hub':
@@ -1203,6 +1232,7 @@ export function App() {
           onResultDismiss={handleHubResultDismiss}
           loggedIn={loggedIn}
           initialStake={prearmStake}
+          initialTimeControl={isGuest ? guestTimeControl : undefined}
           isGuest={isGuest}
         />;
       }

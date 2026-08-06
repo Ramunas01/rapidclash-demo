@@ -141,6 +141,14 @@ export interface GameHubScreenProps {
   loggedIn?: boolean;
   /** Pre-arm the bet selector (the join-fallback drops the user here ready to post). */
   initialStake?: number;
+  /** Pre-arm the time-control selection for games that declare one (chess) — guest mode's fixed
+   *  control (issue #279), mirroring `initialStake`. Guest sessions skip the `/games` roster fetch
+   *  below (curated surface, no picker needed), so `timeControl` (the fetched descriptor that
+   *  normally drives the picker's default) never populates — without this, a guest's `selectedControl`
+   *  would stay `undefined` forever and PLAY would silently omit the time control. Ignored for games
+   *  without a time control (Coinflip) and for non-guest sessions (the fetched roster's own default
+   *  still wins there, unchanged). */
+  initialTimeControl?: string;
   /** Anonymous guest session (CHARTER.md's guest-mode exception, issue #267). Curated/simplified
    *  chrome: hides the wallet chip (own-session balance still shows, just non-interactive), Open
    *  Games, the related-games rail, Bring-a-Rival, the footer, and the bottom nav (account/games
@@ -234,7 +242,7 @@ export function GameHub(props: GameHubProps) {
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
     onPlay, onCancel, onTakeChallenge, onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, onTrackChallenges,
     onUntrackChallenges, onSelectGame, onOpenWallet, onOpenGameList, onResultDismiss,
-    loggedIn = true, initialStake, isGuest = false,
+    loggedIn = true, initialStake, initialTimeControl, isGuest = false,
   } = props;
 
   // ── Live wallet balance ─────────────────────────────────────────────────────
@@ -271,8 +279,11 @@ export function GameHub(props: GameHubProps) {
   }, [token, isGuest]);
   const nameByGame = useMemo(() => new Map(games.map((g) => [g.id, g.displayName])), [games]);
   const timeControl = games.find((g) => g.id === gameId)?.timeControl;
-  const [selectedControl, setSelectedControl] = useState<string | undefined>(undefined);
-  useEffect(() => { setSelectedControl(timeControl?.defaultId); }, [timeControl?.defaultId]);
+  const [selectedControl, setSelectedControl] = useState<string | undefined>(initialTimeControl);
+  // Guest sessions never fetch the roster (above), so `timeControl?.defaultId` never resolves for
+  // them — guard this sync to non-guest sessions so it can't clobber the guest's pre-armed control
+  // (initialTimeControl) with `undefined` on mount.
+  useEffect(() => { if (!isGuest) setSelectedControl(timeControl?.defaultId); }, [timeControl?.defaultId, isGuest]);
 
   // Cross-game ticker: subscribe to every game's feed while the hub is mounted (authed only).
   const gameKey = games.map((g) => g.id).join(',');
@@ -424,7 +435,11 @@ export function GameHub(props: GameHubProps) {
     setOverlay(null);
     clearPendingResult();
     searchStartRef.current = Date.now(); // start the Searching dwell floor
-    if (timeControl) onPlay(armedStake, selectedControl);
+    // Based on the actual armed value, not on whether the full picker descriptor loaded — a guest
+    // session has a selectedControl (pre-armed, issue #279) with no `timeControl` descriptor at
+    // all, and must still send it. Unchanged for every other game/session: `selectedControl` only
+    // ever becomes truthy via the synced effect above when `timeControl` itself is truthy.
+    if (selectedControl) onPlay(armedStake, selectedControl);
     else onPlay(armedStake);
   }
   function handleCancel() {
