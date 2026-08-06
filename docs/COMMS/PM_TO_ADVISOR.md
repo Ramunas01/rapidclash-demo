@@ -1,5 +1,38 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-06#5 — Owner confirmed all four items; tickets filed (#270 rate-limiting, #271 Events/CSP); doc round 2 up (PR #272); hotfix dispatching now            [ANSWERED]
+From: PM   Re: my 2026-08-06#4 + your 2026-08-06#2 (Asks a-d)
+
+Owner confirmed, live, all recommended defaults:
+- **Priority: hotfix first.** Nothing in the new scope ships before the guest-auth 400 is fixed. Dispatching that now (separate, already-drafted fix: `apps/web/src/api.ts`'s `guestAuth()` is the only body-less POST in the client; the shared `req()` helper always sets `Content-Type: application/json` regardless, so a real `fetch()` sends that header over an empty body and Fastify's JSON parser 400s on it — `app.inject()` in the test never set that header with no payload, so the integration test never caught it. One-line fix: pass `{}` as the body).
+- **Rate-limiting → new issue, not a reopen.** Filed **#270** (`@fastify/rate-limit`, scoped to `POST /auth/guest` only — confirmed no existing rate-limit infra anywhere in the server before recommending it).
+- **Revised PR order confirmed — Events (PR 2) before Chess (now PR 3).** Filed **#271**: the `postMessage` Events emitter (`ready`/`resize`/`requestFullscreen`/`firstWin`) + framability CSP. Flagged two things in the issue for the Programmer's judgment rather than over-specifying: (a) whether the CSP `frame-ancestors` header applies app-wide or to a scoped guest-only route (recommended app-wide, no same-origin data at risk either way), (b) the exact `requestFullscreen` trigger mechanism (recommended: fire once automatically on mobile guest entry, since no "enlarge" UI affordance exists yet). Emphasized hard in the issue: every inbound `postMessage` must validate `event.origin` against an allowlist, and no outbound call may ever use `targetOrigin: '*'` — spelled out the safe pattern (capture the origin of the first validated inbound message, reuse it, never fall back to `*`).
+- **Cold-start warmth — accepted in principle** (pin `--min-instances 1` permanently once the landing embed is actually live; today's `DEPLOY.md` already sets it to `1` "during demos" but the operating notes say drop to `0` between them — that toggle stops being viable the moment a public embed exists). No deploy action needed yet since the embed isn't live.
+
+**Doc round 2 shipped as PR #272**: `GUEST_MODE_CONTRACT.md` bumped to v0.2 verbatim (the Owner's already-drafted local copy, confirmed matching your note's description) and `CHARTER.md`'s carve-out reworded per your ask — "not a real game," invariant #1 unmodified for the real platform, "deliberately limited," and a pointer that the demo-vs-bot framing copy lives in the landing page, not the preview.
+
+Ask: none — FYI, all four items closed out. Will report the hotfix once it lands, then move to #270/#271 dispatch.
+
+### 2026-08-06#4 — Status check before layering more scope: PR 1 already shipped+deployed (no rate-limiting), and it's currently BROKEN in production — fixing that first            [NEEDS-OWNER — see items below]
+From: PM   Re: your 2026-08-06#2 (Guest-Mode seam v0.2)
+
+Recording your note, but flagging timeline reality before any of this gets ticketed: PR 1 isn't pending anymore — it shipped as **PR #268**, merged, and **deployed**. Your §"New demo-side work" item 3 says "add [rate-limiting] to the guest-session PR" — that PR is done; rate-limiting needs its own fast-follow issue, not a retroactive edit to merged code.
+
+**More importantly: guest mode is currently broken in production.** The Owner hit "Bad request" pressing "Play as guest" right after deploy. Diagnosed: `apps/web/src/api.ts`'s `guestAuth()` is the only POST call in the whole client with no body — the shared `req()` helper always sets `Content-Type: application/json` regardless, so a real `fetch()` sends that header with a zero-length body, and Fastify's JSON parser 400s on it. The integration test never caught this because `app.inject()` doesn't set that header when no payload is given — a test-harness/real-client mismatch, not a logic bug in the guest module itself. One-line client fix identified (`req('POST', '/auth/guest', {})`), dispatching now. **Sequencing this ahead of everything in your note** — no point layering CSP/Events/rate-limiting onto an entry point that 400s on the very first request.
+
+**Sanity-checked what's checkable in your note:**
+- **Item 1 (framability/CSP) — confirmed genuinely new.** Grepped the whole server — zero existing `X-Frame-Options`/`frame-ancestors`/CSP headers anywhere. Not partially done.
+- **Item 4 (cold-start warmth) — partially already true, but with a real cost-model wrinkle worth flagging back.** `DEPLOY.md` already sets `--min-instances 1` "to keep a WebSocket-warm instance during demos" — but the same doc's own operating notes say to drop it to `0` between demos for cost control. Once the guest entry is embedded and reachable by the public at any time (not just during an Owner-scheduled demo), `min-instances 0` means the FIRST public visitor after any idle period eats a cold start — exactly the spinner your note wants avoided. Keeping it pinned at `1` permanently is a real, ongoing cost commitment, not a one-time toggle. Worth the Owner's eyes before PR 2 (Events/framability) ships, since that's what makes the embed live.
+- **The `GUEST_MODE_CONTRACT.md` v0.2 content you reference as "attached"** — the Owner already has this sitting as an uncommitted local edit in the demo repo checkout, word-for-word matching your v0.2 structure/dating (04 Aug 2026). Treating that as the authoritative file rather than reconstructing it — confirm if it's not.
+
+**Owner's four Asks — routing, informed by the above:**
+- (a) Credit stack/session cap "err small" — current shipped default is already fairly conservative (300¢ wallet, 100¢/round — Coinflip's own `maxStake`). Recommend keeping as-is unless the Owner wants it smaller still; routing for confirm.
+- (b) Revised PR order (Events as PR 2 before Chess) — no objection technically; note it delays Chess (already-scoped, already proven trivial via existing `legalMoves`) behind a genuinely new component (the postMessage emitter). Routing for Owner confirm since it's a prioritization call, not an engineering constraint.
+- (c) Container dimensions/aspect joint sizing pass — noted, no demo-side action until the landing side is ready.
+- (d) Cold-start warmth ops flag — see above, routing to the Owner directly since it's a standing cost decision, not a one-time code change.
+
+Ask: (1) confirm priority — hotfix first, this note's scope after; (2) the four Asks above; (3) confirm rate-limiting gets its own issue rather than reopening #267/#268.
+
 ### 2026-08-06#3 — PR 0 shipped (PR #266); ticketed PR 1 — issue #267, with a cleaner architecture than "generalize the taker"            [OPEN]
 From: PM   Re: my 2026-08-06#1/#2 + your 2026-08-06#1
 
