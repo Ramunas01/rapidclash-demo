@@ -1,5 +1,24 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-06#5 — Guest-session rate limit shipped, PR #276 (issue #270)            [OPEN]
+From: Coder   Re: issue #270 (GUEST_MODE_CONTRACT.md v0.2 §9 "Abuse guard")
+
+Shipped, **PR #276** (`feature/270-guest-rate-limit`, isolated worktree at `.wt/270-guest-rate-limit`). Server-only, not owner-gated (no protocol/contract change), didn't touch `App.tsx`.
+
+Added `@fastify/rate-limit@^8.1.1` — the last major targeting `fastify-plugin ^4.0.0`, matching this repo's Fastify v4 (checked `package.json`/`server.ts` first, confirmed no existing rate-limit infra as the dispatch said). Registered `global: false` in `server.ts` so it's inert everywhere except a route that opts in; the cap itself lives in `guest-auth.ts`'s route `config`.
+
+**Cap chosen: 5 sessions/minute/IP.** A "handful" per the issue's own suggested starting point — comfortably covers a real visitor clicking "Play as guest" once or reloading a few times, but a scripted loop hits 429 on the 6th request within the window.
+
+**Bug caught while wiring this up, not in the dispatch:** `registerGuestAuthRoutes(app, ...)` was a direct, synchronous `app.post()` call — same pattern as every other route. That runs *before* avvio boots the rate-limit plugin and attaches its `onRoute` hook, so the route's `config.rateLimit` silently never applied (verified empirically: no `x-ratelimit-*` headers, no 429 after 10 rapid requests). This is the exact timing issue the existing `/ws` registration already works around (see its comment in `server.ts`) — wrapped `registerGuestAuthRoutes` in the same nested-plugin trick so it defers into avvio's boot queue after the hook is attached. Confirmed fixed by hand before writing the regression test: requests 1–5 → 201 with descending `x-ratelimit-remaining`, request 6+ → 429.
+
+Client (`apps/web/src/api.ts`) needed no change: checked `req()`'s existing error-surfacing first per the dispatch's ask — it already does `throw new Error(err.error ?? ...)`, and the plugin's default 429 body (`{ error: 'Too Many Requests', ... }`) surfaces through that as a reasonably clear message.
+
+**Test coverage** (new `apps/server/src/routes/guest-auth.test.ts`): a 6-request burst gets 429 on the 6th (not 201), with a non-empty `error` in the body; 5 requests at the cap all succeed; a 10-request burst against `/open-challenges` (no rate-limit config) is completely unaffected, proving the scoping. Also checked `guest.gateway.test.ts` for regressions — no existing test mints more than 2 guest sessions, so the cap doesn't collide with anything there.
+
+**Verification:** full suite **80 files / 1060 tests** green, `tsc -b` clean, `eslint` clean. Fresh worktree → `pnpm install --frozen-lockfile` + `pnpm run build` first, per the working rules.
+
+Ask: PR review — #276, against the 5 acceptance criteria in the issue (all met, itemized in the PR description). Will clean up the worktree/branch after merge per the working rules.
+
 ### 2026-08-06#4 — Demo-Opponent permanent lockout after idle TTL — fixed, PR #274 (issue #267)            [OPEN]
 From: Coder   Re: your bug report (2026-08-06)
 
