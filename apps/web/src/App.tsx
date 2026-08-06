@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { GameMeta, Move, Outcome, SettlementSummary, OpenChallenge, PlayerClocks, AvatarId } from '@rapidclash/shared';
+import { GUEST_COINFLIP_STAKE } from '@rapidclash/shared';
 import { WsClient, hasStoredMatch, readStoredGameId, writeStoredGameId, type WsStatus } from './ws.js';
 import { applyChallengesUpdate } from './screens/OpenChallengesList.js';
 import { AuthScreen } from './screens/Auth.js';
@@ -366,6 +367,11 @@ export function App() {
   // reload shows it before any traffic. Own-session only — the opponent's avatar is never on the
   // wire (redaction, Charter #2). Set from AuthResponse on auth and by handleSetAvatar on picker save.
   const [avatarId, setAvatarId] = useState<AvatarId>(savedAvatarId);
+  // Anonymous guest session (CHARTER.md's guest-mode exception, issue #267). React state ONLY —
+  // deliberately never persisted to localStorage (unlike the real-auth fields above), so a page
+  // reload naturally drops it: GUEST_MODE_CONTRACT.md's "resets on reload" is satisfied by
+  // construction, not by an explicit clear-on-unload hook.
+  const [isGuest, setIsGuest] = useState(false);
   const [balance, setBalance] = useState(0);
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
   const [opponentId, setOpponentId] = useState<string | null>(null);
@@ -569,6 +575,31 @@ export function App() {
     pendingResumeRef.current = null; // nothing consumes it on connect anymore
   }, [screen]);
 
+  // "Play as guest" from the modal (CHARTER.md's guest-mode exception, issue #267): connect the WS
+  // exactly like a real sign-in, but store NOTHING in localStorage (a reload must drop the session
+  // — GUEST_MODE_CONTRACT.md), and land directly on the curated Coinflip hub with the stake FIXED
+  // at GUEST_COINFLIP_STAKE (the permanently-resting Demo-Opponent only rests at that one stake —
+  // matching PlayPanel's betLocked in GameHub.tsx keeps the bet grid from offering any other).
+  // No auth intent to resume: guest mode never originates from a captured PLAY/JOIN intent.
+  const handleGuestSuccess = useCallback((tok: string, pid: string, bal: number) => {
+    setToken(tok);
+    setPlayerId(pid);
+    setUsername('Guest');
+    setAvatarId('default');
+    setBalance(bal);
+    setIsGuest(true);
+    const ws = new WsClient(tok, {});
+    wsRef.current = ws;
+    setWsEpoch((n) => n + 1);
+    ws.connect();
+    setAuthOpen(false);
+    pendingResumeRef.current = null;
+
+    setPendingGameId('coinflip');
+    setPrearmStake(GUEST_COINFLIP_STAKE);
+    setScreen('coinflip-hub');
+  }, []);
+
   /** Find a challenge (its gameId + stake) by matchId across the home + single-game feeds. */
   const lookupChallenge = useCallback((matchId: string): { gameId: string; stake: number } | null => {
     for (const [gid, list] of Object.entries(homeChallenges)) {
@@ -743,6 +774,7 @@ export function App() {
     setPlayerId(null);
     setUsername(null);
     setAvatarId('default');
+    setIsGuest(false);
     setScreen('home'); // logged-out Home (the single entry for everyone), not the full auth screen
   }, []);
 
@@ -1054,6 +1086,7 @@ export function App() {
           onResultDismiss={handleHubResultDismiss}
           loggedIn={loggedIn}
           initialStake={prearmStake}
+          isGuest={isGuest}
         />;
       }
       case 'stake-entry':
@@ -1101,7 +1134,7 @@ export function App() {
       )}
       {renderScreen()}
       {authOpen && (
-        <AuthModal onSuccess={handleAuthSuccess} onClose={closeAuth} />
+        <AuthModal onSuccess={handleAuthSuccess} onGuestSuccess={handleGuestSuccess} onClose={closeAuth} />
       )}
     </>
   );

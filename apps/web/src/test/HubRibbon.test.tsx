@@ -45,6 +45,16 @@ describe('HubRibbon — solid full-width bg + below-header gap (Advisor #7)', ()
   });
 });
 
+describe('HubRibbon — guest mode (issue #267)', () => {
+  it('isGuest renders a plain "Demo" badge with the balance, not the tappable Wallet chip', () => {
+    render(<HubRibbon balance={200} onLogo={vi.fn()} onWallet={vi.fn()} loggedIn isGuest />);
+    expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument();
+    expect(screen.getByTestId('hub-balance').textContent).toContain('200');
+    expect(screen.queryByTestId('hub-wallet-chip')).toBeNull();
+    expect(screen.queryByText('Wallet')).toBeNull();
+  });
+});
+
 describe('HubRibbon — logo aligned to the content grid (Advisor #4)', () => {
   it('drops the leftover -ml-3 negative margin so the logo sits on the px-4 grid', () => {
     render(<HubRibbon balance={1000} onLogo={vi.fn()} onWallet={vi.fn()} />);

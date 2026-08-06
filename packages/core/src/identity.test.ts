@@ -209,6 +209,27 @@ describe('identity.verifyToken', () => {
   });
 });
 
+describe('identity.signGuestToken', () => {
+  it('mints a token verifiable by the SAME verifyToken, with role "guest" and no DB write', () => {
+    const { identity, db } = makeServices();
+    const before = db.prepare('SELECT COUNT(*) AS n FROM accounts').get() as { n: number };
+    const token = identity.signGuestToken('guest:abc123');
+    const payload = identity.verifyToken(token);
+    expect(payload.sub).toBe('guest:abc123');
+    expect(payload.role).toBe('guest');
+    const after = db.prepare('SELECT COUNT(*) AS n FROM accounts').get() as { n: number };
+    expect(after.n).toBe(before.n); // pure — no accounts-table row created
+  });
+
+  it('two guest tokens for different ids never collide', () => {
+    const { identity } = makeServices();
+    const t1 = identity.signGuestToken('guest:one');
+    const t2 = identity.signGuestToken('guest:two');
+    expect(identity.verifyToken(t1).sub).toBe('guest:one');
+    expect(identity.verifyToken(t2).sub).toBe('guest:two');
+  });
+});
+
 describe('identity.ensureAdmin', () => {
   it('creates the admin account if it does not exist', async () => {
     const { identity, ledger } = makeServices();

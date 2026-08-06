@@ -10,6 +10,10 @@ interface Props {
    *  the user lands on the intent's hub with the stake armed and presses PLAY to commit.
    *  `avatarId` is the player's own stored avatar (redaction-safe: own-session only). */
   onSuccess(token: string, playerId: string, balance: number, username: string, avatarId: AvatarId): void;
+  /** "Play as guest" (CHARTER.md's guest-mode exception, issue #267) — a separate callback, not
+   *  onSuccess with extra args, so it never changes onSuccess's existing call shape. Guest
+   *  responses have a fixed username ('Guest') and avatarId ('default'), so neither is passed. */
+  onGuestSuccess(token: string, playerId: string, balance: number): void;
   onClose(): void;
 }
 
@@ -20,12 +24,13 @@ interface Props {
  * and connects the WS, then lands the user on the game with the stake armed (they press PLAY to
  * commit — nothing auto-fires). A new registrant gets the 1000-credit grant.
  */
-export function AuthModal({ onSuccess, onClose }: Props) {
+export function AuthModal({ onSuccess, onGuestSuccess, onClose }: Props) {
   const [tab, setTab] = useState<'register' | 'login'>('register');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [guestLoading, setGuestLoading] = useState(false);
 
   // On the body-scroll layout (#142) the page scrolls behind a fixed overlay; lock body
   // scroll while the auth wall is open so the form can't drift under the user.
@@ -50,6 +55,19 @@ export function AuthModal({ onSuccess, onClose }: Props) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleGuest() {
+    setError('');
+    setGuestLoading(true);
+    try {
+      const res = await api.guestAuth();
+      onGuestSuccess(res.token, res.playerId, res.balance);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
+      setGuestLoading(false);
     }
   }
 
@@ -143,6 +161,20 @@ export function AuthModal({ onSuccess, onClose }: Props) {
             {loading ? (<><Loader2 className="h-4 w-4 animate-spin" /> Please wait…</>) : tab === 'register' ? 'Create Account' : 'Sign In'}
           </button>
         </form>
+
+        {/* Guest mode (CHARTER.md's documented exception): no form fields — mints an anonymous,
+         *  ephemeral session and drops the visitor straight into the curated Coinflip preview
+         *  against the honestly-labelled Demo Opponent. A link, not a third tab — deliberately
+         *  secondary to signing up for the real platform. */}
+        <button
+          type="button"
+          onClick={handleGuest}
+          disabled={guestLoading}
+          data-testid="auth-guest"
+          className="mt-3 flex w-full items-center justify-center gap-2 text-xs font-semibold text-muted-foreground underline decoration-dotted underline-offset-4 transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {guestLoading ? (<><Loader2 className="h-3.5 w-3.5 animate-spin" /> Starting demo…</>) : 'Play as guest instead'}
+        </button>
 
         <p className="mt-4 text-center text-xs text-foreground">Play-money demo credits only, no real-money wagering.</p>
       </motion.div>

@@ -847,3 +847,42 @@ describe('CoinflipHubScreen — choice controls: optimistic purple pick (#160)',
     });
   });
 });
+
+describe('CoinflipHubScreen — guest mode chrome (issue #267)', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes('/games') || u.includes('/leaderboard'))
+          return { ok: true, json: async () => [] } as Response;
+        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      }),
+    );
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('hides the wallet chip, Open Games, related-games rail, and the bottom nav; shows a plain Demo badge', () => {
+    render(<CoinflipHubScreen {...baseProps({ isGuest: true, balance: 200, initialStake: 100 })} />);
+
+    expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument();
+    expect(screen.getByTestId('hub-balance').textContent).toContain('200');
+    expect(screen.queryByTestId('hub-wallet-chip')).toBeNull();
+    expect(screen.queryByTestId('hub-section-challenges-teaser')).toBeNull();
+    expect(screen.queryByText('No open games right now — press PLAY to post the first.')).toBeNull();
+    expect(screen.queryByTestId('hub-nav-games')).toBeNull();
+    expect(screen.queryByTestId('hub-nav-account')).toBeNull();
+  });
+
+  it('locks the bet amount — the preset buttons are disabled and inert (the Demo-Opponent only rests at one stake)', () => {
+    render(<CoinflipHubScreen {...baseProps({ isGuest: true, initialStake: 100 })} />);
+    const preset = screen.getByTestId('hub-bet-100');
+    expect(preset).toBeDisabled();
+  });
+
+  it('a non-guest hub still shows the full chrome (regression guard)', () => {
+    render(<CoinflipHubScreen {...baseProps({ isGuest: false })} />);
+    expect(screen.queryByTestId('hub-guest-badge')).toBeNull();
+    expect(screen.getByTestId('hub-nav-games')).toBeInTheDocument();
+  });
+});

@@ -141,6 +141,13 @@ export interface GameHubScreenProps {
   loggedIn?: boolean;
   /** Pre-arm the bet selector (the join-fallback drops the user here ready to post). */
   initialStake?: number;
+  /** Anonymous guest session (CHARTER.md's guest-mode exception, issue #267). Curated/simplified
+   *  chrome: hides the wallet chip (own-session balance still shows, just non-interactive), Open
+   *  Games, the related-games rail, Bring-a-Rival, the footer, and the bottom nav (account/games
+   *  all lead to real-platform surfaces a guest session doesn't have). Also locks the bet amount
+   *  at `initialStake` — the permanently-resting Demo-Opponent only rests at ONE fixed stake, so
+   *  letting a guest pick a different one would break "PLAY pairs instantly". Default false. */
+  isGuest?: boolean;
 }
 
 interface GameHubProps extends GameHubScreenProps {
@@ -227,7 +234,7 @@ export function GameHub(props: GameHubProps) {
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
     onPlay, onCancel, onTakeChallenge, onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, onTrackChallenges,
     onUntrackChallenges, onSelectGame, onOpenWallet, onOpenGameList, onResultDismiss,
-    loggedIn = true, initialStake,
+    loggedIn = true, initialStake, isGuest = false,
   } = props;
 
   // ── Live wallet balance ─────────────────────────────────────────────────────
@@ -235,11 +242,14 @@ export function GameHub(props: GameHubProps) {
   // reveal-complete signal when gateResultOnReveal is set); the mount fetch stays here.
   const [liveBalance, setLiveBalance] = useState(balance);
   useEffect(() => {
-    if (!loggedIn) return; // wallet is auth-only; logged out shows the "Sign in" chip
+    // Wallet is auth-only (logged out shows the "Sign in" chip); a guest's balance lives in the
+    // server's ephemeral ledger, never the real `/wallet` — the `balance` prop (updated from the
+    // WS match.end settlement, generic to any session) is already authoritative for it.
+    if (!loggedIn || isGuest) return;
     let alive = true;
     api.wallet(token).then((w) => { if (alive) setLiveBalance(w.balance); }).catch(() => {});
     return () => { alive = false; };
-  }, [token, loggedIn]);
+  }, [token, loggedIn, isGuest]);
 
   // ── Reveal-complete gate (opt-in via gateResultOnReveal) ─────────────────────
   // The game area (which alone knows its reveal choreography timing) calls onRevealComplete when the
@@ -250,12 +260,15 @@ export function GameHub(props: GameHubProps) {
   const handleRevealComplete = useCallback(() => setRevealDone(true), []);
 
   // ── Games roster (drives the time control, related rail, and feed labels) ─────
+  // A guest's curated surface is exactly one game (isGuest games are hidden anyway) — skip the
+  // roster fetch and the cross-game ticker subscription entirely; coinflip has no time control.
   const [games, setGames] = useState<GameMeta[]>([]);
   useEffect(() => {
+    if (isGuest) return;
     let alive = true;
     api.games(token).then((g) => { if (alive && Array.isArray(g)) setGames(g); }).catch(() => {});
     return () => { alive = false; };
-  }, [token]);
+  }, [token, isGuest]);
   const nameByGame = useMemo(() => new Map(games.map((g) => [g.id, g.displayName])), [games]);
   const timeControl = games.find((g) => g.id === gameId)?.timeControl;
   const [selectedControl, setSelectedControl] = useState<string | undefined>(undefined);
@@ -264,11 +277,11 @@ export function GameHub(props: GameHubProps) {
   // Cross-game ticker: subscribe to every game's feed while the hub is mounted (authed only).
   const gameKey = games.map((g) => g.id).join(',');
   useEffect(() => {
-    if (!loggedIn || games.length === 0) return;
+    if (!loggedIn || isGuest || games.length === 0) return;
     onTrackChallenges(games.map((g) => g.id));
     return () => onUntrackChallenges();
     // eslint-disable-next-line -- track once per game-set change (callbacks are stable)
-  }, [gameKey, loggedIn]);
+  }, [gameKey, loggedIn, isGuest]);
 
   // ── Sub-state machine ──────────────────────────────────────────────────────
   const [waiting, setWaiting] = useState(false);
@@ -493,7 +506,7 @@ export function GameHub(props: GameHubProps) {
 
   return (
     <div className={HUB_SHELL}>
-      <HubRibbon balance={loggedIn ? liveBalance : null} onLogo={onOpenGameList} onWallet={onOpenWallet} loggedIn={loggedIn} />
+      <HubRibbon balance={loggedIn ? liveBalance : null} onLogo={onOpenGameList} onWallet={onOpenWallet} loggedIn={loggedIn} isGuest={isGuest} />
 
       <main data-testid="hub-body">
         {/* No blanket px-4 — sections that need insetting add their own; the shared Open Games /
@@ -548,6 +561,7 @@ export function GameHub(props: GameHubProps) {
               timeControl={timeControl}
               selectedControl={selectedControl}
               onSelectControl={setSelectedControl}
+              betLocked={isGuest}
             />
           </div>
 
@@ -557,8 +571,10 @@ export function GameHub(props: GameHubProps) {
               JOIN is blocked ONLY while genuinely occupied — a live match or an in-flight search. The
               settled post-game result view (phase 'result') is idle-with-a-board: the match is already
               deleted server-side, so JOIN must stay open there (as in plain idle) — otherwise Open
-              Games wrongly reads "one match at a time" until the player leaves. */}
-          {loggedIn ? (
+              Games wrongly reads "one match at a time" until the player leaves.
+              Guest mode omits this whole section — no real Open Games with strangers
+              (GUEST_MODE_CONTRACT.md §4's non-goal). */}
+          {isGuest ? null : loggedIn ? (
             <OpenGamesTicker
               challengesByGame={challengesByGame}
               nameByGame={nameByGame}
@@ -579,18 +595,22 @@ export function GameHub(props: GameHubProps) {
             </section>
           )}
 
-          {/* 5 — Related games rail: ALL games (coming-soon included), this game excluded. */}
-          <RelatedRail related={related} onSelectGame={onSelectGame} />
-
-          {/* 6 — Bring a Rival (shared with Home). */}
-          <BringARival />
-
-          {/* 8 — Footer (shared with Home: inert social row, seeded-RNG provably-fair, 18+). */}
-          <HubFooter />
+          {/* 5–8 — Related-games rail, Bring a Rival, footer: all point at the full registered
+              platform (game grid / leaderboard / waitlist), none of which a curated guest session
+              has. Omitted for guest mode. */}
+          {!isGuest && (
+            <>
+              <RelatedRail related={related} onSelectGame={onSelectGame} />
+              <BringARival />
+              <HubFooter />
+            </>
+          )}
         </div>
       </main>
 
-      <HubToolbar onGames={onOpenGameList} onAccount={onOpenWallet} active="games" />
+      {/* Bottom nav (Games/Account) leads to the full game grid / profile — real-platform
+          surfaces a guest session doesn't have. Omitted for guest mode. */}
+      {!isGuest && <HubToolbar onGames={onOpenGameList} onAccount={onOpenWallet} active="games" />}
 
       {/* Opt-out games (Blackjack) suppress the pop-up and present the result on the board instead;
           the overlay stays the default for every other hub (the regression guard). */}
@@ -728,7 +748,7 @@ function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdi
  *  Play-a-Friend becomes the active Cancel, while the bet row freezes with the SAME visuals — but
  *  NO "Playing…" label); `noOpponent` shows the polite "No opponent found" note after expiry. */
 function PlayPanel({
-  playing, searching, noOpponent, armedStake, onArm, onPlay, onCancel, actionSlot, secondaryActionSlot, timeControl, selectedControl, onSelectControl,
+  playing, searching, noOpponent, armedStake, onArm, onPlay, onCancel, actionSlot, secondaryActionSlot, timeControl, selectedControl, onSelectControl, betLocked,
 }: {
   playing: boolean;
   /** Pure search: freeze the bet row (no "Playing…") and turn Play-a-Friend into the active Cancel. */
@@ -740,6 +760,10 @@ function PlayPanel({
   onPlay(): void;
   /** Cancel the in-flight search (the hardened leaveQueue path, #153). */
   onCancel(): void;
+  /** Guest mode (issue #267): the bet amount is fixed at `armedStake` (the permanently-resting
+   *  Demo-Opponent only rests at one stake) — grey + inert like `frozen`, but independent of
+   *  playing/searching state. Default false (every other hub is unaffected). */
+  betLocked?: boolean;
   /** When provided, replaces the PLAY button in place — the game's transforming primary action
    *  (e.g. Crash's EJECT during flight, or the hub's waiting label during search). Null → the
    *  default PLAY button (the #1-bug fix: ONE button that transforms, never a second control). */
@@ -829,7 +853,7 @@ function PlayPanel({
         className={cn(
           'scroll-mt-24 scroll-mb-[calc(7rem_+_env(safe-area-inset-bottom))] rounded-xl transition-shadow',
           needsBet && 'ring-2 ring-destructive',
-          frozen && 'pointer-events-none opacity-50',
+          (frozen || betLocked) && 'pointer-events-none opacity-50',
         )}
       >
         <div className="mb-2.5 flex items-center justify-between">
@@ -843,7 +867,7 @@ function PlayPanel({
             <button
               key={v}
               type="button"
-              disabled={frozen}
+              disabled={frozen || betLocked}
               data-testid={`hub-bet-${v}`}
               onClick={() => onArm(v)}
               className={cn(

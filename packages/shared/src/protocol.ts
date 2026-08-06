@@ -217,6 +217,9 @@ export interface AuthResponse {
   /** The player's own stored avatar (preset id or `'default'`). Own-session only — the opponent's
    *  avatarId is NEVER surfaced in-match (redaction, Charter #2). Persisted like `username`. */
   avatarId: AvatarId;
+  /** True only for a `POST /auth/guest` session (CHARTER.md's "Guest mode" exception). Omitted
+   *  (falsy) for `/auth/register` and `/auth/login` — existing callers see no shape change. */
+  isGuest?: boolean;
 }
 
 /** Body of `POST /auth/avatar` — set the authenticated player's own avatar (presets-only). */
