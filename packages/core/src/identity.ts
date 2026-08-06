@@ -6,7 +6,7 @@ import type { AvatarId } from '@rapidclash/shared';
 import { AVATAR_IDS } from '@rapidclash/shared';
 import type { Ledger } from './ledger.js';
 
-export type UserRole = 'player' | 'admin';
+export type UserRole = 'player' | 'admin' | 'guest';
 
 /** True iff `v` is one of the canonical AvatarId enum values (server-side validation). */
 export function isAvatarId(v: unknown): v is AvatarId {
@@ -38,6 +38,13 @@ export interface Identity {
     password: string,
   ): Promise<{ token: string; playerId: string; balance: number; avatarId: AvatarId }>;
   verifyToken(token: string): TokenPayload;
+  /** Mint a token for a guest playerId (role 'guest') — pure (jwt.sign only), no accounts-table
+   *  read or write. Verifiable by the SAME {@link verifyToken} (same jwtSecret) as any other
+   *  token, so REST middleware and the WS gateway need no separate guest verification path. The
+   *  caller is responsible for the playerId's uniqueness (e.g. `guest:${randomUUID()}`) and for
+   *  never persisting anything for it here — guest mode's isolation from the real accounts/ledger
+   *  tables comes from this never touching the DB, not from a role check elsewhere. */
+  signGuestToken(playerId: string): string;
   /** Display username for a playerId, or undefined if no such account. */
   getUsername: UsernameLookup;
   /** Stored avatarId for a playerId (`'default'` if unknown/unset). Sibling to {@link getUsername};
@@ -196,6 +203,10 @@ export function createIdentity(db: Database.Database, ledger: Ledger): Identity 
     return jwt.verify(token, jwtSecret) as TokenPayload;
   }
 
+  function signGuestToken(playerId: string): string {
+    return signToken(playerId, 'guest');
+  }
+
   function getUsername(playerId: string): string | undefined {
     return stmtFindUsernameById.get(playerId)?.username;
   }
@@ -223,5 +234,5 @@ export function createIdentity(db: Database.Database, ledger: Ledger): Identity 
     }
   }
 
-  return { register, login, verifyToken, getUsername, getAvatarId, setAvatarId, clearPassword, ensureAdmin };
+  return { register, login, verifyToken, signGuestToken, getUsername, getAvatarId, setAvatarId, clearPassword, ensureAdmin };
 }

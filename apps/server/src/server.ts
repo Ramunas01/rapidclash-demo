@@ -24,7 +24,9 @@ import { registerOpenChallengesRoutes } from './routes/open-challenges.js';
 import { registerLeaderboardRoutes } from './routes/leaderboard.js';
 import { registerWalletRoutes } from './routes/wallet.js';
 import { registerMatchesRoutes } from './routes/matches.js';
+import { registerGuestAuthRoutes } from './routes/guest-auth.js';
 import { registerWsGateway } from './ws/gateway.js';
+import { createGuestServices, type GuestServices } from './guest/index.js';
 
 export interface AppOptions {
   /** Set to false to skip seeding the admin account (useful in tests that manage their own data). */
@@ -82,6 +84,9 @@ export interface AppServices {
   identity: Identity;
   matchmaking: Matchmaking;
   matchHistory: MatchHistory;
+  /** Guest mode's isolated world (issue #267): an in-memory ledger + a second Matchmaking
+   *  instance, independent of `db` — gone on process restart, by design. */
+  guest: GuestServices;
 }
 
 export function buildApp(
@@ -89,13 +94,14 @@ export function buildApp(
   gameModules: GameModule[],
   opts: AppOptions = {},
 ): FastifyInstance {
-  const { identity, ledger, matchmaking, matchHistory } = services;
+  const { identity, ledger, matchmaking, matchHistory, guest } = services;
   const app = Fastify({ logger: false });
 
   app.register(FastifyWs);
 
   const auth = makeAuthMiddleware(identity);
   registerAuthRoutes(app, auth, identity);
+  registerGuestAuthRoutes(app, identity, guest);
   registerAdminRoutes(app, auth, ledger, identity);
   registerGamesRoutes(app, matchmaking);
   registerOpenChallengesRoutes(app, matchmaking);
@@ -108,7 +114,7 @@ export function buildApp(
   // normal HTTP handler (→ 500). buildApp is synchronous, so we register the gateway in a
   // nested plugin that avvio loads after FastifyWs rather than awaiting the registration.
   app.register(async (instance) => {
-    registerWsGateway(instance, identity, matchmaking, gameModules);
+    registerWsGateway(instance, identity, matchmaking, gameModules, guest);
   });
 
   // Serve the built PWA on the same origin (prod only — see maybeServeStatic).
@@ -154,5 +160,6 @@ export function createServices(
     lookupUsername,
     onSettled: opts.onSettled,
   });
-  return { db, ledger, identity, matchmaking, matchHistory };
+  const guest = createGuestServices();
+  return { db, ledger, identity, matchmaking, matchHistory, guest };
 }

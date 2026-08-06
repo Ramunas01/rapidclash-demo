@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import type { SocketStream } from '@fastify/websocket';
 import type { Identity, Matchmaking, JoinMatched } from '@rapidclash/core';
 import { ChallengeError, usesPlayerTimers, usesScheduledDeadlines } from '@rapidclash/core';
-import { IllegalMove } from '@rapidclash/shared';
+import { IllegalMove, DEMO_BOT_COINFLIP_ID } from '@rapidclash/shared';
+import type { GuestServices } from '../guest/index.js';
 import type {
   Envelope,
   QueueJoinPayload,
@@ -39,6 +40,16 @@ const challengeSubscribers = new Map<string, Set<WsSocket>>();
 // Pending forfeit timers: set on disconnect, cancelled on reconnect/resume.
 const pendingForfeits = new Map<string, ReturnType<typeof setTimeout>>();
 
+// Guest session cleanup (issue #267 — session lifetime policy, GUEST_MODE_STRATEGY.md §8): a
+// guest's ephemeral-ledger entries are evicted `forfeitDelayMs` after their WS closes, same grace
+// window as the real forfeit timer, so a brief network blip doesn't wipe a live guest's balance
+// mid-match. Cancelled on reconnect, mirroring `pendingForfeits`. A SEPARATE map/timer from
+// `pendingForfeits` because Coinflip is a scheduled-deadline game (`usesScheduledDeadlines`) and
+// so never arms a close-forfeit timer at all (see the close handler below) — eviction must not
+// depend on that branch running. Deliberately NOT a durable/queryable cleanup system (per
+// GUEST_MODE_STRATEGY.md §7's "don't over-build") — just a bound on in-memory growth.
+const pendingGuestEvictions = new Map<string, ReturnType<typeof setTimeout>>();
+
 const DEFAULT_FORFEIT_DELAY_MS = 60_000;
 const SWEEP_INTERVAL_MS = (() => {
   const n = parseInt(process.env.CHALLENGE_SWEEP_MS ?? '', 10);
@@ -59,6 +70,10 @@ export function registerWsGateway(
   identity: Identity,
   matchmaking: Matchmaking,
   gameModules: GameModule[],
+  /** Guest mode's isolated world (issue #267) — a second Matchmaking + its own ledger, wired in
+   *  by `server.ts`. Optional so existing call sites (and tests) that don't care about guest
+   *  mode need no change; a guest token then simply falls back to the real matchmaking below. */
+  guest?: GuestServices,
 ): void {
   const moduleByGame = new Map<string, GameModule>(gameModules.map((m) => [m.meta.id, m]));
 
@@ -67,6 +82,15 @@ export function registerWsGateway(
     const n = parseInt(process.env.FORFEIT_DELAY_MS ?? '', 10);
     return Number.isFinite(n) ? n : DEFAULT_FORFEIT_DELAY_MS;
   })();
+
+  /** Resolve a display name for ANY id — bot/guest first (never a DB lookup), else the real
+   *  identity layer. The single replacement for every `identity.getUsername(...)` call site
+   *  below, so the real identity layer is never asked about a guest or bot id (issue #267's
+   *  explicit watch-out: `getUsername`/`getAvatarId` against the real accounts table have no row
+   *  for a guest id). Safe for real ids too — they never match `guest.usernameFor`. */
+  function resolveUsername(id: string): string {
+    return guest?.usernameFor(id) ?? identity.getUsername(id) ?? id;
+  }
 
   /** Push an incremental feed update to every socket subscribed to this game (OC8). */
   function pushChallengesUpdate(gameId: string, update: ChallengesUpdatePayload): void {
@@ -86,7 +110,7 @@ export function registerWsGateway(
     expiresAt: number,
     timeControlId: string,
   ): OpenChallenge {
-    return { matchId, ownerName: identity.getUsername(ownerId) ?? ownerId, stake, openedAt, expiresAt, timeControlId };
+    return { matchId, ownerName: resolveUsername(ownerId), stake, openedAt, expiresAt, timeControlId };
   }
 
   /**
@@ -104,7 +128,7 @@ export function registerWsGateway(
     send<MatchStartPayload>(curSocket, 'match.start', {
       matchId: result.matchId,
       opponent: result.opponentId,
-      opponentName: identity.getUsername(result.opponentId) ?? result.opponentId,
+      opponentName: resolveUsername(result.opponentId),
       gameId,
       state: curState,
       serverNow: Date.now(), // lets the client align its clock to server-authoritative timers
@@ -116,7 +140,7 @@ export function registerWsGateway(
       send<MatchStartPayload>(oppSocket, 'match.start', {
         matchId: result.matchId,
         opponent: curId,
-        opponentName: identity.getUsername(curId) ?? curId,
+        opponentName: resolveUsername(curId),
         gameId,
         state: oppState,
         serverNow: Date.now(),
@@ -137,24 +161,33 @@ export function registerWsGateway(
   }
 
   // Server-authoritative expiry sweep: refund (in core) + notify owner & subscribers (OC6).
-  const sweepTimer = setInterval(() => {
-    const expired = matchmaking.sweepExpired(Date.now());
+  // Factored so it can run against BOTH the real Matchmaking and (if guest mode is wired) the
+  // guest one — critical for guest mode, not cosmetic: Coinflip's pick window resolves ONLY via
+  // the timed-out-move sweep (`scheduledDeadlines` + `timeoutMove`), so without also sweeping
+  // `guest.matchmaking` here, a guest's round would never lock/resolve past the 10s window.
+  function runSweeps(mm: Matchmaking, isGuestMm: boolean): void {
+    const expired = mm.sweepExpired(Date.now());
     for (const ex of expired) {
       const ownerSocket = connections.get(ex.ownerId);
       if (ownerSocket?.readyState === 1) {
         send<ChallengeExpiredPayload>(ownerSocket, 'challenge.expired', { matchId: ex.matchId });
       }
-      pushChallengesUpdate(ex.gameId, {
-        gameId: ex.gameId,
-        removed: { matchId: ex.matchId, reason: 'expired' },
-      });
+      // The guest instance's queue reuses real gameId strings (e.g. "coinflip") — never publish
+      // its activity into the real, shared challenge-feed channel (see the pushChallengesUpdate
+      // guards in the message handler below for the full rationale).
+      if (!isGuestMm) {
+        pushChallengesUpdate(ex.gameId, {
+          gameId: ex.gameId,
+          removed: { matchId: ex.matchId, reason: 'expired' },
+        });
+      }
     }
 
     // Server-authoritative move-timeout sweep (#31): resolve matches stuck past their
     // deadline even while the socket stays OPEN. Core has already settled each (void →
     // both refunded, or forfeit → non-responder loses), so no escrow is orphaned — we
     // only push match.end and clean up. Complements the socket-close forfeit below.
-    const stale = matchmaking.sweepStaleMatches(Date.now());
+    const stale = mm.sweepStaleMatches(Date.now());
     for (const r of stale) {
       for (const pid of r.players) {
         playerMatch.delete(pid);
@@ -181,7 +214,7 @@ export function registerWsGateway(
     // declared auto-move (Blackjack auto-stand, Mines auto-reveal) through the normal
     // applyMove path. Broadcast each like a real move — redacted match.state + events, then
     // match.end if it ended (already settled) or match.your_turn to whoever still has moves.
-    const timedOut = matchmaking.sweepTimedOutMoves(Date.now());
+    const timedOut = mm.sweepTimedOutMoves(Date.now());
     for (const t of timedOut) {
       const mod = moduleByGame.get(t.gameId);
       for (const pid of t.players) {
@@ -218,6 +251,25 @@ export function registerWsGateway(
         }
       }
     }
+  }
+
+  const sweepTimer = setInterval(() => {
+    // Each instance's sweep is isolated in its own try/catch: an uncaught exception inside a
+    // setInterval callback crashes the whole process (Node's default), which would let a fault
+    // in the newer, less-proven guest/Demo-Opponent path take the real platform's sweep down
+    // with it. A fault here is logged and skipped for this tick; the next tick tries again.
+    try {
+      runSweeps(matchmaking, false);
+    } catch (err) {
+      console.error('[gateway] real matchmaking sweep failed', err);
+    }
+    if (guest) {
+      try {
+        runSweeps(guest.matchmaking, true);
+      } catch (err) {
+        console.error('[gateway] guest matchmaking sweep failed', err);
+      }
+    }
   }, SWEEP_INTERVAL_MS);
   // Don't keep the event loop alive on the sweeper alone; clear it on shutdown (tests).
   sweepTimer.unref?.();
@@ -232,14 +284,21 @@ export function registerWsGateway(
       // Authenticate via query param ?token=...
       const token = (request.query as Record<string, string>).token;
       let playerId: string;
+      let isGuest: boolean;
       try {
         const payload = identity.verifyToken(token ?? '');
         playerId = payload.sub;
+        isGuest = payload.role === 'guest';
       } catch {
         sendError(socket, 'UNAUTHORIZED', 'Invalid or missing token');
         socket.close(4001, 'Unauthorized');
         return;
       }
+
+      // A guest connection is dispatched against the ISOLATED guest Matchmaking (issue #267) —
+      // own queues/active-matches/ledger, never the real one. Falls back to the real matchmaking
+      // if guest mode isn't wired in (keeps every existing non-guest call site unchanged).
+      const mm: Matchmaking = isGuest && guest ? guest.matchmaking : matchmaking;
 
       connections.set(playerId, socket);
 
@@ -248,6 +307,13 @@ export function registerWsGateway(
       if (existingTimer !== undefined) {
         clearTimeout(existingTimer);
         pendingForfeits.delete(playerId);
+      }
+
+      // Cancel any pending guest-ledger eviction (a genuine reconnect within the grace window).
+      const existingEviction = pendingGuestEvictions.get(playerId);
+      if (existingEviction !== undefined) {
+        clearTimeout(existingEviction);
+        pendingGuestEvictions.delete(playerId);
       }
 
       // Per-connection queue state for leaveQueue support
@@ -265,6 +331,17 @@ export function registerWsGateway(
         if (connections.get(playerId) !== socket) return;
         connections.delete(playerId);
 
+        // Guest session cleanup (see pendingGuestEvictions above): scheduled unconditionally on
+        // every genuine close, independent of match/queue state below — Coinflip's own
+        // scheduled-deadline sweep resolves any live round well within this grace window anyway.
+        if (isGuest && guest) {
+          const evictHandle = setTimeout(() => {
+            pendingGuestEvictions.delete(playerId);
+            guest.ledger.evict(playerId);
+          }, forfeitDelayMs);
+          pendingGuestEvictions.set(playerId, evictHandle);
+        }
+
         // #152: an interrupted search still resting in the queue is abandoned on a genuine
         // socket close — dequeue it and REFUND the escrow (never strand a stake). This sits
         // AFTER the stale-close guard above, so a fast reconnect (a newer socket already the
@@ -278,8 +355,10 @@ export function registerWsGateway(
           queuedGameId = null;
           queuedStake = null;
           try {
-            const refund = matchmaking.leaveQueue(playerId, g, s);
-            if (refund.matchId) {
+            const refund = mm.leaveQueue(playerId, g, s);
+            // Guest activity must never publish into the real, shared challenge-feed channel
+            // (see the pushChallengesUpdate guards below for the full rationale).
+            if (refund.matchId && !isGuest) {
               pushChallengesUpdate(g, { gameId: g, removed: { matchId: refund.matchId, reason: 'cancelled' } });
             }
           } catch {
@@ -289,7 +368,7 @@ export function registerWsGateway(
 
         const matchId = playerMatch.get(playerId);
         if (!matchId) return;
-        const closedMatch = matchmaking.getActiveMatch(matchId);
+        const closedMatch = mm.getActiveMatch(matchId);
         if (!closedMatch) return;
 
         // Opt-in per-player-timer games (Mines, Blackjack) must NOT close-forfeit: an absent
@@ -306,11 +385,11 @@ export function registerWsGateway(
         // Start forfeit timer — if the player doesn't reconnect in time, they forfeit.
         const handle = setTimeout(() => {
           pendingForfeits.delete(playerId);
-          const match = matchmaking.getActiveMatch(matchId);
+          const match = mm.getActiveMatch(matchId);
           if (!match) return; // already settled by the other path
 
           try {
-            const settled = matchmaking.forfeitMatch(matchId, playerId);
+            const settled = mm.forfeitMatch(matchId, playerId);
             for (const pid of match.players) {
               playerMatch.delete(pid);
               const s = connections.get(pid);
@@ -343,7 +422,7 @@ export function registerWsGateway(
           switch (msg.type) {
             case 'queue.join': {
               const { gameId, stake, timeControlId } = msg.payload as QueueJoinPayload;
-              const result = matchmaking.joinQueue(playerId, gameId, stake, timeControlId);
+              const result = mm.joinQueue(playerId, gameId, stake, timeControlId);
 
               if (result.status === 'waiting') {
                 queuedGameId = gameId;
@@ -354,20 +433,36 @@ export function registerWsGateway(
                   since: result.since,
                   expiresAt: result.expiresAt, // OC7
                 });
-                // A new resting bet appeared — announce it to the feed (OC8) with its resolved control.
-                pushChallengesUpdate(gameId, {
-                  gameId,
-                  added: openChallengeOf(result.matchId, playerId, stake, result.since, result.expiresAt, result.timeControlId),
-                });
+                // A new resting bet appeared — announce it to the feed (OC8) with its resolved
+                // control. NEVER for a guest: the guest queue reuses real gameId strings (e.g.
+                // "coinflip"), and `challengeSubscribers`/`pushChallengesUpdate` are a SINGLE
+                // shared channel for every connection, real and guest alike — a guest connection
+                // has no legitimate reason to touch it (a tampered/off-stake guest join would
+                // otherwise publish a phantom entry into the real Open Games list).
+                if (!isGuest) {
+                  pushChallengesUpdate(gameId, {
+                    gameId,
+                    added: openChallengeOf(result.matchId, playerId, stake, result.since, result.expiresAt, result.timeControlId),
+                  });
+                }
               } else {
                 // Match formed via the FIFO path — the waiter's resting bet is consumed.
                 queuedGameId = null;
                 queuedStake = null;
+                // The guest was paired against the permanently-resting Demo-Opponent (issue
+                // #267): submit its pick through the normal applyMove path — viewFor redaction
+                // holds automatically, not via new code — then re-post it so the NEXT guest
+                // pairs instantly too.
+                if (guest && result.opponentId === DEMO_BOT_COINFLIP_ID) {
+                  guest.onDemoBotMatched(result.matchId, Date.now());
+                }
                 deliverMatchStart(playerId, socket, result, gameId);
-                pushChallengesUpdate(gameId, {
-                  gameId,
-                  removed: { matchId: result.matchId, reason: 'taken' },
-                });
+                if (!isGuest) {
+                  pushChallengesUpdate(gameId, {
+                    gameId,
+                    removed: { matchId: result.matchId, reason: 'taken' },
+                  });
+                }
               }
               break;
             }
@@ -379,12 +474,12 @@ export function registerWsGateway(
                 sendError(socket, 'NOT_IN_QUEUE', `Not in queue for game "${gameId}"`);
                 break;
               }
-              const refund = matchmaking.leaveQueue(playerId, gameId, stake);
+              const refund = mm.leaveQueue(playerId, gameId, stake);
               queuedGameId = null;
               queuedStake = null;
               send(socket, 'queue.left', { gameId });
-              // The owner cancelled — drop it from the feed (OC8).
-              if (refund.matchId) {
+              // The owner cancelled — drop it from the feed (OC8). Never for a guest (see above).
+              if (refund.matchId && !isGuest) {
                 pushChallengesUpdate(gameId, {
                   gameId,
                   removed: { matchId: refund.matchId, reason: 'cancelled' },
@@ -395,20 +490,26 @@ export function registerWsGateway(
 
             case 'challenges.subscribe': {
               const { gameId } = msg.payload as ChallengeSubscribePayload;
-              let subs = challengeSubscribers.get(gameId);
-              if (!subs) {
-                subs = new Set();
-                challengeSubscribers.set(gameId, subs);
+              // A guest is never registered into the shared, real subscriber set — the mirror
+              // image of the pushChallengesUpdate guards above: without this, a guest socket
+              // would start receiving REAL players' Open Games activity too. Still answers with
+              // its own (guest-scoped, isolated) snapshot, same as any subscribe.
+              if (!isGuest) {
+                let subs = challengeSubscribers.get(gameId);
+                if (!subs) {
+                  subs = new Set();
+                  challengeSubscribers.set(gameId, subs);
+                }
+                subs.add(socket);
               }
-              subs.add(socket);
-              const { entries, more } = matchmaking.listOpenChallenges(gameId, playerId, Date.now());
+              const { entries, more } = mm.listOpenChallenges(gameId, playerId, Date.now());
               send<ChallengesListPayload>(socket, 'challenges.list', { gameId, entries, more });
               break;
             }
 
             case 'challenges.unsubscribe': {
               const { gameId } = msg.payload as ChallengeSubscribePayload;
-              challengeSubscribers.get(gameId)?.delete(socket);
+              if (!isGuest) challengeSubscribers.get(gameId)?.delete(socket);
               break;
             }
 
@@ -416,7 +517,7 @@ export function registerWsGateway(
               const { matchId } = msg.payload as ChallengeTakePayload;
               let result: JoinMatched;
               try {
-                result = matchmaking.takeChallenge(playerId, matchId);
+                result = mm.takeChallenge(playerId, matchId);
               } catch (err) {
                 if (err instanceof ChallengeError) {
                   sendError(socket, err.code, err.message);
@@ -424,16 +525,20 @@ export function registerWsGateway(
                 }
                 throw err;
               }
-              const match = matchmaking.getActiveMatch(result.matchId);
+              const match = mm.getActiveMatch(result.matchId);
               const gameId = match?.gameId ?? '';
               queuedGameId = null;
               queuedStake = null;
               deliverMatchStart(playerId, socket, result, gameId);
-              // The claimed bet leaves the feed (OC8).
-              pushChallengesUpdate(gameId, {
-                gameId,
-                removed: { matchId: result.matchId, reason: 'taken' },
-              });
+              // The claimed bet leaves the feed (OC8). Never for a guest (see above) — unreachable
+              // today (the curated client never calls challenge.take), but the guest matchmaking
+              // instance still answers this message type, so guard it like every other site.
+              if (!isGuest) {
+                pushChallengesUpdate(gameId, {
+                  gameId,
+                  removed: { matchId: result.matchId, reason: 'taken' },
+                });
+              }
               break;
             }
 
@@ -447,7 +552,7 @@ export function registerWsGateway(
                 pendingForfeits.delete(playerId);
               }
 
-              const activeMatch = matchmaking.getActiveMatch(matchId);
+              const activeMatch = mm.getActiveMatch(matchId);
               if (activeMatch) {
                 if (!activeMatch.players.includes(playerId)) {
                   sendError(socket, 'FORBIDDEN', 'You are not a player in this match');
@@ -460,7 +565,7 @@ export function registerWsGateway(
                 send<MatchStatePayload>(
                   socket,
                   'match.state',
-                  { state, events: [], opponentName: oppId ? (identity.getUsername(oppId) ?? oppId) : undefined, serverNow: Date.now() },
+                  { state, events: [], opponentName: oppId ? resolveUsername(oppId) : undefined, serverNow: Date.now() },
                   matchId,
                 );
 
@@ -476,7 +581,7 @@ export function registerWsGateway(
               }
 
               // Not active — check completed (idempotency path, no second ledger write).
-              const completedMatch = matchmaking.getCompletedMatch(matchId);
+              const completedMatch = mm.getCompletedMatch(matchId);
               if (completedMatch) {
                 if (!completedMatch.players.includes(playerId)) {
                   sendError(socket, 'FORBIDDEN', 'You are not a player in this match');
@@ -504,7 +609,7 @@ export function registerWsGateway(
                 break;
               }
 
-              const match = matchmaking.getActiveMatch(matchId);
+              const match = mm.getActiveMatch(matchId);
               if (!match) {
                 sendError(socket, 'MATCH_NOT_FOUND', `No active match "${matchId}"`);
                 break;
@@ -514,7 +619,7 @@ export function registerWsGateway(
 
               let result;
               try {
-                result = matchmaking.applyMove(matchId, playerId, move, Date.now());
+                result = mm.applyMove(matchId, playerId, move, Date.now());
               } catch (err) {
                 if (err instanceof IllegalMove) {
                   sendError(socket, 'ILLEGAL_MOVE', err.message);
@@ -534,7 +639,7 @@ export function registerWsGateway(
 
               if (mod.isTerminal(result.state)) {
                 // Settle and send match.end to both players.
-                const settled = matchmaking.settleMatch(matchId);
+                const settled = mm.settleMatch(matchId);
                 for (const pid of match.players) {
                   playerMatch.delete(pid);
                   const s = connections.get(pid);
@@ -569,13 +674,13 @@ export function registerWsGateway(
                 break;
               }
 
-              const match = matchmaking.getActiveMatch(matchId);
+              const match = mm.getActiveMatch(matchId);
               if (!match) {
                 sendError(socket, 'MATCH_NOT_FOUND', `No active match "${matchId}"`);
                 break;
               }
 
-              const settled = matchmaking.forfeitMatch(matchId, playerId);
+              const settled = mm.forfeitMatch(matchId, playerId);
 
               for (const pid of match.players) {
                 playerMatch.delete(pid);
@@ -600,7 +705,7 @@ export function registerWsGateway(
                 sendError(socket, 'NOT_IN_MATCH', 'You are not in an active match');
                 break;
               }
-              const match = matchmaking.getActiveMatch(matchId);
+              const match = mm.getActiveMatch(matchId);
               if (!match) {
                 sendError(socket, 'MATCH_NOT_FOUND', `No active match "${matchId}"`);
                 break;
@@ -616,10 +721,10 @@ export function registerWsGateway(
               // Asymmetric (CHESS_DRAW_OFFER.md rev 3): only drawAccept can complete the match.
               const result =
                 msg.type === 'match.drawOffer'
-                  ? matchmaking.offerDraw(matchId, playerId)
+                  ? mm.offerDraw(matchId, playerId)
                   : msg.type === 'match.drawRevoke'
-                    ? matchmaking.revokeDraw(matchId, playerId)
-                    : matchmaking.acceptDraw(matchId, playerId);
+                    ? mm.revokeDraw(matchId, playerId)
+                    : mm.acceptDraw(matchId, playerId);
 
               // Broadcast the updated (redacted) state to BOTH players so the "Draw offered" /
               // "Accept draw?" indicator appears/clears on both screens.
@@ -633,7 +738,7 @@ export function registerWsGateway(
               // An accepted offer completed the match → settle + push match.end, reusing the
               // existing draw settlement (stakes returned, no rake, no rematch).
               if (mod.isTerminal(result.state)) {
-                const settled = matchmaking.settleMatch(matchId);
+                const settled = mm.settleMatch(matchId);
                 for (const pid of match.players) {
                   playerMatch.delete(pid);
                   const s = connections.get(pid);

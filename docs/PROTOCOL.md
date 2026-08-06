@@ -10,6 +10,7 @@ The message and payload types live in `packages/shared` and are imported by both
 |--------|------|---------|
 | `POST` | `/auth/register` | create account, grant starting play-money, return session token (+ own `avatarId`) |
 | `POST` | `/auth/login` | return session token (+ own `avatarId`) |
+| `POST` | `/auth/guest` | mint an anonymous, ephemeral guest session (CHARTER.md's guest-mode exception) — no body, no account/email/password. Returns the same `AuthResponse` shape with `isGuest: true`. See "Guest mode" below. |
 | `POST` | `/auth/avatar` | set the authenticated player's OWN avatar (presets-only). Body `{ avatarId }`; `avatarId` is validated against the preset enum (any other value → `400`). The id is taken from the verified token — a user can only set their own avatar. Returns `{ avatarId }` on success. |
 | `GET`  | `/wallet` | derived balance + recent ledger entries for the player |
 | `GET`  | `/games` | list of available games with their `GameMeta` (stakes, ranking type, etc.) |
@@ -93,3 +94,13 @@ interface Envelope<T = unknown> {
 Players who `queue.join` for the same `gameId` at a compatible `stake` are paired in arrival order (FIFO is enough for the demo). While waiting, the client shows the lobby state from `queue.waiting`. The instant a second human (or the through-the-front-door demo client) joins the same queue, the core creates the match, escrows are already held, and both clients receive `match.start`.
 
 No special opponent type exists at this layer. A demo opponent is just another authenticated client that sent `queue.join`.
+
+## Guest mode (issue #267)
+
+`POST /auth/guest` is the entry point for CHARTER.md's documented guest-mode exception (the anonymous, curated preview — see `GUEST_MODE_STRATEGY.md`/`GUEST_MODE_CONTRACT.md`). A guest session is isolated from the real platform **by construction**, not by a runtime flag:
+
+- **Session.** `signGuestToken` (a pure `jwt.sign`, no DB write) mints a token for a fresh `guest:${randomUUID()}` id — no `accounts` row, no email, no password. The token's `role` claim is `'guest'`.
+- **Wallet.** A guest's balance lives in a second, in-memory `Ledger` implementation (`createEphemeralLedger`) — never the real SQLite-backed one. It is gone on process restart by design, and evicted early: the WS gateway drops a guest's entries `forfeitDelayMs` after its socket closes (cancelled on a reconnect within that window), bounding memory without a durable cleanup system.
+- **Matchmaking.** A second `Matchmaking` instance, backed by the ephemeral ledger and registered with only the curated game set (`coinflip` for this PR) — own queues, own active-match table, no `matchHistory` (so a guest match never reaches the real leaderboard). The SAME `/ws` connection and message types (`queue.join`, `move.make`, …) are used; the gateway dispatches per-connection to the guest instance when the verified token's role is `'guest'`.
+- **Opponent.** A permanently-resting Demo-Opponent (`demo-bot:coinflip`) plays every guest instantly — `queue.join`'s ordinary FIFO pairing does the work, no bot-specific core code. Fixed stake: guest Coinflip has no bet picker: every round is `GUEST_COINFLIP_STAKE` (`@rapidclash/shared`), the one stake the bot rests at.
+- **Redaction.** Unchanged — the bot's pick goes through the normal `applyMove`/`viewFor` path, so it stays hidden from the guest exactly like a real opponent's would.

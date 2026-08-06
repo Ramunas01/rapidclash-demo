@@ -10,6 +10,9 @@ interface Props {
   onWallet(): void;
   /** When false, the control is a Login/Sign-up pill — never a fake balance (default true). */
   loggedIn?: boolean;
+  /** Anonymous guest session (issue #267) — the balance control becomes a plain, non-tappable
+   *  "Demo" badge (no real Wallet screen to open: nothing is persisted). Default false. */
+  isGuest?: boolean;
 }
 
 /**
@@ -27,7 +30,7 @@ interface Props {
  * the whole viewport on wide screens — only the inner row is `max-w-md`-constrained. The inner
  * row also carries `pb-4`, restoring a resting-state gap below the header (Advisor #7).
  */
-export function HubRibbon({ balance, onLogo, onWallet, loggedIn = true }: Props) {
+export function HubRibbon({ balance, onLogo, onWallet, loggedIn = true, isGuest = false }: Props) {
   return (
     <header className="sticky top-0 z-20 w-full bg-background pt-[env(safe-area-inset-top)]">
       <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 pb-4">
@@ -36,7 +39,18 @@ export function HubRibbon({ balance, onLogo, onWallet, loggedIn = true }: Props)
         </button>
 
         <div className="flex items-center gap-2">
-          {loggedIn ? (
+          {isGuest ? (
+            <div
+              data-testid="hub-guest-badge"
+              className="flex items-center gap-2 rounded-full bg-surface py-1.5 pl-3.5 pr-4"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />
+              <span className="text-sm font-bold tabular-nums text-foreground" data-testid="hub-balance">
+                {balance === null ? '—' : formatCredits(balance)}
+              </span>
+              <span className="text-xs font-extrabold uppercase tracking-wide text-muted-foreground">Demo</span>
+            </div>
+          ) : loggedIn ? (
             <button
               type="button"
               onClick={onWallet}

@@ -12,6 +12,8 @@ describe('AuthModal', () => {
         return { ok: true, json: async () => ({ token: 'T', playerId: 'P', balance: 1000, username: body.username, avatarId: 'default' }) } as Response;
       if (u.includes('/auth/login'))
         return { ok: true, json: async () => ({ token: 'T2', playerId: 'P2', balance: 42, username: body.username, avatarId: 'boy-dark' }) } as Response;
+      if (u.includes('/auth/guest'))
+        return { ok: true, json: async () => ({ token: 'GT', playerId: 'guest:G1', balance: 300, username: 'Guest', avatarId: 'default', isGuest: true }) } as Response;
       return { ok: false, json: async () => ({ error: 'nope' }) } as Response;
     }));
   });
@@ -19,7 +21,7 @@ describe('AuthModal', () => {
 
   it('register → onSuccess with the new token + the 1000-credit grant', async () => {
     const onSuccess = vi.fn();
-    render(<AuthModal onSuccess={onSuccess} onClose={vi.fn()} />);
+    render(<AuthModal onSuccess={onSuccess} onGuestSuccess={vi.fn()} onClose={vi.fn()} />);
     fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'neo' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'pw' } });
     fireEvent.click(screen.getByTestId('auth-submit'));
@@ -28,7 +30,7 @@ describe('AuthModal', () => {
 
   it('login tab → onSuccess with the existing account', async () => {
     const onSuccess = vi.fn();
-    render(<AuthModal onSuccess={onSuccess} onClose={vi.fn()} />);
+    render(<AuthModal onSuccess={onSuccess} onGuestSuccess={vi.fn()} onClose={vi.fn()} />);
     fireEvent.click(screen.getByTestId('auth-tab-login'));
     fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'trinity' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'pw' } });
@@ -39,7 +41,7 @@ describe('AuthModal', () => {
   it('surfaces a server error and does not resolve', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, json: async () => ({ error: 'Username taken' }) } as Response)));
     const onSuccess = vi.fn();
-    render(<AuthModal onSuccess={onSuccess} onClose={vi.fn()} />);
+    render(<AuthModal onSuccess={onSuccess} onGuestSuccess={vi.fn()} onClose={vi.fn()} />);
     fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'dup' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'pw' } });
     fireEvent.click(screen.getByTestId('auth-submit'));
@@ -47,15 +49,24 @@ describe('AuthModal', () => {
     expect(onSuccess).not.toHaveBeenCalled();
   });
 
+  it('"Play as guest" calls onGuestSuccess with the guest token/playerId/balance, no form fields required', async () => {
+    const onGuestSuccess = vi.fn();
+    const onSuccess = vi.fn();
+    render(<AuthModal onSuccess={onSuccess} onGuestSuccess={onGuestSuccess} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('auth-guest')); // no username/password typed
+    await waitFor(() => expect(onGuestSuccess).toHaveBeenCalledWith('GT', 'guest:G1', 300));
+    expect(onSuccess).not.toHaveBeenCalled();
+  });
+
   it('dismiss invokes onClose', () => {
     const onClose = vi.fn();
-    render(<AuthModal onSuccess={vi.fn()} onClose={onClose} />);
+    render(<AuthModal onSuccess={vi.fn()} onGuestSuccess={vi.fn()} onClose={onClose} />);
     fireEvent.click(screen.getByLabelText('Dismiss'));
     expect(onClose).toHaveBeenCalled();
   });
 
   it('restyle: fixed header copy, "Sign up" tab label, new disclaimer copy', () => {
-    render(<AuthModal onSuccess={vi.fn()} onClose={vi.fn()} />);
+    render(<AuthModal onSuccess={vi.fn()} onGuestSuccess={vi.fn()} onClose={vi.fn()} />);
     // Header is hardcoded (no per-wall title prop) — same wording for every wall.
     expect(screen.getByText('Create an account or Login')).toBeInTheDocument();
     // The register tab keeps its state value + testid but reads "Sign up".
@@ -69,7 +80,7 @@ describe('AuthModal', () => {
   });
 
   it('restyle: bg-surface panel (no border), solid bg-brand submit, bg-background toggle tray', () => {
-    const { container } = render(<AuthModal onSuccess={vi.fn()} onClose={vi.fn()} />);
+    const { container } = render(<AuthModal onSuccess={vi.fn()} onGuestSuccess={vi.fn()} onClose={vi.fn()} />);
     const panel = container.querySelector('.max-w-sm')!;
     expect(panel.className).toContain('bg-surface');
     expect(panel.className).not.toContain('border-border');

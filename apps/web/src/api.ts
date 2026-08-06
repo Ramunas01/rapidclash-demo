@@ -23,6 +23,10 @@ export const api = {
     req<AuthResponse>('POST', '/auth/register', body),
   login: (body: AuthLoginBody) =>
     req<AuthResponse>('POST', '/auth/login', body),
+  /** No form fields — mints a fresh, isolated, anonymous guest session (CHARTER.md's guest-mode
+   *  exception). Response is AuthResponse-shaped with `isGuest: true`. */
+  guestAuth: () =>
+    req<AuthResponse>('POST', '/auth/guest'),
   wallet: (token: string) =>
     req<WalletResponse>('GET', '/wallet', undefined, token),
   games: (token: string) =>
