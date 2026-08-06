@@ -15,7 +15,7 @@ import {
   type Matchmaking,
   type MatchHistory,
 } from '@rapidclash/core';
-import type { GameModule } from '@rapidclash/shared';
+import { EMBED_ALLOWED_ORIGINS, type GameModule } from '@rapidclash/shared';
 import { makeAuthMiddleware } from './middleware/auth.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerAdminRoutes } from './routes/admin.js';
@@ -41,6 +41,14 @@ export interface AppOptions {
 // Anything under these prefixes is the API (or the WS upgrade) — an unknown path here must
 // 404 as JSON, never fall back to the SPA shell. Everything else GET → index.html.
 const API_PREFIXES = ['/auth', '/wallet', '/games', '/open-challenges', '/leaderboard', '/matches', '/admin', '/ws'];
+
+// Guest-mode framability (GUEST_MODE_CONTRACT.md §3, issue #271): allow the landing origins to
+// iframe-embed the app; never send X-Frame-Options (it would fight/override frame-ancestors in
+// older browsers). Applied app-wide via onSend, not a scoped route: this is a single-entry-point
+// SPA with no server-rendered "guest" page and no same-origin sensitive data a malicious embed
+// could exploit differently than normal browsing — real users still go through the normal login
+// wall regardless of framing, so there's no concrete reason to scope this to a guest-only route.
+const FRAME_ANCESTORS_CSP = `frame-ancestors ${EMBED_ALLOWED_ORIGINS.join(' ')}`;
 
 /** Where the built PWA lives. WEB_DIST overrides; otherwise resolve relative to this
  *  compiled file (apps/server/dist → apps/web/dist) so it works from the repo layout. */
@@ -96,6 +104,11 @@ export function buildApp(
 ): FastifyInstance {
   const { identity, ledger, matchmaking, matchHistory, guest } = services;
   const app = Fastify({ logger: false });
+
+  // App-wide, every response (see FRAME_ANCESTORS_CSP above for why global vs scoped).
+  app.addHook('onSend', async (_request, reply) => {
+    reply.header('Content-Security-Policy', FRAME_ANCESTORS_CSP);
+  });
 
   app.register(FastifyWs);
 

@@ -25,3 +25,17 @@ export const GUEST_CURATED_GAMES: readonly string[] = ['coinflip'];
  * starting stack (3 rounds before a guest needs a fresh session).
  */
 export const GUEST_COINFLIP_STAKE = 100;
+
+/**
+ * The landing origins allowed to iframe-embed the guest surface (GUEST_MODE_CONTRACT.md §3/§5,
+ * issue #271). ONE list, imported by both sides so neither can drift from the other:
+ * - server (`server.ts`) echoes it verbatim into the CSP `frame-ancestors` directive.
+ * - client (`guest/events.ts`) validates every inbound `postMessage`'s `event.origin` against it,
+ *   and only ever sends outbound messages to an origin captured from a validated inbound one —
+ *   never a `'*'` targetOrigin.
+ * Extend this list (not either call site) when the Owner confirms a new preview/staging origin.
+ */
+export const EMBED_ALLOWED_ORIGINS: readonly string[] = [
+  'https://rapidclash.com',
+  'https://staging.rapidclash.com',
+];
