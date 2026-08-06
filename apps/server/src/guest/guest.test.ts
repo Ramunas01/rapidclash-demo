@@ -106,8 +106,10 @@ describe('guest services', () => {
       expect(matchmaking.sweepExpired(clock)).toEqual([]); // not yet — still resting
       clock += 1;
       const expired = matchmaking.sweepExpired(clock);
-      expect(expired).toHaveLength(1);
-      expect(expired[0].ownerId).toBe(DEMO_BOT_COINFLIP_ID);
+      // Issue #278 also seeds one chess pool bot resting at construction — both it and Coinflip's
+      // bot were posted at the same `now` and share the same ttlMs, so both expire together here.
+      expect(expired).toHaveLength(2);
+      expect(expired.map((e) => e.ownerId)).toContain(DEMO_BOT_COINFLIP_ID);
 
       // With the bot gone and NOTHING re-posting it (the old, buggy behaviour: only
       // onDemoBotMatched re-posts, and it can never fire with no bot left to pair against), a
@@ -124,7 +126,7 @@ describe('guest services', () => {
       // The bot sat idle (no guest joined) long enough to expire — the exact production
       // scenario: nobody played for 90s+, sweepExpired removed the bot's resting entry.
       clock += TTL + 1;
-      expect(matchmaking.sweepExpired(clock)).toHaveLength(1);
+      expect(matchmaking.sweepExpired(clock)).toHaveLength(2); // Coinflip's bot + #278's chess pool slot
 
       // This is what gateway.ts's periodic sweep now calls every tick, independent of match
       // activity — the fix. In production this runs ~1s after the expiry, well before any real
@@ -145,7 +147,7 @@ describe('guest services', () => {
       const { ledger, matchmaking, ensureDemoBotResting } = createGuestServices({ now: () => clock, ttlMs: TTL });
 
       clock += TTL + 1;
-      expect(matchmaking.sweepExpired(clock)).toHaveLength(1);
+      expect(matchmaking.sweepExpired(clock)).toHaveLength(2); // Coinflip's bot + #278's chess pool slot
 
       // A guest happened to hit PLAY DURING the outage window — finds nobody resting, so it
       // rests itself (the "stuck" symptom).

@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import type { SocketStream } from '@fastify/websocket';
-import type { Identity, Matchmaking, JoinMatched } from '@rapidclash/core';
+import type { Identity, Matchmaking, JoinMatched, MatchRecord } from '@rapidclash/core';
 import { ChallengeError, usesPlayerTimers, usesScheduledDeadlines } from '@rapidclash/core';
-import { IllegalMove, DEMO_BOT_COINFLIP_ID } from '@rapidclash/shared';
+import { IllegalMove, isDemoBotId } from '@rapidclash/shared';
 import type { GuestServices } from '../guest/index.js';
 import type {
   Envelope,
@@ -22,6 +22,7 @@ import type {
   ChallengesUpdatePayload,
   ChallengeExpiredPayload,
   OpenChallenge,
+  ApplyResult,
 } from '@rapidclash/shared';
 import type { GameModule } from '@rapidclash/shared';
 
@@ -50,6 +51,13 @@ const pendingForfeits = new Map<string, ReturnType<typeof setTimeout>>();
 // GUEST_MODE_STRATEGY.md §7's "don't over-build") — just a bound on in-memory growth.
 const pendingGuestEvictions = new Map<string, ReturnType<typeof setTimeout>>();
 
+// A demo bot's delayed "thinking" move (issue #278), keyed by matchId — at most one pending
+// move per match (turn-based games strictly alternate). Scheduled by `maybeScheduleGuestBotMove`
+// once a pool bot's turn arrives; cancelled by `cancelPendingBotMove` wherever a match can end
+// out from under it (forfeit, draw acceptance, a sweep resolving it) so a "thinking" bot never
+// applies a move to — or crashes trying to broadcast for — a match that's already gone.
+const pendingBotMoves = new Map<string, ReturnType<typeof setTimeout>>();
+
 const DEFAULT_FORFEIT_DELAY_MS = 60_000;
 const SWEEP_INTERVAL_MS = (() => {
   const n = parseInt(process.env.CHALLENGE_SWEEP_MS ?? '', 10);
@@ -63,6 +71,16 @@ function send<T>(socket: WsSocket, type: string, payload: T, matchId?: string): 
 
 function sendError(socket: WsSocket, code: string, message: string): void {
   send<ErrorPayload>(socket, 'error', { code, message });
+}
+
+/** Cancel a demo bot's pending delayed move for `matchId`, if one is scheduled — a no-op
+ *  otherwise. Call this wherever a match can end while a bot is still "thinking" (issue #278). */
+function cancelPendingBotMove(matchId: string): void {
+  const pending = pendingBotMoves.get(matchId);
+  if (pending !== undefined) {
+    clearTimeout(pending);
+    pendingBotMoves.delete(matchId);
+  }
 }
 
 export function registerWsGateway(
@@ -160,6 +178,99 @@ export function registerWsGateway(
     }
   }
 
+  /**
+   * Broadcast an already-applied move's result to both players — redacted match.state, then
+   * either match.end (terminal, already settled) or match.your_turn to whoever still has legal
+   * moves. Shared by the human `move.make` handler and a demo bot's delayed submission (issue
+   * #278, below): same broadcast contract regardless of who moved. After a non-terminal move,
+   * also checks whether it's now a demo bot's turn and schedules its delayed response.
+   */
+  function broadcastMoveResult(
+    mm: Matchmaking,
+    matchId: string,
+    match: MatchRecord,
+    mod: GameModule,
+    result: ApplyResult,
+  ): void {
+    for (const pid of match.players) {
+      const s = connections.get(pid);
+      if (s?.readyState === 1) {
+        const viewState = mod.viewFor(result.state, pid);
+        send<MatchStatePayload>(s, 'match.state', { state: viewState, events: result.events }, matchId);
+      }
+    }
+
+    if (mod.isTerminal(result.state)) {
+      const settled = mm.settleMatch(matchId);
+      cancelPendingBotMove(matchId);
+      for (const pid of match.players) {
+        playerMatch.delete(pid);
+        const s = connections.get(pid);
+        if (s?.readyState === 1) {
+          send<MatchEndPayload>(
+            s,
+            'match.end',
+            { outcome: settled.outcome, settlement: settled.settlement[pid] },
+            matchId,
+          );
+        }
+      }
+    } else {
+      for (const pid of match.players) {
+        const lm = mod.legalMoves(result.state, pid);
+        if (lm.length > 0) {
+          const s = connections.get(pid);
+          if (s?.readyState === 1) {
+            send<MatchYourTurnPayload>(s, 'match.your_turn', { legalMoves: lm }, matchId);
+          }
+        }
+      }
+      maybeScheduleGuestBotMove(matchId);
+    }
+  }
+
+  /**
+   * If it's now a demo bot's turn in `matchId` (issue #278), pick its move (the full
+   * capture-value evaluation + 50/50 gate runs synchronously, right now — only the SUBMISSION is
+   * delayed) and schedule it via `setTimeout`. A no-op for a real match, a match with no bot
+   * player, one already settled, or one where a bot move is already pending. The timer is
+   * cancellable (`pendingBotMoves`/`cancelPendingBotMove`) so a match ending while the bot is
+   * "thinking" never applies a move to, or crashes broadcasting for, a match that's gone.
+   */
+  function maybeScheduleGuestBotMove(matchId: string): void {
+    if (!guest) return;
+    const match = guest.matchmaking.getActiveMatch(matchId);
+    if (!match) return;
+    const mod = moduleByGame.get(match.gameId);
+    if (!mod) return;
+    const botId = match.players.find(isDemoBotId);
+    if (botId === undefined) return;
+    if (mod.legalMoves(match.state, botId).length === 0) return; // not the bot's turn
+    if (pendingBotMoves.has(matchId)) return; // already scheduled
+
+    const picked = guest.selectBotMove(match.gameId, match.state, botId, Date.now());
+    if (!picked) return;
+    const { move, delayMs } = picked;
+
+    const handle = setTimeout(() => {
+      pendingBotMoves.delete(matchId);
+      const liveMatch = guest.matchmaking.getActiveMatch(matchId);
+      if (!liveMatch) return; // the match ended while the bot was "thinking" — nothing to submit
+
+      let result: ApplyResult;
+      try {
+        result = guest.matchmaking.applyMove(matchId, botId, move, Date.now());
+      } catch {
+        // Defensive: the move became illegal between selection and submission. Can't happen in a
+        // strictly-alternating turn-based game with no other actor able to move mid-"think", but
+        // a misbehaving module here must not crash the timer callback.
+        return;
+      }
+      broadcastMoveResult(guest.matchmaking, matchId, liveMatch, mod, result);
+    }, delayMs);
+    pendingBotMoves.set(matchId, handle);
+  }
+
   // Server-authoritative expiry sweep: refund (in core) + notify owner & subscribers (OC6).
   // Factored so it can run against BOTH the real Matchmaking and (if guest mode is wired) the
   // guest one — critical for guest mode, not cosmetic: Coinflip's pick window resolves ONLY via
@@ -189,6 +300,7 @@ export function registerWsGateway(
     // only push match.end and clean up. Complements the socket-close forfeit below.
     const stale = mm.sweepStaleMatches(Date.now());
     for (const r of stale) {
+      cancelPendingBotMove(r.matchId); // #278: a "thinking" bot must not move into a dead match
       for (const pid of r.players) {
         playerMatch.delete(pid);
         // A close-forfeit timer may also be pending for this player — cancel it so the
@@ -224,6 +336,7 @@ export function registerWsGateway(
         send<MatchStatePayload>(s, 'match.state', { state: viewState, events: t.events }, t.matchId);
       }
       if (t.terminal) {
+        cancelPendingBotMove(t.matchId); // #278: covers chess's flag-on-time (cumulative clock) path
         for (const pid of t.players) {
           playerMatch.delete(pid);
           const pending = pendingForfeits.get(pid);
@@ -397,6 +510,7 @@ export function registerWsGateway(
 
           try {
             const settled = mm.forfeitMatch(matchId, playerId);
+            cancelPendingBotMove(matchId); // #278: a "thinking" bot must not move into a dead match
             for (const pid of match.players) {
               playerMatch.delete(pid);
               const s = connections.get(pid);
@@ -456,14 +570,19 @@ export function registerWsGateway(
                 // Match formed via the FIFO path — the waiter's resting bet is consumed.
                 queuedGameId = null;
                 queuedStake = null;
-                // The guest was paired against the permanently-resting Demo-Opponent (issue
-                // #267): submit its pick through the normal applyMove path — viewFor redaction
-                // holds automatically, not via new code — then re-post it so the NEXT guest
-                // pairs instantly too.
-                if (guest && result.opponentId === DEMO_BOT_COINFLIP_ID) {
+                // The guest was paired against a resting Demo-Opponent (issue #267, generalized
+                // per-game by issue #278): dispatches on the matched game internally — Coinflip
+                // submits its pick immediately through the normal applyMove path (viewFor
+                // redaction holds automatically, not via new code) and re-posts so the NEXT guest
+                // pairs instantly too; Chess just marks the matched pool bot busy.
+                if (guest && isDemoBotId(result.opponentId)) {
                   guest.onDemoBotMatched(result.matchId, Date.now());
                 }
                 deliverMatchStart(playerId, socket, result, gameId);
+                // Chess: the just-matched bot may owe the first move (it always plays the side
+                // that was already resting, i.e. players[0] — see matchmaking.ts's joinQueue).
+                // Coinflip: already picked above, so this is a harmless no-op (no legal moves left).
+                if (guest) maybeScheduleGuestBotMove(result.matchId);
                 if (!isGuest) {
                   pushChallengesUpdate(gameId, {
                     gameId,
@@ -536,10 +655,16 @@ export function registerWsGateway(
               const gameId = match?.gameId ?? '';
               queuedGameId = null;
               queuedStake = null;
+              // Same bot dispatch as queue.join above, and the feed-removal guard below: all
+              // unreachable today (the curated client never calls challenge.take), but the guest
+              // matchmaking instance still answers this message type, so guard it like every
+              // other site.
+              if (guest && isDemoBotId(result.opponentId)) {
+                guest.onDemoBotMatched(result.matchId, Date.now());
+              }
               deliverMatchStart(playerId, socket, result, gameId);
-              // The claimed bet leaves the feed (OC8). Never for a guest (see above) — unreachable
-              // today (the curated client never calls challenge.take), but the guest matchmaking
-              // instance still answers this message type, so guard it like every other site.
+              if (guest) maybeScheduleGuestBotMove(result.matchId);
+              // The claimed bet leaves the feed (OC8). Never for a guest (see above).
               if (!isGuest) {
                 pushChallengesUpdate(gameId, {
                   gameId,
@@ -635,42 +760,9 @@ export function registerWsGateway(
                 throw err;
               }
 
-              // Broadcast per-player redacted match.state to both players.
-              for (const pid of match.players) {
-                const s = connections.get(pid);
-                if (s?.readyState === 1) {
-                  const viewState = mod.viewFor(result.state, pid);
-                  send<MatchStatePayload>(s, 'match.state', { state: viewState, events: result.events }, matchId);
-                }
-              }
-
-              if (mod.isTerminal(result.state)) {
-                // Settle and send match.end to both players.
-                const settled = mm.settleMatch(matchId);
-                for (const pid of match.players) {
-                  playerMatch.delete(pid);
-                  const s = connections.get(pid);
-                  if (s?.readyState === 1) {
-                    send<MatchEndPayload>(
-                      s,
-                      'match.end',
-                      { outcome: settled.outcome, settlement: settled.settlement[pid] },
-                      matchId,
-                    );
-                  }
-                }
-              } else {
-                // Send match.your_turn to each player who has legal moves.
-                for (const pid of match.players) {
-                  const lm = mod.legalMoves(result.state, pid);
-                  if (lm.length > 0) {
-                    const s = connections.get(pid);
-                    if (s?.readyState === 1) {
-                      send<MatchYourTurnPayload>(s, 'match.your_turn', { legalMoves: lm }, matchId);
-                    }
-                  }
-                }
-              }
+              // Broadcast per-player redacted match.state to both players; settle + match.end if
+              // terminal, else match.your_turn (and maybe schedule a demo bot's next move — #278).
+              broadcastMoveResult(mm, matchId, match, mod, result);
               break;
             }
 
@@ -688,6 +780,7 @@ export function registerWsGateway(
               }
 
               const settled = mm.forfeitMatch(matchId, playerId);
+              cancelPendingBotMove(matchId); // #278: a "thinking" bot must not move into a dead match
 
               for (const pid of match.players) {
                 playerMatch.delete(pid);
@@ -746,6 +839,7 @@ export function registerWsGateway(
               // existing draw settlement (stakes returned, no rake, no rematch).
               if (mod.isTerminal(result.state)) {
                 const settled = mm.settleMatch(matchId);
+                cancelPendingBotMove(matchId); // #278: a drawAccept can end a match a bot was "thinking" in
                 for (const pid of match.players) {
                   playerMatch.delete(pid);
                   const s = connections.get(pid);
