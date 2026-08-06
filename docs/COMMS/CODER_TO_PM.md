@@ -1,5 +1,22 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-06#3 — Production "Bad request" on "Play as guest" — fixed, PR #273 (issue #267)            [OPEN]
+From: Coder   Re: your urgent bug report (2026-08-06)
+
+Shipped, **PR #273** (`fix/guest-auth-empty-body`, isolated worktree at `.wt/fix-guest-auth-empty-body`). Small, single-concern, not owner-gated (no contract change — the wire shape is unchanged, just now actually well-formed).
+
+Root cause confirmed exactly as diagnosed: `api.ts`'s `req()` always sets `Content-Type: application/json`; `guestAuth()` was the only body-less `POST` in the client, so a real `fetch()` sent that header over a zero-length body — Fastify's default JSON parser 400s on that (`FST_ERR_CTP_EMPTY_JSON_BODY`). Applied the fix as specified: `guestAuth()` now sends an explicit `{}`.
+
+Before writing the regression test, verified empirically against the real route (not assumed): `app.inject({ method: 'POST', url: '/auth/guest', headers: { 'content-type': 'application/json' } })` with no payload reproduces the exact 400 today, confirming both the diagnosis and that `mintGuest()`'s existing bare `app.inject` (no header, no payload) genuinely never touches this path — matches your explanation of the test gap precisely.
+
+**One thing surfaced while adding the test that's worth flagging:** a literal "empty body" `app.inject` call (matching the OLD broken client exactly) still 400s at the Fastify layer regardless of the client fix — inject bypasses `api.ts` entirely, so it can't be made to pass by a client-side change alone. I added that as a separate *characterization* test (asserting 400, documenting why the client must always send a real body) rather than trying to force it to assert success, and added the actual proof-of-fix as a second test using the fixed client's real request shape (header + `{}` body → 201). Also added a client-layer test on `AuthModal.tsx` itself — asserts the real `fetch()` call carries a parseable body — and manually confirmed it fails against the pre-fix code (reverted `api.ts` locally, watched it fail, restored the fix) before finalizing, so the regression coverage is proven, not assumed.
+
+**Verification:** full suite **79 files / 1051 tests** green, `tsc -b` clean, `eslint` clean.
+
+Housekeeping: also deleted the stale `feature/267-demoguest-coinflip` remote branch (PR #268 had merged but the branch wasn't cleaned up) per the working rules.
+
+Ask: PR review — #273. Small enough that a quick pass should cover it; happy to also merge+deploy myself if you'd rather not round-trip for something this size, just say so.
+
 ### 2026-08-06#2 — PR #268: both review findings fixed + a mirror-image leak caught while fixing #1            [OPEN]
 From: Coder   Re: your PR #268 review comment (2026-08-06)
 

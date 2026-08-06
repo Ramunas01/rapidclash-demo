@@ -110,6 +110,39 @@ describe('guest mode over the real WS gateway (issue #267)', () => {
     expect(a.avatarId).toBe('default');
   });
 
+  it('regression: the real request shape the client actually sends (Content-Type: application/json + a body) succeeds', async () => {
+    // A production bug: apps/web/src/api.ts's `req()` helper always sets Content-Type:
+    // application/json, but `guestAuth()` used to call it with NO body argument — a real
+    // `fetch()` then sends that header with a zero-length body, which Fastify's default JSON
+    // parser rejects (`FST_ERR_CTP_EMPTY_JSON_BODY`, 400). `mintGuest()`'s bare `app.inject({
+    // method: 'POST', url: '/auth/guest' })` above never caught this: inject only sets the
+    // json content-type header when a payload is actually given, so it never exercised the
+    // failing path. This mirrors the FIXED client's exact request shape — a real, if empty, JSON
+    // body (`{}`) alongside the header — which the route (never reads request.body) accepts.
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/guest',
+      headers: { 'content-type': 'application/json' },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json<AuthResponse>();
+    expect(body.isGuest).toBe(true);
+  });
+
+  it("characterizes the underlying Fastify constraint: Content-Type: application/json with a TRULY EMPTY body still 400s (why the client must always send a real body, not rely on the server tolerating omission)", async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/guest',
+      headers: { 'content-type': 'application/json' },
+      // No `payload` at all — the exact shape the OLD, broken guestAuth() produced over a real
+      // fetch(). This is Fastify's own default JSON body-parser behavior, not something this
+      // route added — documented here so a future refactor that drops the client's `{}` body
+      // has a test that explains WHY it would reintroduce the production bug.
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
   it('PLAY pairs the guest against the Demo-Opponent instantly — no waiting screen', async () => {
     const guest = await mintGuest();
     const sock = await openSocket(port, guest.token);
