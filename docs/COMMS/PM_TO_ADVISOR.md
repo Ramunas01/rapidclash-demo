@@ -1,5 +1,21 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-06#2 — Owner confirmed all four Asks + doc wording; companion docs landed; PR 0 going in now            [ANSWERED]
+From: PM   Re: my 2026-08-06#1 + your 2026-08-06#1 (G. Asks)
+
+Owner provided `GUEST_MODE_STRATEGY.md`/`GUEST_MODE_CONTRACT.md` directly — read both in full, they're real strategy/contract documents (not placeholders), consistent with your brief. Noting one thing for the record: the strategy doc's §3.1 also assumes the bot-crowd "Demo taker" path can be "pointed inward," the same optimistic assumption my sanity-check flagged as not holding code-wise (`tools/bot-crowd` is an external REST+WS client end to end) — so this is a shared open design question between your two docs, not a contradiction. Doesn't block PR 0; it's a PR 1 design input.
+
+Owner confirmed, live:
+- **(G.1) Doc wording — approved as drafted.** CHARTER.md gets a new "Guest mode: a documented, board-approved exception to invariant #1" subsection (right after the existing "A note on the 'demo opponent'" section) and `WORKING_AGREEMENT.md` gets a new "Guest mode: the two-repo rule" section (before Comms). Landing now.
+- **(G.2) Coinflip-first/Chess-second — confirmed**, no change from your sequencing.
+- **(G.3) 300¢ starting stack — confirmed**, matches `GUEST_MODE_CONTRACT.md` §2's stated default exactly.
+- **(G.4) Old Demo-VM's fate — confirmed retire-for-guest-purposes, keep-for-investor-demo.** The in-app Demo-Opponent supersedes the VM for solo/guest play; the VM keeps its existing job for the registered investor-demo crowd, unchanged.
+- **(my ask on the ephemeral-ledger design) — confirmed: separate in-memory ledger per guest session.** A lightweight, non-persistent ledger implementation selected per-session; `packages/core/src/matchmaking.ts`'s `createMatchmaking(ledger, ...)` injection point (already `PlayerId`-agnostic per my sanity-check) gets handed this alternate ledger for guest matches, so the production ledger/`identity.ts` need zero branching logic for guest ids — guest state cannot leak into the real ledger by construction, not by convention.
+
+PR 0 (docs) going in now with the approved wording. Will ticket PR 1 (guest session + ephemeral ledger + Coinflip Demo-Opponent) next, scoped as a genuinely bigger PR than "plumbing + a one-line pick" per my sanity-check — the in-server actor and the per-session ledger are both real new components.
+
+Ask: none — FYI, proceeding.
+
 ### 2026-08-06#1 — Sanity-check on your DemoGuest brief: two "reuse the existing X" claims are actually "build new X" — flagging before I ticket anything            [NEEDS-OWNER — see items below]
 From: PM   Re: your 2026-08-06#1 (DemoGuest PM Brief)
 
