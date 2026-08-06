@@ -1,5 +1,22 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-07#2 — Guest-mode embed entry point: ?mode=guest URL route — PR #286 (issue #284)            [OPEN]
+From: Coder   Re: your dispatch (2026-08-07)
+
+Shipped, **PR #286** (`feature/284-guest-mode-url-entry`, isolated worktree at `.wt/284-guest-mode-url-entry`). Read `docs/GUEST_MODE_CONTRACT.md` v0.2 §1 first.
+
+**Concurrency check (as instructed):** #279/PR #281 is still OPEN, touches the exact same `App.tsx` guest-entry area (`handleGuestSuccess` and its neighborhood). Branched from current `main` (does not include #281's unmerged changes) — whichever of #281/#284 merges second eats a rebase. Kept the collision risk as low as I could by calling `handleGuestSuccess` by reference rather than editing its internals, so this PR shouldn't need to change regardless of what #281 does inside that function. Also spotted `.wt/283-guest-stuck-hub-fix` (same guest area) but it's clean, zero divergent commits — nothing actually in flight there.
+
+**What shipped:** `isGuestModeUrl()` reads `?mode=guest` off `window.location.search` (no dedicated route — this app has no client router). New `'guest-loading'` screen + the initial `screen` state checks the URL **synchronously before first paint**, not just reactively, so an embed never flashes Home while the guest-auth call is in flight. A ref-guarded mount effect calls `api.guestAuth()` then feeds the result straight into the existing `handleGuestSuccess`, unchanged. Guarded against React 18 StrictMode's dev double-invoke (this app wraps `<App/>` in `<StrictMode>` — without the guard it'd mint two guest sessions per load, hitting #270's rate limit needlessly). Skipped entirely when a real session is already persisted, so a shared guest link can't hijack a signed-in visitor. A failed mint falls back to Home instead of a stuck blank screen.
+
+**Judgment call — config params:** kept `games`/`credits`/`chrome` solely on the existing postMessage `config` channel (#271), did not also parse them from the URL. The postMessage channel validates the sender's origin against the CSP allowlist; a query string has no equivalent trust boundary. Also nothing client- or server-side varies its behavior off these today (curated set/stake/credits are fixed constants) — URL parsing for them would be unused plumbing right now.
+
+**Acceptance criteria — one is only partially met, flagging clearly:** built the real app (`vite build`) and ran it through the actual Fastify server, then `curl`'d `/?mode=guest` — confirmed `content-security-policy: frame-ancestors https://rapidclash.com https://staging.rapidclash.com` on the real built artifact, not just a unit test. **Could not do a live-browser iframe check** — downloaded a headless Chromium via Playwright fine, but it wouldn't launch (missing OS shared libs, `libnspr4.so` etc.) and installing them needs `apt-get`/root, which needs interactive `sudo` this sandbox doesn't have. Separately, even with a working browser I have no way to serve a test page from the actual `rapidclash.com`/`staging.rapidclash.com` origins to test the real positive case — and per the issue's own note, there's no staging deployment yet either, so that exact scenario can't be fully exercised from any dev box today. **Ask: someone with real browser access (or root) should do a quick manual iframe check post-deploy** — embed the deployed `/?mode=guest` from an allowed origin and confirm it renders; confirm a disallowed origin gets blocked. Everything else is covered by a new jsdom test file (`GuestUrlEntry.test.tsx`, 5 tests) exercising the real `App` component end-to-end.
+
+**Verification:** full suite **86 files / 1096 tests** green, `tsc -b` clean, `eslint` clean.
+
+Ask: PR review — #286, with the iframe-verification caveat above front and center.
+
 ### 2026-08-07#1 — Guest stuck-hub bug fixed, PR #285 (issue #283)            [OPEN]
 From: Coder   Re: your dispatch (2026-08-07)
 

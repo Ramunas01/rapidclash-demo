@@ -31,8 +31,9 @@ import { CrashHubScreen } from './screens/CrashHub.js';
 import { HomeHubScreen } from './screens/HomeHub.js';
 import { ProfileHubScreen } from './screens/ProfileHub.js';
 import { AuthModal } from './components/AuthModal.js';
+import { api } from './api.js';
 
-type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub' | 'crash-hub' | 'roulette-hub' | 'ships-battle-hub' | 'dice-hub' | 'baccarat-hub' | 'keno-hub' | 'limbo-hub' | 'hilo-hub';
+type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'guest-loading' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub' | 'crash-hub' | 'roulette-hub' | 'ships-battle-hub' | 'dice-hub' | 'baccarat-hub' | 'keno-hub' | 'limbo-hub' | 'hilo-hub';
 
 /** A commit-to-play action captured when a logged-out visitor hits the auth wall. After sign-in
  *  the user lands on the intent's hub with the stake armed and presses PLAY to commit — nothing
@@ -349,6 +350,20 @@ function loadAuth() {
   };
 }
 
+/** `?mode=guest` on the entry URL (issue #284, GUEST_MODE_CONTRACT.md §1 "a stable guest entry
+ *  (route/flag)") — the iframe-embed trigger: an embed loads straight into the curated guest
+ *  surface, no login/home screen, no tap. Query-string only (no dedicated route) — this app has
+ *  no client-side router, just the `Screen` union + `setScreen`, so a router-less URL check fits
+ *  the existing shape. */
+function isGuestModeUrl(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URLSearchParams(window.location.search).get('mode') === 'guest';
+  } catch {
+    return false;
+  }
+}
+
 export function App() {
   const { token: savedToken, playerId: savedPlayerId, username: savedUsername, avatarId: savedAvatarId } = loadAuth();
   // A match persisted across a reload restores straight to the play view; match.state
@@ -356,8 +371,13 @@ export function App() {
   // coinflip match resumes onto the hub (in-place flow), not the standalone play screen.
   // Everyone lands on the Home hub — a logged-out visitor browses there and only hits the
   // auth wall at the commit-to-play action. (The full 'auth' screen stays for back-compat.)
+  // `?mode=guest` (issue #284) with no already-persisted real session takes priority over both:
+  // land on the blank guest-loading screen instead of a Home-hub flash while the guest-auth
+  // network call (fired from an effect below) is in flight.
   const [screen, setScreen] = useState<Screen>(
-    savedToken && hasStoredMatch() ? (hubScreenFor(readStoredGameId()) ?? 'play') : 'home',
+    savedToken && hasStoredMatch() ? (hubScreenFor(readStoredGameId()) ?? 'play')
+      : !savedToken && isGuestModeUrl() ? 'guest-loading'
+      : 'home',
   );
   const [token, setToken] = useState<string | null>(savedToken);
   const [playerId, setPlayerId] = useState<string | null>(savedPlayerId);
@@ -599,6 +619,38 @@ export function App() {
     setPendingGameId('coinflip');
     setPrearmStake(GUEST_COINFLIP_STAKE);
     setScreen('coinflip-hub');
+  }, []);
+
+  // URL-based guest entry (issue #284, GUEST_MODE_CONTRACT.md §1): `?mode=guest` on initial load
+  // mints a guest session and lands on the guest surface with no tap required — an iframe embed
+  // has no visible login/home screen to tap through. Reuses handleGuestSuccess verbatim (the same
+  // path "Play as guest" drives) rather than duplicating any of its session-setup logic.
+  //
+  // Judgment call (issue #284): the contract's §2 config params (games/credits/chrome) are NOT
+  // also read from the URL here — they stay solely on the postMessage `config` channel (#271).
+  // Reasons: (1) that channel already validates the sender's origin against the CSP allowlist;
+  // a URL query string has no equivalent trust boundary, so any direct visitor (not just the
+  // landing embed) could set them; (2) nothing client- or server-side actually varies its
+  // behavior off these params today (the curated set/stake/credits are all fixed constants) — URL
+  // parsing for them would be unused plumbing. Revisit if a real per-request config need appears.
+  //
+  // Guarded by a ref (not just the effect's empty deps) so React 18 StrictMode's dev double-invoke
+  // (main.tsx wraps <App/> in <StrictMode>) can't mint two guest sessions — cheap per-session, but
+  // rate-limited (issue #270) and wasteful to double-fire on every dev mount. Skipped entirely if
+  // a real session is already persisted (savedToken) — a `?mode=guest` link never hijacks an
+  // already-signed-in visitor.
+  const guestUrlEntryFired = useRef(false);
+  useEffect(() => {
+    if (guestUrlEntryFired.current) return;
+    if (savedToken || !isGuestModeUrl()) return;
+    guestUrlEntryFired.current = true;
+    api.guestAuth()
+      .then((res) => handleGuestSuccess(res.token, res.playerId, res.balance))
+      .catch((err) => {
+        console.error('[guest] ?mode=guest entry failed', err);
+        setScreen('home'); // fall back to the normal flow rather than a stuck loading screen
+      });
+  // eslint-disable-next-line -- savedToken is intentionally read once on mount (mirrors the WS-on-mount effect below)
   }, []);
 
   // Guest-mode postMessage protocol (GUEST_MODE_CONTRACT.md §5, issue #271): listen from mount,
@@ -1073,6 +1125,11 @@ export function App() {
         return <WalletScreen token={token!} username={username} balance={balance} onPlay={goToHome} onLogout={handleLogout} />;
       case 'game-list':
         return <GameListScreen token={token!} onSelect={handleSelectGame} onBack={goToWallet} />;
+      case 'guest-loading':
+        // Deliberately blank (issue #284) — up while the `?mode=guest` guest-auth call is in
+        // flight, so an embed never flashes the normal Home hub first. Token-driven background,
+        // no visible text (the call is typically near-instant).
+        return <div data-testid="guest-loading" className="min-h-screen bg-background" aria-busy="true" aria-live="polite" />;
       case 'coinflip-hub':
       case 'rps-hub':
       case 'blackjack-hub':
