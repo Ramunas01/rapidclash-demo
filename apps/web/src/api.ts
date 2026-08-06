@@ -24,9 +24,14 @@ export const api = {
   login: (body: AuthLoginBody) =>
     req<AuthResponse>('POST', '/auth/login', body),
   /** No form fields — mints a fresh, isolated, anonymous guest session (CHARTER.md's guest-mode
-   *  exception). Response is AuthResponse-shaped with `isGuest: true`. */
+   *  exception). Response is AuthResponse-shaped with `isGuest: true`. Body is an explicit `{}`,
+   *  not omitted: `req` always sends `Content-Type: application/json`, and a real `fetch()` with
+   *  that header but no body is a zero-length body Fastify's JSON parser rejects (400) — the only
+   *  body-less POST in this file otherwise. `app.inject()` in tests doesn't set the header without
+   *  a payload, so this exact gap doesn't reproduce there unless the header is forced (see the
+   *  regression test in guest.gateway.test.ts). */
   guestAuth: () =>
-    req<AuthResponse>('POST', '/auth/guest'),
+    req<AuthResponse>('POST', '/auth/guest', {}),
   wallet: (token: string) =>
     req<WalletResponse>('GET', '/wallet', undefined, token),
   games: (token: string) =>

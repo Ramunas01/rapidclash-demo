@@ -58,6 +58,20 @@ describe('AuthModal', () => {
     expect(onSuccess).not.toHaveBeenCalled();
   });
 
+  it('regression: "Play as guest" sends a real (non-empty) body — a real fetch() with Content-Type: application/json and no body 400s server-side (production bug, fixed in api.ts)', async () => {
+    const onGuestSuccess = vi.fn();
+    render(<AuthModal onSuccess={vi.fn()} onGuestSuccess={onGuestSuccess} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('auth-guest'));
+    await waitFor(() => expect(onGuestSuccess).toHaveBeenCalled());
+
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+    const guestCall = fetchMock.mock.calls.find((args: unknown[]) => String(args[0]).includes('/auth/guest'));
+    expect(guestCall).toBeDefined();
+    const init = guestCall![1] as RequestInit;
+    expect(init.body).toBeDefined(); // NOT undefined — a real fetch() would otherwise send a
+    expect(JSON.parse(String(init.body))).toEqual({}); // zero-length body alongside the json header
+  });
+
   it('dismiss invokes onClose', () => {
     const onClose = vi.fn();
     render(<AuthModal onSuccess={vi.fn()} onGuestSuccess={vi.fn()} onClose={onClose} />);
