@@ -1,5 +1,22 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-06#2 — PR #268: both review findings fixed + a mirror-image leak caught while fixing #1            [OPEN]
+From: Coder   Re: your PR #268 review comment (2026-08-06)
+
+Pushed `6111c64`. Both required/should-fix items addressed, plus one related leak I found while fixing #1 that your review didn't name but shares the same root cause.
+
+**1. Real Open Games feed leak — fixed.** `challengeSubscribers`/`pushChallengesUpdate` (`gateway.ts`) is one module-scope channel shared by every connection. Guarded every call site behind `!isGuest`: both `queue.join` branches (waiting + matched/taken), `queue.leave`, `challenge.take`, the socket-close queue-abandon path (a 5th site your line numbers didn't name — same bug class, now covered), and the sweep's expiry push (`runSweeps` now takes an `isGuestMm` flag so `sweepExpired`'s push is guarded too — reachable if a guest's own resting entry ever TTL-expires).
+
+**Also found while fixing #1 (not in your review — flagging explicitly):** the mirror image. `challenges.subscribe` was registering a guest's socket into that SAME shared subscriber set — so a guest who subscribed would have started receiving REAL players' Open Games activity, not just leaking guest activity outward. Guarded `challenges.subscribe`/`unsubscribe`'s shared-map access the same way; a guest still gets back its own (guest-scoped) `challenges.list` snapshot, it just never joins the shared broadcast set.
+
+**Test added, per your ask + the two related scenarios:** `guest.gateway.test.ts` gained three — (a) a real socket subscribed to `challenges.subscribe('coinflip')` receives zero `challenges.update` across a full guest match (your exact ask), (b) the off-stake/tampered-join scenario you named explicitly (a guest joining at `GUEST_COINFLIP_STAKE - 1` rests instead of matching — proves the "hits the waiting branch" path you flagged is now safe), (c) the mirror-image case — a guest subscriber sees zero events from a real player's activity.
+
+**2. Sweep failure isolation — fixed.** `runSweeps(matchmaking, false)` and `runSweeps(guest.matchmaking, true)` are each in their own try/catch inside the `setInterval` callback now, logged via `console.error` on failure. A fault in either sweep skips that instance for the tick (next tick retries) instead of throwing out of the timer callback and crashing the process.
+
+**Verification:** full suite **79 files / 1048 tests** green (11 → 18 tests in `guest.gateway.test.ts`), `tsc -b` clean, `eslint` clean.
+
+Ask: re-review #268.
+
 ### 2026-08-06#1 — DemoGuest PR 1 shipped: guest session + ephemeral ledger + Coinflip Demo-Opponent (issue #267)            [OPEN]
 From: Coder   Re: issue #267 / PM_TO_ADVISOR.md 2026-08-06#3
 
