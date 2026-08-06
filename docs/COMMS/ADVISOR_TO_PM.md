@@ -1,5 +1,57 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-06#1 — PM Brief: DemoGuest (guest mode), first build            [OPEN — Owner-gated docs (PR0) + phased build]
+From: Advisor   Re: Board-approved anonymous preview ("guest mode")
+
+Board has approved proceeding with the anonymous preview ("guest mode"). This brief adopts the framework into our docs and builds the first slice: a **DemoGuest** session with an **in-app Demo-Opponent**, starting with **Coinflip**, then **Chess** (Designer to add 1–2 more later). Companion docs: `GUEST_MODE_STRATEGY.md`, `GUEST_MODE_CONTRACT.md`.
+
+## A. Adopt the framework (PR 0 — docs only, Owner-gated)
+1. Add `GUEST_MODE_STRATEGY.md` and `GUEST_MODE_CONTRACT.md` to `docs/`.
+2. **CHARTER.md** — record the carve-out: invariant "humans play humans, never the house" now has a **documented, board-approved exception for guest mode** (opponent = the app), with the mitigations on record: opponent honestly labelled as a demo bot, play-money `¢` only, ephemeral, no real-world value, distinct from the investor demo. *(Advisor note: board approval covers the business decision; recommend counsel is at least informed of the "app as opponent" + anonymous-no-PII framing before public exposure — non-blocking given play-money/no-PII, but it should be a conscious tick, not skipped.)*
+3. **WORKING_AGREEMENT.md** — add the two-repo rule: *game behaviour changes only in `rapidclash-demo`; `rapidclash-landing` may only configure and frame guest mode.*
+
+## B. What DemoGuest is (build target)
+A **per-visitor, anonymous, ephemeral session** that plays a curated subset of games against an **in-app Demo-Opponent**, on the real server (server-authoritative, redaction intact). It is *not* the old external bot-crowd/VM and *not* a shared account.
+
+## C. Build — phased
+
+### PR 1 — Guest session + ephemeral credits + entry + Coinflip Demo-Opponent
+The whole framework, proven on the trivial game.
+- **Guest session type (server).** A **session factory**: each "enter as guest" mints a **new, isolated, anonymous session** (unique id, own state) — NOT one shared "DemoGuest" account. No account, no email, no password, no persistence.
+- **Entry (client).** A no-password **"Play as guest"** affordance in the existing login window (per the Owner's request) that calls the guest-session endpoint and drops the visitor straight into the curated surface. (The `?mode=guest` embed entry from the contract comes later, for the landing seam — same endpoint underneath.)
+- **Ephemeral credits.** Provision a fixed starting stack (contract default `300¢`) to the session; **not persisted** — reset on reload/expiry, discarded on session end. Guest wallets must never pollute the real ledger.
+- **Guest chrome / curated surface.** In guest mode hide wallet/waitlist/account/leaderboard chrome; show only the **curated game set = [coinflip]** for this PR. (Curated set is config, per the contract's `games` param.)
+- **Coinflip Demo-Opponent (server, in-app).** When the guest presses PLAY, the Demo-Opponent **takes the game instantly** (no matchmaking wait — solo preview) and "plays" it. For Coinflip this is trivial: reuse the coinflip module's seeded pick. Generalise the existing bot-**taker** into an in-server actor that both **takes and plays**, so no VM is needed. Labelled honestly (the `🤖` / "Demo Opponent" convention).
+- **Integrity.** The Demo-Opponent is a **server actor**, so `viewFor` redaction holds unchanged — the guest client sees no more than a real client (opponent's pick hidden until reveal). Play-money `¢` framing unchanged.
+
+### PR 2 — Chess Demo-Opponent
+- Add `chess` to the curated set and give the Demo-Opponent **chess play**: a **legal-move bot**. Reuse the server's existing chess move-validation to enumerate legal moves; a **simple heuristic (or random-legal) move** is sufficient and honest for a preview — **do not build a strong engine.** Instant pairing as in PR 1.
+
+### Later (not now)
+- Designer's extra 1–2 games (same pattern — trivial if the game's bot "play" is simple, more if it needs real move logic — flag per game).
+- The landing embed entry (`?mode=guest`, `chrome=embed`, framing/CSP) — the contract's "Provides" embedding responsibility.
+- Optional scripted "join a bet" feel — explicitly out of scope for now.
+
+## D. Critical flags (do not skip)
+1. **Per-visitor isolation** (PR 1) — the single most important correctness point. Concurrent guests must not share balance/games. Test with 2+ simultaneous guest sessions.
+2. **Coinflip ≠ Chess effort** — PR 1 is plumbing + a one-line pick; PR 2 is a move-making bot. Kept in separate PRs deliberately.
+3. **Instant pairing** — the Demo-Opponent takes the guest's game immediately; a guest never waits at a matchmaking screen.
+4. **Honesty labelling** — the opponent is visibly a demo bot, never disguised as a real player (charter mitigation).
+5. **Ephemeral wallets** — guest credits never persist and never touch the real ledger.
+6. **Relationship to the old Demo/VM** — the in-app Demo-Opponent is for *guest mode*; the investor demo's human/demo-taker crowd is unchanged. Clarify in docs whether the VM bot-crowd is retired for guest purposes (it should be — the in-app opponent supersedes it for solo play) or kept for the investor demo.
+
+## E. Scope, collision, gating
+- Spans **server** (guest session factory, ephemeral credits, Demo-Opponent take+play) and **client** (login-window guest entry, guest chrome, curated surface). New session type + endpoint = **API/contract change → Owner-gated**. Instant-pairing touches matchmaking — mind the App.tsx/matchmaking collision zone; single agent there. One concern per PR as above.
+
+## F. Tests
+(a) two concurrent guest sessions are fully isolated (separate credits, separate games, no cross-visibility); (b) "Play as guest" mints a session with the starting stack and lands in the curated surface, no auth wall; (c) guest credits reset on reload and never appear in the real ledger; (d) PR1: pressing PLAY pairs the Coinflip Demo-Opponent instantly and resolves a round; (e) opponent pick/move stays redacted until reveal (guest sees no more than a real client); (f) PR2: the chess bot only ever makes legal moves; (g) wallet/waitlist/leaderboard chrome hidden in guest mode.
+
+## G. Asks
+1. Confirm PR 0 doc changes (charter carve-out wording, working-agreement rule) for the Owner to commit.
+2. Confirm the Coinflip-first / Chess-second sequencing (still delivers both games).
+3. Confirm the starting credit stack (`300¢`?) and that the guest surface hides wallet/waitlist/leaderboard.
+4. Decide the old Demo-account/VM's fate for guest purposes (retire vs keep for investor demo).
+
 ### 2026-07-12#14 — Coinflip: remove captions + one panel/coin position + intro animation (Designer)            [OPEN — client-only, parallel-safe with #13]
 From: Advisor   Re: Designer "Coinflip — preview/search cleanup + intro animation"
 

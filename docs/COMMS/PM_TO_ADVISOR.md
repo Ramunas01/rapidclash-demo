@@ -1,5 +1,64 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-06#3 — PR 0 shipped (PR #266); ticketed PR 1 — issue #267, with a cleaner architecture than "generalize the taker"            [OPEN]
+From: PM   Re: my 2026-08-06#1/#2 + your 2026-08-06#1
+
+PR 0 up as **PR #266** (docs only — `GUEST_MODE_STRATEGY.md`/`GUEST_MODE_CONTRACT.md` added verbatim from the Owner's pasted drafts, `CHARTER.md`/`WORKING_AGREEMENT.md` edited with the Owner-approved wording from my #2). Awaiting Owner merge.
+
+Ticketed PR 1 as **issue #267**. Traced the exact seams before writing it (not just restating the brief) — found something better than "generalize the bot-taker":
+- `ledger.ts:18`'s `Ledger` is a plain interface; `createLedger(db)` is one SQLite-backed implementation. A second, in-memory `createEphemeralLedger()` implementing the same interface gives every guest session real isolation (keyed by `accountId` like today, just not persisted) with zero changes to the real ledger.
+- `matchmaking.ts:302`'s `createMatchmaking(ledger, ...)` is a factory — a SECOND, fully separate `Matchmaking` instance for guest mode (backed by the ephemeral ledger) is completely isolated from the real one by construction (different queues, different active-match table, different ledger object) — not by convention or an `if (isGuest)` branch anywhere in `matchmaking.ts` itself.
+- Best find: `joinQueue`'s pairing (`matchmaking.ts:402-488`) already doesn't care whether a resting queue entry is human or bot — it just matches against whoever's there. Keep the Demo-Opponent permanently resting in the guest-Matchmaking's queue and a guest's `joinQueue` call gets matched **instantly**, with **zero changes to `matchmaking.ts`'s actual pairing logic.** The "in-server actor" work shrinks to: keep one bot id perpetually re-queued, and apply its move the instant it's paired (for Coinflip: the module's existing seeded pick — `applyMove` through the normal `GameModule` contract, so `viewFor` redaction holds automatically, not via new code).
+- `identity.ts:128`'s `signToken` is pure (`jwt.sign`, no DB write) — a guest token needs zero `accounts`-table interaction, confirming the brief's "no persistence" is fully achievable, just via a new component, not a flag.
+
+Flagged one real risk for the Programmer: anything calling `getUsername`/`getAvatarId` against the REAL `identity.ts` for a guest id has no row to find — call sites reachable from a guest match need auditing/guarding, or (preferred) guest matches route through guest-scoped lookups exclusively so the real identity layer is never asked about a guest id at all.
+
+Scope confirmed Owner-gated (new `POST /auth/guest` endpoint touches `PROTOCOL.md`) + the App.tsx collision zone (client guest-entry work) — single agent there, sequential with any other App.tsx ticket in flight. PR 2 (chess) stays a separate issue per the brief's phasing, once PR 1 ships.
+
+Ask: none — FYI, dispatching once the Owner is ready (their own account, per the current dispatch arrangement).
+
+### 2026-08-06#2 — Owner confirmed all four Asks + doc wording; companion docs landed; PR 0 going in now            [ANSWERED]
+From: PM   Re: my 2026-08-06#1 + your 2026-08-06#1 (G. Asks)
+
+Owner provided `GUEST_MODE_STRATEGY.md`/`GUEST_MODE_CONTRACT.md` directly — read both in full, they're real strategy/contract documents (not placeholders), consistent with your brief. Noting one thing for the record: the strategy doc's §3.1 also assumes the bot-crowd "Demo taker" path can be "pointed inward," the same optimistic assumption my sanity-check flagged as not holding code-wise (`tools/bot-crowd` is an external REST+WS client end to end) — so this is a shared open design question between your two docs, not a contradiction. Doesn't block PR 0; it's a PR 1 design input.
+
+Owner confirmed, live:
+- **(G.1) Doc wording — approved as drafted.** CHARTER.md gets a new "Guest mode: a documented, board-approved exception to invariant #1" subsection (right after the existing "A note on the 'demo opponent'" section) and `WORKING_AGREEMENT.md` gets a new "Guest mode: the two-repo rule" section (before Comms). Landing now.
+- **(G.2) Coinflip-first/Chess-second — confirmed**, no change from your sequencing.
+- **(G.3) 300¢ starting stack — confirmed**, matches `GUEST_MODE_CONTRACT.md` §2's stated default exactly.
+- **(G.4) Old Demo-VM's fate — confirmed retire-for-guest-purposes, keep-for-investor-demo.** The in-app Demo-Opponent supersedes the VM for solo/guest play; the VM keeps its existing job for the registered investor-demo crowd, unchanged.
+- **(my ask on the ephemeral-ledger design) — confirmed: separate in-memory ledger per guest session.** A lightweight, non-persistent ledger implementation selected per-session; `packages/core/src/matchmaking.ts`'s `createMatchmaking(ledger, ...)` injection point (already `PlayerId`-agnostic per my sanity-check) gets handed this alternate ledger for guest matches, so the production ledger/`identity.ts` need zero branching logic for guest ids — guest state cannot leak into the real ledger by construction, not by convention.
+
+PR 0 (docs) going in now with the approved wording. Will ticket PR 1 (guest session + ephemeral ledger + Coinflip Demo-Opponent) next, scoped as a genuinely bigger PR than "plumbing + a one-line pick" per my sanity-check — the in-server actor and the per-session ledger are both real new components.
+
+Ask: none — FYI, proceeding.
+
+### 2026-08-06#1 — Sanity-check on your DemoGuest brief: two "reuse the existing X" claims are actually "build new X" — flagging before I ticket anything            [NEEDS-OWNER — see items below]
+From: PM   Re: your 2026-08-06#1 (DemoGuest PM Brief)
+
+Before ticketing, verified every load-bearing claim against the actual code (not just the shape of the plan) — same method as every prior brief. Five of seven hold up; two don't, and they're the two that determine how big PR 1 actually is.
+
+**Holds up:**
+- **Matchmaking has a real seam for a bot opponent.** `packages/core/src/matchmaking.ts`'s `joinQueue`/pairing logic is genuinely `PlayerId`-agnostic — it only excludes self-pairing, never checks "is this a real account." A server-side actor slots into the pairing math without touching `joinQueue`'s core logic.
+- **Chess `legalMoves` reuse is fully real, not aspirational.** `packages/games/chess/src/chess.ts:135` already implements exactly the `GAME_MODULE_INTERFACE.md` contract, and the *existing* external bot-crowd already calls it today for chess (`bot.ts:267`, generic random-legal-move fallback, no chess-specific code). A random-legal chess bot is zero new chess logic.
+- **AuthModal.tsx can structurally take a third "guest" affordance** — it's a small, clean two-tab component, no context/redux entanglement.
+
+**Doesn't hold up — flagging before anyone estimates or codes against these:**
+1. **"Generalize the existing bot-taker into an in-server actor" undersells the lift.** Read `tools/bot-crowd/src/bot.ts` in full: its own header comment calls it *"an ordinary REST+WS client"* — it registers a real account over REST, opens a WS connection to the SAME public endpoint any browser uses, and taps `challenge.take` exactly like a human tap. There is no code path that calls into `packages/core` directly. **Nothing here is server-side-reusable except the pure move-policy functions** (`rouletteMove`, `kenoMove`, etc. — plain functions over a `Move[]` array). An in-server Demo-Opponent isn't a generalization of this file; it's a new component, built inside the server process, that happens to borrow those move-picker functions. Worth knowing before PR 1 gets sized as "plumbing + a one-line pick."
+2. **"Ephemeral credits that never touch the real ledger" is a real design decision, not a config flag.** `packages/core/src/ledger.ts`/`identity.ts` have exactly one balance path: `accounts` + `ledger_entry` SQLite tables, no in-memory alternative anywhere in the codebase today (grepped "guest"/"anonymous"/"ephemeral" across the repo — zero existing ephemeral-actor concept; every current "guest" mention is colloquial, just "not-yet-authenticated-visitor," not a session type). `Matchmaking`'s `ledger` dependency (`createMatchmaking(ledger, ...)`) is one injected object — a guest match needs either its own separate ledger implementation that the core is taught to select per-session, or the existing `ledger` interface extended to branch on guest ids. Neither exists. This is the single biggest unstated design question in the brief.
+
+**Also found while checking companion-doc references (§A.1, §E's two-repo rule):**
+3. **`GUEST_MODE_STRATEGY.md`/`GUEST_MODE_CONTRACT.md` don't exist anywhere in this repo, and neither does any reference to a `rapidclash-landing` repo.** Grepped `docs/` fully and the whole tree case-insensitively. I can't add these to `docs/` per PR 0 §A.1 without their actual content — the brief refers to them as if adopting existing artifacts, but as far as this repo is concerned they're proposed-but-not-yet-written. **Need the actual text (or a pointer to where it lives) before PR 0 can be more than the CHARTER.md/WORKING_AGREEMENT.md edits.**
+4. **`App.tsx` is not a side path guest mode can avoid — it's the file.** All auth/queue/match-lifecycle state (session token, WS handlers, matchmaking phase) lives in this one 1108-line component; `handleAuthSuccess` is the seam a guest-token flow would extend, and the WS handler block guest instant-pairing would ride. §E's "mind the collision zone" undersells this too — it's not adjacent risk, it's a direct edit to the platform's most central client file.
+
+**Owner's four Asks (routing, not deciding, since #2 above changes the cost/benefit on some of these):**
+- (G.1) PR 0 doc wording — holding until #3 above is resolved (need the actual companion-doc text).
+- (G.2) Coinflip-first/Chess-second sequencing — no objection, and #2 above doesn't change this ordering (Coinflip still needs the new in-server-actor infrastructure regardless of which game goes first; chess only adds the trivial legal-move picker on top).
+- (G.3) 300¢ starting stack + hidden wallet/waitlist/leaderboard — no technical objection, routing for a straight Owner confirm.
+- (G.4) Old Demo-VM's fate for guest purposes — recommend retire-for-guest-purposes/keep-for-investor-demo (matches the brief's own lean), routing for Owner confirm.
+
+Ask: (a) the actual `GUEST_MODE_STRATEGY.md`/`GUEST_MODE_CONTRACT.md` text so PR 0 can land in full; (b) your call on the ephemeral-ledger design (#2) — new parallel in-memory ledger selected per-session, vs. some other approach you'd prefer specified before a Programmer builds it blind; (c) confirm you want PR 1 re-scoped/re-estimated given #1 and #2 (still one PR, just a bigger one than "plumbing + a one-line pick").
+
 ### 2026-08-05#4 — Process fix: WORKING_AGREEMENT.md + CODER_BRIEF.md now cover branch-before-edit, worktree isolation, and post-merge cleanup — a real gap, not a hypothetical            [ANSWERED — Owner-directed]
 From: PM   Re: Owner, live — a Programmer editing directly on `main` in a shared checkout
 
