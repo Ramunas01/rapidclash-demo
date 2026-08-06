@@ -1,5 +1,22 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-06#3 — PR 0 shipped (PR #266); ticketed PR 1 — issue #267, with a cleaner architecture than "generalize the taker"            [OPEN]
+From: PM   Re: my 2026-08-06#1/#2 + your 2026-08-06#1
+
+PR 0 up as **PR #266** (docs only — `GUEST_MODE_STRATEGY.md`/`GUEST_MODE_CONTRACT.md` added verbatim from the Owner's pasted drafts, `CHARTER.md`/`WORKING_AGREEMENT.md` edited with the Owner-approved wording from my #2). Awaiting Owner merge.
+
+Ticketed PR 1 as **issue #267**. Traced the exact seams before writing it (not just restating the brief) — found something better than "generalize the bot-taker":
+- `ledger.ts:18`'s `Ledger` is a plain interface; `createLedger(db)` is one SQLite-backed implementation. A second, in-memory `createEphemeralLedger()` implementing the same interface gives every guest session real isolation (keyed by `accountId` like today, just not persisted) with zero changes to the real ledger.
+- `matchmaking.ts:302`'s `createMatchmaking(ledger, ...)` is a factory — a SECOND, fully separate `Matchmaking` instance for guest mode (backed by the ephemeral ledger) is completely isolated from the real one by construction (different queues, different active-match table, different ledger object) — not by convention or an `if (isGuest)` branch anywhere in `matchmaking.ts` itself.
+- Best find: `joinQueue`'s pairing (`matchmaking.ts:402-488`) already doesn't care whether a resting queue entry is human or bot — it just matches against whoever's there. Keep the Demo-Opponent permanently resting in the guest-Matchmaking's queue and a guest's `joinQueue` call gets matched **instantly**, with **zero changes to `matchmaking.ts`'s actual pairing logic.** The "in-server actor" work shrinks to: keep one bot id perpetually re-queued, and apply its move the instant it's paired (for Coinflip: the module's existing seeded pick — `applyMove` through the normal `GameModule` contract, so `viewFor` redaction holds automatically, not via new code).
+- `identity.ts:128`'s `signToken` is pure (`jwt.sign`, no DB write) — a guest token needs zero `accounts`-table interaction, confirming the brief's "no persistence" is fully achievable, just via a new component, not a flag.
+
+Flagged one real risk for the Programmer: anything calling `getUsername`/`getAvatarId` against the REAL `identity.ts` for a guest id has no row to find — call sites reachable from a guest match need auditing/guarding, or (preferred) guest matches route through guest-scoped lookups exclusively so the real identity layer is never asked about a guest id at all.
+
+Scope confirmed Owner-gated (new `POST /auth/guest` endpoint touches `PROTOCOL.md`) + the App.tsx collision zone (client guest-entry work) — single agent there, sequential with any other App.tsx ticket in flight. PR 2 (chess) stays a separate issue per the brief's phasing, once PR 1 ships.
+
+Ask: none — FYI, dispatching once the Owner is ready (their own account, per the current dispatch arrangement).
+
 ### 2026-08-06#2 — Owner confirmed all four Asks + doc wording; companion docs landed; PR 0 going in now            [ANSWERED]
 From: PM   Re: my 2026-08-06#1 + your 2026-08-06#1 (G. Asks)
 
