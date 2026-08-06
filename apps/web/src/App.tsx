@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import type { GameMeta, Move, Outcome, SettlementSummary, OpenChallenge, PlayerClocks, AvatarId } from '@rapidclash/shared';
 import { GUEST_COINFLIP_STAKE } from '@rapidclash/shared';
 import { WsClient, hasStoredMatch, readStoredGameId, writeStoredGameId, type WsStatus } from './ws.js';
+import { initGuestEvents, emitReady, emitResize, emitRequestFullscreenOnMobileEntry, emitFirstWin } from './guest/events.js';
 import { applyChallengesUpdate } from './screens/OpenChallengesList.js';
 import { AuthScreen } from './screens/Auth.js';
 import { WalletScreen } from './screens/Wallet.js';
@@ -600,6 +601,44 @@ export function App() {
     setScreen('coinflip-hub');
   }, []);
 
+  // Guest-mode postMessage protocol (GUEST_MODE_CONTRACT.md §5, issue #271): listen from mount,
+  // not gated on isGuest — an embedding landing page can send `config` right after the iframe
+  // loads, before any visitor has picked "Play as guest", and that's the only chance to capture
+  // its validated origin from that early message. Harmless outside an embedded context: nothing
+  // ever arrives, and outbound emit* calls below only ever fire from guest-mode code paths.
+  useEffect(() => initGuestEvents(), []);
+
+  // `ready` + the mobile `requestFullscreen` trigger fire once the guest surface is actually up
+  // (the curated Coinflip hub, guest mode's only screen) — not the instant the session is minted,
+  // which is still mid-transition. Both emit* calls are self-guarded to fire at most once per
+  // session, so re-running this effect on every render is harmless.
+  useEffect(() => {
+    if (!isGuest || screen !== 'coinflip-hub') return;
+    emitReady();
+    // Judgment call (issue #271): fire automatically on mobile guest entry rather than requiring
+    // a manual "enlarge" tap — no such affordance exists in the UI yet, and the contract's intent
+    // ("mobile: step into the app") reads as an automatic transition. Coarse pointer is the
+    // signal, not viewport width: the guest surface is narrow/portrait on desktop too (§3's
+    // phone-mockup shell), so width alone can't tell mobile and desktop apart from inside the frame.
+    const isMobile = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+    emitRequestFullscreenOnMobileEntry(isMobile);
+  }, [isGuest, screen]);
+
+  // `resize` — a ResizeObserver on the app root reports genuine content-height changes (not
+  // spurious per-render noise) so the landing shell can size to content. Guest-only: the
+  // registered platform is never embedded, so there's nothing for a real session to report.
+  useEffect(() => {
+    if (!isGuest || typeof ResizeObserver === 'undefined') return;
+    const target = document.getElementById('root');
+    if (!target) return;
+    const ro = new ResizeObserver((entries) => {
+      const height = entries[0]?.contentRect.height;
+      if (height != null) emitResize(Math.round(height));
+    });
+    ro.observe(target);
+    return () => ro.disconnect();
+  }, [isGuest]);
+
   /** Find a challenge (its gameId + stake) by matchId across the home + single-game feeds. */
   const lookupChallenge = useCallback((matchId: string): { gameId: string; stake: number } | null => {
     for (const [gid, list] of Object.entries(homeChallenges)) {
@@ -671,6 +710,11 @@ export function App() {
         setLastSettlement(payload.settlement);
         setBalance(payload.settlement.newBalance);
         setCurrentMatchId(null);
+        // Guest-mode `firstWin` (GUEST_MODE_CONTRACT.md §5, issue #271): the module itself
+        // guards "exactly once per session" — safe to call on every guest win.
+        if (isGuest && payload.outcome.type === 'win' && payload.outcome.winner === playerId) {
+          emitFirstWin();
+        }
         // Match over — clear the persisted active game in lockstep with the matchId.
         writeStoredGameId(null);
         setLegalMoves([]);

@@ -1,5 +1,28 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-06#6 — DemoGuest PR 2: postMessage Events emitter + framability CSP — PR #277 (issue #271)            [OPEN]
+From: Coder   Re: your dispatch (2026-08-06)
+
+Shipped, **PR #277** (`feature/271-guest-events-csp`, isolated worktree at `.wt/271-guest-events-csp`). Read `docs/GUEST_MODE_CONTRACT.md` v0.2 §§3/5 and the full issue spec before starting.
+
+**Issue #270 check (as instructed):** still open at dispatch time, with uncommitted in-progress work sitting in `.wt/270-guest-rate-limit` touching `server.ts`. Branched from the `main` I had (`d9ff82d`) and didn't touch that worktree. #270 has since opened as **PR #276** but is still unmerged — my branch is current with `main` as of PR #277; will rebase if #276 lands first (both touch `server.ts`'s top-level app setup, but in non-overlapping spots — the CSP hook is a new `onSend` block before route registration, #276's rate-limiter is scoped to the guest-auth route registration — so I'd expect a clean rebase, not a real conflict).
+
+**Part A — CSP:** app-wide `onSend` hook on `server.ts` sets `Content-Security-Policy: frame-ancestors <allowlist>`; confirmed (again) no `X-Frame-Options` exists anywhere. **Judgment call — app-wide, per the issue's recommendation:** single-entry-point SPA, no same-origin sensitive data an embed could exploit differently than normal browsing, real users still hit the normal login wall regardless of framing.
+
+**Part B — Events emitter:** new `apps/web/src/guest/events.ts`. Outbound `ready`/`resize`/`requestFullscreen`/`firstWin`, inbound `config` (origin-validated but not consumed into behavior yet — reads as a separate future slice, flagging rather than guessing at scope). New shared constant `EMBED_ALLOWED_ORIGINS` (`packages/shared/src/guest.ts`) is the single allowlist both the CSP header and the client's origin check read from, so neither can drift from the other.
+
+**Judgment call — requestFullscreen trigger:** fires once, automatically, on mobile guest entry — no manual "enlarge" affordance exists in the UI, and the contract's "mobile: step into the app" phrasing reads as automatic. Detected via `matchMedia('(pointer: coarse)')`, not viewport width — the guest surface is narrow/portrait on desktop too (§3's phone-mockup shell), so width can't distinguish the two contexts from inside the frame.
+
+**Security (the load-bearing part) — built exactly per the issue's spelled-out pattern, no improvising:** every inbound `message` validates `event.origin` against `EMBED_ALLOWED_ORIGINS` before acting; unrecognized origins are ignored outright. No outbound `postMessage` ever uses `targetOrigin: '*'` — the target origin is captured from the **first validated inbound message** (any type, not just `config`) and reused for the rest of the session; if none ever arrives, falls back to `document.referrer`'s origin **only if it also passes the same allowlist check**; if neither validates, outbound events just don't send. `firstWin` carries no payload at all (no PII, nothing non-PII worth sending either).
+
+Not owner-gated — no wire-protocol/REST change, this is browser-level messaging only.
+
+**Tests:** `apps/server/src/csp.test.ts` (header present app-wide including an unrelated route, contains every allowlisted origin, `X-Frame-Options` never sent) + `apps/web/src/test/guestEvents.test.ts` (13 tests — origin allow/reject, malformed envelopes ignored, capture-from-first-validated-message, referrer fallback valid + invalid, **every emitted event type asserted to never use `'*'`**, one-shot guards on `ready`/`requestFullscreen`/`firstWin`, `resize` confirmed NOT one-shot).
+
+**Verification:** full suite **81 files / 1073 tests** green, `tsc -b` clean, `eslint` clean.
+
+Ask: PR review — #277. Flagging the `config` inbound handler is validated but not wired to any behavior change (games/credits/chrome) — say if you want that in this PR or a follow-up; I read it as out of scope per the issue's acceptance criteria.
+
 ### 2026-08-06#5 — Guest-session rate limit shipped, PR #276 (issue #270)            [OPEN]
 From: Coder   Re: issue #270 (GUEST_MODE_CONTRACT.md v0.2 §9 "Abuse guard")
 
