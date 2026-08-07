@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { GameMeta, Move, Outcome, SettlementSummary, OpenChallenge, PlayerClocks, AvatarId } from '@rapidclash/shared';
-import { GUEST_COINFLIP_STAKE, GUEST_CURATED_GAMES } from '@rapidclash/shared';
+import { GUEST_COINFLIP_STAKE, GUEST_CHESS_STAKE, GUEST_CHESS_TIME_CONTROL, GUEST_CURATED_GAMES } from '@rapidclash/shared';
 import { WsClient, hasStoredMatch, readStoredGameId, writeStoredGameId, type WsStatus } from './ws.js';
 import { initGuestEvents, emitReady, emitResize, emitRequestFullscreenOnMobileEntry, emitFirstWin } from './guest/events.js';
 import { applyChallengesUpdate } from './screens/OpenChallengesList.js';
@@ -44,13 +44,6 @@ type AuthIntent =
   | { action: 'join'; matchId: string; gameId: string; stake: number };
 
 const RECONNECT_NOTICE = 'Connection lost — reconnecting. Try again in a moment.';
-
-/** Guest mode's fixed chess time control (issue #279, GUEST_MODE spec — matches #278 §6's
- *  server-side bot pool, which rests at the same value: `'blitz5'`). Guest mode has no picker for
- *  anything, so this is the only control a guest chess match ever uses. Kept local (not
- *  `packages/shared`) — #279 is a client-only ticket per its own scope note, and #278 owns
- *  `GUEST_CURATED_GAMES`/any shared guest constants touching chess on the server side. */
-const GUEST_CHESS_TIME_CONTROL = 'blitz5';
 
 /** Games that play through the shared one-screen Game hub (vs the multi-screen flow).
  *  Each maps to a `<gameId>-hub` screen. Adding a game here wires it to the hub. */
@@ -631,15 +624,18 @@ export function App() {
   }, []);
 
   // A tile pick on the guest picker (issue #279) routes straight into that game's hub with the
-  // guest's stake FIXED at GUEST_COINFLIP_STAKE — guest mode's one fixed stake, shared across every
-  // curated game (chess's own maxStake is also 100, so this ceiling applies there too; the
-  // permanently-resting/pooled Demo-Opponent(s) only rest at that one stake — matching PlayPanel's
-  // betLocked in GameHub.tsx keeps the bet grid from offering any other). Chess additionally needs
-  // its fixed time control pre-armed (GUEST_CHESS_TIME_CONTROL, 'blitz5' per #278 §6) since guest
-  // mode has no time-control picker either; every other curated game leaves it undefined.
+  // guest's stake FIXED at the game's own guest-stake constant from `packages/shared` — per-game
+  // (GUEST_COINFLIP_STAKE / GUEST_CHESS_STAKE, both 100 today, #278 §6) rather than reusing one
+  // constant across games, so a future guest game with a different ceiling can't silently drift
+  // from the pooled Demo-Opponent(s), which only ever rest at that exact stake (matching
+  // PlayPanel's betLocked in GameHub.tsx, which keeps the bet grid from offering any other).
+  // Chess additionally needs its fixed time control pre-armed (GUEST_CHESS_TIME_CONTROL, 'blitz5'
+  // — the same shared constant #278's real bot pool rests at, imported here rather than
+  // duplicated, now that #278 has actually landed) since guest mode has no time-control picker
+  // either; every other curated game leaves it undefined.
   const handleGuestSelectGame = useCallback((gameId: string) => {
     setPendingGameId(gameId);
-    setPrearmStake(GUEST_COINFLIP_STAKE);
+    setPrearmStake(gameId === 'chess' ? GUEST_CHESS_STAKE : GUEST_COINFLIP_STAKE);
     setGuestTimeControl(gameId === 'chess' ? GUEST_CHESS_TIME_CONTROL : undefined);
     setScreen(hubScreenFor(gameId) ?? 'guest-picker');
   }, []);

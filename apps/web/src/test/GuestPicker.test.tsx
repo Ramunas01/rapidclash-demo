@@ -89,10 +89,12 @@ describe('App — guest game picker (issue #279)', () => {
     await waitFor(() => screen.getByTestId('guest-game-picker'));
   }
 
-  it('a guest lands on the picker (not directly in a hub), showing exactly GUEST_CURATED_GAMES — today just Coinflip (#278 not yet merged)', async () => {
+  it('a guest lands on the picker (not directly in a hub), showing the real GUEST_CURATED_GAMES — now genuinely Coinflip + Chess (#278 merged)', async () => {
     await enterAsGuest();
     expect(screen.getByTestId('guest-picker-coinflip')).toBeInTheDocument();
-    expect(screen.queryAllByTestId(/^guest-picker-/)).toHaveLength(1); // data-driven, nothing extra
+    // Both tiles come from the real, unmocked GUEST_CURATED_GAMES — see GuestPickerChess.test.tsx
+    // for the dedicated proof this is genuinely data-driven, not a hardcoded pair.
+    expect(screen.queryAllByTestId(/^guest-picker-/)).toHaveLength(2);
   });
 
   it('picking Coinflip behaves exactly as before the picker existed (regression guard): lands on the guest coinflip hub, fixed stake locked', async () => {

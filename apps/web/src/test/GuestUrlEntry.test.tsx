@@ -77,8 +77,10 @@ describe('App — ?mode=guest URL entry point (issue #284)', () => {
     expect(screen.getByTestId('guest-loading')).toBeInTheDocument();
     expect(screen.queryByTestId('home-hub')).toBeNull();
 
-    // The guest surface lands once the mint resolves — no auth wall, no tap.
-    await waitFor(() => expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument());
+    // The guest surface lands once the mint resolves — no auth wall, no tap. Post-#279,
+    // handleGuestSuccess (called verbatim by this URL-entry path) lands on the guest game
+    // picker rather than jumping straight into a hub — the picker itself IS the guest surface.
+    await waitFor(() => expect(screen.getByTestId('guest-game-picker')).toBeInTheDocument());
     expect(screen.queryByTestId('auth-modal')).toBeNull();
     expect(screen.queryByTestId('home-hub')).toBeNull(); // never rendered at any point
   });
@@ -100,6 +102,10 @@ describe('App — ?mode=guest URL entry point (issue #284)', () => {
     await waitFor(() => screen.getByTestId('auth-guest'));
     fireEvent.click(screen.getByTestId('auth-guest'));
 
+    // Lands on the guest picker (issue #279), same as the ?mode=guest URL-entry path above —
+    // both drive the same handleGuestSuccess. A hub only follows a tile pick.
+    await waitFor(() => expect(screen.getByTestId('guest-game-picker')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('guest-picker-coinflip'));
     await waitFor(() => expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument());
   });
 

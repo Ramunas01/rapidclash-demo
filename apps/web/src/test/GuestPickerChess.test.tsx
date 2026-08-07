@@ -3,15 +3,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { App } from '../App.js';
 
-// Simulates the day #278 lands and GUEST_CURATED_GAMES becomes ['coinflip', 'chess'] — proves the
-// picker/routing/pre-arm/firstWin wiring is genuinely data-driven (issue #279), not a second
-// hardcoded path that happens to also handle chess. Everything else from the real module passes
-// through unmocked (GUEST_COINFLIP_STAKE, etc.).
-vi.mock('@rapidclash/shared', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@rapidclash/shared')>();
-  return { ...actual, GUEST_CURATED_GAMES: ['coinflip', 'chess'] };
-});
-
+// #278 has now merged: GUEST_CURATED_GAMES is genuinely ['coinflip', 'chess'] on `packages/shared`
+// (no mock). These tests exercise the real constant end-to-end, proving the picker/routing/
+// pre-arm/firstWin wiring is genuinely data-driven (issue #279), not a second hardcoded path that
+// happens to also handle chess.
 vi.mock('three', async () => import('./three-stub.js'));
 
 const { emitFirstWinMock } = vi.hoisted(() => ({ emitFirstWinMock: vi.fn() }));
@@ -53,7 +48,7 @@ type MockSock = {
   close: ReturnType<typeof vi.fn>;
 };
 
-describe('App — guest game picker, once Chess is curated (issue #279, anticipating #278)', () => {
+describe('App — guest game picker with Chess curated (issue #279, real GUEST_CURATED_GAMES post-#278)', () => {
   let sockets: MockSock[];
 
   beforeEach(async () => {
