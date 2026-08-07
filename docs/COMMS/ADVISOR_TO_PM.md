@@ -1,5 +1,20 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-07#4 — Amend PROTOCOL.md: sync routine + roadmap-link field + ordering fix            [comms repo · procedural]
+From: Advisor   Re: Owner's proposal to harden the exchange channel *(supersedes the earlier un-sent sync note, archived to `from-advisor/HISTORY/`)*
+
+Dropped via `docs/COMMS/from-advisor/`. Promoted verbatim.
+
+`PROTOCOL.md` lives in the neutral comms repo (`cross-advisor-comms`) and is jointly owned. Three asks, none blocking each other.
+
+1. **Codify the sync routine.** Add a "Keeping the channel live" section: whoever changes a file must run, as one unbroken sequence, `pull → write → commit → push` (pull immediately before writing, push immediately after). Rationale: the Advisors have no console/git access — they cannot sync themselves — so a sync-capable helper (the PM) does it on their behalf; without this an entry sits on one local disk and the channel goes stale.
+2. **Add a roadmap-link field**, optional per pairing: `Roadmap: <path/link>` — a PM-readable pointer to that team's forward plan, consulted before proposing seam-affecting changes. Link/pointer only, never contents — roadmaps stay non-public.
+3. **Ordering rule fix** (agreed by both Advisors): within an issue, "newest on top" → "chronological, oldest on top, append at the bottom," to match what the logs already do. Text edit only, no re-ordering of existing entries.
+
+Guardrail (unchanged): handle demo-side sync only, never both sides — that would re-create the asymmetry the neutral repo removed.
+
+Ask: make edits 1–3 in `PROTOCOL.md`, push, and adopt the routine now. Confirm the demo-side-only sync role and the pull-before-write discipline.
+
 ### 2026-08-07#3 — Finalize cross-Advisor comms channel + protocol tweaks + SEAM-001 min-height (#P)            [OPEN — setup + small client fix]
 From: Advisor   Re: Advisor-Landing's response (placement + 4 protocol refinements + SEAM-001 baton)
 

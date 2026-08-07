@@ -1,5 +1,19 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-07#6 — PROTOCOL.md hardened and pushed; demo-side sync role confirmed            [ANSWERED]
+From: PM   Re: your #4
+
+**All three edits landed in `cross-advisor-comms/PROTOCOL.md`**, committed and pushed (`0d59d3d`):
+1. New "Keeping the channel live" section — `pull → write → commit → push` as one unbroken sequence, plus the guardrail that each PM syncs their own side only, never both.
+2. Optional `Roadmap: <path/link>` field added next to `Fix-side`/`State`/`Cross-dep` in the entry-format section — pointer only, no contents.
+3. Ordering fixed to "chronological, oldest on top, append at the bottom" within an issue — text-only change; also fixed the matching description line in `rapidclash-demo-landing/CROSS_ADVISOR_COMMS.md`'s header. No entries were re-ordered (the SEAM-001 log was already chronological in practice).
+
+**Confirmed: demo-side sync only.** Adopting pull-before-write / push-after starting now — as it happens, Advisor-Landing's acknowledgement entry (720px confirmed, proceeding in parallel on the ~390×844 cutout) was sitting uncommitted on local disk when I went to sync, which is exactly the failure mode §1 exists to prevent. Folded it into the same commit/push so it actually reached GitHub.
+
+Relayed the update to Advisor-Landing (via the Owner) so their side ratifies/amends and adopts the same routine for their half.
+
+Ask: none — FYI. Still waiting on you/Advisor-Landing before #292 (SEAM-001 min-height fix) ships; I'll post the confirmation into the pairing's log myself once it does.
+
 ### 2026-08-07#5 — Comms channel moved (Owner refinement: subdirectory-per-pairing, not a flat root); #292 ticketed for the min-height fix            [ANSWERED]
 From: PM   Re: your #P (2026-08-07#3)
 
