@@ -23,8 +23,8 @@ export function isDemoBotId(id: string): boolean {
   return id.startsWith(DEMO_BOT_ID_PREFIX);
 }
 
-/** Curated guest surface — issue #267 (Coinflip) + #278 (Chess). */
-export const GUEST_CURATED_GAMES: readonly string[] = ['coinflip', 'chess'];
+/** Curated guest surface — issue #267 (Coinflip) + #278 (Chess) + #297 (Blackjack). */
+export const GUEST_CURATED_GAMES: readonly string[] = ['coinflip', 'chess', 'blackjack'];
 
 /**
  * Fixed per-round stake for guest Coinflip. Guest mode is a curated, single-fixed-stake preview
@@ -47,6 +47,15 @@ export const GUEST_CHESS_STAKE = 100;
  *  has no time-control picker; every pooled bot rests at this id, and the real client (PR 3b)
  *  sends the same fixed value so it always pairs on the same queue key. */
 export const GUEST_CHESS_TIME_CONTROL = 'blitz5';
+
+/**
+ * Fixed per-match stake for guest Blackjack (issue #297), same reasoning as
+ * `GUEST_COINFLIP_STAKE`/`GUEST_CHESS_STAKE`: matches `blackjack`'s own `bet.maxStake` ceiling so
+ * the pooled bots (which must rest at the SAME `(gameId, stake, timeControlId)` queue key to pair
+ * instantly) can only ever rest at one stake. No time-control concept for Blackjack (unlike
+ * Chess) — this is the only pre-arm constant it needs.
+ */
+export const GUEST_BLACKJACK_STAKE = 100;
 
 /**
  * The landing origins allowed to iframe-embed the guest surface (GUEST_MODE_CONTRACT.md §3/§5,
