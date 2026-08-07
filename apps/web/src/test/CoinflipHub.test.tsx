@@ -918,3 +918,31 @@ describe('CoinflipHubScreen — guest mode skips the hidden-toolbar bottom paddi
     // necessary and sufficient for the real rendered height to drop to ~720px.
   });
 });
+
+describe('CoinflipHubScreen — guest surface fills its container height (issue #292 / SEAM-001)', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes('/games') || u.includes('/leaderboard'))
+          return { ok: true, json: async () => [] } as Response;
+        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      }),
+    );
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('a non-guest hub keeps the exact HUB_SHELL min-h-[100dvh] class — pixel-identical to before (regression guard)', () => {
+    const { container } = render(<CoinflipHubScreen {...baseProps({ isGuest: false })} />);
+    const shell = container.firstElementChild;
+    expect(shell?.className).toBe('relative min-h-[100dvh] bg-background text-foreground');
+  });
+
+  it('a guest hub gets min-h-[100vh] instead of min-h-[100dvh] — the fix — so it reliably fills its (possibly iframed) container', () => {
+    const { container } = render(<CoinflipHubScreen {...baseProps({ isGuest: true, initialStake: 100 })} />);
+    const shell = container.firstElementChild;
+    expect(shell?.className).toBe('relative min-h-[100vh] bg-background text-foreground');
+    expect(shell?.className).not.toContain('dvh');
+  });
+});

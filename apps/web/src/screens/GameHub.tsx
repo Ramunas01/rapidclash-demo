@@ -9,7 +9,7 @@ import { formatCredits, formatClock } from '../format.js';
 import { cn } from '@/lib/utils';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
-import { HUB_SHELL, hubBodyPadding } from '../components/hub-chrome/layout.js';
+import { hubShellClass, hubBodyPadding } from '../components/hub-chrome/layout.js';
 import { TILE_ART, COMING_SOON, titleCase } from '../components/hub-shared/tiles.js';
 import { OpenGamesTicker } from '../components/hub-shared/OpenGames.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
@@ -520,7 +520,7 @@ export function GameHub(props: GameHubProps) {
   const ownBarVerdict: Verdict | null = (ownBarResult && ownBarVerdictLit) ? ownBarFrameKind : null;
 
   return (
-    <div className={HUB_SHELL}>
+    <div className={hubShellClass(isGuest)}>
       <HubRibbon balance={loggedIn ? liveBalance : null} onLogo={onOpenGameList} onWallet={onOpenWallet} loggedIn={loggedIn} isGuest={isGuest} />
 
       <main data-testid="hub-body">
