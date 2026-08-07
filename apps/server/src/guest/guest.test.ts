@@ -106,9 +106,10 @@ describe('guest services', () => {
       expect(matchmaking.sweepExpired(clock)).toEqual([]); // not yet — still resting
       clock += 1;
       const expired = matchmaking.sweepExpired(clock);
-      // Issue #278 also seeds one chess pool bot resting at construction — both it and Coinflip's
-      // bot were posted at the same `now` and share the same ttlMs, so both expire together here.
-      expect(expired).toHaveLength(2);
+      // Issue #278 also seeds one chess pool bot resting at construction, and issue #297 one
+      // blackjack pool bot too — all three were posted at the same `now` and share the same
+      // ttlMs, so all three expire together here.
+      expect(expired).toHaveLength(3);
       expect(expired.map((e) => e.ownerId)).toContain(DEMO_BOT_COINFLIP_ID);
 
       // With the bot gone and NOTHING re-posting it (the old, buggy behaviour: only
@@ -126,7 +127,7 @@ describe('guest services', () => {
       // The bot sat idle (no guest joined) long enough to expire — the exact production
       // scenario: nobody played for 90s+, sweepExpired removed the bot's resting entry.
       clock += TTL + 1;
-      expect(matchmaking.sweepExpired(clock)).toHaveLength(2); // Coinflip's bot + #278's chess pool slot
+      expect(matchmaking.sweepExpired(clock)).toHaveLength(3); // Coinflip's bot + #278's chess pool slot + #297's blackjack pool slot
 
       // This is what gateway.ts's periodic sweep now calls every tick, independent of match
       // activity — the fix. In production this runs ~1s after the expiry, well before any real
@@ -147,7 +148,7 @@ describe('guest services', () => {
       const { ledger, matchmaking, ensureDemoBotResting } = createGuestServices({ now: () => clock, ttlMs: TTL });
 
       clock += TTL + 1;
-      expect(matchmaking.sweepExpired(clock)).toHaveLength(2); // Coinflip's bot + #278's chess pool slot
+      expect(matchmaking.sweepExpired(clock)).toHaveLength(3); // Coinflip's bot + #278's chess pool slot + #297's blackjack pool slot
 
       // A guest happened to hit PLAY DURING the outage window — finds nobody resting, so it
       // rests itself (the "stuck" symptom).

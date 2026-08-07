@@ -7,6 +7,7 @@ import {
 } from '@rapidclash/core';
 import { coinflipModule } from '@rapidclash/game-coinflip';
 import { chessModule, type ChessMove } from '@rapidclash/game-chess';
+import { blackjackModule, handValue, type Card } from '@rapidclash/game-blackjack';
 import type { GameState, Move } from '@rapidclash/shared';
 import {
   GUEST_ID_PREFIX,
@@ -15,6 +16,7 @@ import {
   GUEST_COINFLIP_STAKE,
   GUEST_CHESS_STAKE,
   GUEST_CHESS_TIME_CONTROL,
+  GUEST_BLACKJACK_STAKE,
   isDemoBotId,
 } from '@rapidclash/shared';
 
@@ -36,6 +38,14 @@ const DEMO_BOT_NOTIONAL_BALANCE = 1_000_000_000;
  * unmatched bet, until a slot frees.
  */
 const DEMO_BOT_CHESS_IDS = ['demo-bot:chess:0', 'demo-bot:chess:1', 'demo-bot:chess:2'] as const;
+
+/**
+ * A small pool of independent Blackjack bot identities (issue #297), same reasoning as
+ * `DEMO_BOT_CHESS_IDS`: a Blackjack match has a 10s per-decision timer, reveal choreography, and
+ * possible draw-replays (up to 10), so it's mid-match for real time — unlike Coinflip, which
+ * resolves the instant both sides pick. Pool size 3 (Owner-confirmed, matching Chess's pool).
+ */
+const DEMO_BOT_BLACKJACK_IDS = ['demo-bot:blackjack:0', 'demo-bot:blackjack:1', 'demo-bot:blackjack:2'] as const;
 
 /** Read once per `createGuestServices()` call (NOT a module-top-level constant — `process.env`
  *  must be re-read fresh each time, the same reason `forfeitDelayMs` is computed inside
@@ -131,6 +141,40 @@ export function selectChessMove(
   return others.length === 1 ? others[0] : others[Math.floor(random() * others.length)];
 }
 
+/**
+ * P(hit) keyed to the hand's BEST value (issue #297, Owner-specified table — deliberately NOT a
+ * flat "stand on 17" rule). "Best" is exactly `handValue`'s soft-if-it-exists-else-hard total, the
+ * same value `BLACKJACK.md`'s own display logic computes — reused here, not re-derived.
+ */
+function hitProbability(best: number): number {
+  if (best <= 14) return 1;
+  if (best === 15) return 0.9;
+  if (best === 16) return 0.8;
+  if (best === 17) return 0.5;
+  if (best === 18) return 0.2;
+  return 0; // >= 19
+}
+
+/**
+ * Blackjack hit/stand heuristic (issue #297, Owner's explicit spec): sample once per decision
+ * point against `hitProbability` of the bot's own hand's best value. Pure and deterministic given
+ * `random` (defaults to `Math.random`; tests inject a seeded source — same pluggable-random
+ * pattern as `selectChessMove` above, for repeatable statistical trials).
+ */
+export function selectBlackjackMove(
+  state: GameState,
+  botId: string,
+  random: () => number = Math.random,
+): 'hit' | 'stand' {
+  const legal = blackjackModule.legalMoves(state, botId);
+  if (legal.length === 0) {
+    throw new Error(`selectBlackjackMove called for ${botId}, who has no legal move`);
+  }
+  const s = state as { hands: Record<string, { cards: Card[]; done: boolean }> };
+  const best = handValue(s.hands[botId].cards);
+  return random() < hitProbability(best) ? 'hit' : 'stand';
+}
+
 export function isGuestId(id: string): boolean {
   return id.startsWith(GUEST_ID_PREFIX);
 }
@@ -150,24 +194,28 @@ export interface GuestServices {
    *  resting Demo-Opponent (any curated game — dispatches on `MatchRecord.gameId`, issue #278).
    *  Coinflip: submits the bot's pick immediately through the normal `GameModule` contract (redaction
    *  holds automatically), then re-posts the bot so the next guest pairs instantly — unchanged
-   *  from issue #267. Chess: only marks the matched pool identity busy — chess moves are
-   *  delayed ("thinking" time) and need the gateway's WS broadcast machinery to reach the human
-   *  the moment they're submitted, so the actual move is selected/scheduled by the gateway via
-   *  `selectBotMove` below, not submitted here. */
+   *  from issue #267. Chess and Blackjack: only mark the matched pool identity busy — their moves
+   *  are delayed ("thinking" time) and need the gateway's WS broadcast machinery to reach the
+   *  human the moment they're submitted, so the actual move is selected/scheduled by the gateway
+   *  via `selectBotMove` below, not submitted here. Blackjack additionally never needs an
+   *  opponent-move trigger at all (issue #297 — concurrent, not turn-based): the gateway's
+   *  generic post-match-formation + post-broadcast scheduling already fires the bot's first (and
+   *  every subsequent) decision purely off its own `legalMoves`, with no bespoke hook here. */
   onDemoBotMatched(matchId: string, now: number): void;
   /** Idempotent: (re-)post every currently-free Demo-Opponent into its resting queue slot.
-   *  Coinflip: the single shared identity, unchanged from issue #267/#274. Chess: loops the pool
-   *  — a pool identity re-rests only once its current match has actually ended (checked via
-   *  `matchmaking.getActiveMatch`, never blindly), so a mid-game bot is never double-queued into
-   *  a second concurrent match (the exact collision issue #278 exists to prevent). Called once at
-   *  startup, after every `onDemoBotMatched`, AND once per gateway sweep tick (self-heals a
-   *  TTL-expiry-driven removal — see issue #274). */
+   *  Coinflip: the single shared identity, unchanged from issue #267/#274. Chess and Blackjack:
+   *  loop their own pool — a pool identity re-rests only once its current match has actually
+   *  ended (checked via `matchmaking.getActiveMatch`, never blindly), so a mid-game bot is never
+   *  double-queued into a second concurrent match (the exact collision issue #278 exists to
+   *  prevent, and issue #297 reuses verbatim for Blackjack). Called once at startup, after every
+   *  `onDemoBotMatched`, AND once per gateway sweep tick (self-heals a TTL-expiry-driven removal
+   *  — see issue #274). */
   ensureDemoBotResting(): void;
-  /** Chess-only today (issue #278): given an active match's raw state and the id of the pool bot
-   *  whose turn it is, run the capture-value + 50/50-gate heuristic and pick a 1-5s "thinking"
-   *  delay. Returns undefined for any game with no bot move-selection logic (defensive — the
-   *  gateway only calls this once it has confirmed `botId` actually has a legal move). Pure: no
-   *  timer, no submission, no broadcast — the gateway owns all of that (mirrors its existing
+  /** Chess and Blackjack today (issues #278/#297): given an active match's raw state and the id
+   *  of the pool bot due to act, run that game's heuristic and pick a 1-5s "thinking" delay.
+   *  Returns undefined for any game with no bot move-selection logic (defensive — the gateway
+   *  only calls this once it has confirmed `botId` actually has a legal move). Pure: no timer, no
+   *  submission, no broadcast — the gateway owns all of that (mirrors its existing
    *  `pendingForfeits`/`pendingGuestEvictions` cancelable-timer pattern). */
   selectBotMove(gameId: string, state: GameState, botId: string, now: number): SelectedBotMove | undefined;
 }
@@ -181,6 +229,9 @@ export function createGuestServices(
   // only the first and silently no-op the rest.
   ledger.adminCredit(DEMO_BOT_COINFLIP_ID, DEMO_BOT_NOTIONAL_BALANCE, `demo-bot:init:${DEMO_BOT_COINFLIP_ID}`);
   for (const botId of DEMO_BOT_CHESS_IDS) {
+    ledger.adminCredit(botId, DEMO_BOT_NOTIONAL_BALANCE, `demo-bot:init:${botId}`);
+  }
+  for (const botId of DEMO_BOT_BLACKJACK_IDS) {
     ledger.adminCredit(botId, DEMO_BOT_NOTIONAL_BALANCE, `demo-bot:init:${botId}`);
   }
 
@@ -200,7 +251,7 @@ export function createGuestServices(
   // real one by construction, per issue #267. Only the curated game set is registered, so a
   // guest can never join-queue for anything outside GUEST_CURATED_GAMES. No matchHistory →
   // guest matches never write to the real leaderboard/standings.
-  const matchmaking = createMatchmaking(ledger, [coinflipModule, chessModule], undefined, {
+  const matchmaking = createMatchmaking(ledger, [coinflipModule, chessModule, blackjackModule], undefined, {
     lookupUsername: usernameFor,
     now: opts.now,
     ttlMs: opts.ttlMs,
@@ -211,6 +262,12 @@ export function createGuestServices(
   // the next `ensureDemoBotResting` call notices (via `getActiveMatch`) that a tracked match has
   // actually ended and frees the slot, same self-healing sweep-tick pattern as issue #274.
   const chessBotMatch = new Map<string, string>();
+
+  // Same tracking, own pool (issue #297) — kept as a SEPARATE map from `chessBotMatch` rather than
+  // one keyed by botId across both games: the two pools' ids never collide (`demo-bot:chess:N` vs
+  // `demo-bot:blackjack:N`), but keeping them apart mirrors the pattern issue #278 established and
+  // avoids one game's free-slot sweep accidentally touching the other's bookkeeping.
+  const blackjackBotMatch = new Map<string, string>();
 
   function ensureDemoBotResting(): void {
     // joinQueue is idempotent for a player already resting at this exact key (it returns the
@@ -234,6 +291,18 @@ export function createGuestServices(
     const nextToRest = DEMO_BOT_CHESS_IDS.find((id) => !chessBotMatch.has(id));
     if (nextToRest !== undefined) {
       matchmaking.joinQueue(nextToRest, 'chess', GUEST_CHESS_STAKE, GUEST_CHESS_TIME_CONTROL);
+    }
+
+    // Same "at most one idle pool bot rests at a time" invariant, own pool (issue #297) — see the
+    // chess block above for the full rationale (self-pairing avoidance + immediate re-rest).
+    for (const [botId, matchId] of [...blackjackBotMatch]) {
+      if (!matchmaking.getActiveMatch(matchId)) blackjackBotMatch.delete(botId);
+    }
+    const nextBlackjackToRest = DEMO_BOT_BLACKJACK_IDS.find((id) => !blackjackBotMatch.has(id));
+    if (nextBlackjackToRest !== undefined) {
+      // No time-control equivalent for Blackjack — same queue-key shape as Coinflip, just at the
+      // pooled bot's own fixed stake.
+      matchmaking.joinQueue(nextBlackjackToRest, 'blackjack', GUEST_BLACKJACK_STAKE);
     }
   }
 
@@ -259,14 +328,43 @@ export function createGuestServices(
       }
       // No move submitted here — the gateway schedules it (with the "thinking" delay) via
       // `selectBotMove` + its own timer, since only it can broadcast the result once submitted.
+      return;
+    }
+
+    if (match.gameId === 'blackjack') {
+      const botId = match.players.find(isDemoBotId);
+      if (botId !== undefined) {
+        blackjackBotMatch.set(botId, matchId);
+        ensureDemoBotResting(); // immediately post the next idle sibling — see its comment above
+      }
+      // No move submitted here either. Unlike Chess (turn-based — the bot only owes a move once
+      // the opponent has moved), Blackjack is concurrent (issue #297, BLACKJACK.md: "both players
+      // act on their own hand"): the bot's decision loop is SELF-triggered, not opponent-triggered.
+      // No bespoke trigger is needed here because the gateway's existing generic hook already
+      // covers it: `maybeScheduleGuestBotMove` runs once right after every match forms (this
+      // match's round is already dealt — `blackjackModule.init` deals it) and again after every
+      // subsequent non-terminal move broadcast (the bot's own hits included, and every internal
+      // draw/replay's fresh `new_round` deal) — it schedules a decision whenever the bot has a
+      // legal move and none is already pending. That's exactly "trigger on match creation, then
+      // after each of the bot's own hits, then after each replay's re-deal" — issue #297's spec.
     }
   }
 
   function selectBotMove(gameId: string, state: GameState, botId: string, now: number): SelectedBotMove | undefined {
-    if (gameId !== 'chess') return undefined;
-    const move = selectChessMove(state, botId, now, random);
-    const delayMs = thinkMsMin + random() * (thinkMsMax - thinkMsMin); // uniform (issue #278 §4)
-    return { move, delayMs };
+    if (gameId === 'chess') {
+      const move = selectChessMove(state, botId, now, random);
+      const delayMs = thinkMsMin + random() * (thinkMsMax - thinkMsMin); // uniform (issue #278 §4)
+      return { move, delayMs };
+    }
+    if (gameId === 'blackjack') {
+      const move = selectBlackjackMove(state, botId, random);
+      // Same 1-5s "thinking" bounds, reused verbatim (issue #297 — no new env knobs). Each Hit
+      // resets the CORE's 10s per-player move timer, so this delay must stay comfortably under
+      // it — it already does, at 1-5s.
+      const delayMs = thinkMsMin + random() * (thinkMsMax - thinkMsMin);
+      return { move, delayMs };
+    }
+    return undefined;
   }
 
   ensureDemoBotResting(); // once at startup
@@ -275,4 +373,4 @@ export function createGuestServices(
 }
 
 export { GUEST_ID_PREFIX, DEMO_BOT_COINFLIP_ID, GUEST_CURATED_GAMES, GUEST_COINFLIP_STAKE };
-export { DEMO_BOT_CHESS_IDS };
+export { DEMO_BOT_CHESS_IDS, DEMO_BOT_BLACKJACK_IDS };

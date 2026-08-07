@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { GameMeta, Move, Outcome, SettlementSummary, OpenChallenge, PlayerClocks, AvatarId } from '@rapidclash/shared';
-import { GUEST_COINFLIP_STAKE, GUEST_CHESS_STAKE, GUEST_CHESS_TIME_CONTROL, GUEST_CURATED_GAMES } from '@rapidclash/shared';
+import { GUEST_COINFLIP_STAKE, GUEST_CHESS_STAKE, GUEST_CHESS_TIME_CONTROL, GUEST_BLACKJACK_STAKE, GUEST_CURATED_GAMES } from '@rapidclash/shared';
 import { WsClient, hasStoredMatch, readStoredGameId, writeStoredGameId, type WsStatus } from './ws.js';
 import { initGuestEvents, emitReady, emitResize, emitRequestFullscreenOnMobileEntry, emitFirstWin } from './guest/events.js';
 import { applyChallengesUpdate } from './screens/OpenChallengesList.js';
@@ -625,17 +625,21 @@ export function App() {
 
   // A tile pick on the guest picker (issue #279) routes straight into that game's hub with the
   // guest's stake FIXED at the game's own guest-stake constant from `packages/shared` — per-game
-  // (GUEST_COINFLIP_STAKE / GUEST_CHESS_STAKE, both 100 today, #278 §6) rather than reusing one
-  // constant across games, so a future guest game with a different ceiling can't silently drift
-  // from the pooled Demo-Opponent(s), which only ever rest at that exact stake (matching
-  // PlayPanel's betLocked in GameHub.tsx, which keeps the bet grid from offering any other).
+  // (GUEST_COINFLIP_STAKE / GUEST_CHESS_STAKE / GUEST_BLACKJACK_STAKE, all 100 today, #278 §6 /
+  // #297) rather than reusing one constant across games, so a future guest game with a different
+  // ceiling can't silently drift from the pooled Demo-Opponent(s), which only ever rest at that
+  // exact stake (matching PlayPanel's betLocked in GameHub.tsx, which keeps the bet grid from
+  // offering any other).
   // Chess additionally needs its fixed time control pre-armed (GUEST_CHESS_TIME_CONTROL, 'blitz5'
   // — the same shared constant #278's real bot pool rests at, imported here rather than
   // duplicated, now that #278 has actually landed) since guest mode has no time-control picker
-  // either; every other curated game leaves it undefined.
+  // either; every other curated game (Coinflip, Blackjack — #297 has no time-control concept
+  // either) leaves it undefined.
   const handleGuestSelectGame = useCallback((gameId: string) => {
     setPendingGameId(gameId);
-    setPrearmStake(gameId === 'chess' ? GUEST_CHESS_STAKE : GUEST_COINFLIP_STAKE);
+    setPrearmStake(
+      gameId === 'chess' ? GUEST_CHESS_STAKE : gameId === 'blackjack' ? GUEST_BLACKJACK_STAKE : GUEST_COINFLIP_STAKE,
+    );
     setGuestTimeControl(gameId === 'chess' ? GUEST_CHESS_TIME_CONTROL : undefined);
     setScreen(hubScreenFor(gameId) ?? 'guest-picker');
   }, []);

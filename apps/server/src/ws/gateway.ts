@@ -52,10 +52,14 @@ const pendingForfeits = new Map<string, ReturnType<typeof setTimeout>>();
 const pendingGuestEvictions = new Map<string, ReturnType<typeof setTimeout>>();
 
 // A demo bot's delayed "thinking" move (issue #278), keyed by matchId — at most one pending
-// move per match (turn-based games strictly alternate). Scheduled by `maybeScheduleGuestBotMove`
-// once a pool bot's turn arrives; cancelled by `cancelPendingBotMove` wherever a match can end
-// out from under it (forfeit, draw acceptance, a sweep resolving it) so a "thinking" bot never
-// applies a move to — or crashes trying to broadcast for — a match that's already gone.
+// move per match. For turn-based games (Chess) that's because the game itself strictly
+// alternates; for concurrent games (Blackjack, issue #297) it's because the bot only ever decides
+// its OWN next action once its previous one has resolved — never two decisions in flight for the
+// same bot at once, regardless of what the human opponent is doing on their own hand at the same
+// time. Scheduled by `maybeScheduleGuestBotMove` once the bot has a legal move (a "turn" for
+// Chess, a live not-yet-done hand for Blackjack); cancelled by `cancelPendingBotMove` wherever a
+// match can end out from under it (forfeit, draw acceptance, a sweep resolving it) so a "thinking"
+// bot never applies a move to — or crashes trying to broadcast for — a match that's already gone.
 const pendingBotMoves = new Map<string, ReturnType<typeof setTimeout>>();
 
 const DEFAULT_FORFEIT_DELAY_MS = 60_000;
@@ -230,12 +234,19 @@ export function registerWsGateway(
   }
 
   /**
-   * If it's now a demo bot's turn in `matchId` (issue #278), pick its move (the full
-   * capture-value evaluation + 50/50 gate runs synchronously, right now — only the SUBMISSION is
-   * delayed) and schedule it via `setTimeout`. A no-op for a real match, a match with no bot
-   * player, one already settled, or one where a bot move is already pending. The timer is
-   * cancellable (`pendingBotMoves`/`cancelPendingBotMove`) so a match ending while the bot is
-   * "thinking" never applies a move to, or crashes broadcasting for, a match that's gone.
+   * If a demo bot in `matchId` currently has a legal move (issue #278 for Chess — turn-based, "the
+   * bot's turn"; issue #297 for Blackjack — concurrent, "the bot's own hand is still live"), pick
+   * its move (the heuristic runs synchronously, right now — only the SUBMISSION is delayed) and
+   * schedule it via `setTimeout`. A no-op for a real match, a match with no bot player, one
+   * already settled, or one where a bot move is already pending. Called generically after EVERY
+   * non-terminal move broadcast (any player's, bot or human) and once right after a match forms —
+   * for Blackjack this alone satisfies its self-triggered decision loop with no extra hook: the
+   * bot's first decision fires off the match-formation call (the round is already dealt by
+   * `init`), each subsequent one fires off the bot's own just-broadcast hit (if not busted/done),
+   * and a draw-replay's fresh `new_round` re-deal is itself a non-terminal broadcast that re-fires
+   * it too. The timer is cancellable (`pendingBotMoves`/`cancelPendingBotMove`) so a match ending
+   * while the bot is "thinking" never applies a move to, or crashes broadcasting for, a match
+   * that's gone.
    */
   function maybeScheduleGuestBotMove(matchId: string): void {
     if (!guest) return;
@@ -245,7 +256,7 @@ export function registerWsGateway(
     if (!mod) return;
     const botId = match.players.find(isDemoBotId);
     if (botId === undefined) return;
-    if (mod.legalMoves(match.state, botId).length === 0) return; // not the bot's turn
+    if (mod.legalMoves(match.state, botId).length === 0) return; // bot has nothing to act on right now
     if (pendingBotMoves.has(matchId)) return; // already scheduled
 
     const picked = guest.selectBotMove(match.gameId, match.state, botId, Date.now());
@@ -262,8 +273,10 @@ export function registerWsGateway(
         result = guest.matchmaking.applyMove(matchId, botId, move, Date.now());
       } catch {
         // Defensive: the move became illegal between selection and submission. Can't happen in a
-        // strictly-alternating turn-based game with no other actor able to move mid-"think", but
-        // a misbehaving module here must not crash the timer callback.
+        // strictly-alternating turn-based game (Chess) with no other actor able to move mid-
+        // "think"; can't happen in Blackjack either — a human's own hit/stand never touches the
+        // bot's independent hand, so the bot's own legalMoves can't have changed out from under
+        // it. Still, a misbehaving module here must not crash the timer callback.
         return;
       }
       broadcastMoveResult(guest.matchmaking, matchId, liveMatch, mod, result);
