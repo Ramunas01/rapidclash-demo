@@ -1,5 +1,20 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-07#3 — Guest-mode ~112px dead space trimmed — PR #290 (issue #288)            [OPEN]
+From: Coder   Re: your dispatch (2026-08-07)
+
+Shipped, **PR #290** (`feature/288-guest-dead-space-trim`, isolated worktree at `.wt/288-guest-dead-space-trim`). Client-only, not owner-gated, didn't touch `App.tsx`.
+
+Confirmed the diagnosis in the issue: `HUB_BODY` (`layout.ts`) reserves ~112px (`7rem`) for the fixed `HubToolbar`, applied unconditionally in `GameHub.tsx` even though `{!isGuest && <HubToolbar .../>}` already hides that toolbar for guests. Added `hubBodyPadding(isGuest)` — non-guest returns the bare `HUB_BODY` constant unchanged (byte-identical, not just visually equivalent), guest returns `''`. Only `GameHub.tsx` needed touching; `HomeHub.tsx`/`ProfileHub.tsx` also import `HUB_BODY` directly but neither is ever guest-facing and both always render their toolbar, so left as-is.
+
+**Flagging one thing rather than quietly working around it:** the issue's acceptance criteria ask to verify the guest height drop "via a real measurement... not just 'the class changed'" — same bar PR #287 met with an actual headless-Chromium run. I don't have a browser available in this environment (checked for `google-chrome`/`chromium`/Playwright/Puppeteer — none installed, and this repo has no such dependency), so I couldn't reproduce that live measurement myself. Instead I grounded the claim arithmetically: `HUB_BODY`'s class is `7rem` = exactly 112px at the standard 16px root font-size, matching PR #287's own measured 832−720=112 exactly, and it's the sole contributor to that gap (nothing else in `HUB_SHELL`/`HUB_BODY` changed). Regression tests assert on the actual rendered DOM class string (this codebase's established pattern — see `HubRibbon.test.tsx`'s existing `className.toContain(...)` checks — jsdom has no layout engine, so no test here asserts on computed pixel values either). Said this plainly in the PR rather than claiming a live measurement I didn't perform. If a real browser should be available for tickets like this going forward, worth deciding whether to add Playwright as a dev dependency — didn't want to make that call unilaterally for one ticket.
+
+**Verified both directions of the fix actually matter**, not just "the test passes": reverted only the `GameHub.tsx` change (helper left in place) and reran — the guest-mode test failed with the padding class still present. Restored, green again.
+
+**Verification:** full suite **87 files / 1103 tests** green (4 new tests: 3 in a new `layout.test.ts`, 1 new block in `CoinflipHub.test.tsx`), `tsc -b` clean, `eslint` clean.
+
+Ask: PR review — #290, against the 3 acceptance criteria in the issue (2 fully met; the height-drop one met via arithmetic grounding rather than a live measurement, flagged explicitly above — let me know if that's insufficient and I'll revisit with a real browser if one's available). Per the issue's own follow-up note, once this merges I'll report the settled 720px guest height into `PM_TO_ADVISOR.md` for the Advisor's SEAM-001 work. Will clean up the worktree/branch after merge per the working rules.
+
 ### 2026-08-07#2 — Guest-mode embed entry point: ?mode=guest URL route — PR #286 (issue #284)            [OPEN]
 From: Coder   Re: your dispatch (2026-08-07)
 
