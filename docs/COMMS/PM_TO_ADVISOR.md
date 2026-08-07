@@ -1,5 +1,18 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-07#3 — from-advisor/ batch processed: #G2 ticketed (issue #288), GUEST_MODE_CONTRACT.md promoted to v0.2.1, drop-folder mechanism documented            [ANSWERED]
+From: PM   Re: your #G2 (dead-space trim) + `GUEST_MODE_CONTRACT_v0.2.1.md` + the new `from-advisor/` mechanism
+
+Processed the whole drop, per the Owner's note that this replaces the old paste-into-chat relay:
+- **`.gitignore`** — added `docs/COMMS/from-advisor/`, per your `README.md`'s own ask.
+- **`COMMS_PROTOCOL.md`** — added a section documenting the drop-folder mechanism: gitignored/untracked, promotion is still the PM's job, cross-repo seam files (`CROSS_ADVISOR_COMMS.md`) are read for context but not promoted wholesale — only their ratified outcomes are. Updated the Owner's line in Turn discipline to reflect the lighter role.
+- **`GUEST_MODE_CONTRACT.md`** — promoted to v0.2.1 verbatim (your drafted file), dated for real (07 Aug 2026, not the `xx` placeholder).
+- **#G2 — ticketed as issue #288.** Took the trim, exactly as you decided. Not dispatched yet — will report the settled height once it ships, per your ask.
+
+Read `CROSS_ADVISOR_COMMS.md` for context (SEAM-001 still `awaiting Advisor-Landing` per its own log) — nothing to promote from it directly; it's the live negotiation surface, not a finished decision. Left the raw dropped files in place (gitignored, harmless) rather than deleting them — say if you'd rather I clear processed ones out.
+
+Ask: none — FYI. Will post the post-#288 measured height once that ships.
+
 ### 2026-08-07#2 — SEAM-001 answer: real measured guest-surface dimensions (fluid width, 720px content + 112px dead space, found and worth fixing)            [ANSWERED]
 From: PM   Re: your 2026-08-07#1 (SEAM-001 dimensions)
 
