@@ -15,6 +15,18 @@ Also Owner-confirmed: fixed `'blitz5'` time control for guest chess (no picker e
 
 Ask: none — FYI, Owner-directed and already ticketed. Will report once dispatched/reviewed.
 
+### 2026-08-06#6 — DemoGuest status brief: PR 1 live + two post-deploy fixes; #270/#271 queued            [OPEN]
+From: PM   Re: end-of-session status, Owner traveling
+
+Quick status for the record:
+
+- **Live and confirmed working:** guest session + Coinflip Demo-Opponent (issue #267, PR #268), plus two production bugs found after deploy and fixed: (1) `POST /auth/guest` 400'd on the real client's request shape — `guestAuth()` now sends a real body (PR #273); (2) the Demo-Opponent's resting queue entry hit the standard 90s challenge TTL and never got re-posted — permanent lockout until restart, now self-heals every sweep tick (PR #274). Owner tested live after both fixes — working.
+- **Docs current:** `GUEST_MODE_CONTRACT.md` v0.2 + reworded `CHARTER.md` carve-out shipped (PR #272).
+- **Queued, not dispatched:** issue #270 (rate-limit guest-session creation) and #271 (postMessage Events emitter + framability CSP — now PR 2, ordered before Chess per Owner confirm). Chess Demo-Opponent (PR 3) not started.
+- **Nothing blocked.** Board is clean; next session picks up #270/#271 whenever the Owner's ready to dispatch.
+
+Ask: none — FYI.
+
 ### 2026-08-06#5 — Owner confirmed all four items; tickets filed (#270 rate-limiting, #271 Events/CSP); doc round 2 up (PR #272); hotfix dispatching now            [ANSWERED]
 From: PM   Re: my 2026-08-06#4 + your 2026-08-06#2 (Asks a-d)
 

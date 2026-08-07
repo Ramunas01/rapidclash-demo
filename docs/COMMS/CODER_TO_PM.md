@@ -1,5 +1,66 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-07#2 — Guest-mode embed entry point: ?mode=guest URL route — PR #286 (issue #284)            [OPEN]
+From: Coder   Re: your dispatch (2026-08-07)
+
+Shipped, **PR #286** (`feature/284-guest-mode-url-entry`, isolated worktree at `.wt/284-guest-mode-url-entry`). Read `docs/GUEST_MODE_CONTRACT.md` v0.2 §1 first.
+
+**Concurrency check (as instructed):** #279/PR #281 is still OPEN, touches the exact same `App.tsx` guest-entry area (`handleGuestSuccess` and its neighborhood). Branched from current `main` (does not include #281's unmerged changes) — whichever of #281/#284 merges second eats a rebase. Kept the collision risk as low as I could by calling `handleGuestSuccess` by reference rather than editing its internals, so this PR shouldn't need to change regardless of what #281 does inside that function. Also spotted `.wt/283-guest-stuck-hub-fix` (same guest area) but it's clean, zero divergent commits — nothing actually in flight there.
+
+**What shipped:** `isGuestModeUrl()` reads `?mode=guest` off `window.location.search` (no dedicated route — this app has no client router). New `'guest-loading'` screen + the initial `screen` state checks the URL **synchronously before first paint**, not just reactively, so an embed never flashes Home while the guest-auth call is in flight. A ref-guarded mount effect calls `api.guestAuth()` then feeds the result straight into the existing `handleGuestSuccess`, unchanged. Guarded against React 18 StrictMode's dev double-invoke (this app wraps `<App/>` in `<StrictMode>` — without the guard it'd mint two guest sessions per load, hitting #270's rate limit needlessly). Skipped entirely when a real session is already persisted, so a shared guest link can't hijack a signed-in visitor. A failed mint falls back to Home instead of a stuck blank screen.
+
+**Judgment call — config params:** kept `games`/`credits`/`chrome` solely on the existing postMessage `config` channel (#271), did not also parse them from the URL. The postMessage channel validates the sender's origin against the CSP allowlist; a query string has no equivalent trust boundary. Also nothing client- or server-side varies its behavior off these today (curated set/stake/credits are fixed constants) — URL parsing for them would be unused plumbing right now.
+
+**Acceptance criteria — one is only partially met, flagging clearly:** built the real app (`vite build`) and ran it through the actual Fastify server, then `curl`'d `/?mode=guest` — confirmed `content-security-policy: frame-ancestors https://rapidclash.com https://staging.rapidclash.com` on the real built artifact, not just a unit test. **Could not do a live-browser iframe check** — downloaded a headless Chromium via Playwright fine, but it wouldn't launch (missing OS shared libs, `libnspr4.so` etc.) and installing them needs `apt-get`/root, which needs interactive `sudo` this sandbox doesn't have. Separately, even with a working browser I have no way to serve a test page from the actual `rapidclash.com`/`staging.rapidclash.com` origins to test the real positive case — and per the issue's own note, there's no staging deployment yet either, so that exact scenario can't be fully exercised from any dev box today. **Ask: someone with real browser access (or root) should do a quick manual iframe check post-deploy** — embed the deployed `/?mode=guest` from an allowed origin and confirm it renders; confirm a disallowed origin gets blocked. Everything else is covered by a new jsdom test file (`GuestUrlEntry.test.tsx`, 5 tests) exercising the real `App` component end-to-end.
+
+**Verification:** full suite **86 files / 1096 tests** green, `tsc -b` clean, `eslint` clean.
+
+Ask: PR review — #286, with the iframe-verification caveat above front and center.
+
+### 2026-08-07#1 — Guest stuck-hub bug fixed, PR #285 (issue #283)            [OPEN]
+From: Coder   Re: your dispatch (2026-08-07)
+
+Shipped, **PR #285** (`feature/283-guest-stuck-hub-fix`, isolated worktree at `.wt/283-guest-stuck-hub-fix`). Client-only, not owner-gated. Checked #279/PR #281 first per the dispatch: still open/unmerged, touches the same `App.tsx`/`GameHub.tsx` area — no actual collision, since #281 hasn't landed, this fix targets the current direct-jump-to-Coinflip flow still on `main`.
+
+**Exact trigger, found by exercising every clickable element reachable from the guest Coinflip hub (acceptance criterion 1):** `GameHub.tsx`'s related-games rail, footer, and bottom nav were all already correctly gated on `isGuest` — none of those were it. It was `HubRibbon`'s top-left logo button — rendered unconditionally, the one piece of hub chrome NOT gated. Tap it → `onLogo` → `App.tsx`'s `goToHome()` → the full, unrestricted Home hub (never passed `isGuest`, no concept of guest mode). Its game grid routes through the ordinary `handleSelectGame`, which explicitly sets `prearmStake` to `undefined` ("normal selection: no pre-armed bet") — landing a guest on e.g. chess-hub with `isGuest` still `true` (never resets mid-session, so `betLocked=true`) but nothing ever pre-arming a stake for that game. PLAY permanently fails "Select a bet amount to play" — exactly the reported dead end.
+
+**Fix at the source:** `HubRibbon.tsx` renders the logo as a plain, non-interactive image for a guest — no `<button>`, no `onClick`. Mirrors the EXISTING `isGuest` pattern already on the same component (the non-tappable "Demo" badge instead of the live Wallet chip) — not a new mechanism.
+
+**Defense-in-depth (issue's explicit ask #3):** a new `App.tsx` guard, independent of the specific trigger — whenever `isGuest` is true and the current screen is a hub for a game outside `GUEST_CURATED_GAMES`, snap back to the guest's curated entry point. Wrote this against the DATA-DRIVEN constant (not a hardcoded screen check), so it doesn't need touching again once #281's picker adds chess to the curated set.
+
+**Verified the two layers are genuinely independent**, not "the same fix asserted twice": temporarily reverted ONLY the `HubRibbon` change (guard left in place) — both its own test and the App-level regression test failed with the exact pre-fix button back in the DOM. Restored it, then separately short-circuited ONLY the `App.tsx` guard (fix left in place) — the defense-in-depth test (which injects a WS `match.start` for an uncurated game, a different code path than the ribbon click) timed out waiting for the snap-back. Restored, full pair green again. This is the "prove the fix" half of acceptance criterion 4, done for both layers separately.
+
+**Note left in the PR for whoever picks up #279/PR #281 next**, per the dispatch's own ask: its picker + `handleGuestSelectGame` should be the only way a guest ever changes games — this fix + guard close the stray path independently of that PR landing, no coordination needed, but worth a sanity check once #281 merges that the guard's `GUEST_CURATED_GAMES` check still lines up with the picker's routing.
+
+**Verification:** full suite **85 files / 1093 tests** green (4 new tests: 1 in `HubRibbon.test.tsx`, a new describe block in `App.test.tsx`), `tsc -b` clean, `eslint` clean.
+
+Ask: PR review — #285, against the 4 acceptance criteria in the issue (all met, itemized in the PR description). Will clean up the worktree/branch after merge per the working rules.
+
+### 2026-08-06#7 — DemoGuest PR 3a (server): Chess Demo-Opponent — PR #282 (issue #278)            [OPEN]
+From: Coder   Re: your dispatch (2026-08-06)
+
+Shipped, **PR #282** (`feature/278-chess-demo-bot`, isolated worktree at `.wt/278-chess-demo-bot`). Server-only, not owner-gated (no protocol change), didn't touch `App.tsx`. Read `guest/index.ts` in full and the issue's architecture reasoning before starting, per the dispatch.
+
+Generalized `onDemoBotMatched`/`ensureDemoBotResting` to dispatch on `MatchRecord.gameId` — Coinflip's branch is byte-for-byte its old logic, just wrapped. Added the chess pool (`demo-bot:chess:0..2`), the capture-value + 50/50-gate heuristic (`selectChessMove`), and the 1-5s thinking delay.
+
+**Two bugs caught while implementing, neither in the dispatch itself:**
+1. **Pool self-pairing.** Resting all 3 chess bot identities simultaneously lets the core's ordinary FIFO queue match them against EACH OTHER — any two distinct playerIds resting at the same `(gameId, stake, timeControlId)` key pair up, and the pool shares one key by design (so a human's single fixed-stake join can reach any of them). Caught this empirically: `sweepExpired` returned 2 entries where I expected 4, because two bots had already self-paired into a fake "match" at startup, consuming each other's queue slots. Fixed by only ever resting ONE pool bot at a time — the instant it's taken, `onDemoBotMatched` marks it busy and calls `ensureDemoBotResting()` again synchronously (mirrors Coinflip's own immediate re-rest), so the next idle sibling is resting well before any other guest's WS message can be processed. Still get 3 concurrent guest games; they just never observe 3 simultaneously-resting bots.
+2. **Ephemeral-ledger idempotency collision.** `EphemeralLedger.adminCredit`'s idempotency key dedups by the key string ALONE, not key+account. The original Coinflip code's literal `'demo-bot:init'` only ever had one caller, so this never mattered; reusing it across the new pool would have silently left 3 of 4 bots at 0 balance (only the first credit call would have landed). Fixed with a per-bot key. Flagging this since it's a real footgun for the ledger's dedup contract that's easy to hit again — worth a Advisor/PM note if any future work adds more `adminCredit` call sites for the same conceptual account family.
+
+**Heuristic (issue §3), chose the no-new-dependency approach:** score each candidate by a speculative `chessModule.applyMove` (pure, never touches the real match) and diff the opponent's material parsed straight from the resulting FEN — no `chess.js` added as a direct `apps/server` dependency. `packages/games/chess/src/index.ts` now also exports the `ChessMove` type (previously only `chessModule` itself), needed to type the heuristic.
+
+**Thinking delay (issue §4):** since submission can't be synchronous, `gateway.ts` schedules it via a new `pendingBotMoves` map — same cancelable-timer pattern as the existing `pendingForfeits`/`pendingGuestEvictions`. Cancelled at every point a chess match can end while a bot is "thinking": explicit forfeit, socket-close forfeit, draw acceptance, and both sweep resolution loops (stale-match and timed-out-move/flag-on-time).
+
+**Test coverage**, one file per concern in `apps/server/src/guest/`:
+- `chess-bot-heuristic.test.ts` — seeded-random statistical proof the capture-value move is played roughly half the time (not ~0% or ~100%), a spy on `chessModule.applyMove` proving the full evaluation runs every call regardless of gate outcome, the sole-legal-move override, and tie-breaking variety.
+- `chess-bot-pool.test.ts` — core-level: no self-pairing, 3 concurrent matches with 3 distinct opponents and no cross-contamination, a 4th guest rests in FIFO and pairs once a slot frees, pool idempotency.
+- `chess-demo-bot.gateway.test.ts` — live WS: bot's delayed opening move arrives and broadcasts correctly, `viewFor` genuinely unchanged (compared against the live gateway, not assumed), 3 concurrent live sockets never cross-receive each other's `match.state`, and a forfeit mid-"think" settles cleanly with the bot's now-stale pending move never re-applying (verified by advancing real time PAST the bot's original delay window after the forfeit and confirming the settlement is unchanged). `GUEST_BOT_THINK_MIN_MS`/`MAX_MS` env-tunable (same pattern as `RC_PICK_WINDOW_MS`) so these don't wait out real 1-5s delays — **note for future coders**: I originally made these module-top-level constants and they silently ignored `beforeEach`'s env override because Node caches the module after first import; moved the read inside `createGuestServices()` itself, matching how `forfeitDelayMs` is already read inside `registerWsGateway` rather than at `gateway.ts`'s module scope.
+- Updated 3 pre-existing assertions in `guest.test.ts` that hardcoded "exactly 1 resting bot total" — now legitimately 2 (Coinflip's + the chess pool's one resting slot), not a regression.
+
+**Verification:** full suite **85 files / 1090 tests** green, `tsc -b` clean, `eslint` clean.
+
+Ask: PR review — #282, against the 9 acceptance criteria in the issue (all met, itemized in the PR description). Will clean up the worktree/branch after merge per the working rules.
+
 ### 2026-08-06#6 — DemoGuest PR 2: postMessage Events emitter + framability CSP — PR #277 (issue #271)            [OPEN]
 From: Coder   Re: your dispatch (2026-08-06)
 

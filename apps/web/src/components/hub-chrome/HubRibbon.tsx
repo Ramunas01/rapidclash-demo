@@ -4,14 +4,18 @@ import logoUrl from '../../assets/brand/rapidclash-wordmark.webp';
 interface Props {
   /** Live balance in integer credits, or null while it's still loading. */
   balance: number | null;
-  /** Tap the logo → home / game list. */
+  /** Tap the logo → home / game list. Ignored when `isGuest` (see below) — never called. */
   onLogo(): void;
   /** Tap the auth control → account / wallet (or the sign-in modal when logged out). */
   onWallet(): void;
   /** When false, the control is a Login/Sign-up pill — never a fake balance (default true). */
   loggedIn?: boolean;
   /** Anonymous guest session (issue #267) — the balance control becomes a plain, non-tappable
-   *  "Demo" badge (no real Wallet screen to open: nothing is persisted). Default false. */
+   *  "Demo" badge (no real Wallet screen to open: nothing is persisted), and the logo becomes a
+   *  plain, non-tappable image (issue #283: it used to route to the full home hub's unrestricted
+   *  game grid — the one ungated escape hatch out of the guest's curated surface, landing a guest
+   *  on some other game's hub with no stake pre-armed and a permanently locked bet control).
+   *  Default false. */
   isGuest?: boolean;
 }
 
@@ -34,9 +38,21 @@ export function HubRibbon({ balance, onLogo, onWallet, loggedIn = true, isGuest 
   return (
     <header className="sticky top-0 z-20 w-full bg-background pt-[env(safe-area-inset-top)]">
       <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 pb-4">
-        <button type="button" onClick={onLogo} aria-label="RapidClash — home" className="flex items-center">
-          <img src={logoUrl} alt="RapidClash" className="h-8 w-auto object-contain" />
-        </button>
+        {isGuest ? (
+          // #283: guest mode has no game list / home hub to return to — every OTHER piece of
+          // chrome that would leave the curated surface (related-games rail, footer, bottom nav,
+          // the wallet chip) is already inert or hidden for a guest; this logo tap was the one
+          // gap, and tapping it dropped a guest onto the full home hub's unrestricted game grid,
+          // landing on some other game's hub with no stake pre-armed and a locked bet control —
+          // a dead end. Non-interactive, mirroring the plain "Demo" badge already used below.
+          <div className="flex items-center" data-testid="hub-logo-inert">
+            <img src={logoUrl} alt="RapidClash" className="h-8 w-auto object-contain" />
+          </div>
+        ) : (
+          <button type="button" onClick={onLogo} aria-label="RapidClash — home" className="flex items-center">
+            <img src={logoUrl} alt="RapidClash" className="h-8 w-auto object-contain" />
+          </button>
+        )}
 
         <div className="flex items-center gap-2">
           {isGuest ? (

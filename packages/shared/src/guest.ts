@@ -13,8 +13,18 @@ export const GUEST_ID_PREFIX = 'guest:';
  *  concurrent guest — match state is keyed by matchId, not by an exclusive per-session bot. */
 export const DEMO_BOT_COINFLIP_ID = 'demo-bot:coinflip';
 
-/** Curated guest surface for PR 1 (issue #267) — Coinflip only. PR 2 adds chess. */
-export const GUEST_CURATED_GAMES: readonly string[] = ['coinflip'];
+/** Shared prefix for every Demo-Opponent identity, real (`demo-bot:coinflip`) or pooled
+ *  (`demo-bot:chess:0`, …). Lets the gateway recognise ANY bot player generically — no per-game
+ *  id list to keep in sync there (issue #278's dispatch generalization). */
+export const DEMO_BOT_ID_PREFIX = 'demo-bot:';
+
+/** True for any Demo-Opponent identity, in any curated game. */
+export function isDemoBotId(id: string): boolean {
+  return id.startsWith(DEMO_BOT_ID_PREFIX);
+}
+
+/** Curated guest surface — issue #267 (Coinflip) + #278 (Chess). */
+export const GUEST_CURATED_GAMES: readonly string[] = ['coinflip', 'chess'];
 
 /**
  * Fixed per-round stake for guest Coinflip. Guest mode is a curated, single-fixed-stake preview
@@ -25,6 +35,18 @@ export const GUEST_CURATED_GAMES: readonly string[] = ['coinflip'];
  * starting stack (3 rounds before a guest needs a fresh session).
  */
 export const GUEST_COINFLIP_STAKE = 100;
+
+/**
+ * Fixed per-match stake for guest Chess (issue #278), same reasoning as `GUEST_COINFLIP_STAKE`:
+ * matches `chess`'s own `bet.maxStake` ceiling so the pooled bots (which must rest at the SAME
+ * `(gameId, stake, timeControlId)` queue key to pair instantly) can only ever rest at one stake.
+ */
+export const GUEST_CHESS_STAKE = 100;
+
+/** Fixed guest chess time control (issue #278 §6, Owner-confirmed) — Blitz · 5 min. Guest mode
+ *  has no time-control picker; every pooled bot rests at this id, and the real client (PR 3b)
+ *  sends the same fixed value so it always pairs on the same queue key. */
+export const GUEST_CHESS_TIME_CONTROL = 'blitz5';
 
 /**
  * The landing origins allowed to iframe-embed the guest surface (GUEST_MODE_CONTRACT.md §3/§5,
