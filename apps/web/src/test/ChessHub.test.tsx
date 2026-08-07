@@ -587,3 +587,67 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
     });
   });
 });
+
+// Issue #279: the guest chrome gates (hidden wallet/Open Games/related/footer/nav, locked bet
+// picker) live in the SHARED GameHub component, exercised identically for Coinflip
+// (CoinflipHub.test.tsx "guest mode chrome") — this block proves that generically, against the
+// actual chess hub, rather than assuming code-sharing implies identical behavior. It also proves
+// the `initialTimeControl` pre-arm (added by #279 to fix a real bug: guest sessions skip the
+// `/games` roster fetch, so without this the fixed control would never actually be sent).
+describe('ChessHubScreen — guest mode chrome + fixed time control (issue #279)', () => {
+  beforeEach(() => {
+    // Guest mode must never depend on the roster fetch — stub it to return nothing so a test
+    // failure here (accidentally relying on /games) shows up as a broken assertion, not a fluke pass.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes('/games') || u.includes('/leaderboard'))
+          return { ok: true, json: async () => [] } as Response;
+        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      }),
+    );
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('hides the wallet chip, Open Games, related-games rail, and the bottom nav; shows a plain Demo badge — generalized, not Coinflip-only', () => {
+    render(<ChessHubScreen {...baseProps({ isGuest: true, balance: 200, initialStake: 100, initialTimeControl: 'blitz5' })} />);
+
+    expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument();
+    expect(screen.getByTestId('hub-balance').textContent).toContain('200');
+    expect(screen.queryByTestId('hub-wallet-chip')).toBeNull();
+    expect(screen.queryByTestId('hub-section-challenges-teaser')).toBeNull();
+    expect(screen.queryByTestId('hub-section-related')).toBeNull();
+    expect(screen.queryByTestId('hub-nav-games')).toBeNull();
+    expect(screen.queryByTestId('hub-nav-account')).toBeNull();
+  });
+
+  it('locks the bet amount — the preset buttons are disabled and inert (matches Coinflip generically)', () => {
+    render(<ChessHubScreen {...baseProps({ isGuest: true, initialStake: 100, initialTimeControl: 'blitz5' })} />);
+    expect(screen.getByTestId('hub-bet-100')).toBeDisabled();
+  });
+
+  it('pre-arms the fixed guest time control with NO time-control picker shown, and PLAY sends it without any tap', () => {
+    const onPlay = vi.fn();
+    render(<ChessHubScreen {...baseProps({ isGuest: true, initialStake: 100, initialTimeControl: 'blitz5', onPlay })} />);
+
+    // No picker UI at all — a guest never sees a control to pick (guest mode has no pickers).
+    expect(screen.queryByTestId('hub-section-timecontrol')).toBeNull();
+    expect(screen.queryByTestId('hub-tc-blitz5')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('hub-play'));
+    expect(onPlay).toHaveBeenCalledWith(100, 'blitz5');
+  });
+
+  it('a non-guest hub is unaffected — still fetches the roster and shows its own picker (regression guard)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/games')) return { ok: true, json: async () => [CHESS_META] } as Response;
+      if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
+      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+    }));
+    render(<ChessHubScreen {...baseProps({ isGuest: false })} />);
+    await screen.findByTestId('hub-tc-rapid10'); // the real picker still shows and defaults normally
+    expect(screen.getByTestId('hub-nav-games')).toBeInTheDocument();
+  });
+});

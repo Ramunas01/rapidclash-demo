@@ -852,13 +852,17 @@ describe('App — guest mode never gets stuck on an uncurated hub (issue #283)',
     vi.unstubAllGlobals();
   });
 
-  /** Land a fresh guest session on the curated Coinflip hub via the real "Play as guest" flow. */
+  /** Land a fresh guest session on the curated Coinflip hub via the real "Play as guest" flow.
+   *  Post-#279, guest-auth success lands on the guest game picker first (not directly in a hub) —
+   *  pick the Coinflip tile to reach the same hub this suite's pre-#279 assertions exercise. */
   async function enterAsGuest() {
     render(<App />);
     await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('hub-signin-chip'));
     await waitFor(() => expect(screen.getByTestId('auth-modal')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('auth-guest'));
+    await waitFor(() => expect(screen.getByTestId('guest-game-picker')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('guest-picker-coinflip'));
     await waitFor(() => expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument());
   }
 
@@ -884,9 +888,10 @@ describe('App — guest mode never gets stuck on an uncurated hub (issue #283)',
     const sock = sockets[0];
 
     // Independent of the specific bug found/fixed above: simulate a guest somehow reaching a
-    // match.start for a game outside GUEST_CURATED_GAMES (today just Coinflip) — the "whatever
-    // the trigger" scenario the App-level guard exists for, exercised through a different
-    // injection point (the WS message handler, not the ribbon click) than the fix above.
+    // match.start for a game outside GUEST_CURATED_GAMES (today Coinflip + Chess; 'rps' is not
+    // curated) — the "whatever the trigger" scenario the App-level guard exists for, exercised
+    // through a different injection point (the WS message handler, not the ribbon click) than the
+    // fix above.
     const env = {
       type: 'match.start',
       matchId: 'm1',
