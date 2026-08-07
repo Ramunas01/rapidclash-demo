@@ -1,5 +1,22 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-07#5 — SEAM-001 guest min-height gap fixed — PR #296 (issue #292)            [OPEN]
+From: Coder   Re: your dispatch (2026-08-07)
+
+Shipped, **PR #296** (`feature/292-guest-min-height`, isolated worktree at `.wt/292-guest-min-height`). Client-only, not owner-gated, didn't touch `App.tsx`.
+
+**Root-caused before changing anything, per the issue's own explicit ask.** `HUB_SHELL` already carries `min-h-[100dvh]` — the issue's own framing is right that this "should" already fill the guest surface's container, but doesn't when that container is a nested iframe. `dvh` is a *dynamic* unit: the CSS Values and Units spec defines it as continuously re-resolving against a UA interface (address bar, etc.) "dynamically expanding and retracting" — chrome that exists only at the outermost/top-level browsing context. A nested iframe has no independent chrome of its own for that recompute channel to observe, so implementations vary in how (or whether) they keep `dvh` live for a context with no chrome to track — in practice it can resolve once at initial layout and then not track the iframe's real allocated box. Plain `vh` (currently defined to equal `lvh`, the large/stable viewport height, per MDN) is a static "how tall is my own viewport" read with no such dependency, and a nested browsing context's own viewport is its own content box — a static unit resolves against that correctly regardless of nesting depth.
+
+**Could not verify this live** — same environment constraint #286/#290 already hit and documented (no headless browser/Playwright available here, checked again). Grounded the conclusion in the CSS spec / MDN semantics instead (`WebSearch`/`WebFetch` against MDN's viewport-units doc and a spec-adjacent article, both confirming the `vh`≡`lvh`-is-static / `dvh`-is-dynamic distinction, plus the well-known "plain `vh` inside an iframe resolves to the iframe's own height, not the parent's" behavior), and said so explicitly in the PR rather than claiming a live measurement.
+
+**Fix:** added `HUB_SHELL_GUEST` in `layout.ts` — byte-identical to `HUB_SHELL` except `dvh`→`vh` — and `hubShellClass(isGuest)`, mirroring #290's `hubBodyPadding(isGuest)` shape exactly (non-guest/`undefined` returns the bare `HUB_SHELL` constant unchanged; guest returns the `vh` variant). `GameHub.tsx` is the only guest-facing screen and the only call site touched.
+
+**Regression guard verified against real DOM, not assumed:** new `CoinflipHub.test.tsx` block renders the actual `CoinflipHubScreen` and asserts the shell `<div>`'s `className` string directly — non-guest is `'relative min-h-[100dvh] bg-background text-foreground'` (unchanged), guest is `'relative min-h-[100vh] bg-background text-foreground'` (the fix). `layout.test.ts` gained a matching unit-level block for `hubShellClass` itself, including an explicit check that the guest/non-guest strings differ *only* in the `dvh`/`vh` token.
+
+**Verification:** full suite **90 files / 1123 tests** green, `tsc -b` clean, `eslint` clean. Pushed and confirmed CI: `build-and-test` passed, 3m27s — https://github.com/Ramunas01/rapidclash-demo/actions/runs/31205666304/job/92955945348
+
+Ask: PR review — #296, against the issue's 4 acceptance criteria (all met; the root-cause one grounded in spec/MDN reasoning rather than a live iframe measurement, per the environment constraint flagged above and already precedented in #286/#290). Per the issue's own follow-up note, posting confirmation into the cross-advisor-comms log so Advisor-Landing can lock the cutout dimensions is explicitly not mine to do — leaving that to the PM. Will clean up the worktree/branch after merge per the working rules.
+
 ### 2026-08-07#4 — PR #281 (issue #279) rebased onto #278, mock removed, real verification done            [OPEN]
 From: Coder   Re: your dispatch (2026-08-07)
 
