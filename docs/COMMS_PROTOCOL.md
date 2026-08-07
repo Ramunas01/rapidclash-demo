@@ -23,8 +23,20 @@ The Advisor reads the repo by `git clone` (public). That read covers **every com
 **Append-only logs** — time-ordered messages. Newest entry on top. Never rewrite history (same rule as `PM_REPORTS/`).
 
 - **`docs/COMMS/PM_TO_ADVISOR.md`** — the PM writes here anything it wants the Advisor to see that isn't self-evident from a diff: a question, a status snapshot, a mis-diagnosis it wants sanity-checked, an uncommitted finding it has now committed, a pointer to a branch to review.
-- **`docs/COMMS/ADVISOR_TO_PM.md`** — the Advisor produces this (Owner commits it in one action, pasting the newest entry at the top). It carries the finding + the copy-paste instructions the PM acts on. This is the same "PM prompt" the Advisor already emits, in committable form so the Owner does one `git commit` instead of shuttling text.
+- **`docs/COMMS/ADVISOR_TO_PM.md`** — the Advisor produces this; the PM promotes it here (pasting the newest entry at the top) and commits. It carries the finding + the copy-paste instructions the PM acts on. This is the same "PM prompt" the Advisor already emits, in committable form so a single commit replaces shuttling text. Source is now usually a dropped file in `from-advisor/` (below), not Owner-typed text — the promotion step is unchanged either way.
 - **`docs/COMMS/CODER_TO_PM.md`** — programmers report task status, blockers, and questions here. This channel is mainly the PM's, but it is committed so the **Advisor can also read it and verify what shipped against the actual code**. The PM tasks coders through issues/terminal as before; there is no separate PM→Coder log.
+
+## The `from-advisor/` drop folder (removes the Owner as postman)
+
+As of 2026-08-07, the Advisor writes files **directly to disk** at `docs/COMMS/from-advisor/` (via its own filesystem access on the WSL machine) instead of the Owner hand-pasting chat output into a formatted mailbox entry. See `docs/COMMS/from-advisor/README.md` (untracked, lives alongside the dropped files) for the folder's own note.
+
+- **Gitignored, not tracked.** `docs/COMMS/from-advisor/` is scratch/staging — convenience and visibility only, listed in `.gitignore`. It is never the source of truth and never committed as-is.
+- **Boundary preserved.** The Advisor writes here; it does not edit tracked files or run git. **Promotion into a tracked file is the PM's job** — same as before, just reading from a disk file instead of chat-pasted text:
+  - A mailbox entry → copied into `ADVISOR_TO_PM.md` in the normal entry format (below), dated for real (the Advisor may drop a placeholder like `2026-08-xx` — the PM fills in the actual date on promotion).
+  - A doc draft (e.g. a contract version bump) → copied into its real tracked location in `docs/` once ratified.
+  - A ticket-shaped note → also becomes a GitHub issue, same as any other Advisor ask.
+- **Cross-repo seam files are a distinct case.** A file like `CROSS_ADVISOR_COMMS.md` (shared between this repo's Advisor and another repo's Advisor — e.g. `rapidclash-landing`, for a cross-team negotiation) is a **live, in-progress negotiation surface**, not a finished decision — read it for context, but don't promote the whole thing into tracked history. Only the *ratified outcomes* it produces (a ticket, a contract bump) get promoted, same as any other drop.
+- **Nothing here is auto-processed.** The PM reads the folder like a second inbox alongside `ADVISOR_TO_PM.md` at the start of a session (or whenever the Owner points at it), promotes what's durable, and leaves the raw files in place afterward (gitignored, harmless) unless told otherwise.
 
 ## Entry format
 
@@ -44,9 +56,9 @@ Ask: <the one concrete thing you want back, or "none — FYI">
 ## Turn discipline
 
 - **Advisor, each turn:** clone fresh; read the mailbox logs (`PM_TO_ADVISOR`, and `CODER_TO_PM` when verifying shipped work) before acting; act on `OPEN`/`ANSWERED` items relevant to the request. Answer PM questions; produce doc edits it owns; append an `ADVISOR_TO_PM` entry when there's an action for the PM.
-- **PM, each session:** if cold-started, read `PM_BRIEF.md` first. Then read `ADVISOR_TO_PM.md`; execute or convert entries into issues; read `CODER_TO_PM.md` for programmer status; post status/questions back into `PM_TO_ADVISOR.md`; commit the mailbox files with its normal work.
+- **PM, each session:** if cold-started, read `PM_BRIEF.md` first. Then read `ADVISOR_TO_PM.md` **and** `docs/COMMS/from-advisor/` (the drop folder, if present); promote/execute or convert entries into issues; read `CODER_TO_PM.md` for programmer status; post status/questions back into `PM_TO_ADVISOR.md`; commit the mailbox files with its normal work.
 - **Programmer, on spawn:** read `CODER_BRIEF.md` to internalise the role, ownership boundaries, and the invariants that must never break; report status/blockers into `CODER_TO_PM.md`.
-- **Owner:** commits the Advisor's presented files (mailbox entry + any spec edits). That single commit is the only relay step, and only for content not already on a branch.
+- **Owner:** no longer a required relay for Advisor content (see the drop-folder section above) — the Advisor writes `from-advisor/` directly. The Owner's role narrows to pointing the PM at it when something's landed, and approving the docs-touching commits/PRs the PM produces from it, same gate as any other doc change.
 
 Briefs are updated whenever the role's scope changes; treat a brief edit like any other `spec`-labelled, Owner-approved doc change.
 

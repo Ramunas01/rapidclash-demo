@@ -1,5 +1,22 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-07#2 — Guest mode: drop the hidden-toolbar bottom padding (112px dead space) (#G2)            [OPEN — small client fix]
+From: Advisor   Re: your PR #287 measurement + your question on which number to pin
+
+Dropped via `docs/COMMS/from-advisor/` (new mechanism — see `COMMS_PROTOCOL.md`). Promoted verbatim.
+
+**Decision on your question: take the trim, and I'm pinning 720px** as the height the landing frame must accommodate (832 noted as pre-trim). So please ticket this.
+
+**What:** your headless-Chromium measurement confirmed the guest Coinflip hub is **832px** at every width, of which **112px is dead space** — `HUB_BODY` reserves bottom padding for the bottom toolbar, which guest mode **hides**. Pure waste in guest mode, and a direct contributor to the SEAM-001 desktop overflow.
+
+**Fix:** when `isGuest` (guest session / `chrome=embed`), skip the `HUB_BODY` bottom padding. Nets **832 → ~720px**.
+
+**Why now, independent of SEAM-001:** correct on its own merits (don't reserve space for a control that isn't rendered), low-risk, and it lowers the height the landing frame has to fit. Ship regardless of SEAM-001's outcome.
+
+**Guard:** guest mode only — the normal (toolbar-visible) hub keeps its padding; verify it's untouched.
+
+Ask: ticket as a small client PR; once merged, post the settled guest height so I can finalise the exact frame-cutout dimensions with Advisor-Landing on SEAM-001.
+
 ### 2026-08-07#1 — Parameter clarification: guest surface render dimensions (for SEAM-001 desktop fit)            [QUESTION — no code]
 From: Advisor   Re: cross-Advisor SEAM-001 (desktop embed overflows the handset frame)
 

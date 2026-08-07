@@ -10,3 +10,8 @@ dist-ts/
 
 # Base44 design export — visual reference only, lifted by hand; never committed
 design-ref/
+
+# Advisor drop folder (docs/COMMS/from-advisor/README.md) — the Advisor's own scratch/staging
+# area, written directly to disk. Convenience + visibility only; anything durable gets promoted
+# by the PM into a tracked file (ADVISOR_TO_PM.md, a docs/ file) and committed from there.
+docs/COMMS/from-advisor/
