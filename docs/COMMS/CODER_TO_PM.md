@@ -1,5 +1,26 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-07#6 — DemoGuest: Blackjack Demo-Opponent — PR #298 (issue #297)            [OPEN]
+From: Coder   Re: your dispatch (2026-08-07)
+
+Shipped, **PR #298** (`feature/297-blackjack-demo-opponent`, isolated worktree at `.wt/297-blackjack-demo-opponent`). One PR for both server and client halves, per the issue's own scoping note — unlike Chess's #278/#279 split, the client side here is small since `GuestGamePicker.tsx` (#279) already reads `GUEST_CURATED_GAMES` generically and `GameHub.tsx`'s guest-chrome gates already generalize with no code change.
+
+**Server: bot pool.** `DEMO_BOT_BLACKJACK_IDS`, pool of 3 (Owner-confirmed to match Chess's pool size). Reused Chess's exact "at most one idle pool bot rests at a time, re-rest synchronously the instant one is taken" self-pairing guard rather than re-deriving it — new `blackjackBotMatch` tracking map, own branch in `ensureDemoBotResting`/`onDemoBotMatched`, same mechanism.
+
+**Server: hit/stand heuristic.** `selectBlackjackMove`, issue-locked probability table keyed to the hand's best (soft-if-present-else-hard) value: ≤14→100%, 15→90%, 16→80%, 17→50%, 18→20%, ≥19→0%. Same pluggable-`random()` pattern as `selectChessMove`. Reused `handValue`/`Card` by exporting them from `@rapidclash/game-blackjack`'s public entry rather than re-deriving ace-downgrade logic in `apps/server`.
+
+**The architecturally interesting part — concurrent, not turn-based, needed zero new scheduling code.** Blackjack's bot decisions are self-triggered (both players act on their own hand independently), unlike Chess's opponent-triggered ones. Traced `maybeScheduleGuestBotMove` closely: it's already fully generic — checks `mod.legalMoves(...).length > 0`, already called both right after every match forms and after every non-terminal `broadcastMoveResult` regardless of who moved. Since Blackjack's round is dealt by `init` at match formation, a hit/stand always broadcasts (even mid-round, empty `events` per redaction), and an internal draw's `new_round` re-deal is itself just another non-terminal broadcast — the existing hook already satisfies "trigger on match creation, after each bot hit, after each replay re-deal" with no behavioral change, just updated doc comments stating the generalization explicitly.
+
+**Forcing a genuine draw/replay in a live-WS test (flagging the technique, not a new ambiguity).** The issue's test list asks for an internal draw/replay to re-trigger the bot's next-round loop under live WS. Deck seed comes from `node:crypto`'s `randomBytes`, the heuristic from `Math.random` — neither injectable through `createServices`/`buildApp`'s public surface. Used a partial `vi.mock('node:crypto', ...)` (forwards to the real impl except one pinned `randomBytes` call) plus a `Math.random` spy installed *before* `createServices()` (the heuristic closes over `Math.random` at construction — spying after is a no-op), with an offline-search-derived seed (`cryptoSeed=4`) landing both hands on 16 round 0. Asserts the actual `new_round` event, then a further unsolicited `match.state` for round 1 proving the self-trigger fired the redeal alone.
+
+**A wrong assumption caught building the forfeit-mid-think test:** Blackjack opts into the core's per-player move timer (`meta.moveTimeoutMs`), so the gateway deliberately does *not* arm the ordinary close-forfeit timer for it (an absent player auto-stands via the #91 move-timer sweep instead). Chess's version of this test close-forfeits normally; Blackjack's had to send the explicit `match.forfeit` message instead — the real client's own forfeit action, unconditional regardless of a game's timer opt-in.
+
+**Client:** `GUEST_CURATED_GAMES` gains `'blackjack'`, new `GUEST_BLACKJACK_STAKE = 100` (matches `bet.maxStake`, same reasoning as the other two stake constants), both in `packages/shared/src/guest.ts`. `App.tsx`'s `handleGuestSelectGame` pre-arms the fixed stake (no time-control equivalent — Blackjack has none). Verified rather than assumed: `GuestGamePicker.tsx` needed no change (new unmocked `GuestPickerBlackjack.test.tsx` against the real, now-3-game `GUEST_CURATED_GAMES`, same "no more mocking a constant that's real" bar #281 held Chess to), and `GameHub.tsx`'s guest-chrome gates generalize (new `BlackjackHub.test.tsx` block mirroring Coinflip's/Chess's).
+
+**Verification:** full suite **94 files / 1150 tests** green, `tsc -b` clean, `eslint` clean. Pushed and confirmed CI green against the PR's actual HEAD SHA (`5118c36`) — `build-and-test` passed, 3m34s: https://github.com/Ramunas01/rapidclash-demo/actions/runs/31212812558
+
+Ask: PR review — #298, against the issue's server/heuristic/client/test asks (all met, itemized in the PR description). No new design ambiguity hit — this was issue-locked pool size and heuristic table, not re-litigated. Will clean up the worktree/branch after merge per the working rules.
+
 ### 2026-08-07#5 — SEAM-001 guest min-height gap fixed — PR #296 (issue #292)            [OPEN]
 From: Coder   Re: your dispatch (2026-08-07)
 
