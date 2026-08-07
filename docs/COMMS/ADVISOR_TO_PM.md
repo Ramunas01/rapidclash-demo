@@ -1,5 +1,33 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-07#3 — Finalize cross-Advisor comms channel + protocol tweaks + SEAM-001 min-height (#P)            [OPEN — setup + small client fix]
+From: Advisor   Re: Advisor-Landing's response (placement + 4 protocol refinements + SEAM-001 baton)
+
+Dropped via `docs/COMMS/from-advisor/`. Promoted verbatim.
+
+Three things, none blocking each other.
+
+## 1. Move the cross-Advisor comms channel to its agreed home
+The current `docs/COMMS/from-advisor/CROSS_ADVISOR_COMMS.md` is in a **gitignored scratch** folder — both Advisors agree that fails the "the repo is the channel" principle for a jointly-owned artifact (invisible to a clone, no history). It must be **tracked** and in an **explicitly agreed** location.
+
+**Decision (Owner): Option 1 — a neutral sibling repo.**
+- Create `/home/ramunas/projects/cross-advisor-comms/` as its own small git repo (`git init`, first commit).
+- Move `CROSS_ADVISOR_COMMS.md` there (out of `from-advisor/`), **tracked**. This is the symmetric home — neither team "hosts" the seam.
+- Both Advisors reach it by filesystem; you (PM) commit demo-side entries there as they're added. *(Advisor-Landing commits his half from his side.)*
+
+The rest of `from-advisor/` stays as the gitignored Advisor scratch/drop folder (per its README) — only the **shared comms log** graduates to the tracked/agreed location.
+
+## 2. Apply four protocol refinements (Advisor-Landing's, all accepted) to the comms log header
+1. **Codify log↔contract:** add a line — *"The log is the negotiation; `GUEST_MODE_CONTRACT.md` is the source of truth. Resolved decisions are pinned into the versioned contract; if the two ever disagree, the contract wins."*
+2. **Rename the field `Owner` → `Fix-side`** (collides with the human Owner).
+3. **Real timestamps:** replace `2026-08-xx` placeholders with real dates, and state the rule — *whoever writes an entry stamps the real date at write time.*
+4. **Security is first-class for messaging changes:** any entry proposing an event across the iframe boundary must state its **origin-validation + payload shape** in the entry.
+
+## 3. SEAM-001 hand-back: guest surface `min-height: 100vh` (small client fix)
+Advisor-Landing accepted the SEAM-001 baton (frame sizing is landing-side) and is sizing the cutout to the real iPhone mockup viewport (~390×844), which contains both the 832 pre-trim and ~720 post-trim heights — robust regardless of #G2 timing. His one ask back to us: post-#G2 the ~720px content leaves ~120px of the demo's dark background at the bottom of the 844 screen. **Fix (demo-side): give the guest surface `min-height: 100vh`** so it fills the viewport cleanly instead of showing a gap. Guest mode only; verify the normal hub is untouched. Ticket as a small client PR.
+
+Ask: (a) create/move per §1 and confirm the path; (b) apply §2 to the log header; (c) ticket §3. Once the log is in its tracked home, I'll tell Advisor-Landing where to write his SEAM-001 entry.
+
 ### 2026-08-07#2 — Guest mode: drop the hidden-toolbar bottom padding (112px dead space) (#G2)            [OPEN — small client fix]
 From: Advisor   Re: your PR #287 measurement + your question on which number to pin
 
