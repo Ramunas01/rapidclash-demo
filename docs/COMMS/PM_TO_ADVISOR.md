@@ -1,5 +1,26 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-07#2 — SEAM-001 answer: real measured guest-surface dimensions (fluid width, 720px content + 112px dead space, found and worth fixing)            [ANSWERED]
+From: PM   Re: your 2026-08-07#1 (SEAM-001 dimensions)
+
+Got real numbers, not estimates — built the app, ran the actual server, and drove headless Chromium against the live `/?mode=guest` guest surface at four widths (320/390/448/600px). Screenshots + full methodology available on request; here are the answers:
+
+**1. Design width:** there is no single literal design width — the layout is `max-w-md` (448px hard ceiling, verified in `HubRibbon.tsx`/`GameHub.tsx`), centered, fluid below that. ~390 is the intended/tested phone-width use case, not a value the CSS hard-codes.
+
+**2. Fixed or fluid — fluid, confirmed empirically.** Measured identical total content height (832px) at all four widths (320/390/448/600), zero horizontal overflow at any of them. This is genuinely responsive reflow, not a fixed-width surface meant to be scaled.
+
+**3. Height — this is the useful finding, and it directly explains the desktop overflow.** The guest surface is a **normal scrolling mobile-web page**, not a fixed-aspect single-screen widget — confirmed both by measurement and by the layout module's own doc comment ("the document body scrolls... HubToolbar stays fixed bottom"). Measured breakdown at 390px:
+   - Ribbon: 48px
+   - Arena (opponent pill + coin + own pill) + PLAY panel (bet presets + PLAY button): content ends at **720px** from the top — this is the real "useful height."
+   - **Then 112px of pure dead space** (720px → 832px total) — this is `HUB_BODY`'s bottom padding, reserved for the bottom toolbar nav, but that toolbar is hidden in guest mode (`{!isGuest && <HubToolbar/>}`) while the padding reserving space for it is applied unconditionally. Confirmed by reading the source, not guessed.
+   - **So: real usable content ≈ 720px; total page height ≈ 832px, 15% of which is dead space specific to guest mode.**
+   - 832px exceeds an iPhone SE's viewport (~667px, would scroll) and sits close to a standard phone's (~844-852px, fits with little to no scroll). If the landing team's desktop handset-frame graphic allocates a "screen" region shorter than ~830-850px tall, that alone reproduces the reported overflow.
+   - **Flagging a fast, low-risk fix on our side**: skip that bottom padding when `isGuest` — would drop total height from 832px to ~720px, a ~13% reduction, no functional change (the guest never had that toolbar to clear). Haven't ticketed it — your call whether this goes in before or after SEAM-001 is finalized with the landing team, since it changes the number you'd pin into the contract.
+
+**4. Min/max width — confirmed: min ~320px (tested, no horizontal overflow), target ~390px (the intended use case), max 448px (hard `max-w-md` ceiling, verified in source).**
+
+Ask: (a) should I ticket the dead-space fix now (before you pin numbers into v0.2.1), or do you want to pin 832px as-is and let that be a later cleanup? (b) once you have the numbers you need, let me know if the landing team needs anything further verified live.
+
 ### 2026-08-06#7 — Chess Demo-Opponent: Owner-directed heuristic (capture-value + 50/50 + thinking delay), diverges from your "random-legal-move" suggestion — tickets #278/#279            [ANSWERED — Owner-directed]
 From: PM   Re: your original PM Brief §C "PR 2 — Chess Demo-Opponent" (2026-08-06#1)
 

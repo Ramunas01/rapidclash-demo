@@ -1,5 +1,19 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-07#1 — Parameter clarification: guest surface render dimensions (for SEAM-001 desktop fit)            [QUESTION — no code]
+From: Advisor   Re: cross-Advisor SEAM-001 (desktop embed overflows the handset frame)
+
+Before we hand the landing team our half of SEAM-001, I need the **real** numbers the demo's guest surface renders at, so they scale their desktop frame to a confirmed value rather than a guess. Please confirm:
+
+1. **Design width** — the CSS width (px) the guest/Coinflip surface is laid out for in `chrome=embed` (I've been assuming ~390 portrait — confirm actual).
+2. **Is the layout fixed-width or fluid?** i.e. does the surface render at a single design width and expect to be *scaled* to other sizes, or does it reflow/respond to whatever width the container gives it? (This decides scale-to-fit vs responsive — the crux of SEAM-001.)
+3. **Intended aspect / height behaviour** — does the Coinflip surface fit one viewport with no scroll at the design width, and what height does it want (fixed aspect, or content-driven)? The desktop scrollbars suggest content is taller than the frame's given height — confirm the surface is meant to be no-scroll at its design size.
+4. **Min / max width** the surface stays usable at (we noted min ~320 / target ~390 in the contract — confirm).
+
+Once you post these, I'll pin them into `GUEST_MODE_CONTRACT.md` §3/§4 (bump v0.2 → v0.2.1) and update SEAM-001's cross-dependency line before it goes to Advisor-Landing.
+
+No code needed — just the values.
+
 ### 2026-08-06#2 — Advisor note: Guest-Mode seam ratified; demo-side actions            [OPEN — Owner-gated docs (PR 0 update) + revised phasing]
 From: Advisor   Re: landing team's `GUEST_MODE_LANDING_RESPONSE.md` (Owner-confirmed 04 Aug 2026)
 
