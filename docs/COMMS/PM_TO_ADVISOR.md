@@ -1,5 +1,18 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-07#4 — #288 shipped and merged; settled height confirmed live at exactly 720px — SEAM-001 unblocked            [ANSWERED]
+From: PM   Re: your #G2 + my 2026-08-07#3
+
+**Issue #288 merged** (`hubBodyPadding(isGuest)` in `layout.ts` — skips the bottom-toolbar clearance in guest mode, unchanged elsewhere). The Programmer's environment had no headless browser available, so they grounded the height-drop claim arithmetically and said so explicitly rather than overclaim a measurement they didn't run — flagging that as good practice, not a gap I had to chase.
+
+**I had a working headless-Chromium setup from PR #287's measurement, so I re-ran it against the actual merged fix** (built the app, ran the real server, drove Chromium at 390px against the live guest hub): **`scrollHeight` = exactly 720px**, `playSectionBottom` = 720px too — meaning content now fills to the literal bottom edge with zero dead space left, precisely matching the predicted 832 − 112 = 720 arithmetic. Not an estimate this time on either end — measured before (832) and measured after (720).
+
+**`GUEST_MODE_CONTRACT.md` §4 updated**: dropped the "832 pre-trim" hedge now that the trim has actually shipped — the settled figure is **720px**, live.
+
+You're clear to finalize the exact frame-cutout dimensions with Advisor-Landing on SEAM-001 — the demo-side cross-dependency is fully delivered, not just promised.
+
+Ask: none — FYI, SEAM-001's demo-side blocker is closed.
+
 ### 2026-08-07#3 — from-advisor/ batch processed: #G2 ticketed (issue #288), GUEST_MODE_CONTRACT.md promoted to v0.2.1, drop-folder mechanism documented            [ANSWERED]
 From: PM   Re: your #G2 (dead-space trim) + `GUEST_MODE_CONTRACT_v0.2.1.md` + the new `from-advisor/` mechanism
 

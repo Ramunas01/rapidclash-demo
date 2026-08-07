@@ -14,14 +14,14 @@ Same app, separate deployments, joined by an `<iframe>` (no same-origin co-hosti
 - **Consumes (landing):** minimal `sandbox` (`allow-scripts allow-same-origin`; `allow-forms`/`allow-popups`/`allow-fullscreen` only as needed; **never `allow-top-navigation`**); add the demo origin to `frame-src`. Isolation rests on `frame-ancestors` + origin-validated messaging + no top-navigation, not the sandbox alone.
 - **Lazy-load (landing, non-negotiable):** the iframe loads **only on visitor click**; the static screenshot is the default and the **fallback**. *(Demo implication: first click is a cold entry — keep the guest entry warm/fast.)*
 
-## 4. Shell, fullscreen & sizing (Decision 2 · sizing pinned v0.2.1)
+## 4. Shell, fullscreen & sizing (Decision 2 · sizing settled v0.2.1)
 Desktop: the phone-mockup shell is the iframe container; the click-safe lightbox enlarges it. Mobile: "step into the app" = **fullscreen (100vw/100vh)**.
 
-**Sizing (measured, headless Chromium @ 320/390/448/600px — PR #287):**
+**Sizing (measured, headless Chromium @ 320/390/448/600px — PR #287, re-confirmed live post-fix on PR #290):**
 - **Fluid, not fixed-then-scaled.** Reflows responsively to a hard **`max-w-md` = 448px** ceiling; **min ~320 (tested clean)**, **target ~390**, portrait. Give the iframe a width in that range — it lays out correctly, **no `transform: scale`**. Zero horizontal overflow at any width. (The one hard-fixed element is the Coinflip coin canvas, 216px.)
 - **Normal scrolling mobile page by design** (sticky ribbon top, fixed toolbar bottom, body scrolls) — **not** a fixed single-screen/no-scroll layout.
-- **Height: 832px measured, identical at every width.** Useful content **720px** + **112px dead space** (`HUB_BODY` toolbar-reserve padding, applied even though guest hides the toolbar). The demo-side trim (#G2) removes the 112px → **~720px**.
-- **Landing frame's screen cutout must allow ~720px viewport height** (post-trim; 832 pre-trim). A cutout shorter than that is what overflows. Fit is a **height** concern, not width. Exact cutout dims finalised jointly once #G2 lands.
+- **Height: 720px, settled and measured live.** Was 832px (112px dead space from `HUB_BODY`'s toolbar-reserve padding, applied even though guest hides the toolbar) — the demo-side trim (#G2, issue #288) shipped and the fixed height was re-measured directly against the merged code: exactly 720px, zero dead space remaining.
+- **Landing frame's screen cutout should target 720px viewport height.** A cutout shorter than that overflows. Fit is a **height** concern, not width.
 
 ## 5. Events — versioned `postMessage` protocol
 Envelope `{ v: 1, type, payload? }`. **Both sides validate `event.origin`** against the exact counterpart; **never** `*` targetOrigin for anything sensitive.
@@ -45,6 +45,6 @@ Demo: entry point, session factory, bot opponent, ephemeral credits, curated sur
 
 ## 11. Sign-offs / open
 - **Counsel:** charter-exception (labelled-bot / play-money / not-real) + a Privacy-Policy line (preview anonymous, cookieless, collects nothing; landing `demo-open` metric, if added, cookieless/aggregate).
-- **Open (demo-side):** final `credits` + session lifetime/reset; rate-limit thresholds; exact container dims (joint, post-#G2); later engagement-events slice.
+- **Open (demo-side):** final `credits` + session lifetime/reset; rate-limit thresholds; exact container dims (joint, now that height is settled at 720px); later engagement-events slice.
 
-*Changelog: v0.2.1 — §4 sizing pinned to measured numbers (832/720/112, fluid ≤448) per PR #287. v0.2 — added iframe/CSP, shell, Events, limited-taste, abuse-guard. v0.1 — initial seam draft.*
+*Changelog: v0.2.1 — §4 sizing measured (PR #287: 832/720/112, fluid ≤448) then settled live at 720px once the dead-space trim shipped (issue #288/PR #290). v0.2 — added iframe/CSP, shell, Events, limited-taste, abuse-guard. v0.1 — initial seam draft.*
