@@ -17,3 +17,16 @@
  */
 export const HUB_SHELL = 'relative min-h-[100dvh] bg-background text-foreground';
 export const HUB_BODY = 'pb-[calc(7rem_+_env(safe-area-inset-bottom))]';
+
+/**
+ * `HUB_BODY`'s ~112px clearance exists ONLY to keep content from hiding behind the fixed
+ * `HubToolbar` — guest mode never renders that toolbar (`GameHub.tsx`: `{!isGuest &&
+ * <HubToolbar .../>}`), so reserving space for it there is pure dead space (issue #288: measured
+ * at 832px total guest hub height, 112px of which was this). Use this wherever a hub screen can
+ * be guest-facing (today, just `GameHub.tsx`) instead of the bare `HUB_BODY` constant. Screens
+ * that can never render for a guest (Home, Profile) keep using `HUB_BODY` directly — the
+ * toolbar's always there for them, so the clearance is never dead space.
+ */
+export function hubBodyPadding(isGuest?: boolean): string {
+  return isGuest ? '' : HUB_BODY;
+}

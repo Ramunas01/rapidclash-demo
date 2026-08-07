@@ -886,3 +886,35 @@ describe('CoinflipHubScreen — guest mode chrome (issue #267)', () => {
     expect(screen.getByTestId('hub-nav-games')).toBeInTheDocument();
   });
 });
+
+describe('CoinflipHubScreen — guest mode skips the hidden-toolbar bottom padding (issue #288)', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes('/games') || u.includes('/leaderboard'))
+          return { ok: true, json: async () => [] } as Response;
+        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      }),
+    );
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('a non-guest hub keeps the exact HUB_BODY bottom-toolbar clearance — pixel-identical to before (regression guard)', () => {
+    render(<CoinflipHubScreen {...baseProps({ isGuest: false })} />);
+    const body = screen.getByTestId('hub-body').firstElementChild;
+    expect(body?.className).toContain('pb-[calc(7rem_+_env(safe-area-inset-bottom))]');
+  });
+
+  it('guest mode drops the bottom-toolbar clearance entirely — HubToolbar is hidden there, so the ~112px it reserves was pure dead space', () => {
+    render(<CoinflipHubScreen {...baseProps({ isGuest: true, initialStake: 100 })} />);
+    const body = screen.getByTestId('hub-body').firstElementChild;
+    expect(body?.className).not.toContain('pb-[calc(7rem_+_env(safe-area-inset-bottom))]');
+    // PR #287 measured this exact class contributing 112px in a real headless-Chromium render of
+    // the guest hub (832px total height, 720px useful content). jsdom has no layout engine (and no
+    // browser is available to re-run that measurement in this environment) — but this class is the
+    // SOLE source of that gap (nothing else in HUB_SHELL/HUB_BODY changed), so its removal here is
+    // necessary and sufficient for the real rendered height to drop to ~720px.
+  });
+});
