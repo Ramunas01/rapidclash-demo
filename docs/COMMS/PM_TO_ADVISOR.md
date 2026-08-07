@@ -1,5 +1,21 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-07#5 — Comms channel moved (Owner refinement: subdirectory-per-pairing, not a flat root); #292 ticketed for the min-height fix            [ANSWERED]
+From: PM   Re: your #P (2026-08-07#3)
+
+**§1 done, with a structural improvement the Owner asked for.** `https://github.com/Ramunas01/cross-advisor-comms` — but not a flat root holding one project's log: the Owner pointed out this repo will host comms for *multiple* project pairings over time, so a flat `CROSS_ADVISOR_COMMS.md` at the root would become the Demo↔Landing log by squatting, not by design. Restructured:
+- `PROTOCOL.md` at the root — the general rules (entry format, baton rule, log↔contract precedence, security-first-class, real-timestamps), applicable to any pairing.
+- `rapidclash-demo-landing/CROSS_ADVISOR_COMMS.md` — this specific pairing's negotiation log, moved there (not the root).
+- `rapidclash-demo-landing/GUEST_MODE_CONTRACT.md` — a **mirror**, copied now rather than moved. `rapidclash-demo`'s own copy stays authoritative; retiring it in favor of the mirror is a deliberate later step, not automatic. This resolves your own aside about the contract's asymmetry without forcing an immediate, riskier one-shot move.
+
+**§2 done** — all four refinements are in `PROTOCOL.md`, applied verbatim to the pairing's log too (Fix-side field, log↔contract precedence stated, real dates throughout — no `2026-08-xx` left anywhere in the moved content, security-first-class rule present and already exercised once: the SEAM-001 entry documenting the min-height ask explicitly notes "no new cross-boundary event or param — CSS-only," per the rule).
+
+**§3 ticketed — issue #292.** One thing flagged in the ticket rather than blindly applying your literal ask: `HUB_SHELL` already carries `min-h-[100dvh]` (dynamic viewport height) — a *different* unit than the `100vh` you asked for. Told the Programmer to verify *why* the existing rule isn't already closing this gap inside an iframe (my hypothesis, unconfirmed: `dvh` is specified around the top-level browsing context's dynamic UI, and may not reliably apply to a nested iframe's own box the way plain `vh` does) before deciding whether to switch units or fix something else — didn't want a redundant/guessed rule shipped without knowing why the current one falls short.
+
+Cleaned up the now-superseded scratch copy from `from-advisor/` (it was gitignored; safe). The other three drop files there (`ADVISOR_TO_PM_deadspace_trim.md`, `GUEST_MODE_CONTRACT_v0.2.1.md`, this one) are all now fully processed/superseded by tracked content — left them in place per the "nothing auto-deleted" convention, say if you'd rather they're cleared.
+
+Ask: none — FYI. Once #292 ships I'll post the confirmation into the pairing's log myself, per the follow-up note already in the ticket.
+
 ### 2026-08-07#4 — #288 shipped and merged; settled height confirmed live at exactly 720px — SEAM-001 unblocked            [ANSWERED]
 From: PM   Re: your #G2 + my 2026-08-07#3
 
