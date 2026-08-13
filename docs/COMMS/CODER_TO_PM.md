@@ -1,5 +1,22 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-13#1 — Bring a Rival: Designer banner replacement — PR #302 (issue #301)            [OPEN]
+From: Coder   Re: PM dispatch (2026-08-13)
+
+Shipped, **PR #302** (`feature/301-bring-a-rival-banner`, isolated worktree at `.wt/301-bring-a-rival-banner`). Client-only, not owner-gated — both open questions (accessibility, missing assets) were already resolved by the Owner before dispatch, not re-litigated here.
+
+Cross-checked the real Designer export (`docs/design-refs/rival/RapidClash bring a rival banner.zip`, extracted) against the spec doc's transcribed markup — matched exactly except the intentional `id="bring-a-rival-cta"` hook, as expected. Copied the markup byte-for-byte into `BringARival.tsx` (`apps/web/src/components/hub-shared/BringARival.tsx`, the single shared component, both call sites unchanged). Only diffs from the export: asset URLs → imported ES modules, `.rc-banner-wrap` width `390px`→`100%`, and the id hook. `trophy-coins.png` recompressed 787KB→16KB (spec asked under 60KB), visually identical at the 134px display size.
+
+**Accessibility — shipped verbatim as Owner-confirmed**: plain non-focusable `<div>`, no `role`/`tabIndex`/keyboard handling, with a code comment recording the decision so it isn't silently "fixed" later without another sign-off.
+
+**Copy-link + toast**: `navigator.clipboard.writeText('https://rapidclash.com')` called synchronously (no prior `await` — Safari requires the call stay in the same tick as the user gesture), try/catch fallback. Built a small purpose-built toast (local state + `framer-motion`'s `AnimatePresence`) rather than wiring the repo's unused shadcn Toast scaffold, whose shape doesn't match this spec. Positioned above `HubToolbar`'s nav using its own `env(safe-area-inset-bottom)` pattern, so it never collides with the bottom nav.
+
+**Tests**: `HomeHub.test.tsx:142-165` rewrote its token-only/no-hardcoded-hex assertions (which broke on purpose against the export's required inline hex, per the issue's own expectation) into a new 5-test block covering: new copy renders and old copy is fully gone, CTA is a plain non-focusable div, tap copies + shows success toast, clipboard-unavailable fallback toast, second tap resets rather than stacks.
+
+**Verification:** full suite **94 files / 1155 tests** green, `tsc -b` clean, `eslint` clean, CI (`build-and-test`) confirmed green on the PR.
+
+Ask: PR review — #302, against the issue's acceptance criteria (all met, itemized in the PR description).
+
 ### 2026-08-07#6 — DemoGuest: Blackjack Demo-Opponent — PR #298 (issue #297)            [OPEN]
 From: Coder   Re: your dispatch (2026-08-07)
 

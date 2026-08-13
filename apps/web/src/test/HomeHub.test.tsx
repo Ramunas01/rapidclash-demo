@@ -139,7 +139,7 @@ describe('HomeHubScreen', () => {
     expect(footer.textContent ?? '').not.toMatch(/\$/);
   });
 
-  it('footer/Bring-a-Rival restyle (Designer #3): tokens only — purple lead-in, white body + links, borderless rival', async () => {
+  it('footer restyle (Designer #3): tokens only — purple lead-in, white body + links', async () => {
     render(<HomeHubScreen {...baseProps()} />);
     const footer = await screen.findByTestId('home-footer');
     // Provably-fair: brand-purple lead-in, white body sentence, "See how it works" stays purple.
@@ -152,16 +152,79 @@ describe('HomeHubScreen', () => {
       expect(within(footer).getByText(label).className).toContain('text-foreground');
       expect(within(footer).getByText(label).className).not.toContain('text-muted-foreground');
     }
-    // Bring a Rival: borderless navy panel, white description matching the heading (no muted grey).
+  });
+});
+
+// #301 — Bring a Rival: Designer banner replacement + copy-link action. The banner is the
+// Designer's export copied byte-for-byte (docs/COMMS/from-advisor/bring-a-rival-banner.md) —
+// verbatim inline hex per spec, so (unlike the rest of the app) this is NOT tested for
+// token-only styling; that assertion belonged to the old markup and is gone on purpose.
+describe('HomeHubScreen — Bring a Rival banner (#301)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/open-challenges')) return { ok: true, json: async () => [] } as Response;
+      if (u.includes('/games')) return { ok: true, json: async () => GAMES } as Response;
+      if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
+      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+    }));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  function cta(): HTMLElement {
     const rival = screen.getByTestId('home-rival');
-    const panel = rival.querySelector('div');
-    expect(panel?.className).toContain('bg-surface');
-    expect(panel?.className).not.toMatch(/\bborder\b/); // rim removed
-    const desc = within(rival).getByText(/send a match link/i);
-    expect(desc.className).toContain('text-foreground');
-    expect(desc.className).not.toContain('text-muted-foreground');
-    // No new hardcoded hex introduced by the restyle (tokens only).
-    expect(rival.querySelector('div')?.getAttribute('class') ?? '').not.toMatch(/#[0-9a-f]{6}/i);
+    const el = rival.querySelector('#bring-a-rival-cta');
+    if (!el) throw new Error('#bring-a-rival-cta not found');
+    return el as HTMLElement;
+  }
+
+  it('renders the Designer export copy — heading, subline, CTA label — and none of the old copy', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    const rival = screen.getByTestId('home-rival');
+    expect(within(rival).getAllByText('Bring a rival').length).toBeGreaterThanOrEqual(2); // heading + CTA label
+    expect(rival.textContent).toContain('RapidClash is all about real');
+    expect(rival.textContent).toContain('opponents. Send this to whoever');
+    expect(rival.textContent).toContain('you want to take money from first.');
+    // Old copy fully gone.
+    expect(rival.textContent ?? '').not.toMatch(/send a match link/i);
+    expect(rival.textContent ?? '').not.toMatch(/challenge a friend/i);
+    expect(screen.queryByText(/send a match link/i)).toBeNull();
+  });
+
+  it('the CTA is a plain, non-focusable <div> — verbatim as exported, no role/tabIndex added (Owner-confirmed, issue #301)', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    const el = cta();
+    expect(el.tagName).toBe('DIV');
+    expect(el).not.toHaveAttribute('role');
+    expect(el).not.toHaveAttribute('tabindex');
+  });
+
+  it('tap copies https://rapidclash.com to the clipboard and shows the success toast', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    render(<HomeHubScreen {...baseProps()} />);
+    fireEvent.click(cta());
+    expect(writeText).toHaveBeenCalledWith('https://rapidclash.com');
+    expect(await screen.findByText('Link copied to clipboard')).toBeInTheDocument();
+  });
+
+  it('falls back to the copy-failed toast when the Clipboard API is unavailable', async () => {
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+    render(<HomeHubScreen {...baseProps()} />);
+    fireEvent.click(cta());
+    expect(await screen.findByText('Copy failed — link: rapidclash.com')).toBeInTheDocument();
+  });
+
+  it('a second tap resets the toast instead of stacking a new one', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    render(<HomeHubScreen {...baseProps()} />);
+    fireEvent.click(cta());
+    await screen.findByText('Link copied to clipboard');
+    fireEvent.click(cta());
+    await waitFor(() => {
+      expect(screen.getAllByText('Link copied to clipboard')).toHaveLength(1);
+    });
   });
 });
 
