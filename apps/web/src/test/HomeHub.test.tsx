@@ -73,7 +73,7 @@ describe('HomeHubScreen', () => {
     expect(onTrackChallenges).toHaveBeenCalledWith(['coinflip', 'chess', 'mines']);
   });
 
-  it('merges per-game feeds into one ticker (oldest first) and JOIN takes that challenge', async () => {
+  it('the Games-page carousel (#305) merges per-game feeds and JOIN takes the real challenge', async () => {
     const onTakeChallenge = vi.fn();
     const challengesByGame = {
       coinflip: [challenge('c1', 'alice', 5, 100)],
@@ -81,20 +81,20 @@ describe('HomeHubScreen', () => {
     };
     render(<HomeHubScreen {...baseProps({ challengesByGame, onTakeChallenge })} />);
 
-    // Both games' challenges appear in the one ticker.
-    const ticker = within(screen.getByTestId('home-ticker'));
-    expect(ticker.getByTestId('home-row-c1')).toBeInTheDocument();
-    expect(ticker.getByTestId('home-row-m1')).toBeInTheDocument();
-    // Stakes render in ¢ and the row names its game (real data, not fabricated).
-    expect(ticker.getByTestId('home-stake-c1').textContent).toBe('5¢');
-    expect(ticker.getByTestId('home-stake-m1').textContent).toBe('25¢');
-    await waitFor(() => expect(ticker.getByTestId('home-row-game-m1').textContent).toBe('Mines'));
+    // Both games' challenges appear in the one carousel (real data, not fabricated) — rows are
+    // keyed by the carousel's own synthetic uid (the pool can wrap when smaller than the 11-row
+    // window), so look them up by the real `data-match-id` instead of a row testid.
+    const carousel = within(screen.getByTestId('games-carousel'));
+    const c1Row = document.querySelector('[data-match-id="c1"]') as HTMLElement;
+    const m1Row = document.querySelector('[data-match-id="m1"]') as HTMLElement;
+    expect(c1Row).toBeInTheDocument();
+    expect(m1Row).toBeInTheDocument();
+    expect(within(c1Row).getByText('5')).toBeInTheDocument();
+    expect(within(m1Row).getByText('25')).toBeInTheDocument();
+    await waitFor(() => expect(within(m1Row).getByText('Mines')).toBeInTheDocument());
+    expect(carousel.getByTestId('games-carousel-live').textContent).toContain('2 LIVE');
 
-    // Oldest-first: m1 (openedAt 50) above c1 (openedAt 100).
-    const rows = ticker.getAllByTestId(/^home-row-[a-z0-9]+$/);
-    expect(rows[0].getAttribute('data-testid')).toBe('home-row-m1');
-
-    fireEvent.click(ticker.getByTestId('home-join-c1'));
+    fireEvent.click(within(c1Row).getByTestId(/^games-carousel-join-/));
     expect(onTakeChallenge).toHaveBeenCalledWith('c1');
   });
 
@@ -102,9 +102,10 @@ describe('HomeHubScreen', () => {
     const onTakeChallenge = vi.fn();
     const challengesByGame = { coinflip: [challenge('c1', 'alice', 50, 100)] };
     render(<HomeHubScreen {...baseProps({ balance: 5, challengesByGame, onTakeChallenge })} />);
-    fireEvent.click(screen.getByTestId('home-join-c1'));
+    const c1Row = document.querySelector('[data-match-id="c1"]') as HTMLElement;
+    fireEvent.click(within(c1Row).getByTestId(/^games-carousel-join-/));
     expect(onTakeChallenge).not.toHaveBeenCalled();
-    expect(screen.getByTestId('home-ticker-notice').textContent).toMatch(/not enough/i);
+    expect(screen.getByTestId('games-carousel-notice').textContent).toMatch(/not enough/i);
   });
 
   it('is sanitized: no $ anywhere on the hub', async () => {
@@ -288,16 +289,15 @@ describe('HomeHubScreen (logged out)', () => {
   beforeEach(() => stubFetch());
   afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
-  it('browses the grid via public /games; the wallet chip is "Sign in"; the ticker is the live public feed', async () => {
+  it('browses the grid via public /games; the wallet chip is "Sign in"; the carousel is the live public feed', async () => {
     render(<HomeHubScreen {...baseProps({ loggedIn: false, token: '' })} />);
     // The game grid still renders (public endpoint) so a visitor can browse.
     await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
     // No fake balance — the chip is a "Sign in" affordance.
     expect(screen.getByTestId('hub-signin-chip')).toBeInTheDocument();
     expect(screen.queryByTestId('hub-wallet-chip')).toBeNull();
-    // The ticker is the REAL public feed (no WS subscription) — not a teaser stub.
-    expect(screen.getByTestId('home-ticker')).toBeInTheDocument();
-    expect(screen.queryByTestId('home-ticker-teaser')).toBeNull();
+    // The Games-page carousel (#305) is the REAL public feed (no WS subscription).
+    expect(screen.getByTestId('games-carousel')).toBeInTheDocument();
   });
 
   it('renders real public challenges; JOIN captures the row\'s game + stake (for the auth wall)', async () => {
@@ -306,12 +306,13 @@ describe('HomeHubScreen (logged out)', () => {
     render(<HomeHubScreen {...baseProps({ loggedIn: false, token: '', onTakePublicChallenge })} />);
 
     // Real rows from GET /open-challenges (never fabricated).
-    await waitFor(() => expect(screen.getByTestId('home-row-p1')).toBeInTheDocument());
-    expect(screen.getByTestId('home-stake-p1').textContent).toBe('15¢');
-    expect(screen.getByTestId('home-row-p2')).toBeInTheDocument();
+    await waitFor(() => expect(document.querySelector('[data-match-id="p1"]')).toBeInTheDocument());
+    const p1Row = document.querySelector('[data-match-id="p1"]') as HTMLElement;
+    expect(within(p1Row).getByText('15')).toBeInTheDocument();
+    expect(document.querySelector('[data-match-id="p2"]')).toBeInTheDocument();
 
     // A JOIN tap passes the row's matchId + gameId + stake so the auth wall can resume the take.
-    fireEvent.click(screen.getByTestId('home-join-p1'));
+    fireEvent.click(within(p1Row).getByTestId(/^games-carousel-join-/));
     expect(onTakePublicChallenge).toHaveBeenCalledWith({ matchId: 'p1', gameId: 'coinflip', stake: 15 });
   });
 
@@ -340,13 +341,12 @@ describe('HomeHubScreen (logged out)', () => {
     expect(urls.some((u) => u.includes('/open-challenges'))).toBe(true); // the public read IS used
   });
 
-  it('the sign-in affordances (chip + ticker) invoke the sign-in handler', async () => {
+  it('the wallet chip sign-in affordance invokes the sign-in handler', async () => {
     const onOpenWallet = vi.fn();
     render(<HomeHubScreen {...baseProps({ loggedIn: false, token: '', onOpenWallet })} />);
-    await waitFor(() => expect(screen.getByTestId('home-ticker-signin')).toBeInTheDocument());
-    fireEvent.click(screen.getByTestId('home-ticker-signin'));
+    await waitFor(() => expect(screen.getByTestId('hub-signin-chip')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('hub-signin-chip'));
-    expect(onOpenWallet).toHaveBeenCalledTimes(2);
+    expect(onOpenWallet).toHaveBeenCalledTimes(1);
   });
 });
 

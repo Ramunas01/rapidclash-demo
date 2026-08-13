@@ -4,8 +4,10 @@ import { api } from '../../api.js';
 import { formatCredits } from '../../format.js';
 import { TILE_ART, titleCase } from './tiles.js';
 
-/** How often the logged-out ticker re-polls the public snapshot so the feed visibly moves. */
-const PUBLIC_POLL_MS = 4_000;
+/** How often the logged-out ticker re-polls the public snapshot so the feed visibly moves.
+ *  Exported for reuse by the Games-page carousel (issue #305), which polls the same public
+ *  snapshot on the same cadence when logged out — one interval constant, not two guesses. */
+export const PUBLIC_POLL_MS = 4_000;
 
 /**
  * Owner-confirmed visible-row count (PM_TO_ADVISOR 2026-08-05#1 / issue #259): the ticker window
@@ -31,8 +33,28 @@ const OLD_MARQUEE_LOOP_MS = 22_000;
 const OLD_MARQUEE_REFERENCE_ROWS = TICKER_VISIBLE_ROWS + 1;
 const TICKER_STEP_MS = Math.round(OLD_MARQUEE_LOOP_MS / OLD_MARQUEE_REFERENCE_ROWS);
 
-/** One feed row — shared by the signed-in (WS) and logged-out (public) tickers. */
-type FeedRow = { gameId: string; c: OpenChallenge };
+/** One feed row — shared by the signed-in (WS) and logged-out (public) tickers, and by the
+ *  Games-page carousel (issue #305), which reuses this exact shape rather than inventing a
+ *  second one. */
+export type FeedRow = { gameId: string; c: OpenChallenge };
+
+/** Flattens the per-game WS feed into one oldest-first row list — the exact merge the signed-in
+ *  ticker has always done, pulled out so the Games-page carousel's OPEN GAMES tab can reuse it
+ *  instead of re-deriving its own (issue #305: "reuse the existing feed, don't build a new path"). */
+export function mergeChallengesByGame(challengesByGame: Record<string, OpenChallenge[]>): FeedRow[] {
+  const out: FeedRow[] = [];
+  for (const [gameId, list] of Object.entries(challengesByGame)) for (const c of list) out.push({ gameId, c });
+  return out.sort((a, b) => a.c.openedAt - b.c.openedAt);
+}
+
+/** The one balance-affordability check every JOIN action runs before taking a challenge — pulled
+ *  out of the signed-in ticker's `handleJoin` so the Games-page carousel (issue #305) reuses the
+ *  exact same rule/copy instead of reinventing it. Returns the notice text to show, or `null` if
+ *  the stake is covered. */
+export function insufficientBalanceNotice(stake: number, balance: number): string | null {
+  if (balance >= stake) return null;
+  return `Not enough credits to join — needs ${formatCredits(stake)}, you have ${formatCredits(balance)}.`;
+}
 
 function usePrefersReducedMotion(): boolean {
   const [reduced, setReduced] = useState(
@@ -306,15 +328,12 @@ export function OpenGamesTicker({
   emptyText?: string;
 }) {
   const [notice, setNotice] = useState<string | null>(null);
-  const rows = useMemo(() => {
-    const out: FeedRow[] = [];
-    for (const [gameId, list] of Object.entries(challengesByGame)) for (const c of list) out.push({ gameId, c });
-    return out.sort((a, b) => a.c.openedAt - b.c.openedAt);
-  }, [challengesByGame]);
+  const rows = useMemo(() => mergeChallengesByGame(challengesByGame), [challengesByGame]);
 
   function handleJoin(c: OpenChallenge) {
-    if (balance < c.stake) {
-      setNotice(`Not enough credits to join — needs ${formatCredits(c.stake)}, you have ${formatCredits(balance)}.`);
+    const msg = insufficientBalanceNotice(c.stake, balance);
+    if (msg) {
+      setNotice(msg);
       return;
     }
     setNotice(null);
