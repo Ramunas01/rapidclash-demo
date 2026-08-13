@@ -134,6 +134,8 @@ export interface GameHubScreenProps {
   onSelectGame(meta: GameMeta): void;
   onOpenWallet(): void;
   onOpenGameList(): void;
+  /** Rewards tab → the VIP/Rewards hub (issue #307). */
+  onOpenRewards(): void;
   /** Reset App's result state when the hub's result overlay dismisses (back to Idle). */
   onResultDismiss(): void;
   /** Logged out → no wallet/feed (auth-required); browsing the board + picking a bet stay open.
@@ -241,7 +243,7 @@ export function GameHub(props: GameHubProps) {
     token, playerId, username, avatarId = 'default', opponentId, opponentName, serverClockOffset = 0, balance, currentMatchId, gameState, legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
     onPlay, onCancel, onTakeChallenge, onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, onTrackChallenges,
-    onUntrackChallenges, onSelectGame, onOpenWallet, onOpenGameList, onResultDismiss,
+    onUntrackChallenges, onSelectGame, onOpenWallet, onOpenGameList, onOpenRewards, onResultDismiss,
     loggedIn = true, initialStake, initialTimeControl, isGuest = false,
   } = props;
 
@@ -625,7 +627,7 @@ export function GameHub(props: GameHubProps) {
 
       {/* Bottom nav (Games/Account) leads to the full game grid / profile — real-platform
           surfaces a guest session doesn't have. Omitted for guest mode. */}
-      {!isGuest && <HubToolbar onGames={onOpenGameList} onAccount={onOpenWallet} active="games" />}
+      {!isGuest && <HubToolbar onGames={onOpenGameList} onAccount={onOpenWallet} onRewards={onOpenRewards} active="games" />}
 
       {/* Opt-out games (Blackjack) suppress the pop-up and present the result on the board instead;
           the overlay stays the default for every other hub (the regression guard). */}

@@ -6,19 +6,21 @@ interface Props {
   onGames(): void;
   /** account → profile / wallet. */
   onAccount(): void;
+  /** rewards → the VIP/Rewards surface (issue #307). */
+  onRewards(): void;
   /** Which item reads as active (default 'games' — the home/games surface). */
-  active?: 'games' | 'account';
+  active?: 'games' | 'account' | 'rewards';
 }
 
 /**
  * Bottom navigation — the frame's transparent bar holding one rounded pill with 5 items
- * (Menu · Games · Account · Rewards · Chat). games/account are wired to live surfaces;
- * menu/rewards/chat are reserved and render visibly inactive (greyed, no action) — never a
+ * (Menu · Games · Account · Rewards · Chat). games/account/rewards are wired to live surfaces;
+ * menu/chat are reserved and render visibly inactive (greyed, no action) — never a
  * live-looking button that silently no-ops. Shared across hubs; `position: fixed` at the
  * bottom (#142 keeps the footer fixed while the page body scrolls). The bottom pad clears the
  * home-indicator safe-area under viewport-fit=cover.
  */
-export function HubToolbar({ onGames, onAccount, active = 'games' }: Props) {
+export function HubToolbar({ onGames, onAccount, onRewards, active = 'games' }: Props) {
   return (
     <>
       {/* Solid base behind & below the nav: a FULL-viewport-width #0B0B0B block (the canonical
@@ -40,7 +42,7 @@ export function HubToolbar({ onGames, onAccount, active = 'games' }: Props) {
         <ToolbarItem label="Menu" comingSoon icon={ICON_MENU} />
         <ToolbarItem label="Games" active={active === 'games'} onClick={onGames} icon={ICON_GAMES} />
         <ToolbarItem label="Account" active={active === 'account'} onClick={onAccount} icon={ICON_ACCOUNT} />
-        <ToolbarItem label="Rewards" comingSoon icon={ICON_REWARDS} />
+        <ToolbarItem label="Rewards" active={active === 'rewards'} onClick={onRewards} icon={ICON_REWARDS} />
         <ToolbarItem label="Chat" comingSoon icon={ICON_CHAT} />
       </div>
     </nav>

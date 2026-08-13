@@ -1,0 +1,180 @@
+// @vitest-environment jsdom
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { RewardsHubScreen } from '../screens/RewardsHub.js';
+import type { RewardsSnapshot } from '@rapidclash/shared';
+
+type Props = Parameters<typeof RewardsHubScreen>[0];
+
+function baseProps(over: Partial<Props> = {}): Props {
+  return {
+    token: 'tok',
+    username: 'Bobbylee',
+    balance: 1642,
+    onHome: vi.fn(),
+    onOpenProfile: vi.fn(),
+    onOpenRewards: vi.fn(),
+    ...over,
+  };
+}
+
+// Mirrors the design file's own placeholder persona (design-ref/games-and-rewards/, gitignored —
+// transcribed in RewardsHub.tsx's module doc): 17,800 XP lands Bronze→Silver at exactly 64%,
+// independently verified against the decoded template's own hardcoded `64%` — a strong signal
+// the progress formula (band-relative, not absolute-over-nextTier) is the right one.
+const BOBBYLEE_SNAPSHOT: RewardsSnapshot = {
+  xpLifetime: 17_800,
+  xpMonthly: 3_000,
+  wageredLifetime: 18_400,
+  claimableBalance: 25,
+  tier: 'Bronze',
+  rakebackRate: 0.04,
+  nextTier: { tier: 'Silver', xpRequired: 25_000, rakebackRate: 0.07 },
+};
+
+function stubFetch(snapshot: RewardsSnapshot, claimResponse?: { credited: number; newClaimableBalance: number }) {
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    const u = String(url);
+    const method = init?.method ?? 'GET';
+    if (u.includes('/rewards/claim') && method === 'POST') {
+      return { ok: true, json: async () => (claimResponse ?? { credited: snapshot.claimableBalance, newClaimableBalance: 0 }) } as Response;
+    }
+    if (u.includes('/rewards')) return { ok: true, json: async () => snapshot } as Response;
+    if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: 1642, entries: [] }) } as Response;
+    return { ok: true, json: async () => ({}) } as Response;
+  }));
+}
+
+describe('RewardsHubScreen', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('shows real username and lifetime XP from GET /rewards', async () => {
+    stubFetch(BOBBYLEE_SNAPSHOT);
+    render(<RewardsHubScreen {...baseProps()} />);
+    expect(screen.getByTestId('rewards-username').textContent).toBe('@Bobbylee');
+    await waitFor(() => expect(screen.getByTestId('rewards-xp').textContent).toBe('17,800'));
+  });
+
+  it('computes the VIP progress bar as the band-relative percent toward nextTier (Bronze→Silver at 17,800 XP = 64%, matching the design file exactly)', async () => {
+    stubFetch(BOBBYLEE_SNAPSHOT);
+    render(<RewardsHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('rewards-progress-pct').textContent).toBe('64%'));
+    expect(screen.getByTestId('rewards-progress-bar').style.width).toBe('64%');
+    expect(screen.getByTestId('rewards-tier-current').textContent).toContain('BRONZE');
+    expect(screen.getByTestId('rewards-tier-next').textContent).toContain('SILVER');
+  });
+
+  it('reads 100% progress and "MAX" at the top of the ladder (Diamond, no nextTier)', async () => {
+    stubFetch({ ...BOBBYLEE_SNAPSHOT, tier: 'Diamond', xpLifetime: 2_000_000, nextTier: undefined });
+    render(<RewardsHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('rewards-progress-pct').textContent).toBe('100%'));
+    expect(screen.getByTestId('rewards-tier-next').textContent).toContain('MAX');
+  });
+
+  it('reads 0-500 XP as Unranked progress toward Wood (no tier badge, since the design has none below Wood)', async () => {
+    stubFetch({
+      xpLifetime: 250, xpMonthly: 0, wageredLifetime: 0, claimableBalance: 0,
+      tier: 'Unranked', rakebackRate: 0, nextTier: { tier: 'Wood', xpRequired: 500, rakebackRate: 0.01 },
+    });
+    render(<RewardsHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('rewards-progress-pct').textContent).toBe('50%'));
+    expect(screen.getByTestId('rewards-tier-current').textContent).toContain('UNRANKED');
+    expect(screen.getByTestId('rewards-tier-next').textContent).toContain('WOOD');
+  });
+
+  it('highlights the current tier column in the VIP_ROWS table (Bronze = index 1 → left: 226px)', async () => {
+    stubFetch(BOBBYLEE_SNAPSHOT);
+    render(<RewardsHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('rewards-tier-highlight')).toBeInTheDocument());
+    // 150 (label column) + 76 * tierIndex(Bronze=1) = 226px — the design's own `tierMarkLeft` formula.
+    expect(screen.getByTestId('rewards-tier-highlight').style.left).toBe('226px');
+  });
+
+  it('renders the real VIP_ROWS reference table verbatim (all 6 tiers, thresholds, rakeback rates)', async () => {
+    stubFetch(BOBBYLEE_SNAPSHOT);
+    render(<RewardsHubScreen {...baseProps()} />);
+    const table = within(await screen.findByTestId('rewards-vip-table'));
+    for (const label of ['WOOD', 'BRONZE', 'SILVER', 'GOLD', 'EMERALD', 'DIAMOND']) {
+      expect(table.getByText(label)).toBeInTheDocument();
+    }
+    expect(table.getByText('1,500,000')).toBeInTheDocument(); // Diamond XP required
+    expect(table.getByText('20%')).toBeInTheDocument(); // Diamond rakeback
+  });
+
+  it('the CLAIM button is wired to POST /rewards/claim, shows the real claimable balance, and zeroes it on success', async () => {
+    stubFetch(BOBBYLEE_SNAPSHOT);
+    render(<RewardsHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('rewards-claimable').textContent).toBe('25'));
+    expect(screen.getByTestId('rewards-claim-button')).not.toBeDisabled();
+
+    fireEvent.click(screen.getByTestId('rewards-claim-button'));
+    await waitFor(() => expect(screen.getByTestId('rewards-claimable').textContent).toBe('0'));
+    expect(screen.getByTestId('rewards-claim-button')).toBeDisabled();
+  });
+
+  it('a zero claimable balance renders the CLAIM button disabled (idempotent — nothing to claim)', async () => {
+    stubFetch({ ...BOBBYLEE_SNAPSHOT, claimableBalance: 0 });
+    render(<RewardsHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('rewards-claimable').textContent).toBe('0'));
+    expect(screen.getByTestId('rewards-claim-button')).toBeDisabled();
+  });
+
+  it('volume bonus card reads "Wager to unlock" below Emerald', async () => {
+    stubFetch(BOBBYLEE_SNAPSHOT); // Bronze
+    render(<RewardsHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('rewards-volume-progress').textContent).toBe('Wager to unlock'));
+  });
+
+  it('volume bonus card shows real monthly-XP progress toward the next milestone at Emerald+', async () => {
+    stubFetch({ ...BOBBYLEE_SNAPSHOT, tier: 'Emerald', xpMonthly: 60_000 });
+    render(<RewardsHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('rewards-volume-progress').textContent).toBe('60,000 / 120,000 XP'));
+  });
+
+  it('volume bonus card reads "Max bonus reached" once the top Diamond milestone clears', async () => {
+    stubFetch({ ...BOBBYLEE_SNAPSHOT, tier: 'Diamond', xpMonthly: 400_000 });
+    render(<RewardsHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('rewards-volume-progress').textContent).toBe('Max bonus reached'));
+  });
+
+  it('HubToolbar Rewards nav is active and Games/Account route out (App.tsx wiring, same pattern as ProfileHub/HomeHub)', async () => {
+    const onHome = vi.fn();
+    const onOpenProfile = vi.fn();
+    stubFetch(BOBBYLEE_SNAPSHOT);
+    render(<RewardsHubScreen {...baseProps({ onHome, onOpenProfile })} />);
+    await waitFor(() => expect(screen.getByTestId('rewards-xp')).toBeInTheDocument());
+    expect(screen.getByTestId('hub-nav-rewards').getAttribute('aria-current')).toBe('page');
+    fireEvent.click(screen.getByTestId('hub-nav-games'));
+    expect(onHome).toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('hub-nav-account'));
+    expect(onOpenProfile).toHaveBeenCalled();
+  });
+
+  it('Quests and the second (PLATINUM/TIERS) tier list render nothing — confirmed dead markup in the design file, not merely undone', async () => {
+    stubFetch(BOBBYLEE_SNAPSHOT);
+    const { container } = render(<RewardsHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('rewards-xp')).toBeInTheDocument());
+    expect(container.textContent ?? '').not.toMatch(/PLATINUM/i);
+    expect(container.textContent ?? '').not.toMatch(/quest/i);
+  });
+
+  it('the XP Engine / Rakeback / Volume Bonus accordions open on click (collapsed → expanded grid-rows)', async () => {
+    stubFetch(BOBBYLEE_SNAPSHOT);
+    render(<RewardsHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('rewards-xp-engine-toggle')).toBeInTheDocument());
+    // The toggle <span> is the sole child of its heading <div>; the collapsible content <div> is
+    // that heading div's next sibling (AccordionShell renders the two as adjacent fragment children).
+    const heading = screen.getByTestId('rewards-xp-engine-toggle').parentElement as HTMLElement;
+    const panel = heading.nextElementSibling as HTMLElement;
+    expect(panel.style.gridTemplateRows).toBe('0fr');
+    fireEvent.click(screen.getByTestId('rewards-xp-engine-toggle'));
+    expect(panel.style.gridTemplateRows).toBe('1fr');
+  });
+
+  it('is sanitized: no $ anywhere on the hub', async () => {
+    stubFetch(BOBBYLEE_SNAPSHOT);
+    const { container } = render(<RewardsHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('rewards-xp')).toBeInTheDocument());
+    expect(container.textContent ?? '').not.toMatch(/\$/);
+  });
+});

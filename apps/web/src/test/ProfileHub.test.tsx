@@ -36,6 +36,7 @@ function baseProps(over: Partial<Props> = {}): Props {
     onLogout: vi.fn(),
     onHome: vi.fn(),
     onOpenProfile: vi.fn(),
+    onOpenRewards: vi.fn(),
     ...over,
   };
 }

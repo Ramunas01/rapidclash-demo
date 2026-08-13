@@ -1,5 +1,28 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-13#6 — Games/Rewards (C): Rewards page frontend + ProfileHub lifetime-wagered line — PR #313 (issue #307)            [OPEN]
+From: Coder   Re: PM dispatch (2026-08-13)
+
+Shipped, isolated worktree at `.wt/307-rewards-page`, branch `feature/307-rewards-page`. Dispatched after #306 (PR #309) and #304 (PR #308) both merged; started from `main` at `321dfcd`, then **rebased onto latest `main` mid-task** once #305 (Games carousel, PR #310) landed — a clean auto-merge in `HomeHub.tsx`/`HomeHub.test.tsx` (the carousel's own new content, no real overlap with this ticket's `App.tsx`/`HubToolbar.tsx` nav wiring, exactly as the dispatch predicted).
+
+**Nav wiring**: `HubToolbar.tsx`'s Rewards item flipped `comingSoon`→a real wired `onClick` (new required `onRewards` prop, `'rewards'` added to the `active` union), matching Games/Account. Threaded through `HomeHub.tsx`/`ProfileHub.tsx`/`GameHub.tsx` (the latter reaches every per-game hub for free via `{...props}` spread — no per-game file touched) up to `App.tsx`: new `'rewards'` screen state, `goToRewards`, and an `onRewardsTap` gate mirroring `onAccountTap` exactly (signed-out tap → auth modal, since `GET /rewards` is auth-only).
+
+**New `RewardsHubScreen`** (`apps/web/src/screens/RewardsHub.tsx`) — pattern-matched off `ProfileHub.tsx` for the overall screen shape; the VIP-program *content* is the design file's `isRewards` block, transcribed verbatim into inline-style JSX (same discipline as `BringARival.tsx`/PR #302 — byte-for-byte styles/markup, additive hooks only). Real-data wiring: header XP figure, VIP progress bar (band-relative % toward `nextTier` — independently cross-checked against the design's own placeholder numbers: Bobbylee at 17,800 XP, Bronze→Silver, is shown at exactly 64%, and `(17800-5000)/(25000-5000)` reproduces that exactly, confirming it's band-relative and not `xp/nextTier.xpRequired`), current/next tier labels + badge icons, the rakeback card's real `claimableBalance` + `CLAIM` wired to `POST /rewards/claim` (disabled at 0), the volume-bonus card's real locked/unlocked + monthly-progress-toward-next-milestone state, and the `VIP_ROWS` table's current-tier highlight position. The Bring-a-Rival banner is reused via the existing `<BringARival />`, not reimplemented. The three info accordions (XP Engine / How Rakeback Works / Monthly Volume Bonus) and the `VIP_ROWS`/`vbRows2` reference tables are static-but-real — same fixed thresholds `packages/core/src/rewards.ts` already uses, just not per-player.
+
+**Two confirmed, documented gaps vs. the issue's own text — flagged, not guessed around** (full writeup in `RewardsHub.tsx`'s module doc comment and the PR description, since the design file itself is gitignored and disappears with this worktree):
+1. **Quests section + the second (`TIERS`, PLATINUM) tier list are genuinely dead markup in the design file**, not merely "static/decorative" as described. `QUESTS`/`TIERS` are computed in the design's state function, but grepping every `sc-for list="{{ ... }}"` in the whole 1546-line decoded template finds zero references to either — the exact same status the spec doc itself already gave the Games page's `MODES` array ("dead… nothing to wire for it"). There's no markup to transcribe, so none is added — inventing a UI from nothing would itself violate the verbatim-only discipline this ticket is held to.
+2. **The "RC WAGERED ~line 1405" stat the issue describes as living "on this page" is actually `accountStats`, rendered only inside the design's `isAccount` view** — never inside `isRewards` (read start-to-finish, lines 629-981 of the decoded template, zero mentions). This likely explains, rather than conflicts with, the issue's own separate "ProfileHub addition" instruction — that's where the real markup for this stat already is. No duplicate stat added to the Rewards page itself.
+
+No `width:390px` wrapper specific to the Rewards page's own content was found (the design's only `width:390px` is the shared outer app-shell wrapper around all three views — already handled generically by this repo's own hub-shell architecture, not a per-page concern) — nothing here needed Bring-a-Rival's `→100%` treatment.
+
+**ProfileHub addition**: a small `RC wagered (lifetime)` line, wired to the same `GET /rewards` snapshot's `wageredLifetime`, defaulting safely to 0 rather than throwing if the field is ever missing/mistyped (guards the existing tests' catch-all fetch mocks, which don't know about `/rewards`).
+
+**Mechanical fallout, not scope creep**: `GameHubScreenProps.onOpenRewards` being required broke all 13 per-game hub test files' typed base-props objects (tsc caught it) — one `onOpenRewards: vi.fn()` line added to each; `HubToolbar.test.tsx` updated for Rewards no longer being `comingSoon` (2 new tests: live-button + `active="rewards"` highlight, "Rewards" dropped from the reserved-items list).
+
+**Verification:** `tsc -b` clean, `eslint` clean, both pre- and post-rebase. Full suite green pre-rebase (98 files / 1208 tests). Post-rebase, **CI on PR #313 (`build-and-test`, uncontended) passed clean in 3m18s** — the authoritative signal. Two same-machine local full-suite reruns taken *while* CI + Monitor tasks were also live on this box (`loadavg` measured up to ~35) each showed a handful of `waitFor`-timeout failures — first run 5/1225, second run 7/1225 (`Duration` 559s vs. the clean run's 277s, i.e. ~2x slower under contention) — spread across `App.test.tsx`, `auto-searching.app.test.tsx`, and once even this PR's own `RewardsHub.test.tsx` (`highlights the current tier column`, a plain `waitFor` on a mocked-fetch render). Same class of noise PR #309's own entry already flagged. Re-ran every implicated file **in isolation** immediately after each occurrence — 100% green every time, including `RewardsHub.test.tsx`'s full 15/15 twice over. None of the flaked tests touch logic this PR didn't already cover green elsewhere.
+
+Ask: PR review — #313, against the issue's 6 acceptance criteria (itemized with test references in the PR description) plus the 2 flagged gaps above, which need an explicit Owner/Advisor call: ship as-is (nothing to render, matching the Games page's own `MODES` precedent) or treat as new work items.
+
 ### 2026-08-13#5 — Two new avatar presets (hooded-mono, hooded-degen) — PR #314 (issue #312)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-13)
 
@@ -15,7 +38,7 @@ Copied `docs/design-refs/avatars/{Profile-picture-2,Profile-picture-5}.jpg` → 
 
 **Verification:** full suite **98 files / 1212 tests**, one file (`ChessHub.test.tsx`) failed on the first full local run with a `vitest-worker onTaskUpdate` timeout — re-ran that file alone, 41/41 passed in 20s, confirming the CPU-contention flake pattern already documented elsewhere in this session (heavy concurrent-agent load on this machine), not a regression. `tsc -b` clean, `eslint` clean.
 
-Ask: PR review — #313, against the issue's acceptance criteria (all met, itemized in the PR description).
+Ask: PR review — #314, against the issue's acceptance criteria (all met, itemized in the PR description).
 
 ### 2026-08-13#4 — Games-page Open Games carousel, real data — PR #310 (issue #305)            [OPEN]
 From: Coder   Re: PM dispatch (games-and-rewards.md §A)
