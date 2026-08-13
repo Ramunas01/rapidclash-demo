@@ -5,10 +5,12 @@ import boyLight from '../../assets/avatars/avatar-boy-light.png';
 import girlLight from '../../assets/avatars/avatar-girl-light.png';
 import boyBrown from '../../assets/avatars/avatar-boy-brown.png';
 import boyDark from '../../assets/avatars/avatar-boy-dark.png';
+import hoodedMono from '../../assets/avatars/avatar-hooded-mono.jpg';
+import hoodedDegen from '../../assets/avatars/avatar-hooded-degen.jpg';
 
 /** `AvatarId` is the canonical shared contract type (`@rapidclash/shared`) — the single source of
  *  truth for client + server. Re-exported here so existing `Avatar`-relative imports keep working.
- *  `'default'` = the derived disc + person glyph; the four presets map to bundled PNGs below. */
+ *  `'default'` = the derived disc + person glyph; the six presets map to bundled images below. */
 export type { AvatarId };
 
 /** avatarId → preset PNG. Licence PENDING (see assets/avatars/CREDITS.md); inert until sub-split (ii). */
@@ -17,6 +19,8 @@ const PRESETS: Record<Exclude<AvatarId, 'default'>, string> = {
   'girl-light': girlLight,
   'boy-brown': boyBrown,
   'boy-dark': boyDark,
+  'hooded-mono': hoodedMono,
+  'hooded-degen': hoodedDegen,
 };
 
 /** djb2 — a tiny, deterministic, dependency-free string hash. Stable across sessions/machines so a

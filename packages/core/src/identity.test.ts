@@ -145,10 +145,10 @@ describe('identity avatar persistence (Advisor #12 ii)', () => {
   });
 
   it('isAvatarId validates the enum (rejects anything else)', () => {
-    for (const ok of ['default', 'boy-light', 'girl-light', 'boy-brown', 'boy-dark']) {
+    for (const ok of ['default', 'boy-light', 'girl-light', 'boy-brown', 'boy-dark', 'hooded-mono', 'hooded-degen']) {
       expect(isAvatarId(ok)).toBe(true);
     }
-    for (const bad of ['', 'boy', 'evil', 42, null, undefined, {}]) {
+    for (const bad of ['', 'boy', 'evil', 'pepe', 'doge', 42, null, undefined, {}]) {
       expect(isAvatarId(bad)).toBe(false);
     }
   });
