@@ -40,6 +40,8 @@ interface Props {
   onHome(): void;
   /** Wallet chip / Account → stays on Profile (self). */
   onOpenProfile(): void;
+  /** Rewards tab → the VIP/Rewards hub (issue #307). */
+  onOpenRewards(): void;
 }
 
 /** The selectable avatars in the picker: default + the four presets (presets-only, no upload). */
@@ -77,11 +79,17 @@ function formatDate(iso: string): string {
  * leaderboard with a live-games picker. Read-only / play-money — no hidden info. Stays
  * simplified per HUB_TRANSITION_ANALYSIS §8 (wallet + ledger + leaderboard, no stats endpoint).
  */
-export function ProfileHubScreen({ token, username, avatarId = 'default', onAvatarChange, balance, onLogout, onHome, onOpenProfile }: Props) {
+export function ProfileHubScreen({ token, username, avatarId = 'default', onAvatarChange, balance, onLogout, onHome, onOpenProfile, onOpenRewards }: Props) {
   const [liveBalance, setLiveBalance] = useState(balance);
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loadingLedger, setLoadingLedger] = useState(true);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Lifetime-wagered (issue #307, written spec §3.5 + Owner decision #3): the design's own
+  // "RC WAGERED" stat tile lives on THIS page (the `isAccount` view's `accountStats` 3-tile
+  // row) — this is that same figure, now wired to the real rewards snapshot instead of the
+  // design's placeholder '18.4K'. Defaults to 0 (not undefined) so a still-loading or
+  // unexpectedly-shaped response never renders "undefined¢".
+  const [wageredLifetime, setWageredLifetime] = useState(0);
   useEffect(() => { setLiveBalance(balance); }, [balance]);
   useEffect(() => {
     let alive = true;
@@ -89,6 +97,9 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
       .then((w) => { if (alive) { setLiveBalance(w.balance); setEntries(w.entries.slice(-6).reverse()); } })
       .catch(() => {})
       .finally(() => { if (alive) setLoadingLedger(false); });
+    api.rewards(token)
+      .then((r) => { if (alive && typeof r.wageredLifetime === 'number') setWageredLifetime(r.wageredLifetime); })
+      .catch(() => {});
     return () => { alive = false; };
   }, [token]);
 
@@ -142,6 +153,15 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
               <p className="mt-1.5 text-[11px] text-muted-foreground">Play-money credits — no real-world value.</p>
             </div>
 
+            {/* Lifetime-wagered (issue #307, written spec §3.5 + Owner decision #3) — the design's
+                own "RC WAGERED" account stat, wired to the real rewards snapshot. */}
+            <div className="mt-3 flex items-center justify-between rounded-xl bg-surface px-4 py-3">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">RC wagered (lifetime)</span>
+              <span className="text-sm font-bold tabular-nums text-foreground" data-testid="profile-wagered-lifetime">
+                {formatCredits(wageredLifetime)}
+              </span>
+            </div>
+
             <h2 className="mb-2 mt-4 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-foreground">
               <Receipt className="h-4 w-4 text-brand" /> Recent transactions
             </h2>
@@ -171,7 +191,7 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
         </div>
       </main>
 
-      <HubToolbar onGames={onHome} onAccount={onOpenProfile} active="account" />
+      <HubToolbar onGames={onHome} onAccount={onOpenProfile} onRewards={onOpenRewards} active="account" />
 
       {pickerOpen && (
         <AvatarPicker

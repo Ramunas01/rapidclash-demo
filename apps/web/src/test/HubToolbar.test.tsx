@@ -5,7 +5,7 @@ import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
 
 describe('HubToolbar — solid #0B0B0B base fill behind the bottom nav', () => {
   it('renders a full-viewport-width fill behind the nav, using the bg token (no hardcoded hex), below the pill', () => {
-    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} />);
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} />);
     const fill = screen.getByTestId('hub-nav-fill');
     const cls = fill.className;
 
@@ -25,7 +25,7 @@ describe('HubToolbar — solid #0B0B0B base fill behind the bottom nav', () => {
   });
 
   it('covers the home-indicator safe-area inset (reaches bottom:0 including the safe zone)', () => {
-    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} />);
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} />);
     const cls = screen.getByTestId('hub-nav-fill').className;
     expect(cls).toContain('bottom-0');
     expect(cls).toContain('env(safe-area-inset-bottom)'); // its height includes the safe area
@@ -34,17 +34,20 @@ describe('HubToolbar — solid #0B0B0B base fill behind the bottom nav', () => {
   it('nav buttons still tap through — the fill is pointer-events-none and beneath the pill', () => {
     const onGames = vi.fn();
     const onAccount = vi.fn();
-    render(<HubToolbar onGames={onGames} onAccount={onAccount} />);
+    const onRewards = vi.fn();
+    render(<HubToolbar onGames={onGames} onAccount={onAccount} onRewards={onRewards} />);
     expect(screen.getByTestId('hub-nav-fill').className).toContain('pointer-events-none');
     fireEvent.click(screen.getByTestId('hub-nav-games'));
     expect(onGames).toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('hub-nav-account'));
     expect(onAccount).toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('hub-nav-rewards'));
+    expect(onRewards).toHaveBeenCalled();
   });
 
-  it('Menu is reserved — greyed / aria-disabled / not an actionable button, exactly like Rewards & Chat', () => {
-    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} />);
-    for (const label of ['menu', 'rewards', 'chat']) {
+  it('Menu & Chat are reserved — greyed / aria-disabled / not an actionable button', () => {
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} />);
+    for (const label of ['menu', 'chat']) {
       const item = screen.getByTestId(`hub-nav-${label}`);
       // Reserved items render as a non-button div, visibly inactive & aria-disabled.
       expect(item.tagName).toBe('DIV');
@@ -53,11 +56,12 @@ describe('HubToolbar — solid #0B0B0B base fill behind the bottom nav', () => {
     }
   });
 
-  it('Games & Account stay live buttons that fire their handlers', () => {
+  it('Games, Account & Rewards are all live buttons that fire their handlers (issue #307: Rewards flipped from coming-soon)', () => {
     const onGames = vi.fn();
     const onAccount = vi.fn();
-    render(<HubToolbar onGames={onGames} onAccount={onAccount} />);
-    for (const label of ['games', 'account']) {
+    const onRewards = vi.fn();
+    render(<HubToolbar onGames={onGames} onAccount={onAccount} onRewards={onRewards} />);
+    for (const label of ['games', 'account', 'rewards']) {
       const item = screen.getByTestId(`hub-nav-${label}`);
       expect(item.tagName).toBe('BUTTON');
       expect(item.getAttribute('aria-disabled')).toBeNull();
@@ -66,5 +70,16 @@ describe('HubToolbar — solid #0B0B0B base fill behind the bottom nav', () => {
     expect(onGames).toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('hub-nav-account'));
     expect(onAccount).toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('hub-nav-rewards'));
+    expect(onRewards).toHaveBeenCalled();
+  });
+
+  it('active="rewards" highlights the Rewards item (aria-current + brand colour), matching Games/Account', () => {
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} active="rewards" />);
+    const rewards = screen.getByTestId('hub-nav-rewards');
+    expect(rewards.getAttribute('aria-current')).toBe('page');
+    expect(rewards.className).toContain('text-brand');
+    expect(screen.getByTestId('hub-nav-games').getAttribute('aria-current')).toBeNull();
+    expect(screen.getByTestId('hub-nav-account').getAttribute('aria-current')).toBeNull();
   });
 });

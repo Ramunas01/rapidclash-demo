@@ -30,11 +30,12 @@ import { ChessHubScreen } from './screens/ChessHub.js';
 import { CrashHubScreen } from './screens/CrashHub.js';
 import { HomeHubScreen } from './screens/HomeHub.js';
 import { ProfileHubScreen } from './screens/ProfileHub.js';
+import { RewardsHubScreen } from './screens/RewardsHub.js';
 import { AuthModal } from './components/AuthModal.js';
 import { api } from './api.js';
 import { GuestGamePicker } from './screens/GuestGamePicker.js';
 
-type Screen = 'auth' | 'home' | 'profile' | 'wallet' | 'game-list' | 'guest-loading' | 'guest-picker' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub' | 'crash-hub' | 'roulette-hub' | 'ships-battle-hub' | 'dice-hub' | 'baccarat-hub' | 'keno-hub' | 'limbo-hub' | 'hilo-hub';
+type Screen = 'auth' | 'home' | 'profile' | 'rewards' | 'wallet' | 'game-list' | 'guest-loading' | 'guest-picker' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub' | 'crash-hub' | 'roulette-hub' | 'ships-battle-hub' | 'dice-hub' | 'baccarat-hub' | 'keno-hub' | 'limbo-hub' | 'hilo-hub';
 
 /** A commit-to-play action captured when a logged-out visitor hits the auth wall. After sign-in
  *  the user lands on the intent's hub with the stake armed and presses PLAY to commit — nothing
@@ -926,6 +927,7 @@ export function App() {
 
   const goToHome = useCallback(() => setScreen('home'), []);
   const goToProfile = useCallback(() => setScreen('profile'), []);
+  const goToRewards = useCallback(() => setScreen('rewards'), []);
   const goToGameList = useCallback(() => setScreen('game-list'), []);
 
   // ── Home hub cross-game ticker subscriptions (raw, NOT via the single-game handlers,
@@ -1119,6 +1121,13 @@ export function App() {
     else openAuth(null);
   }, [loggedIn, goToProfile, openAuth]);
 
+  // Rewards tab (issue #307): the VIP/Rewards hub when signed in — GET /rewards is auth-only,
+  // same gate as the Account tab — the sign-in modal when logged out.
+  const onRewardsTap = useCallback(() => {
+    if (loggedIn) goToRewards();
+    else openAuth(null);
+  }, [loggedIn, goToRewards, openAuth]);
+
   function renderScreen() {
     switch (screen) {
       case 'auth':
@@ -1134,6 +1143,7 @@ export function App() {
           onTakePublicChallenge={handleTakePublicChallenge}
           onSelectGame={handleSelectGame}
           onOpenWallet={onAccountTap}
+          onOpenRewards={onRewardsTap}
           onHome={goToHome}
           loggedIn={loggedIn}
         />;
@@ -1147,6 +1157,16 @@ export function App() {
           onLogout={handleLogout}
           onHome={goToHome}
           onOpenProfile={goToProfile}
+          onOpenRewards={goToRewards}
+        />;
+      case 'rewards':
+        return <RewardsHubScreen
+          token={token!}
+          username={username}
+          balance={balance}
+          onHome={goToHome}
+          onOpenProfile={goToProfile}
+          onOpenRewards={goToRewards}
         />;
       case 'wallet':
         return <WalletScreen token={token!} username={username} balance={balance} onPlay={goToHome} onLogout={handleLogout} />;
@@ -1228,6 +1248,7 @@ export function App() {
           onUntrackChallenges={handleUntrackChallenges}
           onSelectGame={handleSelectGame}
           onOpenWallet={onAccountTap}
+          onOpenRewards={onRewardsTap}
           onOpenGameList={goToHome}
           onResultDismiss={handleHubResultDismiss}
           loggedIn={loggedIn}

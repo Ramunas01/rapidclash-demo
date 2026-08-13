@@ -1,4 +1,4 @@
-import type { AuthRegisterBody, AuthLoginBody, AuthResponse, WalletResponse, GameMeta, LeaderboardEntry, PublicOpenChallenge, AvatarId, SetAvatarResponse } from '@rapidclash/shared';
+import type { AuthRegisterBody, AuthLoginBody, AuthResponse, WalletResponse, GameMeta, LeaderboardEntry, PublicOpenChallenge, AvatarId, SetAvatarResponse, RewardsSnapshot, RewardsClaimResponse } from '@rapidclash/shared';
 
 const BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -45,4 +45,13 @@ export const api = {
    *  the id and only ever mutates the token-holder's avatar. */
   setAvatar: (avatarId: AvatarId, token: string) =>
     req<SetAvatarResponse>('POST', '/auth/avatar', { avatarId }, token),
+  /** The signed-in player's OWN derived rewards snapshot (issue #306/#307) — XP, tier, rakeback
+   *  rate, progress to next tier, claimable balance. All computed server-side; the client never
+   *  derives any of it itself. */
+  rewards: (token: string) =>
+    req<RewardsSnapshot>('GET', '/rewards', undefined, token),
+  /** Claim the player's OWN whole claimable balance. Idempotent — a repeat call after the
+   *  balance is already zero returns `{ credited: 0, newClaimableBalance: 0 }`, not an error. */
+  claimRewards: (token: string) =>
+    req<RewardsClaimResponse>('POST', '/rewards/claim', {}, token),
 };
