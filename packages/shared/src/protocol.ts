@@ -200,13 +200,13 @@ export interface AuthLoginBody {
 }
 
 /** The canonical avatar identity — the single source of truth shared by client and server.
- *  `'default'` = the derived disc + person glyph (no stored preset); the four presets are the
- *  selectable PNG avatars. Presets-only (a string id, no file storage). The client `Avatar`
+ *  `'default'` = the derived disc + person glyph (no stored preset); the six presets are the
+ *  selectable avatars (PNG or JPG). Presets-only (a string id, no file storage). The client `Avatar`
  *  component imports this and maps each preset id → its bundled asset. */
-export type AvatarId = 'default' | 'boy-light' | 'girl-light' | 'boy-brown' | 'boy-dark';
+export type AvatarId = 'default' | 'boy-light' | 'girl-light' | 'boy-brown' | 'boy-dark' | 'hooded-mono' | 'hooded-degen';
 
 /** Every valid AvatarId, for server-side validation of the set-avatar endpoint. */
-export const AVATAR_IDS: readonly AvatarId[] = ['default', 'boy-light', 'girl-light', 'boy-brown', 'boy-dark'];
+export const AVATAR_IDS: readonly AvatarId[] = ['default', 'boy-light', 'girl-light', 'boy-brown', 'boy-dark', 'hooded-mono', 'hooded-degen'];
 
 export interface AuthResponse {
   token: string;

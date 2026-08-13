@@ -145,6 +145,22 @@ describe('avatar — AuthResponse field + POST /auth/avatar (Advisor #12 ii)', (
     expect(login.json<AuthResponse>().avatarId).toBe('girl-light');
   });
 
+  it('accepts the #312 meme-style presets (hooded-mono, hooded-degen) — AVATAR_IDS server-side enforcement', async () => {
+    const { token } = await registerPlayer('finn');
+    for (const avatarId of ['hooded-mono', 'hooded-degen'] as const) {
+      const set = await app.inject({
+        method: 'POST',
+        url: '/auth/avatar',
+        headers: { authorization: `Bearer ${token}` },
+        payload: { avatarId },
+      });
+      expect(set.statusCode).toBe(200);
+      expect(set.json<{ avatarId: string }>().avatarId).toBe(avatarId);
+    }
+    const login = await app.inject({ method: 'POST', url: '/auth/login', payload: { username: 'finn', password: 'pw' } });
+    expect(login.json<AuthResponse>().avatarId).toBe('hooded-degen'); // last write wins, persisted
+  });
+
   it('rejects an invalid avatarId with 400 and does not change the stored value', async () => {
     const { token } = await registerPlayer('cid');
     const bad = await app.inject({

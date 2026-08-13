@@ -42,8 +42,8 @@ interface Props {
   onOpenProfile(): void;
 }
 
-/** The selectable avatars in the picker: default + the four presets (presets-only, no upload). */
-const PICKER_AVATARS: AvatarId[] = ['default', 'boy-light', 'girl-light', 'boy-brown', 'boy-dark'];
+/** The selectable avatars in the picker: default + the six presets (presets-only, no upload). */
+const PICKER_AVATARS: AvatarId[] = ['default', 'boy-light', 'girl-light', 'boy-brown', 'boy-dark', 'hooded-mono', 'hooded-degen'];
 
 // ── Ledger presentation (lifted from Wallet.tsx, restyled to v2 tokens) ──────
 const ENTRY_ART: Record<LedgerEntryType, { icon: LucideIcon; credit: boolean }> = {
