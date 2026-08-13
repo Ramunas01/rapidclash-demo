@@ -27,6 +27,14 @@ export interface Ledger {
     feeRate: number,
   ): void;
   adminCredit(accountId: string, amount: number, idempotencyKey: string): LedgerEntry;
+  /** Credit an account's wallet with a claimed reward (rakeback + volume bonus previously
+   *  accrued into the Rewards module's `claimable_balance` — issue #306). Same append-only
+   *  shape as `adminCredit` (a single positive-amount entry) but its own ledger type, so a
+   *  reward claim is distinguishable from an admin action in the ledger/audit trail. The
+   *  Rewards module supplies a deterministic idempotencyKey (derived from its own per-account
+   *  claim sequence, not client-supplied) so a retried/duplicated call is a no-op here too —
+   *  belt-and-suspenders alongside the Rewards module's own atomic zero-then-credit guard. */
+  creditRewardClaim(accountId: string, amount: number, idempotencyKey: string): LedgerEntry;
   accountExists(accountId: string): boolean;
   /** True if the account holds any escrowed stake that has not yet been settled —
    *  i.e. a BET_ESCROW on a match with no settlement entry (SETTLE_WIN, SETTLE_REFUND
@@ -213,5 +221,21 @@ export function createLedger(db: Database.Database): Ledger {
     return writeEntry(accountId, null, 'ADMIN_CREDIT', amount, idempotencyKey);
   }
 
-  return { grant, escrow, refundEscrow, settle, adminCredit, accountExists, hasOpenEscrow, getBalance, getEntries };
+  function creditRewardClaim(accountId: string, amount: number, idempotencyKey: string): LedgerEntry {
+    if (amount <= 0) throw new RangeError('Reward claim amount must be a positive integer');
+    return writeEntry(accountId, null, 'REWARD_CLAIM', amount, idempotencyKey);
+  }
+
+  return {
+    grant,
+    escrow,
+    refundEscrow,
+    settle,
+    adminCredit,
+    creditRewardClaim,
+    accountExists,
+    hasOpenEscrow,
+    getBalance,
+    getEntries,
+  };
 }
