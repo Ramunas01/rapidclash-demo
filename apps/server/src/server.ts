@@ -11,10 +11,12 @@ import {
   createIdentity,
   createMatchmaking,
   createMatchHistory,
+  createRewards,
   type Ledger,
   type Identity,
   type Matchmaking,
   type MatchHistory,
+  type Rewards,
 } from '@rapidclash/core';
 import { EMBED_ALLOWED_ORIGINS, type GameModule } from '@rapidclash/shared';
 import { makeAuthMiddleware } from './middleware/auth.js';
@@ -26,6 +28,7 @@ import { registerLeaderboardRoutes } from './routes/leaderboard.js';
 import { registerWalletRoutes } from './routes/wallet.js';
 import { registerMatchesRoutes } from './routes/matches.js';
 import { registerGuestAuthRoutes } from './routes/guest-auth.js';
+import { registerRewardsRoutes } from './routes/rewards.js';
 import { registerWsGateway } from './ws/gateway.js';
 import { createGuestServices, type GuestServices } from './guest/index.js';
 
@@ -41,7 +44,17 @@ export interface AppOptions {
 
 // Anything under these prefixes is the API (or the WS upgrade) — an unknown path here must
 // 404 as JSON, never fall back to the SPA shell. Everything else GET → index.html.
-const API_PREFIXES = ['/auth', '/wallet', '/games', '/open-challenges', '/leaderboard', '/matches', '/admin', '/ws'];
+const API_PREFIXES = [
+  '/auth',
+  '/wallet',
+  '/games',
+  '/open-challenges',
+  '/leaderboard',
+  '/matches',
+  '/admin',
+  '/rewards',
+  '/ws',
+];
 
 // Guest-mode framability (GUEST_MODE_CONTRACT.md §3, issue #271): allow the landing origins to
 // iframe-embed the app; never send X-Frame-Options (it would fight/override frame-ancestors in
@@ -96,6 +109,11 @@ export interface AppServices {
   /** Guest mode's isolated world (issue #267): an in-memory ledger + a second Matchmaking
    *  instance, independent of `db` — gone on process restart, by design. */
   guest: GuestServices;
+  /** XP/tier/rakeback/volume-bonus/claim (issue #306). Wired to the REAL `matchmaking`
+   *  instance's `onPlayerSettled` hook only — deliberately NOT wired into `guest`'s ephemeral
+   *  matchmaking instance below, so guest sessions never accrue real rewards state (same
+   *  isolation boundary as guest's ledger/accounts). */
+  rewards: Rewards;
 }
 
 export function buildApp(
@@ -103,7 +121,7 @@ export function buildApp(
   gameModules: GameModule[],
   opts: AppOptions = {},
 ): FastifyInstance {
-  const { identity, ledger, matchmaking, matchHistory, guest } = services;
+  const { identity, ledger, matchmaking, matchHistory, guest, rewards } = services;
   const app = Fastify({ logger: false });
 
   // App-wide, every response (see FRAME_ANCESTORS_CSP above for why global vs scoped).
@@ -132,6 +150,11 @@ export function buildApp(
   registerLeaderboardRoutes(app, matchHistory);
   registerWalletRoutes(app, auth, ledger);
   registerMatchesRoutes(app, auth, matchmaking, gameModules);
+  // POST /rewards/claim opts into config.rateLimit too — same boot-order reason as
+  // /auth/guest above: nest it so it registers after FastifyRateLimit's onRoute hook exists.
+  app.register(async (instance) => {
+    registerRewardsRoutes(instance, auth, rewards);
+  });
 
   // The `/ws` route must be added *after* @fastify/websocket has loaded, otherwise the
   // plugin's onRoute hook never wraps it and real upgrade requests fall through to the
@@ -180,10 +203,16 @@ export function createServices(
   // generically by kind (ADR-007) — no game-specific code in the core.
   const rankingByGame = new Map(gameModules.map((m) => [m.meta.id, m.meta.ranking]));
   const matchHistory = createMatchHistory(db, rankingByGame, lookupUsername, lookupAvatar);
+  // Rewards (issue #306) — own table in the same `db`, wired to the REAL matchmaking
+  // instance's per-player settlement hook only (never guest's, below).
+  const rewards = createRewards(db, ledger);
   const matchmaking = createMatchmaking(ledger, gameModules, matchHistory, {
     lookupUsername,
     onSettled: opts.onSettled,
+    onPlayerSettled: ({ playerId, stake, feeRate, outcome }) => {
+      rewards.recordMatchSettlement(playerId, stake, feeRate, outcome);
+    },
   });
   const guest = createGuestServices();
-  return { db, ledger, identity, matchmaking, matchHistory, guest };
+  return { db, ledger, identity, matchmaking, matchHistory, guest, rewards };
 }

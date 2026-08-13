@@ -241,6 +241,19 @@ export interface MatchmakingOptions {
    *  idempotent re-settle of an already-completed match. The server uses this to debounce a
    *  durable DB snapshot (ADR-011); the core itself stays storage-agnostic. */
   onSettled?: () => void;
+  /** Fired once per player, per real settlement (never on the idempotent re-settle of an
+   *  already-completed match — same guard as `onSettled`), regardless of outcome. The server
+   *  wires this to the Rewards module (issue #306): XP/rakeback only accrue when `outcome`
+   *  is `'win'` (both winner and loser, each from their OWN stake — draws/voids accrue
+   *  nothing), but `stake`/`feeRate` are always passed so callers can track e.g. lifetime
+   *  wagered volume independent of outcome. Keeps the core storage-agnostic, same seam as
+   *  `onSettled` — no Rewards/DB dependency here. */
+  onPlayerSettled?: (info: {
+    playerId: PlayerId;
+    stake: number;
+    feeRate: number;
+    outcome: Outcome['type'];
+  }) => void;
 }
 
 export interface Matchmaking {
@@ -317,6 +330,7 @@ export function createMatchmaking(
   const lookupUsername = options.lookupUsername;
   const nowFn = options.now ?? (() => Date.now());
   const onSettled = options.onSettled;
+  const onPlayerSettled = options.onPlayerSettled;
 
   // FIFO queues keyed by `${gameId}:${stake}` → [earliest, ...]
   const queues = new Map<string, QueueEntry[]>();
@@ -820,6 +834,14 @@ export function createMatchmaking(
         delta = 0;
       }
       settlement[pid] = { delta, newBalance: ledger.getBalance(pid) };
+
+      // Rewards accrual seam (issue #306) — storage-agnostic: the core only reports the
+      // facts (stake, feeRate, outcome), the Rewards module (if wired) decides what to do
+      // with them. Fires for every player, every real settlement (never on the idempotent
+      // re-settle above, since that early-returns before this loop runs).
+      if (onPlayerSettled) {
+        onPlayerSettled({ playerId: pid, stake, feeRate, outcome: outcome.type });
+      }
     }
 
     const completedMatch: CompletedMatch = { ...match, outcome, settlement };

@@ -153,6 +153,15 @@ export function createEphemeralLedger(opts: { grantAmount?: number } = {}): Ephe
     return writeEntry(accountId, null, 'ADMIN_CREDIT', amount, idempotencyKey);
   }
 
+  // Rewards (issue #306) is never wired to guest sessions (server.ts only hooks the REAL
+  // matchmaking instance's onPlayerSettled into Rewards) — this exists solely to satisfy the
+  // `Ledger` interface EphemeralLedger extends. Included for completeness/type-safety, not
+  // because a guest session can ever actually reach it.
+  function creditRewardClaim(accountId: string, amount: number, idempotencyKey: string): LedgerEntry {
+    if (amount <= 0) throw new RangeError('Reward claim amount must be a positive integer');
+    return writeEntry(accountId, null, 'REWARD_CLAIM', amount, idempotencyKey);
+  }
+
   function evict(accountId: string): void {
     const list = entriesByAccount.get(accountId);
     if (!list) return;
@@ -176,6 +185,7 @@ export function createEphemeralLedger(opts: { grantAmount?: number } = {}): Ephe
     refundEscrow,
     settle,
     adminCredit,
+    creditRewardClaim,
     accountExists,
     hasOpenEscrow,
     getBalance,

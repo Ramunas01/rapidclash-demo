@@ -1,6 +1,6 @@
 # Coder → PM (append-only; newest on top)
 
-### 2026-08-13#2 — Games-page Open Games carousel, real data — PR #310 (issue #305)            [OPEN]
+### 2026-08-13#4 — Games-page Open Games carousel, real data — PR #310 (issue #305)            [OPEN]
 From: Coder   Re: PM dispatch (games-and-rewards.md §A)
 
 Shipped, **PR #310** (`feature/305-games-carousel`, isolated worktree at `.wt/305-games-carousel`). Client-only, not owner-gated. Sanity-checked `git worktree list` before starting — no overlap with the concurrent #304 (asset-only, already merged as #308) or #306 (server-only) worktrees.
@@ -27,6 +27,48 @@ Shipped, **PR #310** (`feature/305-games-carousel`, isolated worktree at `.wt/30
 **Results:** full suite `npx vitest run` — **95 files / 1172 tests green** (ran twice to confirm; one run had a single unrelated `App.test.tsx` timing flake in a pre-existing search-deadline test, confirmed not a regression — reran it in isolation 3x, all green, consistent with this repo's documented parallel-run-flake pattern, e.g. PR #199's report). `tsc -b` clean; `eslint --ext .ts,.tsx packages apps` clean. Pushed; CI (`build-and-test`) confirmed on the PR.
 
 Ask: PR review — #310, against issue #305's acceptance criteria (itemized in the PR description, including the two judgment calls the Advisor should pixel-diff against: the widget's placement decision, and the `¢`-less stake presentation).
+
+### 2026-08-13#3 — Games/Rewards (B): Rewards backend — PR #309 (issue #306)            [OPEN]
+From: Coder   Re: PM dispatch (2026-08-13)
+
+Shipped, isolated worktree at `.wt/306-rewards-backend`, branch `feature/306-rewards-backend`. Server/core only (`packages/core`, `packages/shared`, `apps/server`) — no `App.tsx` touch, so this ran safely alongside the concurrent Games-carousel (#305) and asset-commit (#304/#308) work. **Blocks #307** (Rewards frontend) — now unblocked.
+
+**Schema — own `rewards` table, not columns on `accounts`.** Keyed by `account_id`, same "each module owns one table" pattern as `ledger.ts`/`identity.ts`. `CREATE TABLE IF NOT EXISTS` alone is snapshot-safe here — the issue's `identity.ts` `ALTER TABLE` pattern exists specifically for adding a column to a table an *old snapshot already has*; a brand-new table has no such predecessor. **Two columns added beyond the issue's literal 5-column list, flagged per the dispatch's own "flag it clearly rather than guessing" instruction**: `notional_rake_monthly` (the player's own running monthly notional-rake sum — required because the monthly volume-bonus formula needs it and a match's ledger `RAKE` entry only ever lands on the *winner's* side, so the loser's contribution can't be reconstructed from the ledger after the fact) and `claim_seq` (a monotonic per-account counter for the claim endpoint's idempotency key).
+
+**Accrual hook.** New `onPlayerSettled` option on `Matchmaking`, fired inside `settleMatch`'s existing per-player loop exactly where the issue's line anchors pointed — storage-agnostic (same shape as the existing `onSettled`), reuses the existing `completed.get(matchId)` idempotency guard, no second guard added. Wired to the REAL matchmaking instance only; confirmed guest's separate ephemeral matchmaking instance (`apps/server/src/guest/index.ts`) is untouched, so guest sessions never accrue rewards — same isolation boundary as guest's own ledger (test coverage for this specifically).
+
+**The math, verified against a dedicated non-retroactive-crossing test:** `notionalRake = min(stake,100)×feeRate + max(stake-100,0)×feeRate×0.25`, `xpGained = round(40×notionalRake)`, `rakebackGained = round(stake×feeRate×currentTierRate)` (undiminished), tier rate read from `xp_lifetime` *before* the match's XP lands.
+
+**VIP tier rakeback percentages weren't in the issue text itself** (it gave thresholds but only called out Unranked 0%/Wood 1%) — found and transcribed from the gitignored design export's actual `VIP_ROWS` data (decoded the `__bundler/template` JSON blob in `design-ref/games-and-rewards/RapidClash - Games and Rewards.html`, since the doc said "I already decoded and extracted both" but the committed spec doc only quoted the row it needed for the worked example): Wood 1%, Bronze 4%, Silver 7%, Gold 10%, Emerald 15%, Diamond 20%. Now committed in `docs/PROTOCOL.md`'s new Rewards section so this fact survives the worktree/gitignored file disappearing, per `WORKING_AGREEMENT.md`'s rule.
+
+**Monthly close** runs both lazily (on an account's own next accrual/read/claim — self-healing) and via an hourly `setInterval` sweep in `apps/server/src/index.ts` (no existing cron in this repo), so a dormant account still gets its bonus without needing to play again — dedicated test for this.
+
+**Claim endpoint** (`GET /rewards`, `POST /rewards/claim`, pattern-matched off `wallet.ts`): atomic zero-then-credit in one `db.transaction()`, new `REWARD_CLAIM` ledger type, rate-limited via the already-present `@fastify/rate-limit` (confirmed, not re-added). Idempotency verified two ways: a unit-level double-tap test and an HTTP-level test firing two real concurrent (`Promise.all`) requests — exactly one credits, the other returns `credited: 0`.
+
+**Mechanical, unavoidable client touch (not a scope violation):** extending `LedgerEntryType` with `REWARD_CLAIM` broke `apps/web/src/screens/{Wallet,ProfileHub}.tsx`'s exhaustive `Record<LedgerEntryType, ...>` icon maps (tsc caught it immediately) — added one map entry to each (`Trophy` icon, distinct from `ADMIN_CREDIT`'s `Sparkles`), no `App.tsx` touch, no behavior change beyond satisfying the exhaustiveness check.
+
+**Verification:** `tsc -b` clean, `eslint` clean. Full suite is 1192 tests; this PR's own surface (`rewards.test.ts` 24, `rewards-settlement.test.ts` 6 running the real `settleMatch` pipeline, `apps/server/src/routes/rewards.test.ts` 7) passes 100% reliably every run, isolated, plus the existing `ledger`/`matchmaking`/`ephemeral-ledger`/`wallet`/`guest-auth` suites unaffected. Local full-suite runs were noisy under genuine concurrent-agent CPU contention (confirmed via `ps`: a live agent in `.wt/305-games-carousel` plus an orphaned 28+-minute zombie from a finished `.wt/304-games-rewards-assets` run) — each run's one flaky failure was a different, unrelated `apps/web` test (never anything this PR touches) that reproduced green in isolation. CI (dedicated runner, no contention) is the authoritative signal — confirmed green before this entry: PR #309.
+
+Ask: PR review — #309, against the issue's 5 acceptance criteria (all itemized with test references in the PR description). One flagged judgment call to sanity-check: the two added schema columns beyond the issue's literal list (reasoning above + in the PR description) — didn't stall for a synchronous answer since the reasoning was load-bearing and documented, but wanted it visible rather than silently done.
+
+### 2026-08-13#2 — Games/Rewards (D): commit design assets — PR #308 (issue #304)            [OPEN]
+From: Coder   Re: PM dispatch (2026-08-13)
+
+Shipped, isolated worktree at `.wt/304-games-rewards-assets`, branch `feature/304-games-rewards-assets`. Asset-only, no logic/component changes — exactly as scoped, unblocks nothing further needed for #307 to wire these in later.
+
+Copied the 3 non-duplicate images from the gitignored design export (`design-ref/games-and-rewards/assets/`) into `apps/web/src/assets/games-and-rewards/`, byte-for-byte (checksum-verified against source), with descriptive names replacing the raw GUIDs:
+
+- `d9cb6623-...png` → `wordmark-logo.png` (RapidClash wordmark, 140px display size)
+- `ae7b64bb-...jpg` → `avatar-placeholder.jpg` (header avatar placeholder, 44px circular)
+- `aab93c4b-...png` → `nav-icon-small.png` (small 28px icon)
+
+Confirmed the three exclusions per the issue: skipped the phone-frame chrome overlay (`201c22f3-...`), and did not re-extract the three assets byte-identical to the already-committed Bring-a-Rival banner set from PR #302 (verified via `md5sum` cross-check, not just taking the issue's word for it — all three still match). No `.bin` files touched.
+
+Files are plain committed assets, not yet imported anywhere (correctly out of scope — issue #307 wires them in once #306's backend is ready).
+
+**Verification:** full suite **94 files / 1155 tests** green, `tsc -b` clean, `eslint` clean. (Fresh worktree needed `pnpm install` first — no `node_modules` shipped with `git worktree add`, unlike a branch checkout in the same working directory.)
+
+Ask: PR review — #308, against the issue's asset list (all 3 copied, all exclusions verified).
 
 ### 2026-08-13#1 — Bring a Rival: Designer banner replacement — PR #302 (issue #301)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-13)
