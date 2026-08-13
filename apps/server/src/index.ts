@@ -33,6 +33,24 @@ const services = createServices(db, gameModules, { onSettled: () => snapshotter.
 
 const app = buildApp(services, gameModules);
 
+// Monthly volume-bonus close (issue #306): no existing cron/scheduler in this repo — same
+// same-process setInterval approach as the snapshotter's debounced trigger() above, just on a
+// day-boundary-checking cadence instead of a per-settlement debounce. Rewards.closeElapsedMonths
+// itself does the actual "did the UTC month roll over" check per account (comparing each
+// account's stored `xp_monthly_reset_at` against the current month start) and is a no-op for
+// every account once its month is already closed — so polling hourly (rather than trying to
+// fire exactly at 00:00 UTC on the 1st) is simply "catches the rollover within an hour of it
+// happening," not a correctness requirement. Runs once at boot too, so a month that turned
+// over while the server was down/redeploying still closes promptly on the next start.
+const REWARDS_MONTH_CLOSE_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+services.rewards.closeElapsedMonths();
+const rewardsMonthCloseTimer = setInterval(() => {
+  services.rewards.closeElapsedMonths();
+}, REWARDS_MONTH_CLOSE_INTERVAL_MS);
+// Don't let this timer keep the process alive on its own (same reasoning as the snapshotter's
+// debounce timer in persistence/snapshot.ts).
+if (typeof rewardsMonthCloseTimer.unref === 'function') rewardsMonthCloseTimer.unref();
+
 const port = parseInt(process.env.PORT ?? '3000', 10);
 const host = process.env.HOST ?? '0.0.0.0';
 
@@ -41,6 +59,7 @@ const host = process.env.HOST ?? '0.0.0.0';
 async function shutdown(signal: string): Promise<void> {
   console.log(`[server] ${signal} received — flushing snapshot and shutting down`);
   try {
+    clearInterval(rewardsMonthCloseTimer);
     await snapshotter.flush();
     await app.close();
   } finally {

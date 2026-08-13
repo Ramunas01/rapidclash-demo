@@ -53,6 +53,10 @@ const ENTRY_ART: Record<LedgerEntryType, { icon: LucideIcon; credit: boolean }> 
   SETTLE_WIN: { icon: Trophy, credit: true },
   SETTLE_REFUND: { icon: RotateCcw, credit: true },
   RAKE: { icon: Receipt, credit: false },
+  // Rewards backend (issue #306) — a claimed rakeback/volume-bonus credit. Mechanical addition:
+  // this map is exhaustive over LedgerEntryType, so adding the new type to the shared union
+  // forces this entry; the Rewards frontend itself (issue #307) is a separate, later ticket.
+  REWARD_CLAIM: { icon: Trophy, credit: true },
 };
 
 /** The ledger type as its raw token with underscores spaced — GRANT stays "GRANT". */

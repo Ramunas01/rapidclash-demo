@@ -238,7 +238,11 @@ export type LedgerEntryType =
   | 'BET_ESCROW'
   | 'SETTLE_WIN'
   | 'SETTLE_REFUND'
-  | 'RAKE';
+  | 'RAKE'
+  /** A player claiming their accrued Rewards `claimable_balance` (rakeback + volume bonus,
+   *  issue #306) into their wallet. Always a positive credit, NULL match_id (like ADMIN_CREDIT
+   *  — it isn't tied to one settlement). */
+  | 'REWARD_CLAIM';
 
 export interface LedgerEntry {
   id: string;
@@ -253,6 +257,36 @@ export interface LedgerEntry {
 export interface WalletResponse {
   balance: number;
   entries: LedgerEntry[];
+}
+
+/** The six-tier VIP ladder (issue #306) — `'Unranked'` is the implicit zeroth tier below
+ *  Wood's 500-XP threshold, carrying no rakeback and no volume bonus eligibility. */
+export type VipTier = 'Unranked' | 'Wood' | 'Bronze' | 'Silver' | 'Gold' | 'Emerald' | 'Diamond';
+
+/** Response of `GET /rewards` — everything the Rewards page needs to render, already derived
+ *  server-side (tier, rakeback rate, progress to next tier). The client never computes any of
+ *  this itself (§4 of the written spec — all reward math is server-side only). */
+export interface RewardsSnapshot {
+  xpLifetime: number;
+  xpMonthly: number;
+  wageredLifetime: number;
+  claimableBalance: number;
+  /** Current VIP tier, derived purely from `xpLifetime` (never stored, ADR-007-style). */
+  tier: VipTier;
+  /** This tier's rakeback rate, e.g. 0.04 for Bronze (fraction, not a percent string). */
+  rakebackRate: number;
+  /** The next tier up, or undefined at the top of the ladder (Diamond). `xpRequired` is the
+   *  lifetime-XP threshold to reach it — the client derives the progress bar from
+   *  `xpLifetime` / `nextTier.xpRequired`. */
+  nextTier?: { tier: VipTier; xpRequired: number; rakebackRate: number };
+}
+
+/** Response of `POST /rewards/claim` — the amount just moved into the wallet (0 on a no-op
+ *  double-tap / repeat call — there was nothing left to claim) and the resulting (always 0)
+ *  claimable balance, so the client can update both figures from one response. */
+export interface RewardsClaimResponse {
+  credited: number;
+  newClaimableBalance: number;
 }
 
 /** The ranking strategy a leaderboard row was produced by (= RankingType['kind']).
