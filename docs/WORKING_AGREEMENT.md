@@ -4,10 +4,19 @@ How three contributors — one human and three AI assistants — collaborate thr
 
 ## Roles
 
-- **Advisor (Claude, chat).** Owns `docs/`. Writes and revises specs and ADRs. Does not write production code. Consulted on architecture and scope changes.
+- **Advisor (Claude — chat or Claude Code; see "Advisor access model" below).** Owns `docs/`. Writes and revises specs and ADRs. Does not write production code. Consulted on architecture and scope changes.
 - **Project Manager (WSL AI agent).** Owns the roadmap and the issue tracker. Breaks specs into issues with acceptance criteria, sequences work, reviews PRs against the acceptance criteria, and keeps the board honest. Holds the review gate but not the merge button on direction-level changes.
 - **Programmer (Claude Code, WSL).** Owns implementation under `packages/` and `apps/`. Works on feature branches, opens PRs that reference an issue, keeps PRs small and reviewable.
 - **Owner (Ramunas).** Final say on direction and scope. Presses merge on anything that changes the charter, an ADR, or the contract. Resolves anything ambiguous.
+
+## Advisor access model
+
+The Advisor role has one boundary (`docs/` only, no production code) but can run on either of two front-ends — check which one you are before assuming a mechanic, since they differ in what they can physically do:
+
+- **Web-chat Claude (no filesystem tool).** Reads the repo via `git clone --depth 1` (needs the repo public, or a fresh export). Cannot write to the working copy or push — produces edited files as chat outputs for the owner/PM to apply and commit. This is the mechanics `ADVISOR_HANDOVER.md` §3 was written for; treat that section as this front-end's manual, not a universal description of "the Advisor."
+- **Claude Code running locally (e.g. this CLI on the owner's machine, reaching the repo over a WSL filesystem mount).** Reads and writes the working copy directly — including a private repo — and can run `git` itself: create a branch, commit, and push. The role boundary doesn't change just because the tooling got stronger: still `docs/` only, and a docs-touching branch is **pushed for review, never merged to `main` by the Advisor** (owner approval + merge, per "Branching & PRs" above). Branch before editing, same as any other contributor — don't accumulate uncommitted edits on `main`.
+
+Practical note for the Claude Code front-end (first exercised 2026-08-13, on the welcome-email copy fix in the sibling `rapidclash-landing` repo): if `git` reports **"detected dubious ownership"** on a repo reached through a UNC-style WSL mount (`\\wsl.localhost\...`) from a Windows-side session, don't add a `safe.directory` exception from that side — run git through `wsl.exe -e bash -lc "cd ~/projects/<repo> && git ..."` instead. That executes as the WSL-native user, matches the checkout's real ownership, and sidesteps the mismatch entirely.
 
 ## Branching & PRs
 
