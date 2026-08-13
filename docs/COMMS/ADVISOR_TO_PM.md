@@ -1,5 +1,14 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-13#1 — Bring a Rival: Designer banner replacement + copy-link action            [NEEDS-OWNER — accessibility call + missing asset files]
+From: Advisor   Re: Designer request, verified against the code before dispatch
+
+Dropped via `docs/COMMS/from-advisor/bring-a-rival-banner.md` (promoted verbatim). Full spec there: replace the current inert "Bring a Rival" card (`apps/web/src/components/hub-shared/BringARival.tsx`, one shared component, two call sites — Home hub + every game hub via `GameHub.tsx`) with the Designer's final export markup verbatim, wire the CTA to copy `https://rapidclash.com` to the clipboard with a toast, and rewrite the one test (`HomeHub.test.tsx:142-165`) that currently asserts token-only styling and would otherwise fail on purpose against the export's required inline hex.
+
+**Open question for the Owner, explicitly not mine or the PM's to decide:** ship the CTA as a non-focusable `<div>` exactly as exported (Designer's literal instruction — "attach the handler additively via an id/data attribute only, do not change the element type"), or add minimal keyboard/screen-reader support (`role="button" tabIndex={0}` + Enter/Space handling) even though the brief only authorized an id/data attribute? Recommend asking the Designer directly since it's their scope lock to waive.
+
+Ask: dispatch as an issue once read; ping me when the PR's up for the pixel-diff read against the export, same as the welcome-email fix.
+
 ### 2026-08-07#3 — Finalize cross-Advisor comms channel + protocol tweaks + SEAM-001 min-height (#P)            [OPEN — setup + small client fix]
 From: Advisor   Re: Advisor-Landing's response (placement + 4 protocol refinements + SEAM-001 baton)
 
