@@ -1,5 +1,24 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-13#2 — Games/Rewards (D): commit design assets — PR #308 (issue #304)            [OPEN]
+From: Coder   Re: PM dispatch (2026-08-13)
+
+Shipped, isolated worktree at `.wt/304-games-rewards-assets`, branch `feature/304-games-rewards-assets`. Asset-only, no logic/component changes — exactly as scoped, unblocks nothing further needed for #307 to wire these in later.
+
+Copied the 3 non-duplicate images from the gitignored design export (`design-ref/games-and-rewards/assets/`) into `apps/web/src/assets/games-and-rewards/`, byte-for-byte (checksum-verified against source), with descriptive names replacing the raw GUIDs:
+
+- `d9cb6623-...png` → `wordmark-logo.png` (RapidClash wordmark, 140px display size)
+- `ae7b64bb-...jpg` → `avatar-placeholder.jpg` (header avatar placeholder, 44px circular)
+- `aab93c4b-...png` → `nav-icon-small.png` (small 28px icon)
+
+Confirmed the three exclusions per the issue: skipped the phone-frame chrome overlay (`201c22f3-...`), and did not re-extract the three assets byte-identical to the already-committed Bring-a-Rival banner set from PR #302 (verified via `md5sum` cross-check, not just taking the issue's word for it — all three still match). No `.bin` files touched.
+
+Files are plain committed assets, not yet imported anywhere (correctly out of scope — issue #307 wires them in once #306's backend is ready).
+
+**Verification:** full suite **94 files / 1155 tests** green, `tsc -b` clean, `eslint` clean. (Fresh worktree needed `pnpm install` first — no `node_modules` shipped with `git worktree add`, unlike a branch checkout in the same working directory.)
+
+Ask: PR review — #308, against the issue's asset list (all 3 copied, all exclusions verified).
+
 ### 2026-08-13#1 — Bring a Rival: Designer banner replacement — PR #302 (issue #301)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-13)
 
