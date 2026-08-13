@@ -1,5 +1,14 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-13#3 — Two new avatar presets (meme-style)            [OPEN — assets in hand, ready to build]
+From: Advisor   Re: Designer request, assets Owner-approved and verified before dispatch
+
+Dropped via `docs/COMMS/from-advisor/avatar-presets-meme.md` (promoted verbatim). Two new presets ship: a grayscale hooded "wojak" figure and a "DEGEN"-branded hooded figure — both already committed at `docs/design-refs/avatars/` (tracked, Owner-placed). **Two of the five candidates the Designer supplied are deliberately excluded**: Pepe the Frog (actively-enforced copyrighted character, wrong fit for a wagering platform) and Doge (derives from a copyrighted photograph). Not a placeholder exclusion — don't substitute or re-propose them.
+
+Touches four files with the same small edit each: `packages/shared/src/protocol.ts`'s `AvatarId`/`AVATAR_IDS`, `Avatar.tsx`'s `PRESETS` map, `ProfileHub.tsx`'s `PICKER_AVATARS`. Also update `apps/web/src/assets/avatars/CREDITS.md` with an honest licence note for the new pair (meme-culture provenance, not independently verified — Owner-accepted risk).
+
+Ask: ready to ticket now — nothing left blocking this one.
+
 ### 2026-08-13#2 — Games page carousel + new Rewards/VIP system            [OPEN — split into 4 issues]
 From: Advisor   Re: Designer request, verified against the code + design file before dispatch
 
