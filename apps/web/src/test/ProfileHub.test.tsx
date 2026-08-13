@@ -142,7 +142,7 @@ describe('ProfileHubScreen', () => {
   });
 
   describe('avatar picker (Advisor #12 ii)', () => {
-    it('tapping the header avatar opens the bg-surface overlay with the default + 4 presets', () => {
+    it('tapping the header avatar opens the bg-surface overlay with the default + 6 presets', () => {
       render(<ProfileHubScreen {...baseProps()} />);
       expect(screen.queryByTestId('avatar-picker')).toBeNull();
       fireEvent.click(screen.getByTestId('profile-avatar-button'));
@@ -150,8 +150,8 @@ describe('ProfileHubScreen', () => {
       expect(picker).toBeInTheDocument();
       // the auth-popup treatment: an inner bg-surface panel (no rim).
       expect(picker.querySelector('.bg-surface')).not.toBeNull();
-      // default + 4 presets are offered.
-      for (const id of ['default', 'boy-light', 'girl-light', 'boy-brown', 'boy-dark']) {
+      // default + 6 presets are offered (incl. the #312 meme-style pair).
+      for (const id of ['default', 'boy-light', 'girl-light', 'boy-brown', 'boy-dark', 'hooded-mono', 'hooded-degen']) {
         expect(screen.getByTestId(`avatar-option-${id}`)).toBeInTheDocument();
       }
     });
@@ -188,6 +188,32 @@ describe('ProfileHubScreen', () => {
 
       await waitFor(() => expect(setAvatarCalls).toEqual(['girl-light']));
       expect(onAvatarChange).toHaveBeenCalledWith('girl-light');
+      await waitFor(() => expect(screen.queryByTestId('avatar-picker')).toBeNull());
+    });
+
+    it('selecting and saving a #312 meme-style preset (hooded-degen) calls api.setAvatar with that id', async () => {
+      const setAvatarCalls: string[] = [];
+      vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+        const u = String(url);
+        if (u.includes('/auth/avatar')) {
+          const sent = JSON.parse(String(init?.body)).avatarId as string;
+          setAvatarCalls.push(sent);
+          return { ok: true, json: async () => ({ avatarId: sent }) } as Response;
+        }
+        if (u.includes('/games')) return { ok: true, json: async () => GAMES } as Response;
+        if (u.includes('/leaderboard/coinflip')) return { ok: true, json: async () => CF_BOARD } as Response;
+        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: 1009, entries: LEDGER }) } as Response;
+        return { ok: true, json: async () => ({}) } as Response;
+      }));
+      const onAvatarChange = vi.fn();
+      render(<ProfileHubScreen {...baseProps({ avatarId: 'default', onAvatarChange })} />);
+
+      fireEvent.click(screen.getByTestId('profile-avatar-button'));
+      fireEvent.click(screen.getByTestId('avatar-option-hooded-degen'));
+      fireEvent.click(screen.getByTestId('avatar-picker-save'));
+
+      await waitFor(() => expect(setAvatarCalls).toEqual(['hooded-degen']));
+      expect(onAvatarChange).toHaveBeenCalledWith('hooded-degen');
       await waitFor(() => expect(screen.queryByTestId('avatar-picker')).toBeNull());
     });
   });

@@ -1,6 +1,6 @@
 # Coder → PM (append-only; newest on top)
 
-### 2026-08-13#4 — Games/Rewards (C): Rewards page frontend + ProfileHub lifetime-wagered line — PR #313 (issue #307)            [OPEN]
+### 2026-08-13#6 — Games/Rewards (C): Rewards page frontend + ProfileHub lifetime-wagered line — PR #313 (issue #307)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-13)
 
 Shipped, isolated worktree at `.wt/307-rewards-page`, branch `feature/307-rewards-page`. Dispatched after #306 (PR #309) and #304 (PR #308) both merged; started from `main` at `321dfcd`, then **rebased onto latest `main` mid-task** once #305 (Games carousel, PR #310) landed — a clean auto-merge in `HomeHub.tsx`/`HomeHub.test.tsx` (the carousel's own new content, no real overlap with this ticket's `App.tsx`/`HubToolbar.tsx` nav wiring, exactly as the dispatch predicted).
@@ -22,6 +22,23 @@ No `width:390px` wrapper specific to the Rewards page's own content was found (t
 **Verification:** `tsc -b` clean, `eslint` clean, both pre- and post-rebase. Full suite green pre-rebase (98 files / 1208 tests). Post-rebase, **CI on PR #313 (`build-and-test`, uncontended) passed clean in 3m18s** — the authoritative signal. Two same-machine local full-suite reruns taken *while* CI + Monitor tasks were also live on this box (`loadavg` measured up to ~35) each showed a handful of `waitFor`-timeout failures — first run 5/1225, second run 7/1225 (`Duration` 559s vs. the clean run's 277s, i.e. ~2x slower under contention) — spread across `App.test.tsx`, `auto-searching.app.test.tsx`, and once even this PR's own `RewardsHub.test.tsx` (`highlights the current tier column`, a plain `waitFor` on a mocked-fetch render). Same class of noise PR #309's own entry already flagged. Re-ran every implicated file **in isolation** immediately after each occurrence — 100% green every time, including `RewardsHub.test.tsx`'s full 15/15 twice over. None of the flaked tests touch logic this PR didn't already cover green elsewhere.
 
 Ask: PR review — #313, against the issue's 6 acceptance criteria (itemized with test references in the PR description) plus the 2 flagged gaps above, which need an explicit Owner/Advisor call: ship as-is (nothing to render, matching the Games page's own `MODES` precedent) or treat as new work items.
+
+### 2026-08-13#5 — Two new avatar presets (hooded-mono, hooded-degen) — PR #314 (issue #312)            [OPEN]
+From: Coder   Re: PM dispatch (2026-08-13)
+
+Shipped, `feature/312-avatar-presets-meme`, isolated worktree at `.wt/312-avatar-presets-meme`. Client-only (touches `packages/shared` for the shared `AvatarId` type, consumed by both sides, but not a wire-protocol shape change), not owner-gated.
+
+Copied `docs/design-refs/avatars/{Profile-picture-2,Profile-picture-5}.jpg` → `apps/web/src/assets/avatars/{avatar-hooded-degen,avatar-hooded-mono}.jpg` as delivered, no format conversion or background removal. Four-file wiring exactly as specified: `AvatarId` union + `AVATAR_IDS` validation array (`protocol.ts`), `Avatar.tsx`'s `PRESETS` map, `ProfileHub.tsx`'s `PICKER_AVATARS`. `CREDITS.md` updated with both entries, honest about unverified meme-culture provenance, noting the Pepe/Doge exclusion.
+
+**One extra file beyond the issue's literal list, caught rather than missed:** `App.tsx`'s `loadAvatarId()` keeps its own local `VALID` array (a duplicate of `AVATAR_IDS`, used for `localStorage`-persisted avatar-id validation on load) — updated it too, one line. Without this, a returning player who'd selected either new preset would silently fall back to `'default'` on next load despite the id being valid server-side.
+
+**Verification, explicit on the exclusion criterion:** `grep -rli "pepe\|doge"` across `apps/`/`packages/` finds exactly two hits, both correct: `CREDITS.md`'s exclusion note, and `identity.test.ts`'s rejection test (`'pepe'`/`'doge'` added to the existing invalid-id test cases, asserting `isAvatarId` returns `false` for both). No asset, import, or shipped reference to either.
+
+**Concurrency check (per the dispatch's ask):** #307 (Rewards frontend) was concurrently in flight, also touching `ProfileHub.tsx` — confirmed no real overlap (different constants/regions of the file, `PICKER_AVATARS` near the top vs. the lifetime-wagered line lower down); #307 was still in progress at push time, no rebase needed yet on this end.
+
+**Verification:** full suite **98 files / 1212 tests**, one file (`ChessHub.test.tsx`) failed on the first full local run with a `vitest-worker onTaskUpdate` timeout — re-ran that file alone, 41/41 passed in 20s, confirming the CPU-contention flake pattern already documented elsewhere in this session (heavy concurrent-agent load on this machine), not a regression. `tsc -b` clean, `eslint` clean.
+
+Ask: PR review — #314, against the issue's acceptance criteria (all met, itemized in the PR description).
 
 ### 2026-08-13#4 — Games-page Open Games carousel, real data — PR #310 (issue #305)            [OPEN]
 From: Coder   Re: PM dispatch (games-and-rewards.md §A)

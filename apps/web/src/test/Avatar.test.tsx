@@ -3,6 +3,8 @@ import { describe, it, expect } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { Avatar } from '../components/hub-shared/Avatar.js';
 import boyLight from '../assets/avatars/avatar-boy-light.png';
+import hoodedMono from '../assets/avatars/avatar-hooded-mono.jpg';
+import hoodedDegen from '../assets/avatars/avatar-hooded-degen.jpg';
 
 /** Read the disc/glyph tokens the component exposes for testability (raw hsl/hex, CSSOM-agnostic). */
 function tokens() {
@@ -29,6 +31,16 @@ describe('Avatar (shared)', () => {
     const img = screen.getByTestId('avatar-img') as HTMLImageElement;
     expect(img.getAttribute('src')).toBe(boyLight);
     // No default glyph when a preset is shown.
+    expect(screen.queryByTestId('avatar-glyph')).toBeNull();
+  });
+
+  it('renders the two meme-style presets (hooded-mono, hooded-degen) added in #312', () => {
+    render(<Avatar username="alice" avatarId="hooded-mono" />);
+    expect((screen.getByTestId('avatar-img') as HTMLImageElement).getAttribute('src')).toBe(hoodedMono);
+    expect(screen.queryByTestId('avatar-glyph')).toBeNull();
+    cleanup();
+    render(<Avatar username="alice" avatarId="hooded-degen" />);
+    expect((screen.getByTestId('avatar-img') as HTMLImageElement).getAttribute('src')).toBe(hoodedDegen);
     expect(screen.queryByTestId('avatar-glyph')).toBeNull();
   });
 
