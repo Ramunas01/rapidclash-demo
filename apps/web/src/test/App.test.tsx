@@ -346,9 +346,10 @@ describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
     await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
     expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument(); // public grid browses
     expect(screen.getByTestId('hub-signin-chip')).toBeInTheDocument();
-    // The public open-challenges snapshot renders (real movement, no WS).
-    await waitFor(() => expect(screen.getByTestId('home-row-pub-1')).toBeInTheDocument());
-    expect(screen.queryByTestId('home-ticker-teaser')).toBeNull();
+    // The public open-challenges snapshot renders (real movement, no WS) in the Games-page
+    // carousel (#305) — rows are keyed by the carousel's own synthetic uid, not matchId (the
+    // pool can wrap when smaller than the 11-row window), so look up by `data-match-id`.
+    await waitFor(() => expect(document.querySelector('[data-match-id="pub-1"]')).toBeTruthy());
     expect(sockets.length).toBe(0); // the WS (auth) is not opened until sign-in
   });
 
@@ -356,9 +357,10 @@ describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
     render(<App />);
     await waitFor(() => screen.getByTestId('home-hub'));
 
-    // The logged-out ticker shows the resting public challenge; tap JOIN.
-    await waitFor(() => screen.getByTestId('home-join-pub-1'));
-    fireEvent.click(screen.getByTestId('home-join-pub-1'));
+    // The logged-out carousel shows the resting public challenge; tap JOIN.
+    await waitFor(() => expect(document.querySelector('[data-match-id="pub-1"]')).toBeTruthy());
+    const pubRow = document.querySelector('[data-match-id="pub-1"]') as HTMLElement;
+    fireEvent.click(within(pubRow).getByTestId(/^games-carousel-join-/));
 
     // The auth wall fires — JOIN is gated even though browsing the feed is open.
     expect(await screen.findByTestId('auth-modal')).toBeInTheDocument();

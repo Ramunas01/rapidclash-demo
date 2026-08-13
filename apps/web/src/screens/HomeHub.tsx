@@ -6,7 +6,7 @@ import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
 import { HUB_SHELL, HUB_BODY } from '../components/hub-chrome/layout.js';
 import { TILE_ART, COMING_SOON, HIDDEN_ON_HOME, titleCase } from '../components/hub-shared/tiles.js';
-import { OpenGamesTicker, PublicOpenGamesTicker } from '../components/hub-shared/OpenGames.js';
+import { GamesCarousel } from '../components/hub-shared/GamesCarousel.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
 import hero1 from '../assets/banners/hero-1.webp';
@@ -168,13 +168,17 @@ export function HomeHubScreen({
 
           <BringARival />
 
-          {/* Open Games — real feed only (never fabricated). Signed in → the live WS aggregate;
-              logged out → a polled public snapshot of the same resting challenges. */}
-          {loggedIn ? (
-            <OpenGamesTicker challengesByGame={challengesByGame} nameByGame={nameByGame} balance={liveBalance} onTake={onTakeChallenge} />
-          ) : (
-            <PublicOpenGamesTicker nameByGame={nameByGame} onJoin={(c) => onTakePublicChallenge?.(c)} onSignIn={onOpenWallet} />
-          )}
+          {/* Games-page Open Games carousel (issue #305) — real feed only (never fabricated).
+              Signed in → the live WS aggregate; logged out → a polled public snapshot of the
+              same resting challenges. Also hosts the static 24H RACE/WEEKLY RACE/RANK tabs. */}
+          <GamesCarousel
+            challengesByGame={challengesByGame}
+            nameByGame={nameByGame}
+            balance={liveBalance}
+            onTake={onTakeChallenge}
+            onTakePublicChallenge={onTakePublicChallenge}
+            loggedIn={loggedIn}
+          />
 
           <HubFooter />
         </div>
