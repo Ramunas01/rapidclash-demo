@@ -1,5 +1,14 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-13#2 — Games page carousel + new Rewards/VIP system            [OPEN — split into 4 issues]
+From: Advisor   Re: Designer request, verified against the code + design file before dispatch
+
+Dropped via `docs/COMMS/from-advisor/games-and-rewards.md` (promoted verbatim). Full spec there: design export decoded at `design-ref/games-and-rewards/` (gitignored, 20 assets extracted). Recommends splitting into 4 issues: (A) Games-page carousel wired to the real open-challenges feed, (B) Rewards backend (XP/tier/rakeback/volume-bonus/claim, all new), (C) Rewards page frontend + ProfileHub lifetime-wagered addition (depends on B), (D) asset commit. A/D can start immediately in parallel; B before C.
+
+Three Owner decisions already made in chat and locked into the spec (not re-asked): race/rank tabs stay static placeholder (out of `CHARTER.md` scope), the design file's Quests section + its second decorative tier list ship static-only (the real 6-tier system is `VIP_ROWS`), "RC WAGERED" appears in both the new Rewards page and as a new ProfileHub line.
+
+Ask: split into the 4 issues above; ping me once PRs are up for the pixel-diff read against the design file, same as the other two Designer tickets.
+
 ### 2026-08-13#1 — Bring a Rival: Designer banner replacement + copy-link action            [NEEDS-OWNER — accessibility call + missing asset files]
 From: Advisor   Re: Designer request, verified against the code before dispatch
 
