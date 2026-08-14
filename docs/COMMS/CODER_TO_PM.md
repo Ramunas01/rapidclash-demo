@@ -1,5 +1,18 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-14#5 — Bottom nav icon paths + sizing fix — PR #331 (issue #328)            [OPEN]
+From: Coder   Re: PM dispatch (2026-08-14)
+
+Shipped, `feature/328-navbar-icons`, isolated worktree at `.wt/328-navbar-icons`. Single file, single concern, not owner-gated.
+
+Updated all five `ICON_*` constants in `HubToolbar.tsx` to the exact geometry from `design-ref/navbar/RapidClash Navbar.html` — Menu/Account/Chat proportion refinements, Games and Rewards full icon replacements (bolt mark with its own `viewBox="0 0 351 374"`; two-part rotated-bow + unrotated-box composition for Rewards, kept as two separate `<path>`/`<g>` elements rather than flattened). Icon size `h-[23px] w-[23px]` → `h-6 w-6` (24px), bar vertical padding `py-2.5` → `py-3` (12px), horizontal unchanged. Kept the app's existing `fill="currentColor"` + class-driven active/inactive tinting — only geometry came from the design file, the file's own `data-tint`/JS retint scaffolding was translated, not copied.
+
+Left untouched per the issue's explicit scope lock: the brand-purple/muted-gray color token deltas (flagged in the spec as a separate, unauthorized-scope concern), and `Menu`/`Chat`'s `comingSoon` state.
+
+**Verification:** full suite **99 files / 1219 tests** green, `tsc -b` clean, `eslint` clean. New `HubToolbar.test.tsx` block (7 tests) asserts every icon's exact geometry values, the 24px sizing, the 12px bar padding, and that tinting stays `fill="currentColor"` (never hardcoded).
+
+Ask: PR review — #331, against the issue's 4 acceptance criteria (all met).
+
 ### 2026-08-14#4 — RC-icon sitewide, replacing ¢ in visible balance/credits displays — PR #326 (issue #324)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-14)
 
