@@ -76,3 +76,83 @@ describe('HubFooter (issue #323)', () => {
     expect(footer).toBeInTheDocument();
   });
 });
+
+describe('HubFooter drift fixes (issue #333)', () => {
+  it('renders the verbatim Discord path at 21x21, balanced within its own viewBox', () => {
+    render(<HubFooter />);
+    const footer = screen.getByTestId('home-footer');
+    const discord = within(footer).getByTestId('home-social-discord');
+    const svg = discord.querySelector('svg');
+    expect(svg).toHaveAttribute('width', '21');
+    expect(svg).toHaveAttribute('height', '21');
+    expect(svg).toHaveAttribute('viewBox', '0 0 24 24');
+    const path = svg?.querySelector('path');
+    expect(path).toHaveAttribute(
+      'd',
+      'M20 5.3A17 17 0 0 0 15.9 4l-.4.8a12.6 12.6 0 0 0-7 0L8.1 4A17 17 0 0 0 4 5.3C1.4 9.2.7 13 1 16.8A16.9 16.9 0 0 0 6.2 19l.9-1.5c-.6-.2-1.2-.5-1.7-.9l.4-.3a12.1 12.1 0 0 0 10.4 0l.4.3c-.5.4-1.1.7-1.7.9l.9 1.5a16.8 16.8 0 0 0 5.2-2.2c.4-4.4-.7-8.2-3-11.5ZM8.4 14.5c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2Zm7.2 0c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2Z',
+    );
+  });
+
+  it('leaves X, Telegram, and Instagram icons untouched (out of scope for #333)', () => {
+    render(<HubFooter />);
+    const footer = screen.getByTestId('home-footer');
+    const x = within(footer).getByTestId('home-social-x').querySelector('svg');
+    expect(x).toHaveAttribute('width', '17');
+    expect(x).toHaveAttribute('height', '17');
+    const telegram = within(footer).getByTestId('home-social-telegram').querySelector('svg');
+    expect(telegram).toHaveAttribute('width', '20');
+    expect(telegram).toHaveAttribute('height', '20');
+    const instagram = within(footer).getByTestId('home-social-instagram').querySelector('svg');
+    expect(instagram).toHaveAttribute('width', '20');
+    expect(instagram).toHaveAttribute('height', '20');
+  });
+
+  it('uses the bg-surface token for the footer background, not bg-background', () => {
+    render(<HubFooter />);
+    const footer = screen.getByTestId('home-footer');
+    expect(footer.className).toContain('bg-surface');
+    expect(footer.className).not.toContain('bg-background');
+  });
+
+  it('renders a gradient band, first inside <footer>, before the wordmark, with the exact spec stops/height/margin', () => {
+    render(<HubFooter />);
+    const footer = screen.getByTestId('home-footer');
+    const gradient = within(footer).getByTestId('home-footer-gradient');
+    expect(gradient).toHaveAttribute('aria-hidden', 'true');
+    // First element child of <footer>, and precedes the wordmark image.
+    expect(footer.firstElementChild).toBe(gradient);
+    const wordmark = within(footer).getByAltText('RapidClash');
+    expect(
+      gradient.compareDocumentPosition(wordmark) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(gradient.className).toContain('h-16');
+    expect(gradient.className).toContain('mt-6');
+    expect(gradient.style.background).toBe(
+      'linear-gradient(to bottom, rgba(26,26,46,0) 0%, rgba(26,26,46,0.45) 55%, rgba(26,26,46,0.85) 82%, rgba(26,26,46,1) 100%)',
+    );
+    // The gradient's terminal stop is opaque #1A1A2E, matching bg-surface exactly — no seam
+    // against the footer's own solid background at any point below it.
+  });
+
+  it('renders the four column headings with text-brand and the 15px/bold/1.4px-tracking hierarchy', () => {
+    render(<HubFooter />);
+    const footer = screen.getByTestId('home-footer');
+    for (const heading of ['PLATFORM', 'FAIRNESS', 'SUPPORT', 'LEGAL']) {
+      const el = within(footer).getByText(heading);
+      expect(el.className).toContain('text-brand');
+      expect(el.className).not.toContain('text-muted-foreground');
+      expect(el.className).toContain('text-[15px]');
+      expect(el.className).toContain('font-bold');
+      expect(el.className).toContain('tracking-[1.4px]');
+    }
+  });
+
+  it('renders footer links at 14px (up from 12.5px), colour/weight otherwise unchanged', () => {
+    render(<HubFooter />);
+    const footer = screen.getByTestId('home-footer');
+    const link = within(footer).getByText('Games');
+    expect(link.className).toContain('text-[14px]');
+    expect(link.className).not.toContain('text-[12.5px]');
+    expect(link.className).toContain('text-foreground');
+  });
+});

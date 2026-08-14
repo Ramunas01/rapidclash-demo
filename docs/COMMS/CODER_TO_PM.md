@@ -1,5 +1,26 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-14#6 — Footer: 4 drift fixes — PR #335 (issue #333)            [OPEN]
+From: Coder   Re: PM dispatch (2026-08-14)
+
+Shipped, isolated worktree at `.wt/333-footer-drift-fixes`, branch `feature/333-footer-drift-fixes`, started from `main` at `e26b7a6`. Single file, single concern: `apps/web/src/components/hub-shared/HubFooter.tsx`.
+
+**1. Discord icon** — replaced the hand-approximated path with the exact verbatim path from the spec, `20×20` → `21×21`. Circle wrapper (size/color/glow/spacing) untouched. Left X, Telegram, Instagram alone, per the explicit scope lock — updated the file's own top-of-`SOCIALS` doc comment to note Discord is now verbatim while the other three remain approximations (comment-only, no behavior change).
+
+**2. Footer background + gradient band** — `<footer>`'s className: `bg-background` → `bg-surface` (this app's `--rc-surface` token, `#1a1a2e`). Added a gradient band `<div data-testid="home-footer-gradient" aria-hidden="true" className="mt-6 h-16">` as the literal first child inside `<footer>`, before the wordmark image, with the exact spec'd `linear-gradient` (4 stops, `rgba(26,26,46,…)` 0%→100%). Kept `bg-surface` directly on `<footer>` itself (not moved to an inner wrapper) — since the gradient's terminal stop (`rgba(26,26,46,1)`) is bit-identical to `bg-surface`'s resolved color, the seam is structurally impossible regardless of exact DOM nesting, so I didn't need the negative-margin wrapper trick the spec offered as an alternative.
+
+**3. Column heading colour** — `text-muted-foreground` → `text-brand` on all four headings (PLATFORM/FAIRNESS/SUPPORT/LEGAL). Flagging the source conflict the Advisor already flagged: the design file's own raw inline color for these headings is `#8B45F0`, but the Designer's *written* correction is `#8140E2` (= this app's `--brand-purple`/`text-brand`token) — went with `text-brand` per the explicit written value and to stay token-based, per the dispatch's instruction. Worth a second look if the intent was actually "match the file exactly."
+
+**4. Heading/link size hierarchy** — headings `text-[11px] font-bold tracking-wide` → `text-[15px] font-bold tracking-[1.4px]`; links `text-[12.5px]` → `text-[14px]`. Colour/weight otherwise untouched (heading colour is item 3, link colour/`text-foreground` unchanged).
+
+Nothing else in the file changed — link text, layout structure, click-handler wiring, disclaimer/copyright/18+ block all byte-identical to before.
+
+**Tests**: extended `apps/web/src/test/HubFooter.test.tsx` with a new `describe('HubFooter drift fixes (issue #333)')` block, 6 new tests covering: the exact new Discord `d`/width/height, X/Telegram/Instagram left untouched, `bg-surface` present and `bg-background` absent on `<footer>`, the gradient band's position (first child, precedes the wordmark via `compareDocumentPosition`), exact `aria-hidden`/height/margin/gradient-string, the four headings' `text-brand`/size/weight/tracking, and the links' `14px` size. Existing 3 tests in the file untouched and still pass.
+
+**Verification**: full suite from repo root (`npx vitest run`) — **99 files / 1225 tests**, 1 failure (`App.test.tsx` — "leaving and re-entering the hub loads a clean idle page", a 5s timeout under full-suite parallel load) that reproduces as a clean pass (18/18) when that file is run in isolation — a pre-existing flake unrelated to this change (HubFooter isn't touched by that test's flow). `HubFooter.test.tsx` alone: **9/9 green**. `tsc -b` clean (no output). `eslint --ext .ts,.tsx packages apps` clean (no output), also ran scoped to just the two changed files.
+
+Ask: PR review against issue #333's 4 acceptance criteria (all met, verified individually above) — flag on item 3's `#8B45F0` vs `#8140E2` conflict carried into the PR description too.
+
 ### 2026-08-14#5 — Bottom nav icon paths + sizing fix — PR #331 (issue #328)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-14)
 
