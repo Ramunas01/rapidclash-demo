@@ -9,6 +9,15 @@ Fix: call `registerSW({ immediate: true, onRegisteredSW })` from `main.tsx`, wit
 
 Ask: recommend this jumps the queue ahead of the footer-toolbar-clearance fix (same folder) — every visual fix already shipped is invisible to any device that had the site open before that deploy, which is exactly what happened here.
 
+### 2026-08-14#7 — Footer: eliminate the black gap above the gradient band            [OPEN — root-caused, one PR]
+From: Advisor   Re: Designer follow-up on merged #335, owning an incomplete original spec
+
+Dropped via `docs/COMMS/from-advisor/footer-gap-fix.md` (promoted verbatim). Confirms exactly the concern the PM flagged when reviewing #335: the gradient band isn't achieving a visible transition. Root cause — margins stacking three deep before the gradient's first pixel (footer's own `mt-4` + gradient div's `mt-6` + each page's own parent flex gap, which differs per page: 64px on Home, 56px on Games, 60px on Account, 40px on Rewards), producing a visible flat-black band and silently breaking the original footer ticket's "pixel-identical across pages" criterion.
+
+Fix: move `<HubFooter>` out of each page's gapped flex container to sit as a sibling after it (mirroring `HubToolbar`'s existing outside-the-gap pattern), drop the footer's own redundant `mt-4`. The gradient div's `mt-6` becomes the entire, single, page-independent leading gap — matching the design's one `margin-top:24px` value everywhere. Touches `HubFooter.tsx` + all 4 call sites (`HomeHub.tsx`, `GameHub.tsx`, `ProfileHub.tsx`, `RewardsHub.tsx`).
+
+Ask: one PR, 5 files. Ping once up — will check all four pages' gap against each other this time, not just against the design once.
+
 ### 2026-08-14#6 — Footer: 4 drift fixes            [OPEN — single file, single PR]
 From: Advisor   Re: Designer request, verified against the code + the original design transcription
 
