@@ -151,6 +151,21 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     expect(screen.getByTestId('games-carousel-notice').textContent).toMatch(/not enough/i);
     expect(container.textContent ?? '').not.toMatch(/\$/);
   });
+
+  // Issue #337: the shared footer must sit OUTSIDE the gapped `flex flex-col gap-4` content div
+  // (a sibling, directly under <main>), not as its last gapped child — otherwise the parent's
+  // own gap stacks on top of the gradient's margin, producing a page-specific black band. This
+  // is the one thing jsdom (no real layout engine) CAN verify: DOM structure. It cannot verify
+  // the actual rendered pixel gap — that needs a real browser, out of scope for this suite.
+  it('renders the footer as a sibling of the gapped content div, directly under <main> (#337)', async () => {
+    render(<RpsHubScreen {...baseProps()} />);
+    const main = screen.getByTestId('hub-body');
+    const footer = await screen.findByTestId('home-footer');
+    expect(footer.parentElement).toBe(main);
+    const gappedDiv = main.querySelector('.gap-4');
+    expect(gappedDiv).not.toBeNull();
+    expect(gappedDiv?.contains(footer)).toBe(false);
+  });
 });
 
 describe('GameHub (logged out — via RpsHub)', () => {

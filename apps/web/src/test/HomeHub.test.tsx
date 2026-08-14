@@ -131,6 +131,22 @@ describe('HomeHubScreen', () => {
     fireEvent.click(within(footer).getByText('Rewards/VIP'));
     expect(onOpenRewards).toHaveBeenCalled();
   });
+
+  // Issue #337: the footer must sit OUTSIDE the gapped `flex flex-col gap-6` content div (a
+  // sibling, directly under <main>), not as its last gapped child — otherwise the parent's own
+  // gap stacks on top of the gradient's margin, producing a page-specific black band. This is the
+  // one thing jsdom (no real layout engine) CAN verify: DOM structure. It cannot verify the
+  // actual rendered pixel gap — that needs a real browser, out of scope for this suite.
+  it('renders the footer as a sibling of the gapped content div, directly under <main> (#337)', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    const main = screen.getByTestId('home-hub');
+    const footer = await screen.findByTestId('home-footer');
+    expect(footer.parentElement).toBe(main);
+    // The gapped div (gap-6) is a previous sibling, not an ancestor, of the footer.
+    const gappedDiv = main.querySelector('.gap-6');
+    expect(gappedDiv).not.toBeNull();
+    expect(gappedDiv?.contains(footer)).toBe(false);
+  });
 });
 
 // #301 — Bring a Rival: Designer banner replacement + copy-link action. The banner is the

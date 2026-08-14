@@ -109,7 +109,7 @@ const LINK_COLUMNS: { heading: string; links: { label: string; real?: 'games' | 
  */
 export function HubFooter({ onGames, onRewards }: Props) {
   return (
-    <footer data-testid="home-footer" className="mt-4 bg-surface px-4 pb-6 pt-6">
+    <footer data-testid="home-footer" className="bg-surface px-4 pb-6 pt-6">
       <div
         data-testid="home-footer-gradient"
         aria-hidden="true"

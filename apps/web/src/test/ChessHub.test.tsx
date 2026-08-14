@@ -621,6 +621,9 @@ describe('ChessHubScreen — guest mode chrome + fixed time control (issue #279)
     expect(screen.queryByTestId('hub-section-related')).toBeNull();
     expect(screen.queryByTestId('hub-nav-games')).toBeNull();
     expect(screen.queryByTestId('hub-nav-account')).toBeNull();
+    // #337: the footer moved from inside the `!isGuest` fragment to a standalone
+    // `{!isGuest && <HubFooter/>}` sibling of the gapped content div — still gated identically.
+    expect(screen.queryByTestId('home-footer')).toBeNull();
   });
 
   it('locks the bet amount — the preset buttons are disabled and inert (matches Coinflip generically)', () => {

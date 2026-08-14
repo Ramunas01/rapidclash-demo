@@ -181,9 +181,9 @@ export function HomeHubScreen({
           />
 
           <BringARival />
-
-          <HubFooter onGames={onHome} onRewards={onOpenRewards} />
         </div>
+
+        <HubFooter onGames={onHome} onRewards={onOpenRewards} />
       </main>
 
       <HubToolbar onGames={onHome} onAccount={onOpenWallet} onRewards={onOpenRewards} active="games" />

@@ -185,9 +185,9 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
 
           {/* 3 — Leaderboard: live-games picker + the selected game's rankings. */}
           <ProfileLeaderboard token={token} />
-
-          <HubFooter onGames={onHome} onRewards={onOpenRewards} />
         </div>
+
+        <HubFooter onGames={onHome} onRewards={onOpenRewards} />
       </main>
 
       <HubToolbar onGames={onHome} onAccount={onOpenProfile} onRewards={onOpenRewards} active="account" />

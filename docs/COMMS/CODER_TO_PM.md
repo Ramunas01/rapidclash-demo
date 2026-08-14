@@ -1,5 +1,29 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-14#8 — Footer: eliminate the black gap above the gradient band — PR #338 (issue #337)            [OPEN]
+From: Coder   Re: PM dispatch (2026-08-14) / Advisor spec `docs/COMMS/from-advisor/footer-gap-fix.md`
+
+Shipped, isolated worktree at `.wt/337-footer-gap`, branch `feature/337-footer-gap`, started from `main` at `48078ee`. 5 files, both parts of the fix as specced — verified the actual code against the issue/spec first, every gap class, `mt-` value, and line described matched exactly, no surprises.
+
+**1. Moved `<HubFooter/>` out of each page's gapped flex div**, to a sibling immediately after that div closes, still inside `<main>`, before `</main>`:
+- `HomeHub.tsx` (was inside `flex flex-col gap-6`) — footer now a direct sibling of that div under `<main data-testid="home-hub">`.
+- `ProfileHub.tsx` (`gap-5`) — same pattern, under `<main data-testid="profile-hub">`.
+- `RewardsHub.tsx` (no gap class) — same pattern, under `<main data-testid="rewards-hub">`.
+- `GameHub.tsx` (`gap-4`) — one nuance the spec didn't need to call out explicitly but I preserved: the footer was previously the last element inside `{!isGuest && (<>...</>)}` alongside `RelatedRail`/`BringARival`. I kept `RelatedRail`/`BringARival` inside that fragment (unchanged) and pulled just `<HubFooter/>` out to `{!isGuest && <HubFooter .../>}` as its own sibling expression, still under `<main data-testid="hub-body">`, still gated on `!isGuest` identically to before — guest sessions still see no footer at all, verified by a new test (see below).
+
+**2. `HubFooter.tsx`**: dropped the `<footer>` element's own `mt-4` from its className (now `bg-surface px-4 pb-6 pt-6`, no margin). Left the gradient div's `mt-6` exactly as-is, and touched nothing else in the file — no gradient colours/stops, no other markup.
+
+**Tests — extended, not rewritten.** Ran the full suite before and after to confirm nothing pre-existing broke, then added:
+- `HubFooter.test.tsx`: new `describe('HubFooter positioning fix (issue #337)')` block — asserts `<footer>`'s className no longer contains `mt-4` (nor any `mt-\d` at all), and that the gradient div's `mt-6` is unchanged.
+- `HomeHub.test.tsx`, `ProfileHub.test.tsx`, `RewardsHub.test.tsx`, `RpsHub.test.tsx` (covers `GameHub.tsx` — it's the shared component, RPS is the flagship slice): one new test each asserting `footer.parentElement === <main>` and that the page's own gapped div does NOT contain the footer (`gappedDiv.contains(footer) === false`).
+- `ChessHub.test.tsx`: added one assertion to the existing guest-mode-chrome test — `expect(screen.queryByTestId('home-footer')).toBeNull()` — a direct regression check on the `GameHub.tsx` guest-gating nuance above, since that's the one call site where the refactor had to interact with existing conditional logic rather than a straight lift-out.
+
+**What jsdom can and can't verify, explicitly**: all of the above is DOM-structure/className assertions — jsdom has no real layout engine, so none of it proves the actual rendered pixel gap collapses to 24px, or that any flat-black band is visually gone. That verification (screenshotting all four pages, same region, confirming they match) needs a real browser and is called out in the spec itself as the Advisor's own follow-up check. No headless Chromium/Playwright available in this sandbox — same constraint as prior tickets on record in this file (#286/#290/#291/#302/#312/#334). What IS verified: the footer is structurally a sibling of each page's gapped div (so that div's `gap-N` can no longer apply to it, by construction, on all four pages), and the `<footer>` element carries no margin of its own — leaving the gradient's single `mt-6` as the only remaining source of leading space, identical markup-wise on every page.
+
+**Verification**: `tsc -b` clean, `eslint --ext .ts,.tsx packages apps` clean, full suite **99 files / 1231 tests, all green** (was 1225 tests pre-change across the same 99 files before my 6 new tests were added — no pre-existing test touched or weakened, only additive).
+
+Ask: PR review — #338, against all three acceptance criteria from the issue. The pixel-level ones (no visible black band; identical 24px gap across all four pages) still need the Advisor's live-browser pass per the spec's own "Ask" — I've done everything verifiable from this environment.
+
 ### 2026-08-14#7 — Typography Step 1: load Space Grotesk + Inter Tight fonts — PR #334 (issue #330)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-14)
 

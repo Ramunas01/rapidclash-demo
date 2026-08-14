@@ -259,9 +259,9 @@ export function RewardsHubScreen({ token, username, balance, onHome, onOpenProfi
           </div>
 
           <BringARival />
-
-          <HubFooter onGames={onHome} onRewards={onOpenRewards} />
         </div>
+
+        <HubFooter onGames={onHome} onRewards={onOpenRewards} />
       </main>
 
       <HubToolbar onGames={onHome} onAccount={onOpenProfile} onRewards={onOpenRewards} active="rewards" />
