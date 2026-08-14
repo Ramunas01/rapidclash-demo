@@ -244,4 +244,17 @@ describe('ProfileHubScreen', () => {
     expect(container.querySelectorAll('footer')).toHaveLength(1);
     expect(container.textContent ?? '').not.toMatch(/play-money demo\./i);
   });
+
+  // Issue #337: footer must be a sibling of the gapped `flex flex-col gap-5` content div, not
+  // its last gapped child, so the parent's gap no longer stacks on top of the gradient's own
+  // margin. DOM-structure only — jsdom can't verify the actual rendered pixel gap.
+  it('renders the footer as a sibling of the gapped content div, directly under <main> (#337)', async () => {
+    render(<ProfileHubScreen {...baseProps()} />);
+    const main = screen.getByTestId('profile-hub');
+    const footer = await screen.findByTestId('home-footer');
+    expect(footer.parentElement).toBe(main);
+    const gappedDiv = main.querySelector('.gap-5');
+    expect(gappedDiv).not.toBeNull();
+    expect(gappedDiv?.contains(footer)).toBe(false);
+  });
 });

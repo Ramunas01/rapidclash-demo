@@ -191,4 +191,18 @@ describe('RewardsHubScreen', () => {
     fireEvent.click(within(footer).getByText('Rewards/VIP'));
     expect(onOpenRewards).toHaveBeenCalled();
   });
+
+  // Issue #337: footer must be a sibling of the content div (a direct child of <main>, not
+  // nested inside it) so it no longer inherits any parent-container spacing. DOM-structure only
+  // — jsdom can't verify the actual rendered pixel gap, which needs a real browser.
+  it('renders the footer as a sibling of the content div, directly under <main> (#337)', async () => {
+    stubFetch(BOBBYLEE_SNAPSHOT);
+    render(<RewardsHubScreen {...baseProps()} />);
+    const main = screen.getByTestId('rewards-hub');
+    const footer = await screen.findByTestId('home-footer');
+    expect(footer.parentElement).toBe(main);
+    const contentDiv = main.firstElementChild;
+    expect(contentDiv).not.toBeNull();
+    expect(contentDiv?.contains(footer)).toBe(false);
+  });
 });

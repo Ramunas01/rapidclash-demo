@@ -156,3 +156,24 @@ describe('HubFooter drift fixes (issue #333)', () => {
     expect(link.className).toContain('text-foreground');
   });
 });
+
+describe('HubFooter positioning fix (issue #337)', () => {
+  // #337: the <footer> element no longer carries its own leading margin — every call site now
+  // renders it as a sibling outside the page's gapped content div, so the gradient div's own
+  // `mt-6` (24px) is the single, page-independent source of the leading gap. Confirmed here as a
+  // static className check (jsdom doesn't compute real layout/margins); the actual rendered
+  // pixel gap can only be verified in a real browser, which this suite doesn't have.
+  it('does not carry its own mt-4 (or any other leading margin) on the <footer> element', () => {
+    render(<HubFooter />);
+    const footer = screen.getByTestId('home-footer');
+    expect(footer.className).not.toContain('mt-4');
+    expect(footer.className).not.toMatch(/(^|\s)mt-\d/);
+  });
+
+  it('keeps the gradient div\'s mt-6 as the sole leading-gap source (unchanged by #337)', () => {
+    render(<HubFooter />);
+    const footer = screen.getByTestId('home-footer');
+    const gradient = within(footer).getByTestId('home-footer-gradient');
+    expect(gradient.className).toContain('mt-6');
+  });
+});

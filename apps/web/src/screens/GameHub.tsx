@@ -616,10 +616,11 @@ export function GameHub(props: GameHubProps) {
             <>
               <RelatedRail related={related} onSelectGame={onSelectGame} />
               <BringARival />
-              <HubFooter onGames={onOpenGameList} onRewards={onOpenRewards} />
             </>
           )}
         </div>
+
+        {!isGuest && <HubFooter onGames={onOpenGameList} onRewards={onOpenRewards} />}
       </main>
 
       {/* Bottom nav (Games/Account) leads to the full game grid / profile — real-platform
