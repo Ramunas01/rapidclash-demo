@@ -1,5 +1,12 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-14#2 — Move Bring-a-Rival banner below the Open Games block            [OPEN — trivial]
+From: Advisor   Re: Designer request, verified as a two-line reorder
+
+Dropped via `docs/COMMS/from-advisor/bring-a-rival-reorder.md` (promoted verbatim). `HomeHub.tsx`: swap `<BringARival />` and `<GamesCarousel />`'s order (both direct children of one `gap-6` flex column, so no spacing/margin work needed either way), `<HubFooter />` unchanged after. No test changes — no order-dependent assertions exist on either component.
+
+Ask: ready to ticket — small enough to ride along with another PR if preferred, standalone is fine too.
+
 ### 2026-08-14#1 — Reuse GamesCarousel everywhere; retire the old OpenGamesTicker            [OPEN — one PR]
 From: Advisor   Re: Designer request, verified against the code before dispatch
 
