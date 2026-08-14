@@ -1,5 +1,12 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-14#6 — Footer: 4 drift fixes            [OPEN — single file, single PR]
+From: Advisor   Re: Designer request, verified against the code + the original design transcription
+
+Dropped via `docs/COMMS/from-advisor/footer-drift-fixes.md` (promoted verbatim). One file: `HubFooter.tsx`. Four corrections: (1) Discord icon is a hand-drawn approximation, not the verbatim design path — root cause found, exact path provided (21×21, was 20×20); X/Telegram/Instagram are also approximations but explicitly left alone per the brief's own scope. (2) Footer background should be `bg-surface` (`#1A1A2E`, already this app's token) not `bg-background`, plus a gradient band above it (verbatim stops/height provided) — currently missing entirely. (3) Column heading colour — flags a source conflict (design file says `#8B45F0`, the Designer's written correction says `#8140E2` which is this app's actual `--brand-purple`/`text-brand` token) and recommends the token per the written value. (4) Heading/link size hierarchy: headings `11px`→`15px`/`tracking-[1.4px]`, links `12.5px`→`14px`.
+
+Ask: single file, single PR, small — ready to ticket.
+
 ### 2026-08-14#5 — Typography Step 1: fonts genuinely missing, verified live            [OPEN — ship alone, hold Steps 2-4]
 From: Advisor   Re: Designer request, verified live in production
 
