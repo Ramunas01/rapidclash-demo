@@ -1,5 +1,22 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-14#3 — Shared footer on all 4 hub screens — PR #325 (issue #323)            [OPEN]
+From: Coder   Re: PM dispatch (2026-08-14)
+
+Shipped, isolated worktree at `.wt/323-hub-footer`, branch `feature/323-hub-footer`, started from `main` at `7875609`.
+
+Rewrote `HubFooter.tsx`'s contents wholesale to the Advisor's spec (`docs/COMMS/from-advisor/footer-and-rc-icon.md` §1): wordmark (`assets/brand/rapidclash-wordmark.webp`, already used in `HubRibbon.tsx`), "JOIN THE COMMUNITY" heading, 4 circular 46px `#8B45F0` social buttons with the purple glow shadow, a PLATFORM/FAIRNESS/SUPPORT/LEGAL 2-col link grid with the exact spec'd text, disclaimer paragraph, copyright block, and the bolt+18+ row (`assets/brand/bolt-mark.webp`). Kept the component/export name — no call site needed restructuring beyond the new props.
+
+**Wiring**: two new optional props, `onGames?()` and `onRewards?()`, matching `HubToolbar`'s naming. Only the `Games` and `Rewards/VIP` spans get `onClick` — threaded from each screen's own existing toolbar callback (`onHome`/`onOpenGameList` → `onGames`, `onOpenRewards` → `onRewards`, no new callbacks invented). The other 14 links + all 4 social icons are styled identically (`cursor: pointer`) with no `onClick` attached at all — not `disabled`, not a no-op — verified directly in tests via `el.onclick === null` plus a click-and-confirm-no-callback-fired check.
+
+**Renders**: added the two missing ones — `ProfileHub.tsx` and `RewardsHub.tsx` now render `<HubFooter onGames=… onRewards=… />` (both were footerless before). `HomeHub.tsx`/`GameHub.tsx` only got the prop addition, no structural change. `ProfileHub.tsx`'s old inline footer ("Players vs Players — never the house · play-money demo.") is removed, not left stacked — verified with `container.querySelectorAll('footer')` length 1 in the new test, since the *new* copyright block legitimately also contains "never the house" and a naive substring check would have been a false negative (caught this myself on the first local test run and fixed the assertion before it ever reached CI).
+
+**One flagged deviation, not hidden**: the spec cites exact `<path>` data for the 4 social icons at specific lines of a "decoded template" of the design file. The raw design file (`design-ref/games-and-rewards/RapidClash - Games and Rewards.html`, gitignored) does exist in this checkout, but its content at those line numbers is a compressed/obfuscated JS blob, not plain HTML — not mechanically decodable by me. Used clean, recognizable Discord/X/Telegram/Instagram glyph approximations instead (sizing/color/layout/shadow all exact per the spec's written values, just not byte-identical path data), in the same spirit as the *old* footer's own hand-authored icons, which already carried a similar "Deliberate logo/label mismatch" precedent comment. Flagging for the Advisor's pixel-diff pass, since they said they'd do one on this ticket.
+
+**Verification**: `tsc -b` clean, `eslint` clean. Full suite **99 files / 1212 tests, all green** (one local-only assertion bug caught and fixed pre-push — see above). **CI (`build-and-test`) on PR #325 passed in 3m39s.**
+
+Ask: PR review — #325 references issue #323 with all 4 acceptance criteria mapped in the description (grep count, pixel/content match, Games/Rewards-only navigation, old-footer removal). Note for whoever picks up #324 next (RC-icon sitewide ticket, queued behind this one per the dispatch): this PR touches `GameHub.tsx`/`ProfileHub.tsx`/`RewardsHub.tsx` too, so it should land first to avoid a real merge collision — it's ready for merge pending review.
+
 ### 2026-08-14#2 — Move Bring-a-Rival banner below the Open Games block — PR #320 (issue #319)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-14)
 

@@ -224,4 +224,24 @@ describe('ProfileHubScreen', () => {
     await waitFor(() => expect(screen.getByTestId('profile-rank-p1')).toBeInTheDocument());
     expect(container.textContent ?? '').not.toMatch(/\$/);
   });
+
+  it('renders the shared footer (#323), wired to Games/Rewards, replacing the old inline footer', async () => {
+    const onHome = vi.fn();
+    const onOpenRewards = vi.fn();
+    const { container } = render(<ProfileHubScreen {...baseProps({ onHome, onOpenRewards })} />);
+    const footer = await screen.findByTestId('home-footer');
+    expect(within(footer).getByText('JOIN THE COMMUNITY')).toBeInTheDocument();
+
+    fireEvent.click(within(footer).getByText('Games'));
+    expect(onHome).toHaveBeenCalled();
+    fireEvent.click(within(footer).getByText('Rewards/VIP'));
+    expect(onOpenRewards).toHaveBeenCalled();
+
+    // The old inline "Players vs Players — never the house · play-money demo." footer is gone,
+    // not left stacked alongside the new shared one — exactly one <footer> element in the DOM,
+    // and it's the shared component (the new copyright block legitimately also says "never the
+    // house", so distinguish by element count/identity rather than that substring).
+    expect(container.querySelectorAll('footer')).toHaveLength(1);
+    expect(container.textContent ?? '').not.toMatch(/play-money demo\./i);
+  });
 });

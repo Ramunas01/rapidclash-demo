@@ -116,44 +116,20 @@ describe('HomeHubScreen', () => {
     expect(container.textContent ?? '').not.toMatch(/\$/);
   });
 
-  it('footer: inert Discord/Twitter/Telegram social row, 18+ kept, Affiliate out, no fake counts', async () => {
-    render(<HomeHubScreen {...baseProps()} />);
+  it('renders the shared footer (#323) wired to Games/Rewards, no $ anywhere', async () => {
+    const onHome = vi.fn();
+    const onOpenRewards = vi.fn();
+    render(<HomeHubScreen {...baseProps({ onHome, onOpenRewards })} />);
     const footer = await screen.findByTestId('home-footer');
-    // Social row restored (frame 1:1). The middle button is a deliberate logo/label mismatch:
-    // the X glyph kept, but the label (and thus the testid) reads "Twitter".
-    const discord = within(footer).getByTestId('home-social-discord');
-    expect(discord).toBeInTheDocument();
-    const twitter = within(footer).getByTestId('home-social-twitter');
-    expect(twitter.textContent).toContain('Twitter');
-    expect(within(footer).queryByTestId('home-social-x')).toBeNull(); // old testid gone
-    expect(within(footer).getByTestId('home-social-telegram')).toBeInTheDocument();
-    // Inert — not a real link/button, marked aria-disabled (no fabricated reach).
-    expect(discord.tagName).not.toBe('A');
-    expect(discord.tagName).not.toBe('BUTTON');
-    expect(discord).toHaveAttribute('aria-disabled', 'true');
-    expect(footer).not.toHaveTextContent(/affiliate/i); // owner: Affiliate stays OUT
-    expect(footer).toHaveTextContent(/18\+/); // responsibility section stays
-    // Background unification (#0B0B0B): no divider line where the footer begins, and it paints the
-    // shared page-background token — one continuous surface, no seam/band, no hardcoded hex.
-    expect(footer.className).not.toMatch(/border-t/);
-    expect(footer.className).toContain('bg-background');
-    expect(footer.className).not.toMatch(/\[#0/); // no inline-hex bg literal
+    expect(within(footer).getByTestId('home-social-discord')).toBeInTheDocument();
+    expect(within(footer).getByTestId('home-social-instagram')).toBeInTheDocument();
+    expect(footer).toHaveTextContent(/18\+/);
     expect(footer.textContent ?? '').not.toMatch(/\$/);
-  });
 
-  it('footer restyle (Designer #3): tokens only — purple lead-in, white body + links', async () => {
-    render(<HomeHubScreen {...baseProps()} />);
-    const footer = await screen.findByTestId('home-footer');
-    // Provably-fair: brand-purple lead-in, white body sentence, "See how it works" stays purple.
-    const lead = within(footer).getByText('Provably fair, by design.');
-    expect(lead.className).toContain('text-brand'); // purple lead-in
-    expect(lead.parentElement?.className).toContain('text-foreground'); // white body sentence
-    expect(within(footer).getByText('See how it works').className).toContain('text-brand');
-    // All seven footer links are white (token), never muted grey.
-    for (const label of ['How it works', 'Provably fair', 'Fees & rake', 'Tournaments', 'Help center', 'Responsible gaming', 'Terms']) {
-      expect(within(footer).getByText(label).className).toContain('text-foreground');
-      expect(within(footer).getByText(label).className).not.toContain('text-muted-foreground');
-    }
+    fireEvent.click(within(footer).getByText('Games'));
+    expect(onHome).toHaveBeenCalled();
+    fireEvent.click(within(footer).getByText('Rewards/VIP'));
+    expect(onOpenRewards).toHaveBeenCalled();
   });
 });
 
