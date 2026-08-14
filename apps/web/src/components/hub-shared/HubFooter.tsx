@@ -13,15 +13,17 @@ interface Props {
 /** The 4 social buttons — inline SVG glyphs (issue #323 adds Instagram; the old footer never
  *  had one). The design file's own path data lives in a gitignored, JS-obfuscated export we
  *  can't mechanically decode (design-ref/games-and-rewards/ — WORKING_AGREEMENT.md's
- *  gitignored-artifact rule covers transcribing facts by hand, not this); these are clean,
- *  recognizable glyph approximations, same spirit as the old footer's own hand-authored icons
- *  (see its "Deliberate logo/label mismatch" precedent). All four are inert: no href, no onClick. */
+ *  gitignored-artifact rule covers transcribing facts by hand, not this); X, Telegram, and
+ *  Instagram remain clean, recognizable glyph approximations, same spirit as the old footer's
+ *  own hand-authored icons (see its "Deliberate logo/label mismatch" precedent). Discord's path
+ *  was later decoded verbatim from the design source (issue #333) and is exact, not an
+ *  approximation. All four are inert: no href, no onClick. */
 const SOCIALS: { label: string; icon: ReactNode }[] = [
   {
     label: 'Discord',
     icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <path d="M19.3 5.3A16 16 0 0 0 15.6 4l-.3.5a12 12 0 0 1 3.3 1.5 11 11 0 0 0-9.4 0A12 12 0 0 1 12.6 4.5L12.3 4A16 16 0 0 0 8.7 5.3 16.6 16.6 0 0 0 6 16.6a16 16 0 0 0 4.9 2.5l.6-1a10 10 0 0 1-1.7-.8l.4-.3a11.4 11.4 0 0 0 9.6 0l.4.3a10 10 0 0 1-1.7.8l.6 1a16 16 0 0 0 4.9-2.5 16.6 16.6 0 0 0-2.7-11.3ZM9.8 14.3c-.9 0-1.7-.9-1.7-2s.8-2 1.7-2 1.7.9 1.7 2-.7 2-1.7 2Zm4.4 0c-.9 0-1.7-.9-1.7-2s.8-2 1.7-2 1.7.9 1.7 2-.7 2-1.7 2Z" />
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M20 5.3A17 17 0 0 0 15.9 4l-.4.8a12.6 12.6 0 0 0-7 0L8.1 4A17 17 0 0 0 4 5.3C1.4 9.2.7 13 1 16.8A16.9 16.9 0 0 0 6.2 19l.9-1.5c-.6-.2-1.2-.5-1.7-.9l.4-.3a12.1 12.1 0 0 0 10.4 0l.4.3c-.5.4-1.1.7-1.7.9l.9 1.5a16.8 16.8 0 0 0 5.2-2.2c.4-4.4-.7-8.2-3-11.5ZM8.4 14.5c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2Zm7.2 0c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.8.9 1.8 2-.8 2-1.8 2Z" />
       </svg>
     ),
   },
@@ -107,7 +109,16 @@ const LINK_COLUMNS: { heading: string; links: { label: string; real?: 'games' | 
  */
 export function HubFooter({ onGames, onRewards }: Props) {
   return (
-    <footer data-testid="home-footer" className="mt-4 bg-background px-4 pb-6 pt-6">
+    <footer data-testid="home-footer" className="mt-4 bg-surface px-4 pb-6 pt-6">
+      <div
+        data-testid="home-footer-gradient"
+        aria-hidden="true"
+        className="mt-6 h-16"
+        style={{
+          background:
+            'linear-gradient(to bottom, rgba(26,26,46,0) 0%, rgba(26,26,46,0.45) 55%, rgba(26,26,46,0.85) 82%, rgba(26,26,46,1) 100%)',
+        }}
+      />
       <img src={wordmark} alt="RapidClash" className="mb-[22px] h-auto w-[140px]" />
 
       <div className="flex flex-col gap-[22px]">
@@ -133,13 +144,13 @@ export function HubFooter({ onGames, onRewards }: Props) {
         <div className="grid grid-cols-2 gap-x-[26px] gap-y-[12px]">
           {LINK_COLUMNS.map((col) => (
             <div key={col.heading}>
-              <h3 className="mb-3 text-[11px] font-bold tracking-wide text-muted-foreground">{col.heading}</h3>
+              <h3 className="mb-3 text-[15px] font-bold tracking-[1.4px] text-brand">{col.heading}</h3>
               <div className="flex flex-col gap-2.5">
                 {col.links.map((l) => (
                   <span
                     key={l.label}
                     data-testid={`home-footer-link-${l.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
-                    className="cursor-pointer text-[12.5px] text-foreground"
+                    className="cursor-pointer text-[14px] text-foreground"
                     onClick={l.real === 'games' ? onGames : l.real === 'rewards' ? onRewards : undefined}
                   >
                     {l.label}
