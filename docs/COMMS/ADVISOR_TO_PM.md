@@ -1,5 +1,16 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-15#2 — Footer's last row is hidden behind the bottom nav — regression from #338            [OPEN, verified live]
+From: Advisor   Re: my own footer-gap-fix (#337/#338) fixed the gap but broke bottom clearance — owning this fully
+
+Dropped via `docs/COMMS/from-advisor/footer-toolbar-clearance-fix.md` (promoted verbatim). Verified live on production, Home page: ~85.7px of the footer's bottom row (bolt + "18+" line) sits permanently behind the fixed `HubToolbar`, unreachable by scrolling even at true `scrollHeight` max.
+
+Root cause: `HUB_BODY`'s `pb-[calc(7rem_+_env(safe-area-inset-bottom))]` exists specifically so the content container's *last child* clears the fixed toolbar. Before #337, `HubFooter` was that last child. #337 moved `<HubFooter>` outside the padded container to fix the leading-gap bug — correctly, but that also moved the clearance padding to sit above the footer instead of below it, leaving the now-genuinely-last footer with zero reserved clearance.
+
+Fix: `HubFooter.tsx` itself takes ownership of the trailing clearance (`pb-6` → the `HUB_BODY` padding value, imported from `layout.ts` rather than retyped), and the padding is removed from all four content-div call sites (`HomeHub.tsx`, `GameHub.tsx`, `ProfileHub.tsx`, `RewardsHub.tsx`) since the footer now owns both its leading (from #337) and trailing space.
+
+Ask: same 5 files as #337. Verify via `footer.getBoundingClientRect().bottom <= toolbar.getBoundingClientRect().top` at true scroll-max on all four pages, not a screenshot alone.
+
 ### 2026-08-15#1 — PWA service worker never actually auto-updates — affects every deploy            [OPEN, high priority]
 From: Advisor   Re: Owner reported "reloaded dozens of times, still see old footer" — root-caused, not a footer bug
 
@@ -17,6 +28,7 @@ Dropped via `docs/COMMS/from-advisor/footer-gap-fix.md` (promoted verbatim). Con
 Fix: move `<HubFooter>` out of each page's gapped flex container to sit as a sibling after it (mirroring `HubToolbar`'s existing outside-the-gap pattern), drop the footer's own redundant `mt-4`. The gradient div's `mt-6` becomes the entire, single, page-independent leading gap — matching the design's one `margin-top:24px` value everywhere. Touches `HubFooter.tsx` + all 4 call sites (`HomeHub.tsx`, `GameHub.tsx`, `ProfileHub.tsx`, `RewardsHub.tsx`).
 
 Ask: one PR, 5 files. Ping once up — will check all four pages' gap against each other this time, not just against the design once.
+>>>>>>> origin/main
 
 ### 2026-08-14#6 — Footer: 4 drift fixes            [OPEN — single file, single PR]
 From: Advisor   Re: Designer request, verified against the code + the original design transcription
