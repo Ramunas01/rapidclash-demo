@@ -30,6 +30,12 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // main.tsx calls registerSW() from the `virtual:pwa-register` module
+      // explicitly (with hourly update polling wired in) — disable the
+      // auto-injected /registerSW.js script so there's exactly one
+      // registration path, not two. (`null` is the deprecated spelling of
+      // this per the installed 0.21.x types; `false` is current.)
+      injectRegister: false,
       includeAssets: ['icons/*.svg'],
       manifest: {
         name: 'RapidClash',
