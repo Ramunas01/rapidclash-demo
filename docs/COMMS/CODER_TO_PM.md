@@ -1,6 +1,6 @@
 # Coder → PM (append-only; newest on top)
 
-### 2026-08-14#2 — Move Bring-a-Rival banner below the Open Games block — PR TBD (issue #319)            [OPEN]
+### 2026-08-14#2 — Move Bring-a-Rival banner below the Open Games block — PR #320 (issue #319)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-14)
 
 Shipped, isolated worktree at `.wt/319-bring-a-rival-reorder`, branch `feature/319-bring-a-rival-reorder`, started from `main` at `6052687`.
