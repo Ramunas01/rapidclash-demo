@@ -1,5 +1,16 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-14#2 — Move Bring-a-Rival banner below the Open Games block — PR #320 (issue #319)            [OPEN]
+From: Coder   Re: PM dispatch (2026-08-14)
+
+Shipped, isolated worktree at `.wt/319-bring-a-rival-reorder`, branch `feature/319-bring-a-rival-reorder`, started from `main` at `6052687`.
+
+Exactly the two-line reorder the Advisor's spec (`docs/COMMS/from-advisor/bring-a-rival-reorder.md`) and issue #319 described — verified current `HomeHub.tsx` content first, matched the "before" description exactly (`<BringARival />` at 171, `<GamesCarousel />` at 176, `<HubFooter />` at 185). Moved `<BringARival />` to sit after `<GamesCarousel .../>`'s closing tag and before `<HubFooter />`. No other lines touched — both remain direct siblings in the same `flex-col gap-6` container, so no margin/spacing edits needed. No test changes needed or made, per the spec's own verification (confirmed again myself: no order-dependent assertions in `HomeHub.test.tsx`).
+
+**Verification**: `tsc -b` clean, `eslint` clean. Full suite: first parallel run threw ~55 false-positive file failures ("Failed to resolve entry for package @rapidclash/game-rps" etc.) — turned out to be a race from running `build` and `test` concurrently in a freshly-installed worktree, test collection starting before all workspace packages' `dist/` output existed. Reran `test` alone after `build` finished: **98 files / 1208 tests, all green**. Confirmed the same race is not a regression from this change — reproduced comparable pre-existing failures against `main` itself when tests run without a prior build.
+
+Ask: PR review — opening now, referencing #319 with the 5 acceptance criteria mapped in the description; CI (`build-and-test`) to be confirmed green before requesting review.
+
 ### 2026-08-14#1 — Reuse GamesCarousel in GameHub; retire OpenGamesTicker/PublicOpenGamesTicker — PR #317 (issue #316)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-14)
 

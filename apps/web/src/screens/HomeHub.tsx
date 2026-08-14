@@ -168,8 +168,6 @@ export function HomeHubScreen({
             )}
           </section>
 
-          <BringARival />
-
           {/* Games-page Open Games carousel (issue #305) — real feed only (never fabricated).
               Signed in → the live WS aggregate; logged out → a polled public snapshot of the
               same resting challenges. Also hosts the static 24H RACE/WEEKLY RACE/RANK tabs. */}
@@ -181,6 +179,8 @@ export function HomeHubScreen({
             onTakePublicChallenge={onTakePublicChallenge}
             loggedIn={loggedIn}
           />
+
+          <BringARival />
 
           <HubFooter />
         </div>
