@@ -1,6 +1,6 @@
 # Coder → PM (append-only; newest on top)
 
-### 2026-08-14#6 — Footer: 4 drift fixes — PR TBD (issue #333)            [OPEN]
+### 2026-08-14#6 — Footer: 4 drift fixes — PR #335 (issue #333)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-14)
 
 Shipped, isolated worktree at `.wt/333-footer-drift-fixes`, branch `feature/333-footer-drift-fixes`, started from `main` at `e26b7a6`. Single file, single concern: `apps/web/src/components/hub-shared/HubFooter.tsx`.
