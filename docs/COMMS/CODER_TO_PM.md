@@ -1,5 +1,22 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-14#1 — Reuse GamesCarousel in GameHub; retire OpenGamesTicker/PublicOpenGamesTicker — PR TBD (issue #316)            [OPEN]
+From: Coder   Re: PM dispatch (2026-08-14)
+
+Shipped, isolated worktree at `.wt/316-gamescarousel-reuse`, branch `feature/316-gamescarousel-reuse`. Started from `main` at `4f7c7b8`; rebased cleanly onto `main` (`49579fc`, docs-only) before push — no conflicts, my files untouched by that commit.
+
+**The swap**, exactly as specced: `GameHub.tsx:594-613`'s `isGuest ? null : loggedIn ? <OpenGamesTicker/> : <section data-testid="hub-section-challenges-teaser">` collapsed to `isGuest ? null : <GamesCarousel challengesByGame nameByGame balance={liveBalance} onTake={onTakeChallenge} onTakePublicChallenge loggedIn joinDisabled={phase === 'in-match' || phase === 'waiting'} />` — the outer guest gate is untouched, `GamesCarousel` handles signed-in/logged-out internally via its own `loggedIn` prop (same pattern as `HomeHub.tsx`'s existing usage). `App.tsx`'s `GameHubScreen` invocation (~line 1237) got the one missing `onTakePublicChallenge={handleTakePublicChallenge}` line, identical to `HomeHubScreen`'s.
+
+**Two prop additions to `GamesCarousel.tsx`**: (1) `joinDisabled?: boolean` (default `false`) — guards `handleJoinRow` (early return) and the JOIN `<button>`'s `disabled`/`opacity: 0.4`/`cursor: not-allowed`, mirroring `OpenGamesTicker`'s own treatment; Home's usage is unaffected (never mid-match there). (2) Empty-state text: went with the recommendation — no new prop, `GameHub.tsx` now shows `GamesCarousel`'s one hardcoded "No open games right now — pick a tile to post one." (dropped GameHub's old "…press PLAY to post the first." wording) for true 1:1 reuse.
+
+**Cleanup**: confirmed via grep before deleting — `OpenGamesTicker` had exactly one call site (`GameHub.tsx`, now gone) and `PublicOpenGamesTicker` had zero outside its own file/test (already dead since #305, as the spec claimed). `OpenGames.tsx` trimmed from 419 to 24 lines: kept only `mergeChallengesByGame`, `insufficientBalanceNotice`, `PUBLIC_POLL_MS`, `FeedRow` — deleted `OpenGamesTicker`, `PublicOpenGamesTicker`, `TickerRow`, `TickerHeader`, `TickerBody`, `ZebraBackdrop`, `EmptyTicker`, `useSteppedTicker`, `usePrefersReducedMotion`. Post-cleanup grep for all nine deleted names across `apps/web/src` turns up zero code references (only a few historical doc-comment mentions in `GamesCarousel.tsx`, reworded to past tense so they don't imply the components still exist).
+
+**Test fallout**: deleted `OpenGames.test.tsx` outright (every test in it exercised the two now-gone components; `GamesCarousel.test.tsx` already covers the surviving 4 helpers' behavior — affordability refusal, oldest-first merge, empty state). Updated `RpsHub.test.tsx`, `CoinflipHub.test.tsx`, `ChessHub.test.tsx`, `BlackjackHub.test.tsx`: swapped `home-join-*`/`home-stake-*`/`home-ticker*`/`hub-section-challenges-teaser` assertions for `[data-match-id]` row lookups + `games-carousel-join-*`/`games-carousel-stake-*`/`games-carousel-notice`/`games-carousel` (stake numerals lost their `¢` suffix — `GamesCarousel` shows a bare numeral next to its own RC glyph, an existing, already-Advisor-flagged judgment call, not something this PR introduced). Chess's two `joinDisabled` regression tests (Bug 1: result-view stays open / in-match blocks JOIN) now assert the button's `disabled` state directly rather than the old "one match at a time" caption text, which `GamesCarousel` never had — dropping that caption is correct per the "pixel-identical apart from row data" acceptance criterion, not an oversight.
+
+**Verification**: `tsc -b` clean, `eslint` clean, full suite **98 files / 1208 tests**, all green (single local run, no flakes this time). `HomeHub.tsx` untouched (`git diff main -- apps/web/src/screens/HomeHub.tsx` empty) — confirmed the acceptance criterion directly rather than just by construction.
+
+Ask: PR review — will open referencing #316 with the 6 acceptance criteria mapped in the description; CI (`build-and-test`) to be confirmed green before requesting review.
+
 ### 2026-08-13#6 — Games/Rewards (C): Rewards page frontend + ProfileHub lifetime-wagered line — PR #313 (issue #307)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-13)
 
