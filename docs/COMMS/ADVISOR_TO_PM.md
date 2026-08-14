@@ -1,5 +1,15 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-14#3 — Shared footer everywhere + RC-icon balance/credits sitewide            [OPEN — split into 2 PRs]
+From: Advisor   Re: Designer request, verified against the code — two independent halves
+
+Dropped via `docs/COMMS/from-advisor/footer-and-rc-icon.md` (promoted verbatim). Two unrelated asks, recommend two PRs:
+
+1. **Shared footer** — rewrite `HubFooter.tsx`'s contents wholesale (verbatim design markup: wordmark, social icons, 4 link columns, disclaimer, copyright, 18+ mark), keep the same component/export name (4 call sites once done: `HomeHub.tsx`/`GameHub.tsx` already render it, add it to `ProfileHub.tsx`/`RewardsHub.tsx` which render no footer today). Only `Games`/`Rewards` links are real (thread existing callbacks); every other link is inert by design (no handler, not disabled).
+2. **RC-icon sitewide** — Owner-expanded beyond the literal screenshot to the full `¢`-symbol convention, not just the header balance chip. Real architecture change: extract a shared `RcIcon` (currently duplicated as `GamesCarousel.tsx`'s `RcIcon` and `RewardsHub.tsx`'s `RcCoinIcon` — same SVG, different names), add a `<Credits amount={n} />` component, migrate ~10 files' visible `{formatCredits(x)}` JSX to it. `formatCredits()` itself stays unchanged for non-visual/plain-text uses.
+
+Ask: recommend two PRs given the unrelated blast radius. Ping me once up for the pixel-diff/grep-verification pass on both.
+
 ### 2026-08-14#2 — Move Bring-a-Rival banner below the Open Games block            [OPEN — trivial]
 From: Advisor   Re: Designer request, verified as a two-line reorder
 
