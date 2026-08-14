@@ -1,5 +1,24 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-14#7 — Typography Step 1: load Space Grotesk + Inter Tight fonts — PR #334 (issue #330)            [OPEN]
+From: Coder   Re: PM dispatch (2026-08-14)
+
+Shipped, isolated worktree at `.wt/330-font-loading`, branch `feature/330-font-loading`, started from `main` at `0d58ef3`.
+
+Exactly the fix both the issue and `docs/COMMS/from-advisor/typography-step1-font-loading.md` specced, no more: `pnpm add @fontsource/space-grotesk @fontsource-variable/inter-tight --filter @rapidclash/web` (both resolved to `5.3.0`, matching the spec's `npm view` check), then two new imports in `apps/web/src/main.tsx` alongside the existing `@fontsource-variable/inter` line — `@fontsource/space-grotesk/700.css` (per-weight package, only the 700 cut, since a grep of `RewardsHub.tsx`/`GamesCarousel.tsx`/`RcIcon.tsx` confirms every `Space Grotesk` reference in the codebase today is `fontWeight: 700`, no other weight used anywhere) and `@fontsource-variable/inter-tight` (variable file, covers 600+700). Only 3 files touched: `apps/web/src/main.tsx`, `apps/web/package.json`, `pnpm-lock.yaml` — confirmed via `git status --short`, nothing else in the diff.
+
+**Did not touch `RewardsHub.tsx`, `GamesCarousel.tsx`, or `RcIcon.tsx`** per the ticket's explicit instruction — `git diff --stat` on all three against `main` is empty. No surprise found requiring a code change there; their existing `fontFamily: "'Space Grotesk', Arial, Helvetica, sans-serif"` declarations should now resolve to the real font once it's registered.
+
+**One naming nuance worth flagging, not a bug**: `@fontsource-variable/inter-tight`'s `@font-face` rules register the family as `'Inter Tight Variable'`, not bare `'Inter Tight'` — I checked the installed package's `index.css` directly. This exactly mirrors the existing `@fontsource-variable/inter` pattern already in production, which the issue itself confirms registers as `"Inter Variable"` (not bare `"Inter"`) — so this is consistent with the established convention, not a deviation. `@fontsource/space-grotesk/700.css` registers as plain `'Space Grotesk'` (per-weight packages don't get the `" Variable"` suffix), matching the literal string every consuming file already uses.
+
+**Build-level verification performed**: `pnpm -w run build` (`tsc -b`) and `apps/web`'s own `vite build` both succeed. Confirmed in the actual `dist/assets/` output (not just that the import didn't error): `space-grotesk-latin-700-normal-*.{woff2,woff}` and `space-grotesk-latin-ext-700-normal-*.{woff2,woff}`, plus `inter-tight-{latin,latin-ext,cyrillic,cyrillic-ext,greek,greek-ext,vietnamese}-wght-normal-*.woff2` (7 subsets, variable weight range). Grepped the built CSS (`dist/assets/index-*.css`) for `font-family:` values — both `Space Grotesk` and `Inter Tight Variable` appear as real `@font-face` family names, alongside the pre-existing `Inter Variable`. `tsc -b` clean, `eslint --ext .ts,.tsx packages apps` clean, full suite **99 files / 1212 tests, all green** (needed a fresh `pnpm install` after the filtered `pnpm add` — the filtered install alone left other workspace packages' `node_modules` stale in the new worktree, causing a wave of unrelated `Cannot find module` `tsc` errors on the first build attempt; a plain `pnpm install` at the root fixed it before any real verification).
+
+**Could not do a live browser check** — same environment constraint as #286/#290/#291/#302/#312 and others already on record in this file: no headless Chromium/Playwright available in this sandbox (no such dependency in the repo, and no root to install system libs). Did not claim a `document.fonts` or DevTools Fonts-panel check I didn't actually perform. Everything above is the build-artifact-level equivalent: the font files are bundled, the `@font-face` rules exist with the right family names, and the existing call sites already reference those exact family strings. Per the ticket's own framing, the Advisor's live pixel-diff pass is the remaining step — that should now find "Space Grotesk"/"Inter Tight Variable" (not "Inter Tight" — see nuance above) with `status: "loaded"`/`"unloaded"` in `document.fonts`, matching the existing Inter entries' pattern, and the Rewards/Games/RC-icon elements rendering in the real typeface instead of the Arial fallback.
+
+Did not start any work from `typography-steps2-4-type-scale.md` — did not open that file at all, per the dispatch.
+
+Ask: PR review — #334, against both acceptance criteria (clean build/no tsc-lint errors; both families registered per the build-level check above, with the "Inter Tight Variable" naming nuance flagged for the Advisor's live check).
+
 ### 2026-08-14#6 — Footer: 4 drift fixes — PR #335 (issue #333)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-14)
 
