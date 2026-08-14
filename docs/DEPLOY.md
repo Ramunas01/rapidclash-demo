@@ -74,20 +74,22 @@ gcloud secrets add-iam-policy-binding admin-password \
 
 ### 1b. Durable persistence bucket (ADR-011)
 
-SQLite on Cloud Run is ephemeral — it resets on every instance recycle/redeploy (ADR-009). To keep accounts, hashed credentials, and standings across recycles, the server snapshots the DB file to a Cloud Storage bucket and restores it on startup (ADR-011). This is opt-in: it activates only when `GCS_BUCKET` is set (below), so local dev is unchanged. Create the bucket once and grant the Cloud Run service account object read/write on it:
+SQLite on Cloud Run is ephemeral — it resets on every instance recycle/redeploy (ADR-009). To keep accounts, hashed credentials, and standings across recycles, the server snapshots the DB file to a Cloud Storage bucket and restores it on startup (ADR-011). This is opt-in: it activates only when `GCS_BUCKET` is set (below), so local dev is unchanged.
+
+**The bucket already exists — `rapidclash-snapshots-847070222251` (named after the GCP project number, not the repo). Use that exact name below; do not create a new one.** ⚠️ **Incident history (2026-08-07, 2026-08-13, 2026-08-14):** this section previously named a *different*, never-created bucket (`rapidclash-demo-snapshots` — a plausible-sounding guess, not the real one). Any deploy that literally copy-pasted the old `--set-env-vars GCS_BUCKET=…` line below silently pointed the server at a bucket that doesn't exist, so `restore()` got a 404 ("no snapshot… starting fresh") and the live demo booted with a wiped wallet/leaderboard — while a deploy that *didn't* touch env vars (Cloud Run carries them forward from the previous revision) stayed fine, which is why it only broke intermittently rather than every time. The real data was never lost — GCS object versioning is on for this bucket — but each occurrence meant a manual `gcloud run services update --update-env-vars GCS_BUCKET=rapidclash-snapshots-847070222251` to point the live revision back at reality. **If you ever need to (re)create the bucket from scratch** (e.g. a genuinely new environment), the commands are the same shape, just confirm the name against the *live* Cloud Run service's actual env var first (`gcloud run services describe rapidclash --region us-central1 --format='value(spec.template.spec.containers[0].env)'`) rather than trusting this doc blindly — that's the lesson here.
 
 ```bash
-# Create the snapshot bucket (same region as the service; pick a globally-unique name).
-gsutil mb -l us-central1 gs://rapidclash-demo-snapshots
+# One-time bucket creation — only if it genuinely doesn't exist yet (check first, see warning above).
+gsutil mb -l us-central1 gs://rapidclash-snapshots-847070222251
 
 # The Cloud Run service runs as the default compute SA (same one that builds — see §1).
 # Grant it object admin on the bucket so the server can download (restore) and upload (snapshot).
-gcloud storage buckets add-iam-policy-binding gs://rapidclash-demo-snapshots \
+gcloud storage buckets add-iam-policy-binding gs://rapidclash-snapshots-847070222251 \
   --member="serviceAccount:${COMPUTE_SA}" \
   --role="roles/storage.objectAdmin"
 ```
 
-No service-account key file is needed: inside Cloud Run the server authenticates via Application Default Credentials automatically. The bucket holds a single object (`rapidclash.db`), overwritten on each debounced snapshot — no versioning required. (For a true clean slate / hard reset, delete that object: `gsutil rm gs://rapidclash-demo-snapshots/rapidclash.db`, then redeploy.)
+No service-account key file is needed: inside Cloud Run the server authenticates via Application Default Credentials automatically. The bucket holds a single object (`rapidclash.db`), overwritten on each debounced snapshot; object versioning is enabled as insurance against a future torn/bad snapshot. (For a true clean slate / hard reset, delete that object: `gsutil rm gs://rapidclash-snapshots-847070222251/rapidclash.db`, then redeploy.)
 
 ## 2. Set a budget alert (do this before deploying)
 
@@ -112,7 +114,7 @@ gcloud run deploy rapidclash \
   --max-instances 1 \
   --session-affinity \
   --set-secrets ADMIN_PASSWORD=admin-password:latest \
-  --set-env-vars GCS_BUCKET=rapidclash-demo-snapshots
+  --set-env-vars GCS_BUCKET=rapidclash-snapshots-847070222251
 ```
 
 Flag rationale (see ADR-009):
