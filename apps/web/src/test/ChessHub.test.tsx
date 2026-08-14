@@ -257,15 +257,16 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
     expect(onMakeMove).not.toHaveBeenCalled();
   });
 
-  it('Feed: a chess open-challenge shows in the cross-game Open Games ticker (game + ¢ stake)', async () => {
+  it('Feed: a chess open-challenge shows in the shared GamesCarousel (game + stake)', async () => {
     const challenge = {
       matchId: 'c1', ownerName: 'rival', stake: 10, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'blitz5',
     };
     render(<ChessHubScreen {...baseProps({ challengesByGame: { chess: [challenge] } })} />);
-    // The revised hub uses the Home page's cross-game ticker (no per-row time-control chip).
-    await waitFor(() => expect(screen.getByTestId('home-row-c1')).toBeInTheDocument());
-    expect(screen.getByTestId('home-stake-c1').textContent).toBe('10¢');
-    expect(screen.getByTestId('home-row-game-c1').textContent).toBe('Chess');
+    // The hub uses the same GamesCarousel the Home page renders (no per-row time-control chip).
+    await waitFor(() => expect(document.querySelector('[data-match-id="c1"]')).toBeTruthy());
+    const row = document.querySelector('[data-match-id="c1"]') as HTMLElement;
+    expect(within(row).getByTestId(/^games-carousel-stake-/).textContent).toBe('10');
+    expect(within(row).getByTestId(/^games-carousel-game-/).textContent).toBe('Chess');
   });
 
   // ── Chess result: lightweight in-hub popup + persistent bar outline (replaces the heavy overlay) ──
@@ -380,20 +381,20 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
   // ── Bug 1: JOIN gating — Open Games allows JOIN in the settled result view (match already deleted) ──
   const CHALLENGE = { matchId: 'j1', ownerName: 'rival', stake: 10, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'blitz5' };
 
-  it('Bug 1: the settled post-game result view still allows JOIN on Open Games (no "one match at a time")', async () => {
+  it('Bug 1: the settled post-game result view still allows JOIN on Open Games', async () => {
     // The match is settled/deleted server-side once ended, so idling on the result board must NOT
     // block joining another open game — JOIN stays open exactly as it is in plain idle.
     renderToChessResult({ type: 'win', winner: 'alice' }, { challengesByGame: { chess: [CHALLENGE] }, opponentName: 'rival' });
-    await waitFor(() => expect(screen.getByTestId('home-join-j1')).toBeInTheDocument());
-    expect(screen.getByTestId('home-join-j1')).not.toBeDisabled();
-    expect(screen.queryByText(/one match at a time/i)).toBeNull();
+    await waitFor(() => expect(document.querySelector('[data-match-id="j1"]')).toBeTruthy());
+    const join = within(document.querySelector('[data-match-id="j1"]') as HTMLElement).getByTestId(/^games-carousel-join-/);
+    expect(join).not.toBeDisabled();
   });
 
   it('Bug 1: JOIN is still correctly blocked while actually in a match', async () => {
     render(<ChessHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({}), legalMoves: asLegal([]), challengesByGame: { chess: [CHALLENGE] } })} />);
-    await waitFor(() => expect(screen.getByTestId('home-join-j1')).toBeInTheDocument());
-    expect(screen.getByTestId('home-join-j1')).toBeDisabled(); // in-match → one commitment at a time
-    expect(screen.getByText(/one match at a time/i)).toBeInTheDocument();
+    await waitFor(() => expect(document.querySelector('[data-match-id="j1"]')).toBeTruthy());
+    const join = within(document.querySelector('[data-match-id="j1"]') as HTMLElement).getByTestId(/^games-carousel-join-/);
+    expect(join).toBeDisabled(); // in-match → one commitment at a time
   });
 
   // ── Draw offers: the secondary-action button (Play a Friend → Draw request ⇄ Revoke DRAW) + the
@@ -616,7 +617,7 @@ describe('ChessHubScreen — guest mode chrome + fixed time control (issue #279)
     expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument();
     expect(screen.getByTestId('hub-balance').textContent).toContain('200');
     expect(screen.queryByTestId('hub-wallet-chip')).toBeNull();
-    expect(screen.queryByTestId('hub-section-challenges-teaser')).toBeNull();
+    expect(screen.queryByTestId('games-carousel')).toBeNull();
     expect(screen.queryByTestId('hub-section-related')).toBeNull();
     expect(screen.queryByTestId('hub-nav-games')).toBeNull();
     expect(screen.queryByTestId('hub-nav-account')).toBeNull();

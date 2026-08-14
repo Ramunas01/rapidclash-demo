@@ -178,7 +178,9 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     );
     // Waiting is now signalled in place by the Cancel control (no WaitingBlock).
     await waitFor(() => expect(screen.getByTestId('hub-cancel')).toBeInTheDocument());
-    expect(screen.getByTestId('home-join-c1')).toBeDisabled();
+    await waitFor(() => expect(document.querySelector('[data-match-id="c1"]')).toBeTruthy());
+    const join = within(document.querySelector('[data-match-id="c1"]') as HTMLElement).getByTestId(/^games-carousel-join-/);
+    expect(join).toBeDisabled();
   });
 
   it('In-match: the board + countdown activate, H/T move into the own slot pill, opponent shows PLAYING…', () => {
@@ -432,9 +434,10 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
         {...baseProps({ balance: 5, challengesByGame: { coinflip: [CHALLENGE] }, onTakeChallenge })}
       />
     );
-    fireEvent.click(screen.getByTestId('home-join-c1'));
+    const row = document.querySelector('[data-match-id="c1"]') as HTMLElement;
+    fireEvent.click(within(row).getByTestId(/^games-carousel-join-/));
     expect(onTakeChallenge).not.toHaveBeenCalled();
-    expect(screen.getByTestId('home-ticker-notice').textContent).toMatch(/not enough/i);
+    expect(screen.getByTestId('games-carousel-notice').textContent).toMatch(/not enough/i);
   });
 
   it('JOIN succeeds (takes the owner stake) when covered', () => {
@@ -449,8 +452,9 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
       />
     );
     // The row shows the owner's stake so the tap is informed consent.
-    expect(screen.getByTestId('home-stake-c1').textContent).toBe('50¢');
-    fireEvent.click(screen.getByTestId('home-join-c1'));
+    const row = document.querySelector('[data-match-id="c1"]') as HTMLElement;
+    expect(within(row).getByTestId(/^games-carousel-stake-/).textContent).toBe('50');
+    fireEvent.click(within(row).getByTestId(/^games-carousel-join-/));
     expect(onTakeChallenge).toHaveBeenCalledWith('c1');
   });
 
@@ -869,8 +873,7 @@ describe('CoinflipHubScreen — guest mode chrome (issue #267)', () => {
     expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument();
     expect(screen.getByTestId('hub-balance').textContent).toContain('200');
     expect(screen.queryByTestId('hub-wallet-chip')).toBeNull();
-    expect(screen.queryByTestId('hub-section-challenges-teaser')).toBeNull();
-    expect(screen.queryByText('No open games right now — press PLAY to post the first.')).toBeNull();
+    expect(screen.queryByTestId('games-carousel')).toBeNull();
     expect(screen.queryByTestId('hub-nav-games')).toBeNull();
     expect(screen.queryByTestId('hub-nav-account')).toBeNull();
   });

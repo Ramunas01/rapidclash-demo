@@ -1239,6 +1239,7 @@ export function App() {
           onCancel={handleLeaveQueue}
           onRepost={handleRepost}
           onTakeChallenge={handleTakeChallenge}
+          onTakePublicChallenge={handleTakePublicChallenge}
           onMakeMove={handleMakeMove}
           onForfeit={handleForfeit}
           onDrawOffer={handleDrawOffer}

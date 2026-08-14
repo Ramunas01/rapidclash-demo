@@ -11,7 +11,7 @@ import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
 import { hubShellClass, hubBodyPadding } from '../components/hub-chrome/layout.js';
 import { TILE_ART, COMING_SOON, titleCase } from '../components/hub-shared/tiles.js';
-import { OpenGamesTicker } from '../components/hub-shared/OpenGames.js';
+import { GamesCarousel } from '../components/hub-shared/GamesCarousel.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
 import { Avatar } from '../components/hub-shared/Avatar.js';
@@ -121,6 +121,10 @@ export interface GameHubScreenProps {
   onCancel(): void;
   onRepost(): void;
   onTakeChallenge(matchId: string): void;
+  /** Logged-out JOIN: the carousel passes the row's game + stake so the auth wall can capture a
+   *  full {action:'join'} intent (matchId may be gone by auth → fall back to that hub, stake armed).
+   *  Mirrors `HomeHubScreen`'s identical prop (same handler, `App.tsx`'s `handleTakePublicChallenge`). */
+  onTakePublicChallenge?(c: { matchId: string; gameId: string; stake: number }): void;
   onMakeMove(move: string): void;
   onForfeit(): void;
   /** OPT-IN draw offers (chess — CHESS_DRAW_OFFER.md rev 3). App wraps the WS calls; other hubs
@@ -242,7 +246,7 @@ export function GameHub(props: GameHubProps) {
     gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar,
     token, playerId, username, avatarId = 'default', opponentId, opponentName, serverClockOffset = 0, balance, currentMatchId, gameState, legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
-    onPlay, onCancel, onTakeChallenge, onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, onTrackChallenges,
+    onPlay, onCancel, onTakeChallenge, onTakePublicChallenge, onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, onTrackChallenges,
     onUntrackChallenges, onSelectGame, onOpenWallet, onOpenGameList, onOpenRewards, onResultDismiss,
     loggedIn = true, initialStake, initialTimeControl, isGuest = false,
   } = props;
@@ -582,34 +586,25 @@ export function GameHub(props: GameHubProps) {
             />
           </div>
 
-          {/* 4 — Open Games (cross-game, all hubs). Authed → the live aggregate; logged out → a
-              sign-in teaser (the WS feed is auth-only). JOIN a non-matching game → routed by the
-              server's match.start gameId.
+          {/* 4 — Open Games (cross-game, all hubs) — the same GamesCarousel the Home hub renders
+              (issue #305/#316: one implementation, not two). Internally handles both the signed-in
+              WS aggregate and the logged-out public-poll snapshot via its own `loggedIn` prop.
               JOIN is blocked ONLY while genuinely occupied — a live match or an in-flight search. The
               settled post-game result view (phase 'result') is idle-with-a-board: the match is already
               deleted server-side, so JOIN must stay open there (as in plain idle) — otherwise Open
               Games wrongly reads "one match at a time" until the player leaves.
               Guest mode omits this whole section — no real Open Games with strangers
               (GUEST_MODE_CONTRACT.md §4's non-goal). */}
-          {isGuest ? null : loggedIn ? (
-            <OpenGamesTicker
+          {isGuest ? null : (
+            <GamesCarousel
               challengesByGame={challengesByGame}
               nameByGame={nameByGame}
               balance={liveBalance}
               onTake={onTakeChallenge}
+              onTakePublicChallenge={onTakePublicChallenge}
+              loggedIn={loggedIn}
               joinDisabled={phase === 'in-match' || phase === 'waiting'}
-              emptyText="No open games right now — press PLAY to post the first."
             />
-          ) : (
-            <section data-testid="hub-section-challenges-teaser" aria-label="Open challenges" className="px-4">
-              <div className="rounded-2xl border border-border bg-card p-4 text-center">
-                <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-foreground">Open games</h2>
-                <p className="text-xs text-muted-foreground">Sign in to see live games and join a match.</p>
-                <button type="button" onClick={onOpenWallet} data-testid="hub-challenges-signin" className="mt-3 rounded-full bg-brand px-5 py-2 text-xs font-bold text-white transition-colors hover:brightness-105">
-                  Sign in
-                </button>
-              </div>
-            </section>
           )}
 
           {/* 5–8 — Related-games rail, Bring a Rival, footer: all point at the full registered
