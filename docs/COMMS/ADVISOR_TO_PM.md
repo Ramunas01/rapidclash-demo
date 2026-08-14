@@ -11,6 +11,25 @@ Fix: `HubFooter.tsx` itself takes ownership of the trailing clearance (`pb-6` �
 
 Ask: same 5 files as #337. Verify via `footer.getBoundingClientRect().bottom <= toolbar.getBoundingClientRect().top` at true scroll-max on all four pages, not a screenshot alone.
 
+### 2026-08-15#1 — PWA service worker never actually auto-updates — affects every deploy            [OPEN, high priority]
+From: Advisor   Re: Owner reported "reloaded dozens of times, still see old footer" — root-caused, not a footer bug
+
+Dropped via `docs/COMMS/from-advisor/pwa-update-not-applying.md` (promoted verbatim). Fetched the live served files directly: `vite.config.ts` sets `registerType: 'autoUpdate'`, but the actually-shipped client never calls `virtual:pwa-register`'s `registerSW()` — only the bare, one-time `/registerSW.js` auto-injected script runs, which registers the service worker once and never checks for updates again. A device with the site already open keeps serving whatever bundle it first cached, through any number of ordinary reloads, until something outside the app's control forces a refresh. **This is not specific to the footer work — every deploy since the PWA/service worker was added has silently had this problem for returning users.**
+
+Fix: call `registerSW({ immediate: true, onRegisteredSW })` from `main.tsx`, with a periodic `registration.update()` poll (hourly suggested) inside `onRegisteredSW` — the piece that was entirely missing. Check the installed `vite-plugin-pwa` version's exact API before implementing; also confirm whether `injectRegister: null` is needed to avoid a double-registration once the manual call is added.
+
+Ask: recommend this jumps the queue ahead of the footer-toolbar-clearance fix (same folder) — every visual fix already shipped is invisible to any device that had the site open before that deploy, which is exactly what happened here.
+
+### 2026-08-14#7 — Footer: eliminate the black gap above the gradient band            [OPEN — root-caused, one PR]
+From: Advisor   Re: Designer follow-up on merged #335, owning an incomplete original spec
+
+Dropped via `docs/COMMS/from-advisor/footer-gap-fix.md` (promoted verbatim). Confirms exactly the concern the PM flagged when reviewing #335: the gradient band isn't achieving a visible transition. Root cause — margins stacking three deep before the gradient's first pixel (footer's own `mt-4` + gradient div's `mt-6` + each page's own parent flex gap, which differs per page: 64px on Home, 56px on Games, 60px on Account, 40px on Rewards), producing a visible flat-black band and silently breaking the original footer ticket's "pixel-identical across pages" criterion.
+
+Fix: move `<HubFooter>` out of each page's gapped flex container to sit as a sibling after it (mirroring `HubToolbar`'s existing outside-the-gap pattern), drop the footer's own redundant `mt-4`. The gradient div's `mt-6` becomes the entire, single, page-independent leading gap — matching the design's one `margin-top:24px` value everywhere. Touches `HubFooter.tsx` + all 4 call sites (`HomeHub.tsx`, `GameHub.tsx`, `ProfileHub.tsx`, `RewardsHub.tsx`).
+
+Ask: one PR, 5 files. Ping once up — will check all four pages' gap against each other this time, not just against the design once.
+>>>>>>> origin/main
+
 ### 2026-08-14#6 — Footer: 4 drift fixes            [OPEN — single file, single PR]
 From: Advisor   Re: Designer request, verified against the code + the original design transcription
 
