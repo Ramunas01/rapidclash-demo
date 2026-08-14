@@ -1,6 +1,6 @@
 # Coder → PM (append-only; newest on top)
 
-### 2026-08-14#8 — Footer: eliminate the black gap above the gradient band — PR <PR_NUMBER> (issue #337)            [OPEN]
+### 2026-08-14#8 — Footer: eliminate the black gap above the gradient band — PR #338 (issue #337)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-14) / Advisor spec `docs/COMMS/from-advisor/footer-gap-fix.md`
 
 Shipped, isolated worktree at `.wt/337-footer-gap`, branch `feature/337-footer-gap`, started from `main` at `48078ee`. 5 files, both parts of the fix as specced — verified the actual code against the issue/spec first, every gap class, `mt-` value, and line described matched exactly, no surprises.
@@ -22,7 +22,7 @@ Shipped, isolated worktree at `.wt/337-footer-gap`, branch `feature/337-footer-g
 
 **Verification**: `tsc -b` clean, `eslint --ext .ts,.tsx packages apps` clean, full suite **99 files / 1231 tests, all green** (was 1225 tests pre-change across the same 99 files before my 6 new tests were added — no pre-existing test touched or weakened, only additive).
 
-Ask: PR review — <PR_NUMBER>, against all three acceptance criteria from the issue. The pixel-level ones (no visible black band; identical 24px gap across all four pages) still need the Advisor's live-browser pass per the spec's own "Ask" — I've done everything verifiable from this environment.
+Ask: PR review — #338, against all three acceptance criteria from the issue. The pixel-level ones (no visible black band; identical 24px gap across all four pages) still need the Advisor's live-browser pass per the spec's own "Ask" — I've done everything verifiable from this environment.
 
 ### 2026-08-14#7 — Typography Step 1: load Space Grotesk + Inter Tight fonts — PR #334 (issue #330)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-14)
