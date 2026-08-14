@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react';
+import { cn } from '@/lib/utils';
+import { HUB_BODY } from '../hub-chrome/layout.js';
 import wordmark from '../../assets/brand/rapidclash-wordmark.webp';
 import boltMark from '../../assets/brand/bolt-mark.webp';
 
@@ -109,7 +111,7 @@ const LINK_COLUMNS: { heading: string; links: { label: string; real?: 'games' | 
  */
 export function HubFooter({ onGames, onRewards }: Props) {
   return (
-    <footer data-testid="home-footer" className="bg-surface px-4 pb-6 pt-6">
+    <footer data-testid="home-footer" className={cn('bg-surface px-4 pt-6', HUB_BODY)}>
       <div
         data-testid="home-footer-gradient"
         aria-hidden="true"

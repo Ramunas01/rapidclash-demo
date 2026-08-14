@@ -166,6 +166,19 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     expect(gappedDiv).not.toBeNull();
     expect(gappedDiv?.contains(footer)).toBe(false);
   });
+
+  // Issue #342: the content div no longer needs hubBodyPadding's toolbar-clearance padding —
+  // the footer now reserves that space itself (see HubFooter.test.tsx). Non-guest path only:
+  // hubBodyPadding(isGuest) already returned '' for guests before this fix (guest mode never
+  // renders HubFooter/HubToolbar), so this removal only changes the logged-in/non-guest branch.
+  it('no longer carries the hubBodyPadding toolbar-clearance padding on the content div (#342)', async () => {
+    render(<RpsHubScreen {...baseProps()} />);
+    const main = screen.getByTestId('hub-body');
+    await screen.findByTestId('home-footer');
+    const gappedDiv = main.querySelector('.gap-4');
+    expect(gappedDiv).not.toBeNull();
+    expect(gappedDiv?.className).not.toMatch(/pb-\[calc/);
+  });
 });
 
 describe('GameHub (logged out — via RpsHub)', () => {

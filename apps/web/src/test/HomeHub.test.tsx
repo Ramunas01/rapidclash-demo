@@ -147,6 +147,18 @@ describe('HomeHubScreen', () => {
     expect(gappedDiv).not.toBeNull();
     expect(gappedDiv?.contains(footer)).toBe(false);
   });
+
+  // Issue #342: the content div no longer needs HUB_BODY's toolbar-clearance padding — the
+  // footer now reserves that space itself (see HubFooter.test.tsx), so keeping it here would
+  // just be dead space between the content and the now-sibling footer.
+  it('no longer carries the HUB_BODY toolbar-clearance padding on the content div (#342)', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    const main = screen.getByTestId('home-hub');
+    await screen.findByTestId('home-footer');
+    const gappedDiv = main.querySelector('.gap-6');
+    expect(gappedDiv).not.toBeNull();
+    expect(gappedDiv?.className).not.toMatch(/pb-\[calc/);
+  });
 });
 
 // #301 — Bring a Rival: Designer banner replacement + copy-link action. The banner is the

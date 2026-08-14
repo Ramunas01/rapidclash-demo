@@ -905,10 +905,14 @@ describe('CoinflipHubScreen — guest mode skips the hidden-toolbar bottom paddi
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it('a non-guest hub keeps the exact HUB_BODY bottom-toolbar clearance — pixel-identical to before (regression guard)', () => {
+  // Issue #342: HUB_BODY's toolbar-clearance padding moved off this content div and onto
+  // <HubFooter> itself (see HubFooter.test.tsx) — the footer is now a sibling that sits
+  // immediately after this div with zero gap (#337) and owns its own trailing clearance (#342),
+  // so applying HUB_BODY here too would just be dead space stacked in front of the footer's own.
+  it('a non-guest hub no longer carries the HUB_BODY bottom-toolbar clearance on the content div — the footer owns it now (#342)', () => {
     render(<CoinflipHubScreen {...baseProps({ isGuest: false })} />);
     const body = screen.getByTestId('hub-body').firstElementChild;
-    expect(body?.className).toContain('pb-[calc(7rem_+_env(safe-area-inset-bottom))]');
+    expect(body?.className).not.toContain('pb-[calc(7rem_+_env(safe-area-inset-bottom))]');
   });
 
   it('guest mode drops the bottom-toolbar clearance entirely — HubToolbar is hidden there, so the ~112px it reserves was pure dead space', () => {

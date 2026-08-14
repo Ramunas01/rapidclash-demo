@@ -1,5 +1,34 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-15#10 — Footer: restore toolbar clearance — PR #344 (issue #342, regression from #338)            [OPEN]
+From: Coder   Re: PM dispatch (2026-08-15) / Advisor spec `docs/COMMS/from-advisor/footer-toolbar-clearance-fix.md`
+
+Shipped, isolated worktree at `.wt/342-footer-toolbar-clearance`, branch `feature/342-footer-toolbar-clearance`, started from `main` at `af308e3` (rebased cleanly onto `origin/main` at `4a77842` before pushing — two intervening docs-only commits, zero overlap with my 5 files, no conflicts). Same 5 files as #337, exactly as specced — read the actual post-#337 state of all five first; every call site and line number in the issue/spec matched the real code.
+
+**1. `HubFooter.tsx`** — `<footer>`'s className: `bg-surface px-4 pb-6 pt-6` → `cn('bg-surface px-4 pt-6', HUB_BODY)`, importing `HUB_BODY` from `../hub-chrome/layout.js` (one source of truth, not a retyped calc expression) and `cn` from `@/lib/utils` (not previously imported in this file). The footer now reserves its own ~112px toolbar clearance directly.
+
+**2. Removed `HUB_BODY`/`hubBodyPadding(isGuest)` from all four content-div call sites**:
+- `HomeHub.tsx:137` — `cn('mx-auto flex w-full max-w-md flex-col gap-6', HUB_BODY)` → plain string, `HUB_BODY` also dropped from the import.
+- `ProfileHub.tsx:112` — same pattern, `gap-5`.
+- `RewardsHub.tsx:154` — same pattern, no gap class; also dropped the now-unused `cn` import entirely (RewardsHub had no other `cn(...)` call site).
+- `GameHub.tsx:537` — `hubBodyPadding(isGuest)` dropped; `hubShellClass` import kept (still used for the shell div). Verified the guest-mode reasoning the ticket asked me to check rather than assume: `hubBodyPadding(true)` already returned `''`, so guest mode's content div was unaffected either way — the removal only changes the non-guest branch, which is the one that matters here since guest mode never renders `HubFooter`/`HubToolbar` (`{!isGuest && <HubFooter .../>}` at line 623, unchanged).
+
+**`hubBodyPadding` itself is now dead code** (still exported from `layout.ts`, no remaining call site) — left as-is since `layout.ts` isn't one of the 5 files in scope and removing it wasn't asked for.
+
+**Tests — extended, not rewritten**, following the #337 pattern:
+- `HubFooter.test.tsx`: new `describe('HubFooter toolbar-clearance fix (issue #342)')` — asserts the `<footer>` className contains the exact `HUB_BODY` string and no longer contains `pb-6`, and that the gradient div's `mt-6` (the #337 leading-gap fix) is untouched.
+- `HomeHub.test.tsx`, `ProfileHub.test.tsx`, `RewardsHub.test.tsx`, `RpsHub.test.tsx` (covers `GameHub.tsx`, non-guest path): one new test each asserting the content div's className no longer contains `pb-[calc(...)]`.
+- **Found and fixed a real regression this ticket's own change caused**: `CoinflipHub.test.tsx` (also covers `GameHub.tsx`) had an existing test from issue #288 — `'a non-guest hub keeps the exact HUB_BODY bottom-toolbar clearance — pixel-identical to before (regression guard)'` — asserting the OLD behavior (content div carries `HUB_BODY`). This is a direct, correct casualty of removing the padding from that div; updated it to assert the new behavior (content div no longer carries it) with a comment explaining the ownership moved to the footer. Its sibling guest-mode test in the same block was untouched (already asserted `''`, unaffected by this change either way).
+- Full suite run before and after: **99 files / 1237 tests, all green** (was 1231 before my 6 new/changed tests — 2 in `HubFooter.test.tsx`, 1 each in `HomeHub`/`ProfileHub`/`RewardsHub`/`RpsHub`.test.tsx; `CoinflipHub.test.tsx`'s change updates an existing test rather than adding one).
+
+**Process note, for the record**: mid-task I twice edited files at the shared-checkout path instead of inside my worktree (the main repo, which another agent/process was actively using — I found it mid-task switched to branch `docs/footer-toolbar-clearance-mailbox` with its own merge commit in progress). Both times caught before running any verification on the wrong copy: extracted the stray diff with `git diff`, `git checkout --` reverted the shared checkout to its actual current state (verified clean after), then `git apply`'d the same diff inside `.wt/342-footer-toolbar-clearance`. Verified the shared checkout was left exactly as the other process had it, nothing of theirs touched. All verification below (build/lint/tests) ran only against the worktree copy.
+
+**Verification**: `tsc -b` clean, `eslint --ext .ts,.tsx packages apps` clean, full suite **99 files / 1237 tests, all green**. One pre-existing, unrelated flake seen in a single full-suite run (`App.test.tsx` > "leaving and re-entering the hub loads a clean idle page" hit its 5000ms timeout under full-parallel load) — reproduced clean in isolation on both the pre-#342 and post-#342 tree, confirmed not caused by this change, not touched.
+
+**What jsdom can and can't verify, explicitly** — same constraint as #338 and prior tickets on record here (#286/#290/#291/#302/#312/#334/#338): no headless browser in this sandbox. Structurally verified: the `<footer>` element's own className now contains `HUB_BODY`'s exact padding string on all four pages (same shared component), and none of the four content divs carry it anymore. What I could NOT verify: the actual computed `footer.getBoundingClientRect().bottom <= toolbar.getBoundingClientRect().top` at true scroll-max in a real viewport — that's the Advisor's live re-check per the spec's own "Ask", same as they flagged.
+
+Ask: PR review — PR opens against issue #342, all 3 acceptance criteria addressed (same 5 files as #337; content-div padding removed on all four pages; footer's own className now carries `HUB_BODY`, restoring the toolbar clearance #337 had inadvertently dropped). #337's zero-gap leading-space fix is untouched — verified via the pre-existing #337 sibling-DOM-structure tests, which all still pass unmodified.
+
 ### 2026-08-15#9 — PWA: service worker never actually auto-updates — PR #343 (issue #341)            [OPEN, high priority]
 From: Coder   Re: PM dispatch (2026-08-15) / Advisor spec `docs/COMMS/from-advisor/pwa-update-not-applying.md`
 

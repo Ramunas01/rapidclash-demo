@@ -205,4 +205,16 @@ describe('RewardsHubScreen', () => {
     expect(contentDiv).not.toBeNull();
     expect(contentDiv?.contains(footer)).toBe(false);
   });
+
+  // Issue #342: the content div no longer needs HUB_BODY's toolbar-clearance padding — the
+  // footer now reserves that space itself (see HubFooter.test.tsx).
+  it('no longer carries the HUB_BODY toolbar-clearance padding on the content div (#342)', async () => {
+    stubFetch(BOBBYLEE_SNAPSHOT);
+    render(<RewardsHubScreen {...baseProps()} />);
+    const main = screen.getByTestId('rewards-hub');
+    await screen.findByTestId('home-footer');
+    const contentDiv = main.firstElementChild;
+    expect(contentDiv).not.toBeNull();
+    expect(contentDiv?.className).not.toMatch(/pb-\[calc/);
+  });
 });

@@ -257,4 +257,15 @@ describe('ProfileHubScreen', () => {
     expect(gappedDiv).not.toBeNull();
     expect(gappedDiv?.contains(footer)).toBe(false);
   });
+
+  // Issue #342: the content div no longer needs HUB_BODY's toolbar-clearance padding — the
+  // footer now reserves that space itself (see HubFooter.test.tsx).
+  it('no longer carries the HUB_BODY toolbar-clearance padding on the content div (#342)', async () => {
+    render(<ProfileHubScreen {...baseProps()} />);
+    const main = screen.getByTestId('profile-hub');
+    await screen.findByTestId('home-footer');
+    const gappedDiv = main.querySelector('.gap-5');
+    expect(gappedDiv).not.toBeNull();
+    expect(gappedDiv?.className).not.toMatch(/pb-\[calc/);
+  });
 });

@@ -177,3 +177,25 @@ describe('HubFooter positioning fix (issue #337)', () => {
     expect(gradient.className).toContain('mt-6');
   });
 });
+
+describe('HubFooter toolbar-clearance fix (issue #342)', () => {
+  // #337 moved <HubFooter> outside each page's HUB_BODY-padded content div, which fixed the
+  // leading gap but left the footer — now genuinely last — with zero reserved clearance from the
+  // fixed HubToolbar (HUB_BODY's own doc comment says that padding exists so "the last item
+  // clears the fixed toolbar"; the footer wasn't that last item's container anymore). The fix:
+  // the footer now carries HUB_BODY's own padding value directly, replacing its old flat `pb-6`.
+  it('carries the HUB_BODY toolbar-clearance padding instead of the old flat pb-6', () => {
+    render(<HubFooter />);
+    const footer = screen.getByTestId('home-footer');
+    expect(footer.className).toContain('pb-[calc(7rem_+_env(safe-area-inset-bottom))]');
+    expect(footer.className).not.toMatch(/(^|\s)pb-6(\s|$)/);
+  });
+
+  it('leaves the gradient div\'s mt-6 leading gap untouched by the trailing-clearance fix', () => {
+    render(<HubFooter />);
+    const footer = screen.getByTestId('home-footer');
+    const gradient = within(footer).getByTestId('home-footer-gradient');
+    expect(gradient.className).toContain('mt-6');
+    expect(footer.className).not.toMatch(/(^|\s)mt-\d/);
+  });
+});

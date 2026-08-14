@@ -1,13 +1,12 @@
 import { useEffect, useId, useState } from 'react';
 import type { RewardsSnapshot, VipTier } from '@rapidclash/shared';
 import { api } from '../api.js';
-import { cn } from '@/lib/utils';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
 import { RcIcon } from '../components/hub-shared/RcIcon.js';
-import { HUB_SHELL, HUB_BODY } from '../components/hub-chrome/layout.js';
+import { HUB_SHELL } from '../components/hub-chrome/layout.js';
 import avatarPlaceholder from '../assets/games-and-rewards/avatar-placeholder.jpg';
 
 interface Props {
@@ -151,7 +150,7 @@ export function RewardsHubScreen({ token, username, balance, onHome, onOpenProfi
       <HubRibbon balance={liveBalance} onLogo={onHome} onWallet={onOpenProfile} />
 
       <main data-testid="rewards-hub">
-        <div className={cn('mx-auto flex max-w-md flex-col', HUB_BODY)}>
+        <div className="mx-auto flex max-w-md flex-col">
           <div style={{ margin: '6px 16px 0 16px', padding: '16px 0 14px 0' }}>
             <span style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '19px', fontWeight: 'bold', letterSpacing: '0.6px', color: '#FFFFFF' }}>
               VIP PROGRAM
