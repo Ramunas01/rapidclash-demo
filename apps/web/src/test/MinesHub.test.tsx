@@ -134,7 +134,7 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
   });
 
-  it('Result: only the decisive match.end surfaces the GameHub overlay with the ¢ delta', async () => {
+  it('Result: only the decisive match.end surfaces the GameHub overlay with the credits delta', async () => {
     const gameState = view({ uncovered: [0, 1, 2, 3], locked: true });
     const { rerender } = render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: asLegal([]) })} />);
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
@@ -142,6 +142,6 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     rerender(<MinesHubScreen {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'alice' }, lastSettlement: { delta: 18, newBalance: 1018 } })} />);
     await waitFor(() => expect(screen.getByTestId('hub-result-overlay')).toBeInTheDocument());
     expect(screen.getByTestId('hub-result-text').textContent).toContain('You Won');
-    expect(screen.getByTestId('hub-result-delta').textContent).toBe('+18¢');
+    expect(screen.getByTestId('hub-result-delta').textContent).toContain('+18');
   });
 });

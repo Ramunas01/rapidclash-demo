@@ -458,10 +458,10 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     expect(onTakeChallenge).toHaveBeenCalledWith('c1');
   });
 
-  it('chrome: wallet chip shows the live ¢ balance and opens the wallet', () => {
+  it('chrome: wallet chip shows the live RC-icon balance and opens the wallet', () => {
     const onOpenWallet = vi.fn();
     render(<CoinflipHubScreen {...baseProps({ balance: 1250, onOpenWallet })} />);
-    expect(screen.getByTestId('hub-balance').textContent).toBe('1,250¢');
+    expect(screen.getByTestId('hub-balance').textContent).toContain('1,250');
     fireEvent.click(screen.getByTestId('hub-wallet-chip'));
     expect(onOpenWallet).toHaveBeenCalled();
   });

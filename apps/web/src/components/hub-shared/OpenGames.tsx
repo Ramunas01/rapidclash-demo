@@ -1,5 +1,4 @@
 import type { OpenChallenge } from '@rapidclash/shared';
-import { formatCredits } from '../../format.js';
 
 /** How often the logged-out carousel re-polls the public snapshot so the feed visibly moves
  *  (`GamesCarousel.tsx`'s `useOpenChallengesPool`, issue #305). */
@@ -18,8 +17,10 @@ export function mergeChallengesByGame(challengesByGame: Record<string, OpenChall
 
 /** The one balance-affordability check every JOIN action runs before taking a challenge — reused
  *  by `GamesCarousel.tsx` (issue #305) instead of reinventing it. Returns the notice text to show,
- *  or `null` if the stake is covered. */
+ *  or `null` if the stake is covered. Plain numbers, not `formatCredits` (issue #324): this is a
+ *  plain string, not JSX, so the RC icon can't live inside it — same "credit" word-not-symbol
+ *  convention already used by `GamesCarousel.tsx`'s JOIN `aria-label`. */
 export function insufficientBalanceNotice(stake: number, balance: number): string | null {
   if (balance >= stake) return null;
-  return `Not enough credits to join — needs ${formatCredits(stake)}, you have ${formatCredits(balance)}.`;
+  return `Not enough credits to join — needs ${stake.toLocaleString('en-US')}, you have ${balance.toLocaleString('en-US')}.`;
 }

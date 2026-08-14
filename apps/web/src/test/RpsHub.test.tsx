@@ -125,7 +125,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     expect(screen.getByTestId('hub-move-rock').getAttribute('aria-pressed')).toBe('false');
   });
 
-  it('Result: ending a match shows the overlay with the ¢ delta and the both-choices reveal', async () => {
+  it('Result: ending a match shows the overlay with the credits delta and the both-choices reveal', async () => {
     const gameState: RpsView = { players: ['pid', 'bob'], choices: { pid: 'rock', bob: 'scissors' } };
     const { rerender } = render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
@@ -136,7 +136,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     );
     await waitFor(() => expect(screen.getByTestId('hub-result-overlay')).toBeInTheDocument());
     expect(screen.getByTestId('hub-result-text').textContent).toContain('You Won');
-    expect(screen.getByTestId('hub-result-delta').textContent).toBe('+9¢');
+    expect(screen.getByTestId('hub-result-delta').textContent).toContain('+9');
     // Both choices are revealed at terminal (server-authoritative).
     expect(screen.getByTestId('hub-result-rps')).toBeInTheDocument();
   });

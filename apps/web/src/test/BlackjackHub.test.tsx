@@ -725,18 +725,18 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
           winner: 'pid',
         });
         const { rerender } = render(<BlackjackHubScreen {...baseProps({ balance: 1000, currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
-        expect(screen.getByTestId('hub-balance').textContent).toBe('1,000¢');
+        expect(screen.getByTestId('hub-balance').textContent).toContain('1,000');
 
         // Match ends: the settled balance (1019) arrives with the null currentMatchId.
         rerender(<BlackjackHubScreen {...baseProps({ balance: 1019, currentMatchId: null, gameState: terminal, legalMoves: [], lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
 
         // Before reveal-complete the ribbon HOLDS the pre-settlement balance (no jump ahead).
         await act(async () => { await vi.advanceTimersByTimeAsync(500); });
-        expect(screen.getByTestId('hub-balance').textContent).toBe('1,000¢');
+        expect(screen.getByTestId('hub-balance').textContent).toContain('1,000');
 
         // Once the reveal completes (~revealMs) the settled balance applies, in lockstep with the bar.
         await act(async () => { await vi.advanceTimersByTimeAsync(120); });
-        expect(screen.getByTestId('hub-balance').textContent).toBe('1,019¢');
+        expect(screen.getByTestId('hub-balance').textContent).toContain('1,019');
       } finally {
         vi.useRealTimers();
       }

@@ -5,7 +5,7 @@ import { Trophy, X } from 'lucide-react';
 import type { AvatarId, GameMeta, OpenChallenge, Outcome, SettlementSummary } from '@rapidclash/shared';
 import type { GameView } from '../App.js';
 import { api } from '../api.js';
-import { formatCredits, formatClock } from '../format.js';
+import { formatClock } from '../format.js';
 import { cn } from '@/lib/utils';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
@@ -15,6 +15,7 @@ import { GamesCarousel } from '../components/hub-shared/GamesCarousel.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
 import { Avatar } from '../components/hub-shared/Avatar.js';
+import { Credits } from '../components/hub-shared/RcIcon.js';
 import { outlineClasses, outlineForOutcome, replaysOf, useDelayedFlag, useWinReveal, WIN_FILL_IN_MS, type Verdict } from './hub-shared/slotReveal.js';
 
 /** How long after the result phase starts before the own-bar verdict lights (ms). */
@@ -25,7 +26,8 @@ const BAR_VERDICT_BEAT_MS = 250;
  *  tie-replay game (the universal tie rule is game-agnostic). */
 const DRAW_REMATCH_HOLD_MS = 2000;
 
-/** Bet presets within the shared 1–100 demo range (every demo game's BetRules). Rendered ¢. */
+/** Bet presets within the shared 1–100 demo range (every demo game's BetRules). Rendered with the
+ *  RC-icon credits display, not a text currency symbol (issue #324). */
 const BET_PRESETS = [1, 5, 10, 25, 50, 100];
 
 /** Two-line time-control labelling (data-driven from the meta option). The big line is the
@@ -871,7 +873,7 @@ function PlayPanel({
         <div className="mb-2.5 flex items-center justify-between">
           <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Bet amount</span>
           <span className="text-sm font-extrabold tabular-nums text-foreground">
-            {armedStake == null ? '—' : formatCredits(armedStake)}
+            {armedStake == null ? '—' : <Credits amount={armedStake} />}
           </span>
         </div>
         <div className="grid grid-cols-6 gap-2">
@@ -887,7 +889,7 @@ function PlayPanel({
                 armedStake === v ? 'bg-brand text-white' : 'bg-background text-muted-foreground hover:text-foreground',
               )}
             >
-              {formatCredits(v)}
+              <Credits amount={v} />
             </button>
           ))}
         </div>
@@ -1020,7 +1022,7 @@ function RelatedArt({ id, name }: { id: string; name: string }) {
 }
 
 /**
- * Brief, self-dismissing result overlay (spec Q2). Generic win/lose/draw + the ¢ settlement
+ * Brief, self-dismissing result overlay (spec Q2). Generic win/lose/draw + the credits settlement
  * delta (confetti on a win), with an optional game-specific reveal slot at the top.
  */
 function ResultOverlay({
@@ -1077,9 +1079,9 @@ function ResultOverlay({
         </div>
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Wallet change</p>
         <div className={cn('text-2xl font-bold tabular-nums', delta > 0 ? 'text-success' : delta < 0 ? 'text-destructive' : 'text-foreground/80')} data-testid="hub-result-delta">
-          {delta > 0 ? '+' : ''}{formatCredits(delta)}
+          <Credits amount={delta} showSign size={20} />
         </div>
-        <p className="mt-2 text-xs text-muted-foreground">New balance: <strong className="text-foreground">{formatCredits(settlement.newBalance)}</strong></p>
+        <p className="mt-2 text-xs text-muted-foreground">New balance: <strong className="text-foreground"><Credits amount={settlement.newBalance} /></strong></p>
       </motion.div>
     </div>
   );

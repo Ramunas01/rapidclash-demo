@@ -1,5 +1,26 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-14#4 — RC-icon sitewide, replacing ¢ in visible balance/credits displays — PR #326 (issue #324)            [OPEN]
+From: Coder   Re: PM dispatch (2026-08-14)
+
+Shipped, isolated worktree at `.wt/324-rc-icon-sitewide`, branch `feature/324-rc-icon-sitewide`, started from `main` at `37079e7` — after #323 (PR #325) merged, so `GameHub.tsx`/`ProfileHub.tsx`/`RewardsHub.tsx` were re-read fresh rather than trusting the spec doc's stale line numbers, per the dispatch.
+
+**Two new shared primitives**, `apps/web/src/components/hub-shared/RcIcon.tsx`: `RcIcon` (the byte-identical SVG deduped from `GamesCarousel.tsx`'s `RcIcon` and `RewardsHub.tsx`'s `RcCoinIcon` — both local copies deleted, both files now import the shared one) and `<Credits amount={n} showSign? size? />`, which renders `<RcIcon /> {n.toLocaleString('en-US')}` (with an optional leading `+`/`-` for `showSign`) — one React element instead of the string `formatCredits` used to produce, since an icon can't live inside a string.
+
+**Migrated all 10 spec'd files** (`ProfileHub`, `Lobby`, `StakeEntry`, `OpenChallengesList`, `Leaderboard`, `Wallet`, `GameHub`, `Result`, `HubRibbon`, `OpenGames`) plus one more the mechanical acceptance grep surfaced: **`GameList.tsx`** — it interpolates `CREDIT_SYMBOL` directly (not `formatCredits()`, so the advisor's `formatCredits(` search missed it) in its tile's stake-range line; swapped to the plain "X–Y credits" word convention (a range display, not a single balance — two RC icons either side of a dash would've read oddly, and the codebase already uses "N credit(s)" as its established symbol-free fallback in several `aria-label`s). `HubRibbon.tsx`'s guest badge and wallet chip both dropped the leading status dot per spec (the coin takes that visual slot).
+
+**One structural wrinkle worth flagging**: `Leaderboard.tsx`'s exported `formatStat()` had a `net_winnings` branch that called `formatCredits()` internally and was rendered *directly* in two places (`Leaderboard.tsx`'s own `StatCell` and `ProfileHub.tsx`'s `ProfileLeaderboard`) — both visible JSX, both outside the original 10-file list's specific line callouts but clearly in scope ("migrate every visible JSX use"). Since a shared string-building helper can't emit an icon, I changed `formatStat`'s `net_winnings` case to return a plain signed number (no symbol) and made both real call sites branch on `entry.kind` to render `<Credits amount={v} showSign />` for that kind directly, calling `formatStat()` only for elo/win_rate (unaffected). Updated `Leaderboard.test.tsx`'s direct `formatStat` unit tests to match (`'+9¢'` → `'+9'` etc.) — otherwise that test file's hardcoded literal would itself have failed the acceptance grep, since `format.ts`/`format.test.ts` are the only files the grep exempts (and only incidentally, by being `.ts` not `.tsx`).
+
+**`OpenGames.tsx`'s `insufficientBalanceNotice`** returns a plain string (not JSX) embedded in an alert div — can't hold a `<Credits>` element either. Swapped its two `formatCredits()` calls for plain `.toLocaleString('en-US')` numbers, matching the "credit(s)" word convention `GamesCarousel.tsx`'s own JOIN `aria-label` already uses for the same reason.
+
+**`format.ts`**: `CREDIT_SYMBOL`/`formatCredits`/`CREDIT_WORDMARK` untouched in behavior — only the header doc comment rewritten to describe the narrowed post-#324 role (non-visual/plain-text contexts only: unit tests, log lines; not new JSX).
+
+**Test fallout**: every test asserting exact rendered `¢`-suffixed text needed updating to match the new icon+numeral structure — 8 test files (`CoinflipHub`, `BlackjackHub`, `ProfileHub`, `MinesHub`, `RpsHub`, `Lobby`, `OpenChallengesList`, `Wallet`, `Leaderboard`) plus `GameList.test.tsx` for the range-line wording change. Where a test read `.textContent` on a `data-testid` element (which now also contains the icon's SVG `<text>RC</text>`, since DOM `textContent` walks all descendants), switched exact `.toBe(...)` to substring `.toContain(...)`. Where a test used RTL's `getByText(...)`, left it as an exact match on the numeral alone — `getByText`'s default node-text matcher only concatenates an element's *direct* text-node children, so it already ignores the nested SVG's text and needed no `toContain` workaround.
+
+**Verification**: `grep -rn '¢' apps/web/src --include='*.tsx'` → zero matches (ran it myself, per the dispatch). `tsc -b` clean, `eslint` clean. Full suite **99 files / 1212 tests, all green** (one run, no flakes). Had to `pnpm install` fresh in the new worktree first (caught my own mistake of reaching for `npm install` initially — this is a pnpm workspace; cleaned up the resulting `node_modules`/`package-lock.json` before it touched git).
+
+Ask: PR review — #326 references #324 with the acceptance criterion (the grep) stated directly in the description; CI (`build-and-test`) to be confirmed green before requesting review.
+
 ### 2026-08-14#3 — Shared footer on all 4 hub screens — PR #325 (issue #323)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-14)
 

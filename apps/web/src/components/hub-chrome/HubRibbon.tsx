@@ -1,4 +1,4 @@
-import { formatCredits } from '../../format.js';
+import { Credits } from '../hub-shared/RcIcon.js';
 import logoUrl from '../../assets/brand/rapidclash-wordmark.webp';
 
 interface Props {
@@ -22,7 +22,7 @@ interface Props {
 /**
  * Top ribbon — solid #0B0B0B fill (the canonical `bg-background` token) except the wordmark
  * (left) and a pill control (right): the Login/Sign-up auth-gate when logged out, the live
- * wallet chip (balance ¢ + Wallet) when signed in. Shared across hubs. `sticky top-0` (in-flow)
+ * wallet chip (RC-icon balance + Wallet) when signed in. Shared across hubs. `sticky top-0` (in-flow)
  * on the body-scroll layout (#142): it reserves the wordmark band at the top, then sticks as the
  * page scrolls so content slides *underneath* it and disappears behind the solid fill (mirrors
  * HubToolbar's full-viewport-width solid base — never a fresh literal, or we recreate the drift
@@ -60,9 +60,8 @@ export function HubRibbon({ balance, onLogo, onWallet, loggedIn = true, isGuest 
               data-testid="hub-guest-badge"
               className="flex items-center gap-2 rounded-full bg-surface py-1.5 pl-3.5 pr-4"
             >
-              <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />
               <span className="text-sm font-bold tabular-nums text-foreground" data-testid="hub-balance">
-                {balance === null ? '—' : formatCredits(balance)}
+                {balance === null ? '—' : <Credits amount={balance} />}
               </span>
               <span className="text-xs font-extrabold uppercase tracking-wide text-muted-foreground">Demo</span>
             </div>
@@ -74,9 +73,8 @@ export function HubRibbon({ balance, onLogo, onWallet, loggedIn = true, isGuest 
               data-testid="hub-wallet-chip"
               className="flex items-center gap-2 rounded-full bg-surface py-1.5 pl-3.5 pr-1.5 transition-colors hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
             >
-              <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden="true" />
               <span className="text-sm font-bold tabular-nums text-foreground" data-testid="hub-balance">
-                {balance === null ? '—' : formatCredits(balance)}
+                {balance === null ? '—' : <Credits amount={balance} />}
               </span>
               <span className="flex items-center gap-1.5 rounded-full bg-brand px-3.5 py-2 text-xs font-extrabold uppercase tracking-wide text-white">
                 <WalletGlyph />
