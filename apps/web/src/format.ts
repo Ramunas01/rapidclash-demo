@@ -1,12 +1,17 @@
 /**
- * The compact display symbol for the play-money unit (credits), shown beside a number
- * like `320¢`. This is a PRESENTATION-ONLY convention (see DEMO_PRESENTATION.md →
- * "Credits display"): the ledger, protocol, schema, and stored values stay plain integer
- * credits — only this file and UI labels use the symbol.
+ * The compact display symbol for the play-money unit (credits), historically shown beside a
+ * number like `320¢`. PRESENTATION-ONLY (see DEMO_PRESENTATION.md → "Credits display"): the
+ * ledger, protocol, schema, and stored values stay plain integer credits regardless of how this
+ * file formats them.
  *
- * Swappable in ONE line. If `¢` doesn't survive the font / owner eyeball, the spec's
- * fallback ladder is: `⚡` → `¤` → `🪙`. Changing this constant updates every display site
- * (and the wordmark below) automatically.
+ * Post-#324 role: every *visible* JSX credits display now uses the `<Credits>` component
+ * (`components/hub-shared/RcIcon.tsx`), which renders an RC coin icon + plain numeral instead of
+ * interpolating this symbol into a string — an icon can't live inside a string, so
+ * `formatCredits`'s one-line-swappable design (this constant's original purpose) stopped being
+ * how the app actually displays a balance. `CREDIT_SYMBOL`/`formatCredits` remain exactly as
+ * before for non-visual/plain-text contexts only: unit tests, and any string that is genuinely
+ * text (not rendered next to the RC icon) — e.g. log lines or copy that isn't JSX-rendered credits
+ * UI. Don't reach for these in new JSX; reach for `<Credits>`.
  */
 export const CREDIT_SYMBOL = '¢';
 

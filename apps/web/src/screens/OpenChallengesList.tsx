@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Clock, Coins, Swords } from 'lucide-react';
 import type { OpenChallenge, ChallengesUpdatePayload } from '@rapidclash/shared';
-import { formatClock, formatCredits } from '../format.js';
+import { formatClock } from '../format.js';
+import { Credits } from '../components/hub-shared/RcIcon.js';
 import { cn } from '@/lib/utils';
 
 /**
@@ -107,7 +108,7 @@ export function OpenChallengesList({ entries, more, onTake, notice }: Props) {
                 <div className="mt-0.5 flex items-center gap-1 text-brand">
                   <Coins className="h-3.5 w-3.5" />
                   <span className="text-sm font-bold" data-testid={`stake-${e.matchId}`}>
-                    {formatCredits(e.stake)}
+                    <Credits amount={e.stake} />
                   </span>
                 </div>
               </div>

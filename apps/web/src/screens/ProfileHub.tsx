@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import type { AvatarId, GameMeta, LedgerEntry, LedgerEntryType, LeaderboardEntry } from '@rapidclash/shared';
 import { api } from '../api.js';
-import { formatCredits } from '../format.js';
+import { Credits } from '../components/hub-shared/RcIcon.js';
 import { formatStat } from './Leaderboard.js';
 import { cn } from '@/lib/utils';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
@@ -89,7 +89,7 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
   // "RC WAGERED" stat tile lives on THIS page (the `isAccount` view's `accountStats` 3-tile
   // row) — this is that same figure, now wired to the real rewards snapshot instead of the
   // design's placeholder '18.4K'. Defaults to 0 (not undefined) so a still-loading or
-  // unexpectedly-shaped response never renders "undefined¢".
+  // unexpectedly-shaped response never renders a broken "undefined" credits figure.
   const [wageredLifetime, setWageredLifetime] = useState(0);
   useEffect(() => { setLiveBalance(balance); }, [balance]);
   useEffect(() => {
@@ -148,8 +148,8 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
               <p className="flex items-center justify-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                 <WalletIcon className="h-3.5 w-3.5" /> Balance
               </p>
-              <div className="mt-1.5 text-4xl font-bold tabular-nums" data-testid="profile-balance" aria-label="balance">
-                {formatCredits(liveBalance)}
+              <div className="mt-1.5 flex items-center justify-center text-4xl font-bold tabular-nums" data-testid="profile-balance" aria-label="balance">
+                <Credits amount={liveBalance} size={28} />
               </div>
               <p className="mt-1.5 text-[11px] text-muted-foreground">Play-money credits — no real-world value.</p>
             </div>
@@ -159,7 +159,7 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
             <div className="mt-3 flex items-center justify-between rounded-xl bg-surface px-4 py-3">
               <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">RC wagered (lifetime)</span>
               <span className="text-sm font-bold tabular-nums text-foreground" data-testid="profile-wagered-lifetime">
-                {formatCredits(wageredLifetime)}
+                <Credits amount={wageredLifetime} />
               </span>
             </div>
 
@@ -327,7 +327,7 @@ function LedgerRow({ entry }: { entry: LedgerEntry }) {
       </div>
       <span className={cn('flex items-center gap-0.5 text-sm font-bold tabular-nums', positive ? 'text-success' : 'text-foreground/70')}>
         {positive ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownLeft className="h-3.5 w-3.5" />}
-        {positive ? '+' : ''}{formatCredits(entry.amount)}
+        <Credits amount={entry.amount} showSign />
       </span>
     </div>
   );
@@ -395,7 +395,9 @@ function ProfileLeaderboard({ token }: { token: string }) {
                 {/* Public leaderboard alias + its stored avatar, mirroring Leaderboard.tsx rows. */}
                 <Avatar username={e.displayName} avatarId={e.avatarId} size={36} />
                 <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{e.displayName}</span>
-                <span className={cn('text-sm font-bold tabular-nums', neg ? 'text-destructive' : 'text-foreground/80')}>{formatStat(e)}</span>
+                <span className={cn('text-sm font-bold tabular-nums', neg ? 'text-destructive' : 'text-foreground/80')}>
+                  {e.kind === 'net_winnings' ? <Credits amount={e.netWinnings} showSign /> : formatStat(e)}
+                </span>
               </div>
             );
           })}

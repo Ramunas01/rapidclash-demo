@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import type { LedgerEntry, LedgerEntryType } from '@rapidclash/shared';
 import { api } from '../api.js';
-import { formatCredits } from '../format.js';
+import { Credits } from '../components/hub-shared/RcIcon.js';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -109,7 +109,7 @@ function EntryRow({ entry, index }: { entry: LedgerEntry; index: number }) {
         )}
       >
         {positive ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownLeft className="h-3.5 w-3.5" />}
-        {positive ? '+' : ''}{formatCredits(entry.amount)}
+        <Credits amount={entry.amount} showSign />
       </span>
     </motion.div>
   );
@@ -186,8 +186,8 @@ export function WalletScreen({ token, username, balance: initialBalance, onPlay,
             <WalletIcon className="h-3.5 w-3.5" />
             Balance
           </p>
-          <div className="mt-2 text-4xl font-bold tabular-nums" aria-label="balance">
-            {formatCredits(balance)}
+          <div className="mt-2 flex items-center justify-center text-4xl font-bold tabular-nums" aria-label="balance">
+            <Credits amount={balance} size={28} />
           </div>
           <p className="mt-2 text-[11px] text-white/40">Play-money credits — no real-world value.</p>
         </motion.div>

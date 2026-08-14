@@ -4,6 +4,7 @@ import { api } from '../../api.js';
 import { TILE_ART, titleCase } from './tiles.js';
 import { Avatar } from './Avatar.js';
 import { mergeChallengesByGame, insufficientBalanceNotice, PUBLIC_POLL_MS, type FeedRow } from './OpenGames.js';
+import { RcIcon } from './RcIcon.js';
 
 /**
  * Games-page "Open Games" carousel (issue #305, `docs/COMMS/from-advisor/games-and-rewards.md`
@@ -57,12 +58,10 @@ import { mergeChallengesByGame, insufficientBalanceNotice, PUBLIC_POLL_MS, type 
  *    asset audit) — they're placeholder references the design tool itself never resolved. Reused
  *    this app's existing derived-color `Avatar` component (already the "no real image" fallback
  *    used everywhere else a user is shown) instead of fabricating new placeholder art.
- * 5. **Stake/prize/XP numerals show no `¢`** (design shows a plain numeral beside a green "RC"
- *    coin glyph, transcribed verbatim below as `RcIcon`) rather than this app's usual
- *    `formatCredits`. The RC glyph is itself unambiguous play-money framing (no `$`/crypto), so
- *    this isn't a CHARTER §"¢ only" violation — just a presentation choice pixel-matching the
- *    design instead of the sitewide text convention, flagged here since it's the one place in
- *    this component that reads differently from the rest of the app.
+ * 5. **Stake/prize/XP numerals show a plain numeral beside a green "RC" coin glyph** (`RcIcon`,
+ *    now the shared `hub-shared/RcIcon.tsx` component — issue #324 generalized this component's
+ *    original transcribed glyph into the sitewide credits display, so every visible credits
+ *    figure in the app now reads this way, not just this carousel).
  * 6. **Interactive elements are real `<button>`s**, not the design's plain `<div>`/`<span>` with
  *    `onClick` — matching this codebase's existing precedent for every other design-transcribed
  *    interactive control (`HomeHub.tsx`'s `CategoryTabs`/`GridControls`, etc.). Unlike the
@@ -209,28 +208,6 @@ function buildBoardRows(src: BoardTuple[], kind: 'race' | 'rank'): BoardRow[] {
     bg: i % 2 === 0 ? '#1A1A2E' : 'transparent',
     radius: i % 2 === 0 ? '26px' : '0px',
   }));
-}
-
-/** The small green "RC" coin glyph next to every credit figure — transcribed verbatim (it
- *  appears identically at decoded lines 511, 553, 585, 594, scaled per usage). Decorative only;
- *  play-money framing (see judgment call #5 above). */
-function RcIcon({ size = 15 }: { size?: number }) {
-  return (
-    <svg width={size} height={Math.round((size * 44) / 38)} viewBox="0 0 38 44" fill="none" aria-hidden="true" style={{ display: 'block', flex: `0 0 ${size}px` }}>
-      <g>
-        <ellipse cx="22" cy="22" rx="13" ry="20" fill="#0B4D24" />
-        <ellipse cx="15" cy="22" rx="13" ry="20" fill="#0F7A37" />
-        <ellipse cx="15" cy="22" rx="13" ry="20" fill="none" stroke="#0A5A28" strokeWidth="1.2" />
-        <text
-          x="15" y="22" textAnchor="middle" dominantBaseline="central"
-          fontFamily="'Space Grotesk', Arial, Helvetica, sans-serif" fontSize="16" fontWeight="700"
-          fill="#22C55E" transform="scale(0.82 1)" style={{ transformOrigin: '15px 22px' }}
-        >
-          RC
-        </text>
-      </g>
-    </svg>
-  );
 }
 
 /** One rolling row in the OPEN GAMES carousel — the design's synthetic `make()` return shape

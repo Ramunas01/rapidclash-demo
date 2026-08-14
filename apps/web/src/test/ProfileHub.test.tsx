@@ -82,24 +82,24 @@ describe('ProfileHubScreen', () => {
     setMuted(false); // cleanup for other tests / files
   });
 
-  it('shows the wallet balance in ¢ and the recent ledger entries (signed amounts)', async () => {
+  it('shows the wallet balance and the recent ledger entries (signed amounts)', async () => {
     render(<ProfileHubScreen {...baseProps()} />);
-    // Balance refreshed from /wallet, rendered in ¢.
-    await waitFor(() => expect(screen.getByTestId('profile-balance').textContent).toBe('1,009¢'));
+    // Balance refreshed from /wallet, rendered with the RC-icon credits display.
+    await waitFor(() => expect(screen.getByTestId('profile-balance').textContent).toContain('1,009'));
     const ledger = within(screen.getByTestId('profile-ledger'));
     expect(ledger.getByTestId('profile-entry-e1').textContent).toMatch(/GRANT/);
-    expect(ledger.getByTestId('profile-entry-e1').textContent).toContain('+1,000¢');
-    expect(ledger.getByTestId('profile-entry-e2').textContent).toContain('-10¢'); // BET_ESCROW debit
-    expect(ledger.getByTestId('profile-entry-e3').textContent).toContain('+19¢'); // SETTLE_WIN credit
+    expect(ledger.getByTestId('profile-entry-e1').textContent).toContain('+1,000');
+    expect(ledger.getByTestId('profile-entry-e2').textContent).toContain('-10'); // BET_ESCROW debit
+    expect(ledger.getByTestId('profile-entry-e3').textContent).toContain('+19'); // SETTLE_WIN credit
   });
 
   it('renders the leaderboard and switches game via the picker (kind-aware)', async () => {
     render(<ProfileHubScreen {...baseProps()} />);
-    // Default coinflip (net_winnings, ¢, can be negative).
+    // Default coinflip (net_winnings, can be negative).
     await waitFor(() => expect(screen.getByTestId('profile-rank-p1')).toBeInTheDocument());
     const board = within(screen.getByTestId('profile-leaderboard'));
-    expect(board.getByTestId('profile-rank-p1').textContent).toContain('+90¢');
-    expect(board.getByTestId('profile-rank-p2').textContent).toContain('-10¢');
+    expect(board.getByTestId('profile-rank-p1').textContent).toContain('+90');
+    expect(board.getByTestId('profile-rank-p2').textContent).toContain('-10');
 
     // Pick chess → elo rendering.
     fireEvent.click(board.getByTestId('profile-lb-pick-chess'));
@@ -220,7 +220,7 @@ describe('ProfileHubScreen', () => {
 
   it('is sanitized: no $ anywhere on the hub', async () => {
     const { container } = render(<ProfileHubScreen {...baseProps()} />);
-    await waitFor(() => expect(screen.getByTestId('profile-balance').textContent).toBe('1,009¢'));
+    await waitFor(() => expect(screen.getByTestId('profile-balance').textContent).toContain('1,009'));
     await waitFor(() => expect(screen.getByTestId('profile-rank-p1')).toBeInTheDocument());
     expect(container.textContent ?? '').not.toMatch(/\$/);
   });

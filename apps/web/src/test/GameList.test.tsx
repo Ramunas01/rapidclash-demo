@@ -43,7 +43,7 @@ describe('GameListScreen (re-skin)', () => {
     // Option B: the name is baked into the art (not shown as text), but kept as the button's
     // accessible name; the stake range + ranking remain visible.
     expect(screen.getByLabelText('Play Rock Paper Scissors')).toBeInTheDocument();
-    expect(screen.getByText(/1–100¢ · ~10s/)).toBeInTheDocument();
+    expect(screen.getByText(/1–100 credits · ~10s/)).toBeInTheDocument();
     expect(screen.getByText('Net winnings')).toBeInTheDocument(); // coinflip ranking
   });
 

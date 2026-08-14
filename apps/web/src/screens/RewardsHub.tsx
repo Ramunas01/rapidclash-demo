@@ -6,6 +6,7 @@ import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
+import { RcIcon } from '../components/hub-shared/RcIcon.js';
 import { HUB_SHELL, HUB_BODY } from '../components/hub-chrome/layout.js';
 import avatarPlaceholder from '../assets/games-and-rewards/avatar-placeholder.jpg';
 
@@ -215,7 +216,7 @@ export function RewardsHubScreen({ token, username, balance, onHome, onOpenProfi
                     <RakebackIcon />
                   </div>
                   <div style={{ marginTop: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
-                    <RcCoinIcon width={15} height={17} />
+                    <RcIcon size={15} />
                     <span data-testid="rewards-claimable" style={{ fontFamily: "'Space Grotesk', Arial, Helvetica, sans-serif", fontSize: '20px', fontWeight: 700, color: '#34D399' }}>
                       {(snapshot?.claimableBalance ?? 0).toLocaleString('en-US')}
                     </span>
@@ -414,8 +415,8 @@ function XpEngineAccordion() {
       <div style={{ margin: '16px 0 0 0', display: 'flex', flexDirection: 'column', gap: '2px', padding: '11px 0' }}>
         <div style={{ height: '44px', display: 'flex', alignItems: 'flex-end', paddingBottom: '8px' }}>
           <span style={{ flex: '1 1 40%', fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '10px', fontWeight: 'bold', letterSpacing: '1.2px', color: '#FFFFFF' }}>RAKE</span>
-          <span style={{ flex: '1 1 30%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '10px', fontWeight: 'bold', letterSpacing: '1.2px', color: '#FFFFFF' }}>XP / 1 <RcCoinIcon width={13} height={15} /></span>
-          <span style={{ flex: '1 1 30%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '10px', fontWeight: 'bold', letterSpacing: '1.2px', color: '#FFFFFF' }}>100 <RcCoinIcon width={13} height={15} /> WAGERED</span>
+          <span style={{ flex: '1 1 30%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '10px', fontWeight: 'bold', letterSpacing: '1.2px', color: '#FFFFFF' }}>XP / 1 <RcIcon size={13} /></span>
+          <span style={{ flex: '1 1 30%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '10px', fontWeight: 'bold', letterSpacing: '1.2px', color: '#FFFFFF' }}>100 <RcIcon size={13} /> WAGERED</span>
         </div>
         <div style={{ borderRadius: '26px', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '2px' }}>
           {RAKE_XP_ROWS.map(([rake, xp1, xp100], i) => (
@@ -496,19 +497,6 @@ function CheckIcon() {
     <svg width="20" height="20" viewBox="0 0 24 24" style={{ display: 'block' }}>
       <circle cx="12" cy="12" r="11" fill="#34D399" />
       <path d="m7.5 12.3 3.1 3.1 5.9-6.2" fill="none" stroke="#0B0B0B" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function RcCoinIcon({ width, height }: { width: number; height: number }) {
-  return (
-    <svg width={width} height={height} viewBox="0 0 38 44" fill="none" style={{ display: 'block', flex: `0 0 ${width}px`, overflow: 'visible' }}>
-      <g>
-        <ellipse cx="22" cy="22" rx="13" ry="20" fill="#0B4D24" />
-        <ellipse cx="15" cy="22" rx="13" ry="20" fill="#0F7A37" />
-        <ellipse cx="15" cy="22" rx="13" ry="20" fill="none" stroke="#0A5A28" strokeWidth="1.2" />
-        <text x="15" y="22" textAnchor="middle" dominantBaseline="central" fontFamily="'Space Grotesk', Arial, Helvetica, sans-serif" fontSize="16" fontWeight="700" fill="#22C55E" transform="scale(0.82 1)" style={{ transformOrigin: '15px 22px' }}>RC</text>
-      </g>
     </svg>
   );
 }

@@ -69,7 +69,7 @@ interface Props {
  * (fixed-width mobile composition): promo hero carousel, group tabs (All/Originals/Classics/
  * Events) + Find/Filter/Sort, an art-only 3-up game grid (PvP playable vs dimmed coming-soon),
  * a "Bring a Rival" card, the scrolling Open Games ticker (real feed; teaser-free), and a
- * sanitized footer. Presentation only — real data, play-money ¢, no house games playable.
+ * sanitized footer. Presentation only — real data, play-money credits, no house games playable.
  */
 export function HomeHubScreen({
   token, balance, challengesByGame, onTrackChallenges, onUntrackChallenges,

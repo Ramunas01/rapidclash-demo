@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import type { LeaderboardEntry, RankingKind } from '@rapidclash/shared';
 import { api } from '../api.js';
-import { formatCredits } from '../format.js';
+import { Credits } from '../components/hub-shared/RcIcon.js';
 import { cn } from '@/lib/utils';
 import { Avatar } from '../components/hub-shared/Avatar.js';
 
@@ -25,13 +25,20 @@ interface Props {
   onBack(): void;
 }
 
-/** Render a row's stat according to its ranking kind (ADR-007): win_rate shows a
- *  percentage; net_winnings shows signed credits (the sign is part of the value);
- *  elo shows the rounded rating. */
+/**
+ * Render a row's stat according to its ranking kind (ADR-007): win_rate shows a percentage;
+ * net_winnings shows the signed number (the sign is part of the value); elo shows the rounded
+ * rating. `net_winnings` returns a plain signed number, not a credits string — issue #324 moved
+ * the RC-icon credits display to the `<Credits showSign />` component (a string can't hold a
+ * React icon), so this function's only remaining callers render it for elo/win_rate; the
+ * net_winnings case exists here for parity/testing but its two real call sites (below and
+ * `ProfileHub.tsx`'s `ProfileLeaderboard`) both branch on `entry.kind` and use `<Credits>` instead
+ * for that kind.
+ */
 export function formatStat(entry: LeaderboardEntry): string {
   if (entry.kind === 'net_winnings') {
     const v = entry.netWinnings;
-    return `${v > 0 ? '+' : ''}${formatCredits(v)}`;
+    return `${v > 0 ? '+' : ''}${v.toLocaleString('en-US')}`;
   }
   if (entry.kind === 'elo') {
     return `${Math.round(entry.rating)} ELO`;
@@ -85,7 +92,7 @@ function StatCell({ entry }: { entry: LeaderboardEntry }) {
           )}
         >
           {v !== 0 && <Icon className="h-3.5 w-3.5" />}
-          {formatStat(entry)}
+          <Credits amount={v} showSign />
         </span>
         {/* ADR-007: net_winnings sums to −rake across players, so a row can be negative. */}
         <span className="text-[10px] font-medium text-white/40">net of platform fee</span>
