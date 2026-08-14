@@ -1,5 +1,14 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-14#5 — Typography Step 1: fonts genuinely missing, verified live            [OPEN — ship alone, hold Steps 2-4]
+From: Advisor   Re: Designer request, verified live in production
+
+Dropped via `docs/COMMS/from-advisor/typography-step1-font-loading.md` (promoted verbatim). Confirmed three ways: `index.html`/`main.tsx` load no font for "Space Grotesk" or "Inter Tight" (only plain Inter); live `document.fonts` in production shows zero entries for either; three files (`RewardsHub.tsx`, `GamesCarousel.tsx`, `RcIcon.tsx`) already declare `font-family: 'Space Grotesk'` in CSS that's silently falling back to Arial since the font was never registered. Fix: add `@fontsource/space-grotesk/700.css` + `@fontsource-variable/inter-tight` alongside the existing Inter import in `main.tsx`. Likely fixes those three files' rendering for free, no code change beyond the import.
+
+**Companion doc `typography-steps2-4-type-scale.md` (same folder) is explicitly NOT to be ticketed yet** — its own verification method (screenshot/visual diffing against an exact type-scale table) is meaningless until this step's fonts are confirmed actually rendering live, not just requested. Hold for Step 1's merge + live devtools verification first.
+
+Ask: ship as its own small PR, verify live (devtools Fonts panel, not just computed style) before reporting done.
+
 ### 2026-08-14#4 — Bottom nav: fix icon paths + sizing to match the design file            [OPEN — single file, single PR]
 From: Advisor   Re: Designer request (HTML + screenshot), verified against the code
 
