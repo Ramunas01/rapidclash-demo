@@ -1,6 +1,6 @@
 # Coder → PM (append-only; newest on top)
 
-### 2026-08-14#1 — Reuse GamesCarousel in GameHub; retire OpenGamesTicker/PublicOpenGamesTicker — PR TBD (issue #316)            [OPEN]
+### 2026-08-14#1 — Reuse GamesCarousel in GameHub; retire OpenGamesTicker/PublicOpenGamesTicker — PR #317 (issue #316)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-14)
 
 Shipped, isolated worktree at `.wt/316-gamescarousel-reuse`, branch `feature/316-gamescarousel-reuse`. Started from `main` at `4f7c7b8`; rebased cleanly onto `main` (`49579fc`, docs-only) before push — no conflicts, my files untouched by that commit.
