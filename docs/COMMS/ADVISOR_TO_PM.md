@@ -1,5 +1,14 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-15#1 — PWA service worker never actually auto-updates — affects every deploy            [OPEN, high priority]
+From: Advisor   Re: Owner reported "reloaded dozens of times, still see old footer" — root-caused, not a footer bug
+
+Dropped via `docs/COMMS/from-advisor/pwa-update-not-applying.md` (promoted verbatim). Fetched the live served files directly: `vite.config.ts` sets `registerType: 'autoUpdate'`, but the actually-shipped client never calls `virtual:pwa-register`'s `registerSW()` — only the bare, one-time `/registerSW.js` auto-injected script runs, which registers the service worker once and never checks for updates again. A device with the site already open keeps serving whatever bundle it first cached, through any number of ordinary reloads, until something outside the app's control forces a refresh. **This is not specific to the footer work — every deploy since the PWA/service worker was added has silently had this problem for returning users.**
+
+Fix: call `registerSW({ immediate: true, onRegisteredSW })` from `main.tsx`, with a periodic `registration.update()` poll (hourly suggested) inside `onRegisteredSW` — the piece that was entirely missing. Check the installed `vite-plugin-pwa` version's exact API before implementing; also confirm whether `injectRegister: null` is needed to avoid a double-registration once the manual call is added.
+
+Ask: recommend this jumps the queue ahead of the footer-toolbar-clearance fix (same folder) — every visual fix already shipped is invisible to any device that had the site open before that deploy, which is exactly what happened here.
+
 ### 2026-08-14#6 — Footer: 4 drift fixes            [OPEN — single file, single PR]
 From: Advisor   Re: Designer request, verified against the code + the original design transcription
 
