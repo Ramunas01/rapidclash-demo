@@ -1,5 +1,14 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-14#4 — Bottom nav: fix icon paths + sizing to match the design file            [OPEN — single file, single PR]
+From: Advisor   Re: Designer request (HTML + screenshot), verified against the code
+
+Dropped via `docs/COMMS/from-advisor/navbar-icon-fix.md` (promoted verbatim). One file: `HubToolbar.tsx`. The screenshot only calls out Games/Rewards, but the source file (`design-ref/navbar/RapidClash Navbar.html`) changes all five icons' path data plus icon size (23px→24px) and bar vertical padding (10px→12px) — verified byte-by-byte against the current `ICON_*` constants, not assumed from the screenshot. Games and Rewards are full icon swaps (spade→bolt mark; plain box→two-part bow+box); Menu/Account/Chat are proportion refinements. Fill/tint mechanism (`currentColor` + class-driven) is unchanged — only geometry and sizing move.
+
+One flagged, deliberately out-of-scope item: two colour-token deltas (brand purple, muted gray) a few points off between the file and the app's real tokens — both used sitewide, correcting them here would be an unauthorized app-wide rebrand, not a navbar fix. Left untouched, worth its own ticket if the Designer wants it.
+
+Ask: ready to ticket — single-file, single-PR fix.
+
 ### 2026-08-14#3 — Shared footer everywhere + RC-icon balance/credits sitewide            [OPEN — split into 2 PRs]
 From: Advisor   Re: Designer request, verified against the code — two independent halves
 
