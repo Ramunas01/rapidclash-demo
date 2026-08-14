@@ -24,7 +24,7 @@ import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
 import { MuteToggle } from '../components/hub-chrome/MuteToggle.js';
 import { Avatar } from '../components/hub-shared/Avatar.js';
-import { HUB_SHELL, HUB_BODY } from '../components/hub-chrome/layout.js';
+import { HUB_SHELL } from '../components/hub-chrome/layout.js';
 
 interface Props {
   token: string;
@@ -109,7 +109,7 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
       <HubRibbon balance={liveBalance} onLogo={onHome} onWallet={onOpenProfile} />
 
       <main data-testid="profile-hub">
-        <div className={cn('mx-auto flex max-w-md flex-col gap-5 px-4', HUB_BODY)}>
+        <div className="mx-auto flex max-w-md flex-col gap-5 px-4">
           {/* 1 — Profile header: avatar (tap → picker) + alias + log out. */}
           <section data-testid="profile-header" className="flex items-center gap-3 rounded-2xl border border-border bg-card p-4">
             <button

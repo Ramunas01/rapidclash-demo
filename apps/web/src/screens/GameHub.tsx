@@ -9,7 +9,7 @@ import { formatClock } from '../format.js';
 import { cn } from '@/lib/utils';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
-import { hubShellClass, hubBodyPadding } from '../components/hub-chrome/layout.js';
+import { hubShellClass } from '../components/hub-chrome/layout.js';
 import { TILE_ART, COMING_SOON, titleCase } from '../components/hub-shared/tiles.js';
 import { GamesCarousel } from '../components/hub-shared/GamesCarousel.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
@@ -534,7 +534,7 @@ export function GameHub(props: GameHubProps) {
       <main data-testid="hub-body">
         {/* No blanket px-4 — sections that need insetting add their own; the shared Open Games /
             Bring-a-Rival / footer render full-bleed to the max-w-md edge (they pad internally). */}
-        <div className={cn('mx-auto flex w-full max-w-md flex-col gap-4', hubBodyPadding(isGuest))}>
+        <div className="mx-auto flex w-full max-w-md flex-col gap-4">
           {/* 1 — Arena: opponent slot pill, the per-game board, the player's own slot pill.
               No grey card frame here — each panel owns its surface (Blackjack's greyish table
               fills the section; the other arenas wrap themselves in a card). */}

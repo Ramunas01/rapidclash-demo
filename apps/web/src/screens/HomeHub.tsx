@@ -4,7 +4,7 @@ import { api } from '../api.js';
 import { cn } from '@/lib/utils';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
-import { HUB_SHELL, HUB_BODY } from '../components/hub-chrome/layout.js';
+import { HUB_SHELL } from '../components/hub-chrome/layout.js';
 import { TILE_ART, COMING_SOON, HIDDEN_ON_HOME, titleCase } from '../components/hub-shared/tiles.js';
 import { GamesCarousel } from '../components/hub-shared/GamesCarousel.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
@@ -134,7 +134,7 @@ export function HomeHubScreen({
       <HubRibbon balance={loggedIn ? liveBalance : null} onLogo={onHome} onWallet={onOpenWallet} loggedIn={loggedIn} />
 
       <main data-testid="home-hub">
-        <div className={cn('mx-auto flex w-full max-w-md flex-col gap-6', HUB_BODY)}>
+        <div className="mx-auto flex w-full max-w-md flex-col gap-6">
           <HeroCarousel />
 
           {/* Game grid — the prime real-estate: group tabs + controls + art-only tiles. */}
