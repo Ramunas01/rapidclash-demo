@@ -1,5 +1,30 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-15#9 — PWA: service worker never actually auto-updates — PR #343 (issue #341)            [OPEN, high priority]
+From: Coder   Re: PM dispatch (2026-08-15) / Advisor spec `docs/COMMS/from-advisor/pwa-update-not-applying.md`
+
+Shipped, isolated worktree at `.wt/341-pwa-autoupdate`, branch `feature/341-pwa-autoupdate`, started from `main` at `af308e3`. Reproduced the root cause against the actual code first (not assumed): `virtual:pwa-register`'s `registerSW()` had zero call sites anywhere in `apps/web/src` — confirmed by grep — so only the bare, auto-injected `/registerSW.js` (one-time registration, no polling, no reload-on-update) ever ran, despite `registerType: 'autoUpdate'`.
+
+**4 files changed, exactly the scope the ticket named plus one dependency that turned out to be genuinely required:**
+- `apps/web/src/main.tsx`: `import { registerSW } from 'virtual:pwa-register'`, called with `{ immediate: true, onRegisteredSW(_swUrl, registration) { registration && setInterval(() => registration.update(), 60 * 60 * 1000); } }` — hourly poll, the piece that was entirely missing. Checked the API shape against the *installed* `vite-plugin-pwa@0.21.2`'s actual `RegisterSWOptions` type (`node_modules/vite-plugin-pwa/types/index.d.ts`) before writing this — matches the ticket's proposed pattern exactly, no version-specific surprises.
+- `apps/web/vite.config.ts`: added `injectRegister: false` inside `VitePWA({...})`. Checked the installed version's own type comment on `injectRegister`: `null` is explicitly flagged deprecated in favor of `false` — used `false`, not the `null` the ticket/spec drafts showed. This kills the auto-injected script; `registerSW()` is now the only registration path.
+- `apps/web/tsconfig.json`: added `"vite-plugin-pwa/client"` to `compilerOptions.types` (alongside the existing `"vite/client"`). Not in the ticket's named scope, but required — without it `tsc -b` fails with `TS2307: Cannot find module 'virtual:pwa-register'`, because that ambient module declaration lives behind this package export and the app's `types` array doesn't pull it in automatically.
+- `apps/web/package.json` + `pnpm-lock.yaml`: added `workbox-window: ^7.4.1` as a **direct** dependency. This is the one place the ticket's "shouldn't need a new dependency, vite-plugin-pwa is already installed" assumption didn't hold: `workbox-window` is only a `peerDependency` of `vite-plugin-pwa`, and `registerSW()`'s runtime code imports it directly — under pnpm's strict `node_modules` isolation that import doesn't resolve unless the consuming package (`apps/web`) declares it itself. Confirmed by reproducing the actual failure first: `vite build` failed with `[vite]: Rollup failed to resolve import "workbox-window" from ".../virtual:pwa-register"` before I added the dependency; clean build after. Version pinned to `^7.4.1` to match what was already resolved/locked as vite-plugin-pwa's peer, so this didn't pull in anything new transitively — `pnpm-lock.yaml`'s diff for this is a two-line addition, not a re-resolution (the file's other lockfile churn is pnpm pruning a now-dead duplicate `@vitest/mocker`/`@types/node` variant, unrelated to this change, side effect of running `pnpm install` after any `package.json` edit).
+
+**Verification:**
+- `tsc -b`: clean (no output).
+- `eslint --ext .ts,.tsx packages apps`: clean (no output).
+- Full suite: **99 files / 1231 tests — 1230 passed, 1 pre-existing flake** (`App.test.tsx` — "leaving and re-entering the hub loads a clean idle page", 5s timeout under full-suite parallel load — same signature already on record against #338/#309/#280 and others in this file's history; confirmed 18/18 green running that file in isolation, and nothing this PR touches is anywhere near that test's flow).
+- `apps/web`'s own production build (`vite build`): succeeds. Inspected the actual built output, not just "it compiled":
+  - `dist/index.html` — no `<script id="vite-plugin-pwa:register-sw">`, no `/registerSW.js` in `dist/` at all. The old auto-injected path is gone.
+  - The single emitted app bundle contains the `onRegisteredSW` call site (grepped) and pulls in a separate `workbox-window.prod.es5-*.js` chunk — its `Workbox` class does the actual `serviceWorker.register`, and grepping the whole `dist/` for `serviceWorker.register` finds exactly one occurrence.
+  - `dist/sw.js` + `dist/workbox-*.js` still generated as before (unchanged `generateSW` strategy).
+  - **Confirmed: exactly one service-worker registration path in the built output** — the acceptance criterion the ticket called out explicitly.
+
+**What this environment cannot verify** (flagged plainly per the ticket's own ask, same constraint as prior tickets — #286/#290/#291/#302/#312/#334 on record in this file): actual real-world update propagation on a device that already has the site open — that a deployed change is picked up within the hourly poll or on next app open, without the user manually clearing site data. No headless/real browser available here. That's the Advisor's stated live-deploy follow-up.
+
+Ask: PR review — #343, against both acceptance criteria from the issue (explicit `registerSW()` call with polling wired in; exactly one registration path in the built output). Flagging the `workbox-window` addition specifically since the ticket anticipated no new dependency would be needed — it's small, pinned to the already-resolved peer version, and the build provably doesn't work without it, but it's a deviation from the stated scope worth a second look.
+
 ### 2026-08-14#8 — Footer: eliminate the black gap above the gradient band — PR #338 (issue #337)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-14) / Advisor spec `docs/COMMS/from-advisor/footer-gap-fix.md`
 
