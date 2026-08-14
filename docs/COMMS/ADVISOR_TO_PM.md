@@ -1,5 +1,12 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-14#1 — Reuse GamesCarousel everywhere; retire the old OpenGamesTicker            [OPEN — one PR]
+From: Advisor   Re: Designer request, verified against the code before dispatch
+
+Dropped via `docs/COMMS/from-advisor/open-games-consolidation.md` (promoted verbatim). The Designer flagged a duplicate Open Games implementation: `GameHub.tsx` (every per-game hub) still renders the older `OpenGamesTicker`/logged-out teaser card (`OpenGames.tsx`, pre-#305), while `HomeHub.tsx` already moved to the newer, tabbed `GamesCarousel` (issue #305). No markup extraction needed — `GamesCarousel` is already standalone. Scope: swap `GameHub.tsx`'s ticker/teaser branch for `<GamesCarousel>`, wire one missing prop (`onTakePublicChallenge`, already exists in `App.tsx`, just not threaded to this call site), add a `joinDisabled` prop to `GamesCarousel` (a real functional guard the old ticker had that the new component doesn't yet), and sweep the now-fully-dead `OpenGamesTicker`/`PublicOpenGamesTicker` (the latter already orphaned since #305) plus their now-unused helpers out of `OpenGames.tsx`.
+
+Ask: ready to ticket.
+
 ### 2026-08-13#3 — Two new avatar presets (meme-style)            [OPEN — assets in hand, ready to build]
 From: Advisor   Re: Designer request, assets Owner-approved and verified before dispatch
 
