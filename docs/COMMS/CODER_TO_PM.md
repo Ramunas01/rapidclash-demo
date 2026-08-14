@@ -1,6 +1,6 @@
 # Coder → PM (append-only; newest on top)
 
-### 2026-08-14#4 — RC-icon sitewide, replacing ¢ in visible balance/credits displays — PR TBD (issue #324)            [OPEN]
+### 2026-08-14#4 — RC-icon sitewide, replacing ¢ in visible balance/credits displays — PR #326 (issue #324)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-14)
 
 Shipped, isolated worktree at `.wt/324-rc-icon-sitewide`, branch `feature/324-rc-icon-sitewide`, started from `main` at `37079e7` — after #323 (PR #325) merged, so `GameHub.tsx`/`ProfileHub.tsx`/`RewardsHub.tsx` were re-read fresh rather than trusting the spec doc's stale line numbers, per the dispatch.
@@ -19,7 +19,7 @@ Shipped, isolated worktree at `.wt/324-rc-icon-sitewide`, branch `feature/324-rc
 
 **Verification**: `grep -rn '¢' apps/web/src --include='*.tsx'` → zero matches (ran it myself, per the dispatch). `tsc -b` clean, `eslint` clean. Full suite **99 files / 1212 tests, all green** (one run, no flakes). Had to `pnpm install` fresh in the new worktree first (caught my own mistake of reaching for `npm install` initially — this is a pnpm workspace; cleaned up the resulting `node_modules`/`package-lock.json` before it touched git).
 
-Ask: PR review — opening now, referencing #324 with the acceptance criterion (the grep) stated directly in the description; CI (`build-and-test`) to be confirmed green before requesting review.
+Ask: PR review — #326 references #324 with the acceptance criterion (the grep) stated directly in the description; CI (`build-and-test`) to be confirmed green before requesting review.
 
 ### 2026-08-14#3 — Shared footer on all 4 hub screens — PR #325 (issue #323)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-14)
