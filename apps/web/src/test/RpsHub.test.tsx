@@ -144,10 +144,11 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
   it('JOIN balance-check + chrome + no $ (shared GameHub behaviour holds for RPS)', () => {
     const onTakeChallenge = vi.fn();
     const { container } = render(<RpsHubScreen {...baseProps({ balance: 5, challengesByGame: { rps: [CHALLENGE] }, onTakeChallenge })} />);
-    expect(screen.getByTestId('home-stake-c1').textContent).toBe('50¢');
-    fireEvent.click(screen.getByTestId('home-join-c1'));
+    const row = document.querySelector('[data-match-id="c1"]') as HTMLElement;
+    expect(within(row).getByTestId(/^games-carousel-stake-/).textContent).toBe('50');
+    fireEvent.click(within(row).getByTestId(/^games-carousel-join-/));
     expect(onTakeChallenge).not.toHaveBeenCalled();
-    expect(screen.getByTestId('home-ticker-notice').textContent).toMatch(/not enough/i);
+    expect(screen.getByTestId('games-carousel-notice').textContent).toMatch(/not enough/i);
     expect(container.textContent ?? '').not.toMatch(/\$/);
   });
 });
@@ -162,15 +163,16 @@ describe('GameHub (logged out — via RpsHub)', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it('browsing stays open: the bet selector works + PLAY arms, but the chip is "Sign in" and the feed is a teaser', () => {
+  it('browsing stays open: the bet selector works + PLAY arms, but the chip is "Sign in" and the feed is the logged-out carousel', () => {
     const onPlay = vi.fn();
     const onTrackChallenges = vi.fn();
     render(<RpsHubScreen {...baseProps({ loggedIn: false, token: '', onPlay, onTrackChallenges })} />);
-    // Sign-in chip, not a fake balance; the open-challenges feed is a teaser (no live rows).
+    // Sign-in chip, not a fake balance; the same GamesCarousel the Home hub uses, in its
+    // logged-out (public-poll) mode — not the old teaser card, not the signed-in WS ticker.
     expect(screen.getByTestId('hub-signin-chip')).toBeInTheDocument();
     expect(screen.queryByTestId('hub-wallet-chip')).toBeNull();
-    expect(screen.getByTestId('hub-section-challenges-teaser')).toBeInTheDocument();
-    expect(screen.queryByTestId('home-ticker')).toBeNull(); // the live cross-game ticker is auth-only
+    expect(screen.getByTestId('games-carousel')).toBeInTheDocument();
+    expect(screen.queryByTestId('hub-section-challenges-teaser')).toBeNull();
     expect(onTrackChallenges).not.toHaveBeenCalled(); // no WS feed while logged out
     // Browsing + arming a bet is allowed; the auth wall fires in the App at PLAY.
     fireEvent.click(screen.getByTestId('hub-bet-10'));

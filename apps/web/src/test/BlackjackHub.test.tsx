@@ -772,7 +772,7 @@ describe('BlackjackHubScreen — guest mode chrome (issue #297)', () => {
     expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument();
     expect(screen.getByTestId('hub-balance').textContent).toContain('200');
     expect(screen.queryByTestId('hub-wallet-chip')).toBeNull();
-    expect(screen.queryByTestId('hub-section-challenges-teaser')).toBeNull();
+    expect(screen.queryByTestId('games-carousel')).toBeNull();
     expect(screen.queryByTestId('hub-section-related')).toBeNull();
     expect(screen.queryByTestId('hub-nav-games')).toBeNull();
     expect(screen.queryByTestId('hub-nav-account')).toBeNull();

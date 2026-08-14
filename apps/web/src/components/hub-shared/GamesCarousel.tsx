@@ -22,13 +22,13 @@ import { mergeChallengesByGame, insufficientBalanceNotice, PUBLIC_POLL_MS, type 
  *   `transition: 0ms` (invisible — visually identical to the settled frame), frame 2 animates to
  *   `translateY(0)` over 620ms with `cubic-bezier(0.22,0.61,0.36,1)`.
  * - `make()`'s synthetic `POOL`/`STAKES` row-building is replaced with real open-challenge rows
- *   (issue #305: "reuse the existing feed, don't build a new path") — the exact same
- *   `challengesByGame` WS aggregate / public-poll snapshot `OpenGamesTicker`/
- *   `PublicOpenGamesTicker` (`OpenGames.tsx`) already consume, via the shared
- *   `mergeChallengesByGame`/`PUBLIC_POLL_MS` helpers extracted from that file. Game art comes
- *   from the existing `TILE_ART` map (not the design's own `IMGS`, which points at design-tool
- *   asset paths this app doesn't have). JOIN reuses `insufficientBalanceNotice`, the exact
- *   affordability rule/copy `OpenGamesTicker`'s JOIN buttons already enforce.
+ *   (issue #305: "reuse the existing feed, don't build a new path") — the same
+ *   `challengesByGame` WS aggregate / public-poll snapshot the now-retired `OpenGamesTicker`/
+ *   `PublicOpenGamesTicker` used to consume (issue #316 deleted both once this component became
+ *   the one Open Games implementation everywhere), via the shared `mergeChallengesByGame`/
+ *   `PUBLIC_POLL_MS` helpers still exported from `OpenGames.tsx`. Game art comes from the existing
+ *   `TILE_ART` map (not the design's own `IMGS`, which points at design-tool asset paths this app
+ *   doesn't have). JOIN reuses `insufficientBalanceNotice`, the same affordability rule/copy.
  * - The design's `MODES` placeholder array is dead in the file itself (never read by `make()`)
  *   — nothing to wire for it, confirmed by grepping the decoded template.
  * - 24H RACE / WEEKLY RACE / RANK (tabs 1-3) render the design's own static placeholder arrays
@@ -42,9 +42,8 @@ import { mergeChallengesByGame, insufficientBalanceNotice, PUBLIC_POLL_MS, type 
  * Judgment calls (flagged for the Advisor's pixel-diff pass, not silent deviations):
  * 1. **Real-data empty state.** The design's synthetic `POOL` is always non-empty, so its
  *    `tick()`/constructor never had to handle zero rows. A real feed can genuinely be empty (no
- *    open challenges anywhere) — added a plain empty-state message (mirrors
- *    `OpenGamesTicker`'s `EmptyTicker`) instead of animating an empty list, and the tick interval
- *    simply doesn't run while the pool is empty.
+ *    open challenges anywhere) — added a plain empty-state message instead of animating an empty
+ *    list, and the tick interval simply doesn't run while the pool is empty.
  * 2. **Eager initial seed.** The design's constructor synchronously fills all 11 rows because its
  *    POOL is a constant, always fully available. A real feed arrives async (WS subscribe / first
  *    poll) and can start empty — seeded the initial 11-row window the moment the live pool first
@@ -247,9 +246,9 @@ interface CarouselRow {
   zebra: boolean;
 }
 
-/** Real pool for the carousel to draw from: the signed-in WS aggregate when logged in (the exact
- *  `challengesByGame` prop `OpenGamesTicker` already consumes), or the same public-poll snapshot
- *  `PublicOpenGamesTicker` uses when logged out — same feed, same cadence, no new data path. */
+/** Real pool for the carousel to draw from: the signed-in WS aggregate when logged in (the
+ *  `challengesByGame` prop, same shape every hub already passes), or the same public-poll
+ *  snapshot when logged out — one feed, one cadence, no new data path. */
 function useOpenChallengesPool(challengesByGame: Record<string, OpenChallenge[]>, loggedIn: boolean): FeedRow[] {
   const [publicRows, setPublicRows] = useState<PublicOpenChallenge[]>([]);
 
@@ -362,15 +361,20 @@ function useOpenGamesCarousel(pool: FeedRow[], nameByGame: Map<string, string>) 
 }
 
 export interface GamesCarouselProps {
-  /** Cross-game open challenges, keyed by gameId — the same shape `OpenGamesTicker` takes. */
+  /** Cross-game open challenges, keyed by gameId — every hub passes this same shape. */
   challengesByGame: Record<string, OpenChallenge[]>;
   nameByGame: Map<string, string>;
   balance: number;
   onTake(matchId: string): void;
-  /** Logged-out JOIN: mirrors `PublicOpenGamesTicker`'s `onJoin` — captures the row's game+stake
-   *  so the caller's auth wall can resume the take after sign-in. */
+  /** Logged-out JOIN: captures the row's game+stake so the caller's auth wall can resume the
+   *  take after sign-in. */
   onTakePublicChallenge?(c: { matchId: string; gameId: string; stake: number }): void;
   loggedIn: boolean;
+  /** Grey out every row's JOIN while the viewer is already mid-commitment (issue #316) — a real
+   *  guard, not decorative: `GameHub.tsx` passes `phase === 'in-match' || phase === 'waiting'` so a
+   *  player already searching/playing on this exact page can't also take another challenge.
+   *  Default false (Home's usage is unaffected — a player is never mid-match on the Home hub). */
+  joinDisabled?: boolean;
 }
 
 /**
@@ -379,7 +383,7 @@ export interface GamesCarouselProps {
  * `docs/COMMS/from-advisor/games-and-rewards.md`. See the file header for the full design-source
  * transcription and judgment calls.
  */
-export function GamesCarousel({ challengesByGame, nameByGame, balance, onTake, onTakePublicChallenge, loggedIn }: GamesCarouselProps) {
+export function GamesCarousel({ challengesByGame, nameByGame, balance, onTake, onTakePublicChallenge, loggedIn, joinDisabled = false }: GamesCarouselProps) {
   const pool = useOpenChallengesPool(challengesByGame, loggedIn);
   const { items, offset, dur } = useOpenGamesCarousel(pool, nameByGame);
   const liveCount = pool.length; // judgment call #3: real count, not the design's synthetic cycle
@@ -408,6 +412,7 @@ export function GamesCarousel({ challengesByGame, nameByGame, balance, onTake, o
   }
 
   function handleJoinRow(row: CarouselRow) {
+    if (joinDisabled) return;
     if (!loggedIn) {
       onTakePublicChallenge?.({ matchId: row.matchId, gameId: row.gameId, stake: row.stake });
       return;
@@ -592,8 +597,9 @@ export function GamesCarousel({ challengesByGame, nameByGame, balance, onTake, o
                       type="button"
                       data-testid={`games-carousel-join-${g.uid}`}
                       onClick={() => handleJoinRow(g)}
+                      disabled={joinDisabled}
                       aria-label={`Join ${g.host}'s ${g.stake} credit ${g.gameName} game`}
-                      style={{ flex: '0 0 auto', background: '#8B45F0', borderRadius: '999px', padding: '11px 16px 11px 17px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: 'none' }}
+                      style={{ flex: '0 0 auto', background: '#8B45F0', borderRadius: '999px', padding: '11px 16px 11px 17px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: joinDisabled ? 'not-allowed' : 'pointer', opacity: joinDisabled ? 0.4 : 1, border: 'none' }}
                     >
                       <span style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '13px', lineHeight: '13px', fontWeight: 'bold', letterSpacing: '0.8px', color: '#FFFFFF', display: 'block' }}>JOIN</span>
                     </button>
