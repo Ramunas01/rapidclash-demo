@@ -177,4 +177,18 @@ describe('RewardsHubScreen', () => {
     await waitFor(() => expect(screen.getByTestId('rewards-xp')).toBeInTheDocument());
     expect(container.textContent ?? '').not.toMatch(/\$/);
   });
+
+  it('renders the shared footer (#323) between Bring a Rival and the bottom nav, wired to Games/Rewards', async () => {
+    const onHome = vi.fn();
+    const onOpenRewards = vi.fn();
+    stubFetch(BOBBYLEE_SNAPSHOT);
+    render(<RewardsHubScreen {...baseProps({ onHome, onOpenRewards })} />);
+    const footer = await screen.findByTestId('home-footer');
+    expect(within(footer).getByText('JOIN THE COMMUNITY')).toBeInTheDocument();
+
+    fireEvent.click(within(footer).getByText('Games'));
+    expect(onHome).toHaveBeenCalled();
+    fireEvent.click(within(footer).getByText('Rewards/VIP'));
+    expect(onOpenRewards).toHaveBeenCalled();
+  });
 });

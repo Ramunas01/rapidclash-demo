@@ -614,7 +614,7 @@ export function GameHub(props: GameHubProps) {
             <>
               <RelatedRail related={related} onSelectGame={onSelectGame} />
               <BringARival />
-              <HubFooter />
+              <HubFooter onGames={onOpenGameList} onRewards={onOpenRewards} />
             </>
           )}
         </div>

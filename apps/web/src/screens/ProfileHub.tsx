@@ -21,6 +21,7 @@ import { formatStat } from './Leaderboard.js';
 import { cn } from '@/lib/utils';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
+import { HubFooter } from '../components/hub-shared/HubFooter.js';
 import { MuteToggle } from '../components/hub-chrome/MuteToggle.js';
 import { Avatar } from '../components/hub-shared/Avatar.js';
 import { HUB_SHELL, HUB_BODY } from '../components/hub-chrome/layout.js';
@@ -185,9 +186,7 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
           {/* 3 — Leaderboard: live-games picker + the selected game's rankings. */}
           <ProfileLeaderboard token={token} />
 
-          <footer className="border-t border-border pt-4 pb-2 text-center">
-            <p className="text-[11px] text-muted-foreground">Players vs Players — never the house · play-money demo.</p>
-          </footer>
+          <HubFooter onGames={onHome} onRewards={onOpenRewards} />
         </div>
       </main>
 

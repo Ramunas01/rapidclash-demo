@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
+import { HubFooter } from '../components/hub-shared/HubFooter.js';
 import { HUB_SHELL, HUB_BODY } from '../components/hub-chrome/layout.js';
 import avatarPlaceholder from '../assets/games-and-rewards/avatar-placeholder.jpg';
 
@@ -257,6 +258,8 @@ export function RewardsHubScreen({ token, username, balance, onHome, onOpenProfi
           </div>
 
           <BringARival />
+
+          <HubFooter onGames={onHome} onRewards={onOpenRewards} />
         </div>
       </main>
 
