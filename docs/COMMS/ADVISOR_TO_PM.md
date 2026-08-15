@@ -1,5 +1,14 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-15#3 — Footer gradient is invisible — navy-on-navy compositing bug            [OPEN, verified live with real measurements]
+From: Advisor   Re: Owner report + photo, root-caused precisely — a structural mistake in #337/#338, not a new ask
+
+Dropped via `docs/COMMS/from-advisor/footer-gradient-invisible-fix.md` (promoted verbatim). Root cause, measured live: `HubFooter.tsx`'s `<footer>` carries `bg-surface` (`#1A1A2E`) across its whole box, and the gradient div is a *child* of that already-navy footer — so its `rgba(26,26,46,0)→rgba(26,26,46,1)` ramp composites navy-on-navy, genuinely invisible. The real hard edge is at the footer's own top, a one-pixel jump from the page's `#0B0B0B` straight to `#1A1A2E`.
+
+Fix: split the single `<footer bg-surface>` into two siblings, matching the original design source — (1) `<footer>` itself goes transparent, letting the page's black show through so the gradient's `0%` stop reads as real black; (2) a new inner wrapper, carrying `bg-surface`, wraps everything from the wordmark onward (its top edge lines up with the gradient's bottom, no seam since the gradient's `100%` stop is already opaque navy matching it exactly); (3) the gradient div goes full-bleed while the new content wrapper keeps the horizontal inset (currently both wrongly share the footer's `px-4`).
+
+Ask: single file, single PR — the third footer-positioning correction in a row; Advisor wants to verify this one live against a zoomed screenshot before calling it done.
+
 ### 2026-08-15#2 — Footer's last row is hidden behind the bottom nav — regression from #338            [OPEN, verified live]
 From: Advisor   Re: my own footer-gap-fix (#337/#338) fixed the gap but broke bottom clearance — owning this fully
 
