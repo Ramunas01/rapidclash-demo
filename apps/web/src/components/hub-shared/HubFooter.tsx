@@ -111,7 +111,12 @@ const LINK_COLUMNS: { heading: string; links: { label: string; real?: 'games' | 
  */
 export function HubFooter({ onGames, onRewards }: Props) {
   return (
-    <footer data-testid="home-footer" className={cn('bg-surface px-4 pt-6', HUB_BODY)}>
+    <footer data-testid="home-footer" className="pt-6">
+      {/* Full-bleed gradient band: transparent <footer> lets the page's own bg-background
+       *  (black) show through above/behind this div, so its 0% stop genuinely composites
+       *  black-to-navy instead of navy-on-navy (issue #346). Deliberately outside the
+       *  bg-surface content wrapper below and carries no horizontal padding, so it spans the
+       *  footer's full width edge-to-edge, matching the design source. */}
       <div
         data-testid="home-footer-gradient"
         aria-hidden="true"
@@ -121,63 +126,73 @@ export function HubFooter({ onGames, onRewards }: Props) {
             'linear-gradient(to bottom, rgba(26,26,46,0) 0%, rgba(26,26,46,0.45) 55%, rgba(26,26,46,0.85) 82%, rgba(26,26,46,1) 100%)',
         }}
       />
-      <img src={wordmark} alt="RapidClash" className="mb-[22px] h-auto w-[140px]" />
 
-      <div className="flex flex-col gap-[22px]">
-        <div>
-          <h2 className="mb-[18px] text-[20px] font-bold text-white">JOIN THE COMMUNITY</h2>
-          <div data-testid="home-footer-social" className="flex gap-[14px]">
-            {SOCIALS.map((s) => (
-              <span
-                key={s.label}
-                data-testid={`home-social-${s.label.toLowerCase()}`}
-                className="flex h-[46px] w-[46px] cursor-pointer items-center justify-center rounded-full text-white"
-                style={{
-                  background: '#8B45F0',
-                  boxShadow: '0 0 14px 2px rgba(139,69,240,0.28), 0 0 4px rgba(139,69,240,0.22)',
-                }}
-              >
-                {s.icon}
-              </span>
+      {/* Flat-navy content sibling (issue #346): carries bg-surface itself now (not <footer>),
+       *  so its top edge — which lines up exactly with the gradient div's bottom edge, no gap
+       *  or overlap — meets the gradient's already-opaque 100% stop with zero visible seam.
+       *  Also owns the horizontal inset (px-4, moved off <footer>) and the HUB_BODY
+       *  toolbar-clearance padding (moved off <footer> for the same reason: once <footer> is
+       *  transparent, the reserved clearance space behind the fixed HubToolbar must still read
+       *  as solid navy, not a transparent strip revealing page-black — #342's fix). */}
+      <div data-testid="home-footer-content" className={cn('bg-surface px-4', HUB_BODY)}>
+        <img src={wordmark} alt="RapidClash" className="mb-[22px] h-auto w-[140px]" />
+
+        <div className="flex flex-col gap-[22px]">
+          <div>
+            <h2 className="mb-[18px] text-[20px] font-bold text-white">JOIN THE COMMUNITY</h2>
+            <div data-testid="home-footer-social" className="flex gap-[14px]">
+              {SOCIALS.map((s) => (
+                <span
+                  key={s.label}
+                  data-testid={`home-social-${s.label.toLowerCase()}`}
+                  className="flex h-[46px] w-[46px] cursor-pointer items-center justify-center rounded-full text-white"
+                  style={{
+                    background: '#8B45F0',
+                    boxShadow: '0 0 14px 2px rgba(139,69,240,0.28), 0 0 4px rgba(139,69,240,0.22)',
+                  }}
+                >
+                  {s.icon}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-x-[26px] gap-y-[12px]">
+            {LINK_COLUMNS.map((col) => (
+              <div key={col.heading}>
+                <h3 className="mb-3 text-[15px] font-bold tracking-[1.4px] text-brand">{col.heading}</h3>
+                <div className="flex flex-col gap-2.5">
+                  {col.links.map((l) => (
+                    <span
+                      key={l.label}
+                      data-testid={`home-footer-link-${l.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
+                      className="cursor-pointer text-[14px] text-foreground"
+                      onClick={l.real === 'games' ? onGames : l.real === 'rewards' ? onRewards : undefined}
+                    >
+                      {l.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
-        </div>
 
-        <div className="grid grid-cols-2 gap-x-[26px] gap-y-[12px]">
-          {LINK_COLUMNS.map((col) => (
-            <div key={col.heading}>
-              <h3 className="mb-3 text-[15px] font-bold tracking-[1.4px] text-brand">{col.heading}</h3>
-              <div className="flex flex-col gap-2.5">
-                {col.links.map((l) => (
-                  <span
-                    key={l.label}
-                    data-testid={`home-footer-link-${l.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
-                    className="cursor-pointer text-[14px] text-foreground"
-                    onClick={l.real === 'games' ? onGames : l.real === 'rewards' ? onRewards : undefined}
-                  >
-                    {l.label}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
+          <p className="text-[12.5px] leading-relaxed" style={{ color: '#83838F' }}>
+            RapidClash is a play-money demo platform for players aged 18 and over. Credits have no
+            real-world value and cannot be redeemed for cash or prizes. Play responsibly, set
+            limits, and take breaks.
+          </p>
 
-        <p className="text-[12.5px] leading-relaxed" style={{ color: '#83838F' }}>
-          RapidClash is a play-money demo platform for players aged 18 and over. Credits have no
-          real-world value and cannot be redeemed for cash or prizes. Play responsibly, set
-          limits, and take breaks.
-        </p>
+          <p className="text-[12.5px] leading-relaxed" style={{ color: '#83838F' }}>
+            © 2026 RapidClash. All rights reserved.
+            <br />
+            Players vs Players, Never the House.
+          </p>
 
-        <p className="text-[12.5px] leading-relaxed" style={{ color: '#83838F' }}>
-          © 2026 RapidClash. All rights reserved.
-          <br />
-          Players vs Players, Never the House.
-        </p>
-
-        <div className="flex items-center gap-2">
-          <img src={boltMark} alt="" aria-hidden="true" className="h-[28px] w-[28px] object-contain" />
-          <span className="text-[26px] font-bold" style={{ color: '#83838F' }}>18+</span>
+          <div className="flex items-center gap-2">
+            <img src={boltMark} alt="" aria-hidden="true" className="h-[28px] w-[28px] object-contain" />
+            <span className="text-[26px] font-bold" style={{ color: '#83838F' }}>18+</span>
+          </div>
         </div>
       </div>
     </footer>
