@@ -1,5 +1,31 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-15#11 — Footer gradient invisible — navy-on-navy compositing bug — PR #347 (issue #346)            [MERGED]
+From: Coder   Re: PM dispatch (2026-08-15) / Advisor spec `docs/COMMS/from-advisor/footer-gradient-invisible-fix.md`
+
+**Process note first, since this entry itself is late**: PR #347 was already reviewed and squash-merged to `main` (as `294dc8f`) very shortly after CI went green — before I could push this report commit into that same PR, as the dispatch asked for. By the time I went to add it, my worktree for that branch had also been cleaned up (empty `.wt/346-footer-gradient-fix/` directory, branch itself still present at `origin/feature/346-footer-gradient-fix` but no longer attached to an open PR). Rather than force a push to a branch whose PR is already closed, I'm landing this report as a small follow-up docs-only commit/PR (`docs/346-footer-gradient-report`), matching this file's own established pattern for comms-only changes (e.g. #339/#340). Confirmed via `git diff a880e16 294dc8f -- .../HubFooter.tsx` that the merged commit is byte-identical to what I pushed — nothing was altered in review.
+
+Shipped, isolated worktree at `.wt/346-footer-gradient-fix`, branch `feature/346-footer-gradient-fix`, started from `main` at `a880e16` (PR #344's merge commit, current tip — no intervening commits, no rebase needed). Single file in scope (`HubFooter.tsx`) plus its test file, exactly as specced. Read the current post-#342/#344 state fresh before touching anything — it matched the issue/spec's description of the code exactly (footer carrying `bg-surface px-4 pt-6` + `HUB_BODY` all on one element, gradient div as its child).
+
+**Root cause confirmed against the actual code** (not just trusted from the spec): `<footer>` had `className={cn('bg-surface px-4 pt-6', HUB_BODY)}`, and the gradient div (`rgba(26,26,46,0)→rgba(26,26,46,1)`) was its first child — so the gradient's transparent end painted over navy, not the page's real black (`bg-background`, from `HUB_SHELL`).
+
+**The fix — `HubFooter.tsx`, split one element into two:**
+- `<footer>` now carries only `pt-6` — transparent otherwise, so the gradient div (unchanged stops/`mt-6`/`h-16`, now full-width — no `px-*` on `<footer>` or the gradient itself) composites over the page's real black.
+- Everything from the wordmark onward is now wrapped in a new `data-testid="home-footer-content"` sibling div carrying `bg-surface px-4` plus `HUB_BODY`'s toolbar-clearance padding — moved off `<footer>` for the same reason: once `<footer>` went transparent, the reserved clearance behind the fixed `HubToolbar` needed to keep reading as solid navy, not a transparent strip. This preserves #342's fix; I did not just assume the "most likely fix" the spec flagged, I reasoned through it the same way the spec did and it holds — the content wrapper is the only remaining element with both a background and the trailing padding, so the reserved space stays opaque.
+- No content JSX touched — same wordmark/heading/socials/link grid/disclaimer/copyright/18+ row, same classNames, only the containing wrapper changed.
+
+**Tests — updated in place where the assertion's *meaning* moved with the split, not rewritten wholesale:**
+- `'uses the bg-surface token for the footer background'` → now asserts `bg-surface` on `home-footer-content` (not `<footer>`), plus a new explicit assertion that `<footer>` itself carries neither `bg-surface` nor `bg-background`.
+- `'carries the HUB_BODY toolbar-clearance padding'` (#342's test) → now asserts the padding string on `home-footer-content`, and that `<footer>` carries no `pb-*` at all. Its sibling test (gradient's `mt-6` untouched) needed no change.
+- Added 2 new tests: gradient/content are siblings under `<footer>` in the right document order (not gradient-wraps-content or vice versa), and the gradient carries no `px-*`/background token of its own while the content wrapper keeps `px-4`.
+- Full suite before vs. after: **99 files / 1239 tests, all green** (was 1237 per #342's report — 2 net new tests, 3 existing tests edited in place, no others touched).
+
+**Verification**: `npx tsc -b` clean, `npx eslint --ext .ts,.tsx packages apps` clean, full suite 99/1239 green (~200s locally). Pushed, CI `build-and-test` **passed** (4m5s) on PR #347.
+
+**What jsdom can and can't verify, explicitly (same recurring constraint as #286/#290/#291/#302/#312/#334/#338/#342)** — no headless/real browser here. Structurally verified: DOM sibling order (gradient then content, both direct children of `<footer>`), background-token ownership (`bg-surface` only on the content wrapper), full-width gradient (no horizontal padding on `<footer>` or the gradient div), gradient stops/height/margin byte-identical to before, toolbar-clearance padding present on the content wrapper only. **Cannot verify**: the actual rendered pixel ramp (smooth darkening vs. hard edge) and whether the Bring-a-Rival glow's fade now reads naturally across the transition — the spec explicitly flagged both as needing the Advisor's live zoomed-screenshot check before calling this done, same as they asked.
+
+Ask: this is a status report only — PR #347 is already merged (by the Owner, per the merge commit author), so there's nothing left to review/merge here. Flagging the early-merge-before-report timing above in case the PM wants to adjust the dispatch-to-merge handoff for future tickets so this report lands inside the PR next time.
+
 ### 2026-08-15#10 — Footer: restore toolbar clearance — PR #344 (issue #342, regression from #338)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-15) / Advisor spec `docs/COMMS/from-advisor/footer-toolbar-clearance-fix.md`
 
