@@ -107,10 +107,15 @@ describe('HubFooter drift fixes (issue #333)', () => {
     expect(instagram).toHaveAttribute('height', '20');
   });
 
-  it('uses the bg-surface token for the footer background, not bg-background', () => {
+  it('uses the bg-surface token for the footer CONTENT wrapper background, not bg-background (issue #346: <footer> itself is now transparent)', () => {
     render(<HubFooter />);
     const footer = screen.getByTestId('home-footer');
-    expect(footer.className).toContain('bg-surface');
+    const content = within(footer).getByTestId('home-footer-content');
+    expect(content.className).toContain('bg-surface');
+    expect(content.className).not.toContain('bg-background');
+    // <footer> itself no longer carries a background at all — it must stay transparent so the
+    // gradient div's 0% stop composites against the page's real black, not navy-on-navy (#346).
+    expect(footer.className).not.toContain('bg-surface');
     expect(footer.className).not.toContain('bg-background');
   });
 
@@ -130,8 +135,34 @@ describe('HubFooter drift fixes (issue #333)', () => {
     expect(gradient.style.background).toBe(
       'linear-gradient(to bottom, rgba(26,26,46,0) 0%, rgba(26,26,46,0.45) 55%, rgba(26,26,46,0.85) 82%, rgba(26,26,46,1) 100%)',
     );
-    // The gradient's terminal stop is opaque #1A1A2E, matching bg-surface exactly — no seam
-    // against the footer's own solid background at any point below it.
+    // The gradient's terminal stop is opaque #1A1A2E, matching the content wrapper's bg-surface
+    // exactly — no seam between the gradient's bottom edge and the content wrapper's top edge.
+  });
+
+  it('issue #346: the gradient div is a sibling of the bg-surface content wrapper, not its parent — genuinely composites over page-black', () => {
+    render(<HubFooter />);
+    const footer = screen.getByTestId('home-footer');
+    const gradient = within(footer).getByTestId('home-footer-gradient');
+    const content = within(footer).getByTestId('home-footer-content');
+    // Siblings under <footer>, gradient first — not gradient-inside-content or content-inside-gradient.
+    expect(gradient.parentElement).toBe(footer);
+    expect(content.parentElement).toBe(footer);
+    expect(
+      gradient.compareDocumentPosition(content) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    // The gradient carries no bg-surface/background token of its own — its whole visible color
+    // comes from the inline gradient style compositing over whatever is actually behind it.
+    expect(gradient.className).not.toContain('bg-surface');
+  });
+
+  it('issue #346: the gradient spans the footer\'s full width (no horizontal inset); the content wrapper keeps px-4', () => {
+    render(<HubFooter />);
+    const footer = screen.getByTestId('home-footer');
+    const gradient = within(footer).getByTestId('home-footer-gradient');
+    const content = within(footer).getByTestId('home-footer-content');
+    expect(gradient.className).not.toMatch(/(^|\s)px-\d/);
+    expect(footer.className).not.toMatch(/(^|\s)px-\d/);
+    expect(content.className).toContain('px-4');
   });
 
   it('renders the four column headings with text-brand and the 15px/bold/1.4px-tracking hierarchy', () => {
@@ -183,12 +214,23 @@ describe('HubFooter toolbar-clearance fix (issue #342)', () => {
   // leading gap but left the footer — now genuinely last — with zero reserved clearance from the
   // fixed HubToolbar (HUB_BODY's own doc comment says that padding exists so "the last item
   // clears the fixed toolbar"; the footer wasn't that last item's container anymore). The fix:
-  // the footer now carries HUB_BODY's own padding value directly, replacing its old flat `pb-6`.
-  it('carries the HUB_BODY toolbar-clearance padding instead of the old flat pb-6', () => {
+  // the footer carried HUB_BODY's own padding value directly, replacing its old flat `pb-6`.
+  //
+  // #346 moved this padding again, from <footer> onto the new bg-surface content wrapper: once
+  // <footer> itself went transparent (so the gradient div's 0% stop reads real page-black), the
+  // reserved trailing clearance space behind the fixed toolbar needed to keep reading as solid
+  // navy, not a transparent strip revealing page-black. The *meaning* of this test — "the
+  // reserved clearance space is opaque navy, not a gap" — is preserved by asserting it on
+  // whichever element actually carries both the padding and the background now.
+  it('carries the HUB_BODY toolbar-clearance padding on the bg-surface content wrapper (not the old flat pb-6, not on the now-transparent <footer>)', () => {
     render(<HubFooter />);
     const footer = screen.getByTestId('home-footer');
-    expect(footer.className).toContain('pb-[calc(7rem_+_env(safe-area-inset-bottom))]');
-    expect(footer.className).not.toMatch(/(^|\s)pb-6(\s|$)/);
+    const content = within(footer).getByTestId('home-footer-content');
+    expect(content.className).toContain('pb-[calc(7rem_+_env(safe-area-inset-bottom))]');
+    expect(content.className).not.toMatch(/(^|\s)pb-6(\s|$)/);
+    // <footer> itself no longer carries this padding (or any pb-* at all) — it moved to the
+    // content wrapper, which also carries bg-surface, so the reserved clearance stays opaque navy.
+    expect(footer.className).not.toMatch(/(^|\s)pb-/);
   });
 
   it('leaves the gradient div\'s mt-6 leading gap untouched by the trailing-clearance fix', () => {
