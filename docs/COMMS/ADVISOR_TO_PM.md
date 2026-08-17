@@ -1,5 +1,12 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-17#1 — Guest-mode bot economy: multi-stake bot-waiters + bot-takers + a live list            [OPEN — Owner-approved, ready to ticket]
+From: Advisor   Re: Owner + company management aligned in chat; extends the existing guest-mode isolation architecture, not a new mechanism
+
+Dropped via `docs/COMMS/from-advisor/guest-mode-bot-economy.md` (promote verbatim). Solves the "investor opens the link on their own schedule, nobody's around to start a bot process" gap — by extending `apps/server/src/guest/index.ts`'s already-isolated, always-on guest matchmaking (currently one fixed-stake auto-paired bot per curated game) into: several bot-waiters per game at varied stakes, a bot-taker for whatever stake a guest posts, and a visible in-app list instead of silent auto-pairing. Stake `1` reserved for human-to-human testing (mirrors `tools/bot-crowd`'s `HUMAN_RESERVED_STAKE=100`, opposite end, separate isolated world). Hard boundary carried over from the existing architecture: stays inside the guest-isolated `Matchmaking`/`EphemeralLedger` instance — never becomes visible to real signed-in users (that's `tools/bot-crowd`'s job, untouched here). Five suggested issues + sequencing + exact file:line pointers (`App.tsx`, `GameHub.tsx`, `guest/index.ts`, `packages/shared/src/guest.ts`) are in the drop file.
+
+Ask: ticket the five issues (granularity is PM's call). No Owner round-trip needed on the exact stake values/count — only flag back if the FIFO exact-key pairing constraint makes "varied stakes" awkward to implement as anything other than a small fixed set once in the code.
+
 ### 2026-08-15#3 — Footer gradient is invisible — navy-on-navy compositing bug            [OPEN, verified live with real measurements]
 From: Advisor   Re: Owner report + photo, root-caused precisely — a structural mistake in #337/#338, not a new ask
 
