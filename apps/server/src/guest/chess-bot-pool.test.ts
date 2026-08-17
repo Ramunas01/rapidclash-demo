@@ -1,18 +1,26 @@
 import { describe, it, expect } from 'vitest';
-import { GUEST_CHESS_STAKE, GUEST_CHESS_TIME_CONTROL } from '@rapidclash/shared';
+import { GUEST_BOT_STAKE_LANES, GUEST_CHESS_TIME_CONTROL } from '@rapidclash/shared';
 import { createGuestServices } from './index.js';
 
 // Issue #278: a small pool of independent Chess bot identities (not Coinflip's one shared
 // identity) — a real chess game runs for minutes across many moves, so reusing one identity
 // across two concurrent guests would collide in the gateway's playerId → matchId reverse lookup,
 // silently misrouting the first guest's moves into the second guest's match.
+//
+// Issue #351 generalized the pool from "one pool at one fixed stake" to "one independent pool PER
+// stake lane" (GUEST_BOT_STAKE_LANES.chess, [5, 10, 25, 50] as of #350). These tests exercise one
+// representative lane (STAKE) for the within-lane pool behaviour (unchanged reasoning from #278),
+// plus a dedicated cross-lane section proving lanes never interfere with each other.
 
-function joinChess(matchmaking: ReturnType<typeof createGuestServices>['matchmaking'], playerId: string) {
-  return matchmaking.joinQueue(playerId, 'chess', GUEST_CHESS_STAKE, GUEST_CHESS_TIME_CONTROL);
+const STAKE = GUEST_BOT_STAKE_LANES.chess[0];
+const OTHER_STAKE = GUEST_BOT_STAKE_LANES.chess[1];
+
+function joinChess(matchmaking: ReturnType<typeof createGuestServices>['matchmaking'], playerId: string, stake: number = STAKE) {
+  return matchmaking.joinQueue(playerId, 'chess', stake, GUEST_CHESS_TIME_CONTROL);
 }
 
-describe('chess Demo-Opponent pool (issue #278)', () => {
-  it('only ONE pool bot ever rests at a time — two pool identities are never both queued, so they can never pair against each other', () => {
+describe('chess Demo-Opponent pool (issue #278, multi-lane per issue #351)', () => {
+  it('only ONE pool bot ever rests at a time PER LANE — two pool identities in the same lane are never both queued, so they can never pair against each other', () => {
     const { ledger, matchmaking } = createGuestServices();
     ledger.grant('guest:a');
     // The pool's startup entry is posted at construction — confirm the queue holds exactly one
@@ -22,7 +30,7 @@ describe('chess Demo-Opponent pool (issue #278)', () => {
     expect(r.status).toBe('matched');
   });
 
-  it('3 concurrent guest chess games run simultaneously without any bot response misrouting between matches', () => {
+  it('3 concurrent guest chess games run simultaneously, at the SAME stake, without any bot response misrouting between matches', () => {
     const { ledger, matchmaking, onDemoBotMatched } = createGuestServices();
     for (const id of ['guest:a', 'guest:b', 'guest:c']) ledger.grant(id);
 
@@ -51,8 +59,9 @@ describe('chess Demo-Opponent pool (issue #278)', () => {
       expect(match.players).toContain(r.opponentId);
     }
 
-    // A 4th simultaneous guest finds nobody resting (all 3 pool bots are now busy) — rests in the
-    // ordinary FIFO queue like any other unmatched bet, exactly like a real player would.
+    // A 4th simultaneous guest at the SAME stake finds nobody resting (all 3 pool bots in this
+    // lane are now busy) — rests in the ordinary FIFO queue like any other unmatched bet, exactly
+    // like a real player would.
     ledger.grant('guest:d');
     const r4 = joinChess(matchmaking, 'guest:d');
     expect(r4.status).toBe('waiting');
@@ -97,7 +106,45 @@ describe('chess Demo-Opponent pool (issue #278)', () => {
     ensureDemoBotResting();
 
     const { entries } = matchmaking.listOpenChallenges('chess', 'someone-else', Date.now() + 6_000);
-    expect(entries).toHaveLength(1);
-    expect(entries[0].ownerName).toBe('Demo Opponent 🤖');
+    // One resting entry PER stake lane (issue #351) — not just one for the whole game.
+    expect(entries).toHaveLength(GUEST_BOT_STAKE_LANES.chess.length);
+    for (const entry of entries) expect(entry.ownerName).toBe('Demo Opponent 🤖');
+  });
+
+  describe('cross-lane independence (issue #351)', () => {
+    it('two different stakes each have their own resting pool bot simultaneously, and a guest at each pairs instantly', () => {
+      const { ledger, matchmaking } = createGuestServices();
+      ledger.grant('guest:cheap');
+      ledger.grant('guest:pricier');
+
+      const r1 = joinChess(matchmaking, 'guest:cheap', STAKE);
+      const r2 = joinChess(matchmaking, 'guest:pricier', OTHER_STAKE);
+      expect(r1.status).toBe('matched');
+      expect(r2.status).toBe('matched');
+      if (r1.status !== 'matched' || r2.status !== 'matched') throw new Error('expected both matched');
+
+      expect(r1.opponentId).not.toBe(r2.opponentId); // distinct lanes never share a bot identity
+      expect(r1.matchId).not.toBe(r2.matchId);
+    });
+
+    it('filling a lane\'s pool to capacity does not affect a DIFFERENT lane\'s ability to pair instantly', () => {
+      const { ledger, matchmaking, onDemoBotMatched } = createGuestServices();
+      for (const id of ['guest:a', 'guest:b', 'guest:c']) ledger.grant(id);
+
+      // Exhaust the STAKE lane's 3-bot pool.
+      for (const id of ['guest:a', 'guest:b', 'guest:c']) {
+        const r = joinChess(matchmaking, id, STAKE);
+        if (r.status !== 'matched') throw new Error(`expected ${id} matched`);
+        onDemoBotMatched(r.matchId, 1_000_000);
+      }
+      ledger.grant('guest:d');
+      const exhausted = joinChess(matchmaking, 'guest:d', STAKE);
+      expect(exhausted.status).toBe('waiting'); // this lane really is full
+
+      // The OTHER lane is untouched — still pairs instantly.
+      ledger.grant('guest:other');
+      const other = joinChess(matchmaking, 'guest:other', OTHER_STAKE);
+      expect(other.status).toBe('matched');
+    });
   });
 });

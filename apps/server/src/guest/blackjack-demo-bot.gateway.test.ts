@@ -4,9 +4,15 @@ import { WebSocket } from 'ws';
 import type { FastifyInstance } from 'fastify';
 import { coinflipModule } from '@rapidclash/game-coinflip';
 import { blackjackModule, handValue, type Card } from '@rapidclash/game-blackjack';
-import { GUEST_BLACKJACK_STAKE } from '@rapidclash/shared';
+import { GUEST_BOT_STAKE_LANES } from '@rapidclash/shared';
 import type { Envelope, MatchStartPayload, MatchStatePayload, AuthResponse } from '@rapidclash/shared';
 import { createServices, buildApp, type AppServices } from '../server.js';
+
+// Issue #351 superseded the old single fixed-100 Blackjack stake with a pool PER stake lane in
+// GUEST_BOT_STAKE_LANES.blackjack — every `queue.join` below now posts one of those configured
+// lanes. Deal outcomes (below) are seeded independently of the stake amount, so this substitution
+// doesn't disturb any of the pinned-seed determinism the draw/replay test relies on.
+const STAKE = GUEST_BOT_STAKE_LANES.blackjack[0];
 
 // The draw/replay re-trigger test below needs to force an actual internal draw (both hands land
 // on the same total) through the REAL matchmaking/gateway pipeline — not a fake — so it can prove
@@ -130,7 +136,7 @@ describe('blackjack Demo-Opponent over the real WS gateway (issue #297)', () => 
     const sock = await openSocket(port, guest.token);
     sockets.push(sock);
 
-    sock.send('queue.join', { gameId: 'blackjack', stake: GUEST_BLACKJACK_STAKE });
+    sock.send('queue.join', { gameId: 'blackjack', stake: STAKE });
     const start = (await sock.waitFor('match.start')).payload as MatchStartPayload;
     expect(start.opponentName).toBe('Demo Opponent 🤖');
     expect(start.opponent.startsWith('demo-bot:blackjack:')).toBe(true);
@@ -151,7 +157,7 @@ describe('blackjack Demo-Opponent over the real WS gateway (issue #297)', () => 
     const sock = await openSocket(port, guest.token);
     sockets.push(sock);
 
-    sock.send('queue.join', { gameId: 'blackjack', stake: GUEST_BLACKJACK_STAKE });
+    sock.send('queue.join', { gameId: 'blackjack', stake: STAKE });
     const start = (await sock.waitFor('match.start')).payload as MatchStartPayload;
 
     // Wait for the bot's first delayed decision to land as a match.state broadcast.
@@ -173,7 +179,7 @@ describe('blackjack Demo-Opponent over the real WS gateway (issue #297)', () => 
 
     const starts: MatchStartPayload[] = [];
     for (const s of socks) {
-      s.send('queue.join', { gameId: 'blackjack', stake: GUEST_BLACKJACK_STAKE });
+      s.send('queue.join', { gameId: 'blackjack', stake: STAKE });
       starts.push((await s.waitFor('match.start')).payload as MatchStartPayload);
     }
 
@@ -193,7 +199,7 @@ describe('blackjack Demo-Opponent over the real WS gateway (issue #297)', () => 
     const guest4 = await mintGuest();
     const sock4 = await openSocket(port, guest4.token);
     sockets.push(sock4);
-    sock4.send('queue.join', { gameId: 'blackjack', stake: GUEST_BLACKJACK_STAKE });
+    sock4.send('queue.join', { gameId: 'blackjack', stake: STAKE });
     const waiting = await sock4.waitFor('queue.waiting', 3000);
     expect(waiting.payload).toBeDefined();
   });
@@ -221,7 +227,7 @@ describe('blackjack Demo-Opponent over the real WS gateway (issue #297)', () => 
     const guest = await mintGuest();
     const sock = await openSocket(port, guest.token);
     sockets.push(sock);
-    sock.send('queue.join', { gameId: 'blackjack', stake: GUEST_BLACKJACK_STAKE });
+    sock.send('queue.join', { gameId: 'blackjack', stake: STAKE });
     const start = (await sock.waitFor('match.start')).payload as MatchStartPayload;
 
     // Forfeit immediately — the bot is still "thinking" its first decision (2s "thinking" window).
@@ -287,7 +293,7 @@ describe('blackjack Demo-Opponent over the real WS gateway (issue #297)', () => 
       const cryptoSpy = nodeCrypto.randomBytes as unknown as ReturnType<typeof vi.fn>;
       cryptoSpy.mockImplementationOnce(() => Buffer.from([4, 0, 0, 0]));
 
-      sock.send('queue.join', { gameId: 'blackjack', stake: GUEST_BLACKJACK_STAKE });
+      sock.send('queue.join', { gameId: 'blackjack', stake: STAKE });
       const start = (await sock.waitFor('match.start')).payload as MatchStartPayload;
 
       // Confirm the precomputed seed landed as expected before relying on it — a guard against
