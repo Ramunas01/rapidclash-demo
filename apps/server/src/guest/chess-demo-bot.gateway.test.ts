@@ -4,7 +4,7 @@ import { WebSocket } from 'ws';
 import type { FastifyInstance } from 'fastify';
 import { coinflipModule } from '@rapidclash/game-coinflip';
 import { chessModule } from '@rapidclash/game-chess';
-import { GUEST_CHESS_STAKE, GUEST_CHESS_TIME_CONTROL } from '@rapidclash/shared';
+import { GUEST_BOT_STAKE_LANES, GUEST_CHESS_TIME_CONTROL } from '@rapidclash/shared';
 import type { Envelope, MatchStartPayload, MatchStatePayload, MatchYourTurnPayload, AuthResponse } from '@rapidclash/shared';
 import { createServices, buildApp, type AppServices } from '../server.js';
 
@@ -13,6 +13,10 @@ import { createServices, buildApp, type AppServices } from '../server.js';
 // core matchmaking/redaction machinery a real match uses. GUEST_BOT_THINK_{MIN,MAX}_MS and
 // FORFEIT_DELAY_MS are shrunk below (same pattern as guest.gateway.test.ts's RC_PICK_WINDOW_MS)
 // so these tests run in real time without waiting out real 1-5s "thinking" delays.
+//
+// Issue #351 superseded the old single fixed-100 Chess stake with a pool PER stake lane in
+// GUEST_BOT_STAKE_LANES.chess — every `queue.join` below now posts one of those configured lanes.
+const STAKE = GUEST_BOT_STAKE_LANES.chess[0];
 
 /** Minimal envelope recorder, mirrors gateway.test.ts's SocketRecorder. */
 class SocketRecorder {
@@ -114,7 +118,7 @@ describe('chess Demo-Opponent over the real WS gateway (issue #278)', () => {
     const sock = await openSocket(port, guest.token);
     sockets.push(sock);
 
-    sock.send('queue.join', { gameId: 'chess', stake: GUEST_CHESS_STAKE, timeControlId: GUEST_CHESS_TIME_CONTROL });
+    sock.send('queue.join', { gameId: 'chess', stake: STAKE, timeControlId: GUEST_CHESS_TIME_CONTROL });
     const start = (await sock.waitFor('match.start')).payload as MatchStartPayload;
     expect(start.opponentName).toBe('Demo Opponent 🤖');
     expect(start.opponent.startsWith('demo-bot:chess:')).toBe(true);
@@ -136,7 +140,7 @@ describe('chess Demo-Opponent over the real WS gateway (issue #278)', () => {
     const sock = await openSocket(port, guest.token);
     sockets.push(sock);
 
-    sock.send('queue.join', { gameId: 'chess', stake: GUEST_CHESS_STAKE, timeControlId: GUEST_CHESS_TIME_CONTROL });
+    sock.send('queue.join', { gameId: 'chess', stake: STAKE, timeControlId: GUEST_CHESS_TIME_CONTROL });
     const start = (await sock.waitFor('match.start')).payload as MatchStartPayload;
 
     // After a real move has been applied (the bot's opening move), compare the wire state the
@@ -155,7 +159,7 @@ describe('chess Demo-Opponent over the real WS gateway (issue #278)', () => {
 
     const starts: MatchStartPayload[] = [];
     for (const s of socks) {
-      s.send('queue.join', { gameId: 'chess', stake: GUEST_CHESS_STAKE, timeControlId: GUEST_CHESS_TIME_CONTROL });
+      s.send('queue.join', { gameId: 'chess', stake: STAKE, timeControlId: GUEST_CHESS_TIME_CONTROL });
       starts.push((await s.waitFor('match.start')).payload as MatchStartPayload);
     }
 
@@ -179,7 +183,7 @@ describe('chess Demo-Opponent over the real WS gateway (issue #278)', () => {
     const guest4 = await mintGuest();
     const sock4 = await openSocket(port, guest4.token);
     sockets.push(sock4);
-    sock4.send('queue.join', { gameId: 'chess', stake: GUEST_CHESS_STAKE, timeControlId: GUEST_CHESS_TIME_CONTROL });
+    sock4.send('queue.join', { gameId: 'chess', stake: STAKE, timeControlId: GUEST_CHESS_TIME_CONTROL });
     const waiting = await sock4.waitFor('queue.waiting', 3000);
     expect(waiting.payload).toBeDefined();
   });
@@ -203,7 +207,7 @@ describe('chess Demo-Opponent over the real WS gateway (issue #278)', () => {
     const guest = await mintGuest();
     const sock = await openSocket(port, guest.token);
     sockets.push(sock);
-    sock.send('queue.join', { gameId: 'chess', stake: GUEST_CHESS_STAKE, timeControlId: GUEST_CHESS_TIME_CONTROL });
+    sock.send('queue.join', { gameId: 'chess', stake: STAKE, timeControlId: GUEST_CHESS_TIME_CONTROL });
     const start = (await sock.waitFor('match.start')).payload as MatchStartPayload;
 
     // Disconnect immediately — the bot is still "thinking" its opening move (2s), the forfeit

@@ -3,9 +3,16 @@ import Database from 'better-sqlite3';
 import { WebSocket } from 'ws';
 import type { FastifyInstance } from 'fastify';
 import { coinflipModule } from '@rapidclash/game-coinflip';
-import { GUEST_COINFLIP_STAKE, DEMO_BOT_COINFLIP_ID } from '@rapidclash/shared';
+import { GUEST_COINFLIP_STAKE, GUEST_BOT_STAKE_LANES, isDemoBotId } from '@rapidclash/shared';
 import type { Envelope, MatchStartPayload, MatchEndPayload, AuthResponse } from '@rapidclash/shared';
 import { createServices, buildApp, type AppServices } from '../server.js';
+
+// Issue #351 superseded the old single fixed-100 Coinflip bot with one bot-waiter identity per
+// stake lane in GUEST_BOT_STAKE_LANES.coinflip — every `queue.join` below now posts one of those
+// configured lanes (STAKE) instead of the old GUEST_COINFLIP_STAKE, which no bot rests at
+// anymore. GUEST_COINFLIP_STAKE itself is untouched (still 100) and still governs the guest's
+// starting balance (300¢ / 100 per round) — kept where that's what's actually being asserted.
+const STAKE = GUEST_BOT_STAKE_LANES.coinflip[0];
 
 // Live-socket integration test for issue #267 (DemoGuest PR 1): a guest mints a session via
 // POST /auth/guest, connects the SAME /ws endpoint as any real player, presses PLAY, and is
@@ -148,10 +155,10 @@ describe('guest mode over the real WS gateway (issue #267)', () => {
     const sock = await openSocket(port, guest.token);
     sockets.push(sock);
 
-    sock.send('queue.join', { gameId: 'coinflip', stake: GUEST_COINFLIP_STAKE });
+    sock.send('queue.join', { gameId: 'coinflip', stake: STAKE });
     const start = (await sock.waitFor('match.start')).payload as MatchStartPayload;
 
-    expect(start.opponent).toBe(DEMO_BOT_COINFLIP_ID);
+    expect(isDemoBotId(start.opponent)).toBe(true);
     expect(start.opponentName).toBe('Demo Opponent 🤖'); // honestly labelled, never disguised
   });
 
@@ -160,12 +167,12 @@ describe('guest mode over the real WS gateway (issue #267)', () => {
     const sock = await openSocket(port, guest.token);
     sockets.push(sock);
 
-    sock.send('queue.join', { gameId: 'coinflip', stake: GUEST_COINFLIP_STAKE });
+    sock.send('queue.join', { gameId: 'coinflip', stake: STAKE });
     const start = (await sock.waitFor('match.start')).payload as MatchStartPayload;
     const preTerminal = start.state as { choices?: Record<string, string>; seed?: number };
     // The bot already applied its move server-side (onDemoBotMatched), yet the guest's OWN
     // redacted view carries neither the bot's choice nor the seed pre-terminal.
-    expect(preTerminal.choices?.[DEMO_BOT_COINFLIP_ID]).toBeUndefined();
+    expect(preTerminal.choices && Object.keys(preTerminal.choices).some(isDemoBotId)).toBeFalsy();
     expect(preTerminal.seed).toBe(0);
 
     const end = (await sock.waitFor('match.end', 5000)).payload as MatchEndPayload;
@@ -177,7 +184,7 @@ describe('guest mode over the real WS gateway (issue #267)', () => {
     const sock = await openSocket(port, guest.token);
     sockets.push(sock);
 
-    sock.send('queue.join', { gameId: 'coinflip', stake: GUEST_COINFLIP_STAKE });
+    sock.send('queue.join', { gameId: 'coinflip', stake: STAKE });
     await sock.waitFor('match.start');
     await sock.waitFor('match.end', 5000);
 
@@ -197,21 +204,21 @@ describe('guest mode over the real WS gateway (issue #267)', () => {
     const sockB = await openSocket(port, guestB.token);
     sockets.push(sockA, sockB);
 
-    sockA.send('queue.join', { gameId: 'coinflip', stake: GUEST_COINFLIP_STAKE });
+    sockA.send('queue.join', { gameId: 'coinflip', stake: STAKE });
     const startA = (await sockA.waitFor('match.start')).payload as MatchStartPayload;
 
-    sockB.send('queue.join', { gameId: 'coinflip', stake: GUEST_COINFLIP_STAKE });
+    sockB.send('queue.join', { gameId: 'coinflip', stake: STAKE });
     const startB = (await sockB.waitFor('match.start')).payload as MatchStartPayload;
 
-    // Each is paired with the (perpetually-resting) bot, but in DIFFERENT matches.
-    expect(startA.opponent).toBe(DEMO_BOT_COINFLIP_ID);
-    expect(startB.opponent).toBe(DEMO_BOT_COINFLIP_ID);
+    // Each is paired with a (perpetually-resting) bot, but in DIFFERENT matches.
+    expect(isDemoBotId(startA.opponent)).toBe(true);
+    expect(isDemoBotId(startB.opponent)).toBe(true);
     expect(startA.matchId).not.toBe(startB.matchId);
 
     // Balances are independently tracked (both escrowed the same stake out of the same starting
     // stack, but keyed separately — neither's escrow touched the other's balance).
-    expect(services.guest.ledger.getBalance(guestA.playerId)).toBe(guestA.balance - GUEST_COINFLIP_STAKE);
-    expect(services.guest.ledger.getBalance(guestB.playerId)).toBe(guestB.balance - GUEST_COINFLIP_STAKE);
+    expect(services.guest.ledger.getBalance(guestA.playerId)).toBe(guestA.balance - STAKE);
+    expect(services.guest.ledger.getBalance(guestB.playerId)).toBe(guestB.balance - STAKE);
   });
 
   it('a guest match never appears in the real /games matchmaking or leaderboard writes', async () => {
@@ -219,7 +226,7 @@ describe('guest mode over the real WS gateway (issue #267)', () => {
     const sock = await openSocket(port, guest.token);
     sockets.push(sock);
 
-    sock.send('queue.join', { gameId: 'coinflip', stake: GUEST_COINFLIP_STAKE });
+    sock.send('queue.join', { gameId: 'coinflip', stake: STAKE });
     const start = (await sock.waitFor('match.start')).payload as MatchStartPayload;
     await sock.waitFor('match.end', 5000);
 
@@ -242,7 +249,7 @@ describe('guest mode over the real WS gateway (issue #267)', () => {
     const guest = await mintGuest();
     const guestSock = await openSocket(port, guest.token);
     sockets.push(guestSock);
-    guestSock.send('queue.join', { gameId: 'coinflip', stake: GUEST_COINFLIP_STAKE });
+    guestSock.send('queue.join', { gameId: 'coinflip', stake: STAKE });
     await guestSock.waitFor('match.start');
     await guestSock.waitFor('match.end', 5000); // give the whole round + its sweep-driven resolve time to fire any leak
 
@@ -251,10 +258,10 @@ describe('guest mode over the real WS gateway (issue #267)', () => {
   });
 
   it('an off-stake guest join (the exact tamper scenario flagged in review) rests without leaking a phantom entry into the real feed', async () => {
-    // A guest whose join stake does NOT match GUEST_COINFLIP_STAKE never finds the bot resting
-    // (it only rests at the one fixed stake) — it hits the 'waiting' branch instead of matching.
-    // Server-side nothing enforces the fixed stake (the client just always sends it); this proves
-    // the tampered/off-stake path is still safe.
+    // A guest whose join stake does NOT match any configured GUEST_BOT_STAKE_LANES.coinflip
+    // value never finds a bot resting there — it hits the 'waiting' branch instead of matching.
+    // Server-side nothing enforces the configured stakes (the client just always sends one); this
+    // proves the tampered/off-stake path is still safe.
     const reg = await app.inject({ method: 'POST', url: '/auth/register', payload: { username: 'realplayer2', password: 'pw' } });
     const real = reg.json<AuthResponse>();
     const realSock = await openSocket(port, real.token);
@@ -265,7 +272,7 @@ describe('guest mode over the real WS gateway (issue #267)', () => {
     const guest = await mintGuest();
     const guestSock = await openSocket(port, guest.token);
     sockets.push(guestSock);
-    const offStake = GUEST_COINFLIP_STAKE - 1;
+    const offStake = GUEST_COINFLIP_STAKE - 1; // 99 — not a configured lane, and not GUEST_HUMAN_RESERVED_STAKE (1) either
     guestSock.send('queue.join', { gameId: 'coinflip', stake: offStake });
     const waiting = (await guestSock.waitFor('queue.waiting')).payload as { gameId: string };
     expect(waiting.gameId).toBe('coinflip'); // confirms it actually rested (not matched)
@@ -409,11 +416,11 @@ describe('Demo-Opponent queue-expiry self-heal over the real gateway sweep (prod
     const guest = await mintGuest();
     const sock = await openSocket(port, guest.token);
     sockets.push(sock);
-    sock.send('queue.join', { gameId: 'coinflip', stake: GUEST_COINFLIP_STAKE });
+    sock.send('queue.join', { gameId: 'coinflip', stake: STAKE });
     // A generous but bounded wait — if the old bug were still present, the bot would be absent
     // and this guest would receive queue.waiting instead, so match.start would never arrive and
     // this would time out (waitFor's own failure mode), failing the test.
     const start = (await sock.waitFor('match.start', 3000)).payload as MatchStartPayload;
-    expect(start.opponent).toBe(DEMO_BOT_COINFLIP_ID);
+    expect(isDemoBotId(start.opponent)).toBe(true);
   });
 });

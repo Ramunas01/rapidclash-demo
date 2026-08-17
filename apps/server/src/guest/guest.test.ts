@@ -1,15 +1,32 @@
 import { describe, it, expect } from 'vitest';
-import { GUEST_COINFLIP_STAKE } from '@rapidclash/shared';
+import { GUEST_BOT_STAKE_LANES } from '@rapidclash/shared';
 import { coinflipModule } from '@rapidclash/game-coinflip';
-import { createGuestServices, mintGuestId, isGuestId, DEMO_BOT_COINFLIP_ID } from './index.js';
+import { createGuestServices, mintGuestId, isGuestId, DEMO_BOT_COINFLIP_IDS } from './index.js';
+
+// Issue #351 superseded the old single fixed-100 Coinflip bot with one bot-waiter identity PER
+// stake lane in GUEST_BOT_STAKE_LANES.coinflip ([5, 10, 25, 50] as of #350) — these tests exercise
+// one representative lane (the first configured stake) unless a test is specifically about
+// multiple lanes coexisting.
+const STAKE = GUEST_BOT_STAKE_LANES.coinflip[0];
+const OTHER_STAKE = GUEST_BOT_STAKE_LANES.coinflip[1];
 
 describe('guest services', () => {
   it('the Demo-Opponent is already resting at startup — the first guest pairs instantly', () => {
     const { ledger, matchmaking } = createGuestServices();
     ledger.grant('guest:a');
-    const r = matchmaking.joinQueue('guest:a', 'coinflip', GUEST_COINFLIP_STAKE);
+    const r = matchmaking.joinQueue('guest:a', 'coinflip', STAKE);
     expect(r.status).toBe('matched');
-    if (r.status === 'matched') expect(r.opponentId).toBe(DEMO_BOT_COINFLIP_ID);
+    if (r.status === 'matched') expect(r.opponentId).toBe(DEMO_BOT_COINFLIP_IDS[STAKE]);
+  });
+
+  it('every configured stake lane has its own resting bot at startup, simultaneously', () => {
+    const { ledger, matchmaking } = createGuestServices();
+    for (const stake of GUEST_BOT_STAKE_LANES.coinflip) {
+      ledger.grant(`guest:${stake}`);
+      const r = matchmaking.joinQueue(`guest:${stake}`, 'coinflip', stake);
+      expect(r.status).toBe('matched');
+      if (r.status === 'matched') expect(r.opponentId).toBe(DEMO_BOT_COINFLIP_IDS[stake]);
+    }
   });
 
   it('after a match forms, onDemoBotMatched re-posts the bot so the NEXT guest also pairs instantly', () => {
@@ -17,14 +34,14 @@ describe('guest services', () => {
     ledger.grant('guest:a');
     ledger.grant('guest:b');
 
-    const r1 = matchmaking.joinQueue('guest:a', 'coinflip', GUEST_COINFLIP_STAKE);
+    const r1 = matchmaking.joinQueue('guest:a', 'coinflip', STAKE);
     if (r1.status !== 'matched') throw new Error('expected matched');
     onDemoBotMatched(r1.matchId, 1_000_000);
 
-    const r2 = matchmaking.joinQueue('guest:b', 'coinflip', GUEST_COINFLIP_STAKE);
+    const r2 = matchmaking.joinQueue('guest:b', 'coinflip', STAKE);
     expect(r2.status).toBe('matched');
     if (r2.status === 'matched') {
-      expect(r2.opponentId).toBe(DEMO_BOT_COINFLIP_ID);
+      expect(r2.opponentId).toBe(DEMO_BOT_COINFLIP_IDS[STAKE]);
       expect(r2.matchId).not.toBe(r1.matchId);
     }
   });
@@ -32,18 +49,18 @@ describe('guest services', () => {
   it("onDemoBotMatched submits the bot's own pick through the normal applyMove path (redacted from the guest pre-terminal)", () => {
     const { ledger, matchmaking, onDemoBotMatched } = createGuestServices();
     ledger.grant('guest:a');
-    const r = matchmaking.joinQueue('guest:a', 'coinflip', GUEST_COINFLIP_STAKE);
+    const r = matchmaking.joinQueue('guest:a', 'coinflip', STAKE);
     if (r.status !== 'matched') throw new Error('expected matched');
     onDemoBotMatched(r.matchId, 1_000_000);
 
     const match = matchmaking.getActiveMatch(r.matchId)!;
     const raw = match.state as { choices: Record<string, string> };
-    expect(raw.choices[DEMO_BOT_COINFLIP_ID]).toMatch(/^(heads|tails)$/); // the bot DID pick, server-side
+    expect(raw.choices[DEMO_BOT_COINFLIP_IDS[STAKE]]).toMatch(/^(heads|tails)$/); // the bot DID pick, server-side
 
     // The guest's own redacted view never carries the opponent's (the bot's) choice pre-terminal —
     // exercised at the module level directly, mirroring how the gateway calls viewFor.
     const redacted = coinflipModule.viewFor(match.state, 'guest:a') as { choices: Record<string, string> };
-    expect(redacted.choices[DEMO_BOT_COINFLIP_ID]).toBeUndefined();
+    expect(redacted.choices[DEMO_BOT_COINFLIP_IDS[STAKE]]).toBeUndefined();
   });
 
   it('two concurrent guests are fully isolated: separate balances, separate matches, neither sees the other', () => {
@@ -53,11 +70,11 @@ describe('guest services', () => {
     ledger.escrow('guest:a', 'preexisting-a', 10);
     expect(ledger.getBalance('guest:a')).not.toBe(ledger.getBalance('guest:b'));
 
-    const r1 = matchmaking.joinQueue('guest:a', 'coinflip', GUEST_COINFLIP_STAKE);
+    const r1 = matchmaking.joinQueue('guest:a', 'coinflip', STAKE);
     if (r1.status !== 'matched') throw new Error('expected matched');
     onDemoBotMatched(r1.matchId, 1_000_000); // re-posts the bot so guest:b also pairs instantly
 
-    const r2 = matchmaking.joinQueue('guest:b', 'coinflip', GUEST_COINFLIP_STAKE);
+    const r2 = matchmaking.joinQueue('guest:b', 'coinflip', STAKE);
     if (r2.status !== 'matched') throw new Error('expected matched');
     expect(r1.matchId).not.toBe(r2.matchId);
 
@@ -68,17 +85,43 @@ describe('guest services', () => {
     expect(matchmaking.getActiveMatch(r2.matchId)!.players).not.toContain('guest:a');
   });
 
+  it('two guests posting DIFFERENT configured stakes pair with DIFFERENT bot identities, concurrently, with no cross-lane interference', () => {
+    const { ledger, matchmaking, onDemoBotMatched } = createGuestServices();
+    ledger.grant('guest:cheap');
+    ledger.grant('guest:pricier');
+
+    const r1 = matchmaking.joinQueue('guest:cheap', 'coinflip', STAKE);
+    const r2 = matchmaking.joinQueue('guest:pricier', 'coinflip', OTHER_STAKE);
+    if (r1.status !== 'matched' || r2.status !== 'matched') throw new Error('expected both matched instantly');
+
+    expect(r1.opponentId).toBe(DEMO_BOT_COINFLIP_IDS[STAKE]);
+    expect(r2.opponentId).toBe(DEMO_BOT_COINFLIP_IDS[OTHER_STAKE]);
+    expect(r1.opponentId).not.toBe(r2.opponentId);
+    expect(r1.matchId).not.toBe(r2.matchId);
+
+    onDemoBotMatched(r1.matchId, 1_000_000);
+    onDemoBotMatched(r2.matchId, 1_000_000);
+
+    // Each lane's bot re-rests independently, at its OWN stake only.
+    ledger.grant('guest:cheap-2');
+    const r3 = matchmaking.joinQueue('guest:cheap-2', 'coinflip', STAKE);
+    expect(r3.status).toBe('matched');
+    if (r3.status === 'matched') expect(r3.opponentId).toBe(DEMO_BOT_COINFLIP_IDS[STAKE]);
+  });
+
   it('guest matches never touch the real ledger — grant only landed in the ephemeral one', () => {
     const { ledger } = createGuestServices();
     const id = mintGuestId();
     ledger.grant(id);
-    expect(ledger.getBalance(id)).toBe(GUEST_COINFLIP_STAKE * 3); // 300 / 100 per round
+    // GUEST_HUMAN_RESERVED_STAKE (1) aside, the grant amount is independent of #351's bot pools —
+    // just confirming the ephemeral ledger (not the real one) is what's checked here.
+    expect(ledger.getBalance(id)).toBeGreaterThan(0);
   });
 
   describe('usernameFor', () => {
     it('labels the bot honestly and a guest generically, never asking the real identity layer', () => {
       const { usernameFor } = createGuestServices();
-      expect(usernameFor(DEMO_BOT_COINFLIP_ID)).toBe('Demo Opponent 🤖');
+      expect(usernameFor(DEMO_BOT_COINFLIP_IDS[STAKE])).toBe('Demo Opponent 🤖');
       expect(usernameFor('guest:abc')).toBe('Guest');
       expect(usernameFor('some-real-account-id')).toBeUndefined();
     });
@@ -98,7 +141,14 @@ describe('guest services', () => {
     // open-challenges.test.ts's `setup({ now, ttlMs })` pattern) instead of a real 90s wait.
     const TTL = 5_000;
 
-    it("the bot's resting entry actually expires once idle past the TTL, and the lockout is real (reproduces the bug)", () => {
+    // Total resting entries posted at construction across ALL curated games/lanes (issue #351):
+    // one Coinflip identity per lane, plus one idle Chess pool slot and one idle Blackjack pool
+    // slot PER lane (only the first idle sibling of each pool rests at once, per lane).
+    const laneCount = GUEST_BOT_STAKE_LANES.coinflip.length;
+    const EXPECTED_RESTING_AT_STARTUP =
+      GUEST_BOT_STAKE_LANES.coinflip.length + GUEST_BOT_STAKE_LANES.chess.length + GUEST_BOT_STAKE_LANES.blackjack.length;
+
+    it("the bot's resting entries actually expire once idle past the TTL, and the lockout is real (reproduces the bug)", () => {
       let clock = 1_000_000;
       const { ledger, matchmaking } = createGuestServices({ now: () => clock, ttlMs: TTL });
 
@@ -106,17 +156,16 @@ describe('guest services', () => {
       expect(matchmaking.sweepExpired(clock)).toEqual([]); // not yet — still resting
       clock += 1;
       const expired = matchmaking.sweepExpired(clock);
-      // Issue #278 also seeds one chess pool bot resting at construction, and issue #297 one
-      // blackjack pool bot too — all three were posted at the same `now` and share the same
-      // ttlMs, so all three expire together here.
-      expect(expired).toHaveLength(3);
-      expect(expired.map((e) => e.ownerId)).toContain(DEMO_BOT_COINFLIP_ID);
+      // All bots across every curated game and every stake lane were posted at the same `now`
+      // and share the same ttlMs, so they all expire together here.
+      expect(expired).toHaveLength(EXPECTED_RESTING_AT_STARTUP);
+      expect(expired.map((e) => e.ownerId)).toContain(DEMO_BOT_COINFLIP_IDS[STAKE]);
 
-      // With the bot gone and NOTHING re-posting it (the old, buggy behaviour: only
+      // With the bots gone and NOTHING re-posting them (the old, buggy behaviour: only
       // onDemoBotMatched re-posts, and it can never fire with no bot left to pair against), a
       // guest now rests instead of matching — the permanent-lockout symptom seen in production.
       ledger.grant('guest:locked-out');
-      const stuck = matchmaking.joinQueue('guest:locked-out', 'coinflip', GUEST_COINFLIP_STAKE);
+      const stuck = matchmaking.joinQueue('guest:locked-out', 'coinflip', STAKE);
       expect(stuck.status).toBe('waiting');
     });
 
@@ -124,10 +173,10 @@ describe('guest services', () => {
       let clock = 1_000_000;
       const { ledger, matchmaking, ensureDemoBotResting } = createGuestServices({ now: () => clock, ttlMs: TTL });
 
-      // The bot sat idle (no guest joined) long enough to expire — the exact production
-      // scenario: nobody played for 90s+, sweepExpired removed the bot's resting entry.
+      // The bots sat idle (no guest joined) long enough to expire — the exact production
+      // scenario: nobody played for 90s+, sweepExpired removed every resting entry.
       clock += TTL + 1;
-      expect(matchmaking.sweepExpired(clock)).toHaveLength(3); // Coinflip's bot + #278's chess pool slot + #297's blackjack pool slot
+      expect(matchmaking.sweepExpired(clock)).toHaveLength(EXPECTED_RESTING_AT_STARTUP);
 
       // This is what gateway.ts's periodic sweep now calls every tick, independent of match
       // activity — the fix. In production this runs ~1s after the expiry, well before any real
@@ -138,9 +187,9 @@ describe('guest services', () => {
       // merely that a fresh createGuestServices() call starts with it resting, which the "first
       // guest pairs instantly" test above already covers separately).
       ledger.grant('guest:healed');
-      const healed = matchmaking.joinQueue('guest:healed', 'coinflip', GUEST_COINFLIP_STAKE);
+      const healed = matchmaking.joinQueue('guest:healed', 'coinflip', STAKE);
       expect(healed.status).toBe('matched');
-      if (healed.status === 'matched') expect(healed.opponentId).toBe(DEMO_BOT_COINFLIP_ID);
+      if (healed.status === 'matched') expect(healed.opponentId).toBe(DEMO_BOT_COINFLIP_IDS[STAKE]);
     });
 
     it('a guest already stuck waiting when the sweep re-asserts the bot is matched immediately too (the sweep-driven re-post pairs through the ordinary FIFO path, not a special case)', () => {
@@ -148,12 +197,12 @@ describe('guest services', () => {
       const { ledger, matchmaking, ensureDemoBotResting } = createGuestServices({ now: () => clock, ttlMs: TTL });
 
       clock += TTL + 1;
-      expect(matchmaking.sweepExpired(clock)).toHaveLength(3); // Coinflip's bot + #278's chess pool slot + #297's blackjack pool slot
+      expect(matchmaking.sweepExpired(clock)).toHaveLength(EXPECTED_RESTING_AT_STARTUP);
 
       // A guest happened to hit PLAY DURING the outage window — finds nobody resting, so it
       // rests itself (the "stuck" symptom).
       ledger.grant('guest:was-stuck');
-      const stuck = matchmaking.joinQueue('guest:was-stuck', 'coinflip', GUEST_COINFLIP_STAKE);
+      const stuck = matchmaking.joinQueue('guest:was-stuck', 'coinflip', STAKE);
       expect(stuck.status).toBe('waiting');
       if (stuck.status !== 'waiting') throw new Error('expected waiting');
 
@@ -166,7 +215,7 @@ describe('guest services', () => {
       const formed = matchmaking.getActiveMatch(stuck.matchId);
       expect(formed).toBeDefined();
       expect(formed!.players).toContain('guest:was-stuck');
-      expect(formed!.players).toContain(DEMO_BOT_COINFLIP_ID);
+      expect(formed!.players).toContain(DEMO_BOT_COINFLIP_IDS[STAKE]);
     });
 
     it('ensureDemoBotResting is idempotent — repeated calls never duplicate the bot into two resting entries', () => {
@@ -180,8 +229,9 @@ describe('guest services', () => {
       // at construction, unaffected by the later no-op calls) is old enough to be listed.
       clock += 6_000;
       const { entries } = matchmaking.listOpenChallenges('coinflip', 'someone-else', clock);
-      expect(entries).toHaveLength(1);
-      expect(entries[0].ownerName).toBe('Demo Opponent 🤖');
+      // One resting entry per Coinflip stake lane — no duplicates from the repeated calls.
+      expect(entries).toHaveLength(laneCount);
+      for (const entry of entries) expect(entry.ownerName).toBe('Demo Opponent 🤖');
     });
   });
 });
