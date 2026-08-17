@@ -1,5 +1,29 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-17#12 — Guest bot economy (1/5): shared constant + stake-lane plumbing — PR TBD (issue #350)            [OPEN]
+From: Coder   Re: PM dispatch (2026-08-17) / Advisor spec `docs/COMMS/from-advisor/guest-mode-bot-economy.md`
+
+Foundational piece for the 5-issue guest bot economy feature (#350-354) — this one unblocks the rest. Isolated worktree at `.wt/350-guest-bot-stake-lanes`, branch `feature/350-guest-bot-stake-lanes`, started from `main` at `7d54b41` (PR #348's merge commit, current tip). Read the issue, the full spec, `packages/shared/src/guest.ts` in full, `tools/bot-crowd/src/config.ts`, and `ensureDemoBotResting()` in `apps/server/src/guest/index.ts` before writing anything, per the dispatch.
+
+**Scope, exactly as specced — `packages/shared/src/guest.ts` only, no new file needed:**
+
+1. **`GUEST_HUMAN_RESERVED_STAKE = 1`** — added next to the existing `GUEST_*_STAKE` constants. Comment cross-references `tools/bot-crowd/src/config.ts`'s `HUMAN_RESERVED_STAKE = 100` explicitly: same "carve out one stake no bot touches" pattern, but opposite end of the range (100 protects the TOP of the REAL matchmaking's 1–100 range so a human's top bet waits for another human; this new `1` protects the BOTTOM of the ISOLATED guest world's own 1–100 range) and funded differently (bot-crowd's real, ADR-010-earned balance vs. the guest ledger's `DEMO_BOT_NOTIONAL_BALANCE`). Two different worlds, spelled out so nobody conflates the two.
+
+2. **Stake-lane config shape** — `GUEST_BOT_STAKE_LANES: Readonly<Record<GuestCuratedGameId, readonly number[]>>`, one array of 4 distinct stakes per curated game (`[5, 10, 25, 50]` for coinflip/chess/blackjack — a subset of `GameHub.tsx`'s own `BET_PRESETS`/bot-crowd's `STAKE_SET`, excluding `1` and the `100` ceiling already owned by the legacy fixed-stake constants). Design reasoning, spelled out in the doc comment:
+   - **Plain array of numbers, no wrapper object** — the core's FIFO matchmaking pairs on the exact key `(gameId, stake, timeControlId)`; `gameId` and (for chess) `timeControlId` are already fixed per game, so a stake number alone is the entire config a lane needs. #351 zips this 1:1 against a same-length array of bot identities it mints (`demo-bot:coinflip:0` ↔ `GUEST_BOT_STAKE_LANES.coinflip[0]`) — the same index-pairing `DEMO_BOT_CHESS_IDS`/`DEMO_BOT_BLACKJACK_IDS` already use for their pools, generalized from "N identities, one shared stake" to "N identities, N distinct stakes."
+   - **New `GuestCuratedGameId` literal union type** (`'coinflip' | 'chess' | 'blackjack'`), *not* reusing `GUEST_CURATED_GAMES`'s existing `readonly string[]` type — `App.tsx:732`'s `GUEST_CURATED_GAMES.includes(gameId)` call relies on that staying a plain string array; narrowing it would have rippled into that call site for no benefit here. The new type instead gives `GUEST_BOT_STAKE_LANES` compile-time exhaustiveness as its own `Record`. `guest.test.ts` asserts the two lists' keys stay in sync at runtime so a future curated-game addition can't update one and forget the other.
+   - **Guest-scoped by naming and by doc comment**, not just by where it lives — explicitly says never to import it into `tools/bot-crowd/src/config.ts` or any real matchmaking config, per the feature's one hard invariant (bots stay inside the isolated `createGuestServices()` world, never visible/matchable to real signed-in users). This issue never touches server logic, but the shape itself carries that guardrail forward for #351-354.
+
+**Non-goals honored**: no bot-waiter pool logic, no bot-taker logic, no client changes — verified the diff touches only `packages/shared/src/guest.ts` (+ its new test file).
+
+**Tests added** (`packages/shared/src/guest.test.ts`, net-new file, 9 tests): `GUEST_HUMAN_RESERVED_STAKE` is `1` and distinct from the three existing `GUEST_*_STAKE` constants; `GUEST_BOT_STAKE_LANES`'s keys exactly match `GUEST_CURATED_GAMES` (no drift); a `GuestCuratedGameId`-typed lookup compiles and resolves for every curated game; per game, `it.each` asserts 3-4 distinct integer stakes, all `>0`, `<100`, and `!== GUEST_HUMAN_RESERVED_STAKE`; and each game's lane array is its own object instance (no accidental shared-reference risk). Deliberately didn't test anything about a future consumer (#351's pool logic doesn't exist yet) — plumbing-only, per the dispatch's own instruction not to over-test speculative future consumers.
+
+**Verification**: `npx tsc -b` clean. `npx eslint --ext .ts,.tsx packages apps` clean. Full suite **100 files / 1248 tests, all green** (was 99/1239 per #347's report — 1 net new file, 9 net new tests, nothing else touched, ~217s locally). Pushed; PR opened referencing issue #350, CI (`build-and-test`) pending/to confirm before handoff.
+
+**Flag for the PM**: none — the spec, issue, and existing code all matched exactly what the dispatch described; no ambiguity hit that needed a stop-and-flag. Stake values (`[5, 10, 25, 50]`) are cosmetic/tunable per the dispatch's own note ("no need to round-trip to the Owner") — happy to adjust if #351's implementer finds a different spread easier to work with, but the *shape* (`Record<GuestCuratedGameId, readonly number[]>`) is the part meant to be load-bearing for #351-354.
+
+Ask: PM review + merge when ready. Not merging this myself per the dispatch. This unblocks #351 (bot-waiter pools), #352 (bot-taker), #353 (client bet-control unlock), #354 (guest-scoped waiting list UI).
+
 ### 2026-08-15#11 — Footer gradient invisible — navy-on-navy compositing bug — PR #347 (issue #346)            [MERGED]
 From: Coder   Re: PM dispatch (2026-08-15) / Advisor spec `docs/COMMS/from-advisor/footer-gradient-invisible-fix.md`
 
