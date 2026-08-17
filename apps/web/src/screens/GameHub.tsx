@@ -12,6 +12,7 @@ import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
 import { hubShellClass } from '../components/hub-chrome/layout.js';
 import { TILE_ART, COMING_SOON, titleCase } from '../components/hub-shared/tiles.js';
 import { GamesCarousel } from '../components/hub-shared/GamesCarousel.js';
+import { GuestBotWaiters } from '../guest/GuestBotWaiters.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
 import { Avatar } from '../components/hub-shared/Avatar.js';
@@ -604,9 +605,19 @@ export function GameHub(props: GameHubProps) {
               settled post-game result view (phase 'result') is idle-with-a-board: the match is already
               deleted server-side, so JOIN must stay open there (as in plain idle) — otherwise Open
               Games wrongly reads "one match at a time" until the player leaves.
-              Guest mode omits this whole section — no real Open Games with strangers
-              (GUEST_MODE_CONTRACT.md §4's non-goal). */}
-          {isGuest ? null : (
+              Guest mode swaps this for `GuestBotWaiters` (issue #354) instead of omitting the section
+              entirely — a small guest-scoped equivalent backed ONLY by the isolated guest instance's
+              currently-resting Demo-Opponent bot-waiters (issue #351), never `challengesByGame`/the
+              real WS aggregate (GUEST_MODE_CONTRACT.md §4's "no live human matchmaking with strangers"
+              still holds — this never shows a real player, by construction of its own data source). */}
+          {isGuest ? (
+            <GuestBotWaiters
+              gameId={gameId}
+              balance={liveBalance}
+              onTake={onTakeChallenge}
+              joinDisabled={phase === 'in-match' || phase === 'waiting'}
+            />
+          ) : (
             <GamesCarousel
               challengesByGame={challengesByGame}
               nameByGame={nameByGame}

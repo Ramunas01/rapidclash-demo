@@ -39,6 +39,12 @@ export const api = {
   /** Public cross-game snapshot of resting open challenges — no token (the logged-out ticker). */
   openChallenges: () =>
     req<PublicOpenChallenge[]>('GET', '/open-challenges'),
+  /** Guest-scoped snapshot of the ISOLATED guest world's currently-resting Demo-Opponent
+   *  bot-waiters (issue #354, `apps/server/src/routes/guest-open-challenges.ts`) — never the real
+   *  aggregate above. No token: the data is identical for every guest session (the shared bot
+   *  pools), not viewer-specific — same no-auth shape as `openChallenges`. */
+  guestOpenChallenges: () =>
+    req<PublicOpenChallenge[]>('GET', '/guest/open-challenges'),
   leaderboard: (gameId: string, token: string) =>
     req<LeaderboardEntry[]>('GET', `/leaderboard/${gameId}`, undefined, token),
   /** Set the signed-in player's OWN avatar (presets-only). Auth-required; the server validates

@@ -890,6 +890,36 @@ describe('CoinflipHubScreen — guest mode chrome (issue #267)', () => {
     expect(screen.queryByTestId('hub-guest-badge')).toBeNull();
     expect(screen.getByTestId('hub-nav-games')).toBeInTheDocument();
   });
+
+  // Issue #354 (5/5, guest bot economy): guest mode swaps GamesCarousel for GuestBotWaiters — a
+  // guest-scoped "who's on duty" list backed only by the isolated guest instance's bot-waiters,
+  // never `challengesByGame`/the real WS aggregate GamesCarousel is wired to.
+  it('renders GuestBotWaiters in place of GamesCarousel, and JOIN there reuses onTakeChallenge (the same WS wiring a real hub uses)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes('/guest/open-challenges')) {
+          return {
+            ok: true,
+            json: async () => [
+              { gameId: 'coinflip', matchId: 'bot-match-5', ownerName: 'Demo Opponent 🤖', stake: 5, openedAt: Date.now(), expiresAt: Date.now() + 60_000, timeControlId: 'none' },
+            ],
+          } as Response;
+        }
+        return { ok: true, json: async () => [] } as Response;
+      }),
+    );
+    const onTakeChallenge = vi.fn();
+    render(<CoinflipHubScreen {...baseProps({ isGuest: true, initialStake: 100, onTakeChallenge })} />);
+
+    expect(screen.queryByTestId('games-carousel')).toBeNull();
+    expect(screen.getByTestId('guest-bot-waiters')).toBeInTheDocument();
+
+    await waitFor(() => expect(screen.getByTestId('guest-bot-waiter-join-5')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('guest-bot-waiter-join-5'));
+    expect(onTakeChallenge).toHaveBeenCalledWith('bot-match-5');
+  });
 });
 
 describe('CoinflipHubScreen — guest mode skips the hidden-toolbar bottom padding (issue #288)', () => {
