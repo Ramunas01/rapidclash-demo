@@ -99,13 +99,14 @@ describe('App — guest game picker with Chess curated (issue #279, real GUEST_C
     expect(screen.getByTestId('guest-picker-chess')).toBeInTheDocument();
   });
 
-  it('picking Chess lands in the chess hub with the fixed stake AND blitz5 pre-armed — no time-control picker, no stake picker', async () => {
+  it('picking Chess lands in the chess hub with the stake AND blitz5 pre-armed — no time-control picker, but the bet grid is genuinely interactive (issue #353)', async () => {
     await enterAsGuest();
     fireEvent.click(screen.getByTestId('guest-picker-chess'));
 
     await waitFor(() => expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument());
     expect(screen.getByTestId('chess-board')).toBeInTheDocument();
-    expect(screen.getByTestId('hub-bet-100')).toBeDisabled(); // stake locked, same fixed value as Coinflip
+    expect(screen.getByTestId('hub-bet-100')).not.toBeDisabled(); // pre-armed default, no longer locked
+    expect(screen.queryByTestId('hub-bet-1')).toBeNull(); // GUEST_HUMAN_RESERVED_STAKE withheld entirely
     expect(screen.queryByTestId('hub-section-timecontrol')).toBeNull(); // no picker shown, ever
 
     openSocket(sockets[0]);
@@ -115,6 +116,21 @@ describe('App — guest game picker with Chess curated (issue #279, real GUEST_C
       .filter((m: { type: string }) => m.type === 'queue.join');
     expect(joins).toHaveLength(1);
     expect(joins[0].payload).toMatchObject({ gameId: 'chess', stake: 100, timeControlId: 'blitz5' });
+  });
+
+  it('a guest can re-arm Chess to a non-default, non-reserved stake and post it, keeping the pre-armed time control (issue #353)', async () => {
+    await enterAsGuest();
+    fireEvent.click(screen.getByTestId('guest-picker-chess'));
+    await waitFor(() => expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('hub-bet-10'));
+    openSocket(sockets[0]);
+    fireEvent.click(screen.getByTestId('hub-play'));
+    const joins = sockets[0].send.mock.calls
+      .map((c) => JSON.parse(String(c[0])))
+      .filter((m: { type: string }) => m.type === 'queue.join');
+    expect(joins).toHaveLength(1);
+    expect(joins[0].payload).toMatchObject({ gameId: 'chess', stake: 10, timeControlId: 'blitz5' });
   });
 
   it('a guest CHESS win fires firstWin exactly once — the game-agnostic #271 condition genuinely covers chess, not just Coinflip', async () => {

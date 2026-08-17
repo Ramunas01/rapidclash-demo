@@ -778,9 +778,10 @@ describe('BlackjackHubScreen — guest mode chrome (issue #297)', () => {
     expect(screen.queryByTestId('hub-nav-account')).toBeNull();
   });
 
-  it('locks the bet amount — the preset buttons are disabled and inert (matches Coinflip/Chess generically)', () => {
+  it('the bet amount is pre-armed but genuinely interactive, minus the reserved stake (issue #353, matches Coinflip/Chess generically)', () => {
     render(<BlackjackHubScreen {...baseProps({ isGuest: true, initialStake: 100 })} />);
-    expect(screen.getByTestId('hub-bet-100')).toBeDisabled();
+    expect(screen.getByTestId('hub-bet-100')).not.toBeDisabled();
+    expect(screen.queryByTestId('hub-bet-1')).toBeNull(); // GUEST_HUMAN_RESERVED_STAKE withheld entirely
   });
 
   it('pre-arms the fixed guest stake with PLAY sending it without any tap — no time-control picker (Blackjack has none, unlike Chess)', () => {

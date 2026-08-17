@@ -1,6 +1,6 @@
 # Coder → PM (append-only; newest on top)
 
-### 2026-08-17#13 — Guest bot economy (2/5): server multi-stake bot-waiter pools — PR TBD (issue #351)            [OPEN]
+### 2026-08-17#14 — Guest bot economy (2/5): server multi-stake bot-waiter pools — PR #356 (issue #351)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-17) / Advisor spec `docs/COMMS/from-advisor/guest-mode-bot-economy.md` §B
 
 Isolated worktree at `.wt/351-guest-bot-pools`, branch `feature/351-guest-bot-pools`, started from `main` at `c8142d0` (#350's merge commit — no intervening commits). Read the issue, spec §B, `packages/shared/src/guest.ts` fresh (confirmed `GUEST_HUMAN_RESERVED_STAKE` and `GUEST_BOT_STAKE_LANES` — `{coinflip, chess, blackjack: [5,10,25,50]}` — are already in place post-#350), and all of `apps/server/src/guest/index.ts` before writing anything, per the dispatch.
@@ -24,6 +24,19 @@ Isolated worktree at `.wt/351-guest-bot-pools`, branch `feature/351-guest-bot-po
 **Verification**: `npx tsc -b` clean (had to `pnpm install` — the worktree's own `node_modules` wasn't set up; used `npm install` first by mistake, which corrupted resolution across the pnpm workspace, then correctly `pnpm install`'d). `npx eslint --ext .ts,.tsx packages apps` clean, zero warnings. Full suite: **100 files / 1254 tests, 1252 passed, 2 failed** — both failures are `apps/web/src/test/App.test.tsx` timing out at 5000ms (`PLAY while logged-out → auth modal...` and `leaving and re-entering the hub loads a clean idle page`), in a file this PR never touches. Reproduced identically on a clean `main` checkout (same 2 tests, same timeout) — pre-existing and unrelated, the same class of flake #344's report (`CODER_TO_PM.md` #10) already logged and confirmed independent of that PR's changes too. Not investigated further as out of scope for #351. The `apps/server/src/guest/**` suite alone: **8 test files / 65 tests, all green** (was ~55 pre-#351 across the same files — net +10 for the new cross-lane/multi-lane coverage).
 
 **Ask**: PR opens against issue #351, referencing both flagged decisions above (supersession + Chess/Blackjack per-lane pool size) for the PM/Advisor to confirm or correct. Not merging myself. Issue #352 (bot-taker) is sequenced after this per the PM's collision-avoidance plan — no coordination needed from me now, but whoever picks it up should know `onDemoBotMatched`'s Coinflip branch now finds its bot id generically rather than assuming a single constant, in case that assumption mattered elsewhere.
+
+### 2026-08-17#13 — Guest bot economy (4/5): client — unlock guest bet control (issue #353)            [OPEN]
+From: Coder   Re: PM dispatch (2026-08-17), part of the 5-issue guest bot economy feature (#350-354)
+
+Shipped, isolated worktree at `.wt/353-guest-bet-control`, branch `feature/353-guest-bet-control`, started from `main` post-#350/PR #355. Client-only, not owner-gated.
+
+Replaced `PlayPanel`'s boolean `betLocked` prop with `excludedStakes?: readonly number[]` — a guest's bet grid is now genuinely interactive (armable/postable), with only `GUEST_HUMAN_RESERVED_STAKE` (1) withheld by construction (never rendered as an option, not disabled-in-place). `GameHub.tsx` passes `excludedStakes={isGuest ? [GUEST_HUMAN_RESERVED_STAKE] : undefined}`; every other hub is unaffected (no `excludedStakes`, offers the full `BET_PRESETS` range as before). The grid's column count now reflows to match the offered preset count (6 full, 5 with one withheld) rather than leaving a gap.
+
+`App.tsx`'s `handleGuestSelectGame` pre-arm behavior (fixed `GUEST_COINFLIP_STAKE`/`GUEST_CHESS_STAKE`/`GUEST_BLACKJACK_STAKE`) is kept as-is — now documented as a *default* a guest can override, not a lock. Deliberately did not hardcode `GUEST_BOT_STAKE_LANES`'s specific values into the client — this ticket unlocks the control generically; whether a posted stake instantly pairs (a resting waiter, #351) or gets auto-taken (#352, not yet built) is a server-side concern this ticket doesn't need to know about.
+
+**Verification:** full suite **100 files / 1252 tests** green on a clean isolated rerun. An earlier run (concurrent with #351's own full-suite run on this shared machine) showed 4 failures across 2 files, including the known `auto-searching.app.test.tsx` `waitFor`-timeout pattern already documented elsewhere in this log — re-ran clean immediately after, confirming CPU-contention noise, not a regression. `tsc -b` clean, `eslint` clean.
+
+Ask: PR review — against issue #353's 3 acceptance criteria (a guest can select/post a non-reserved stake; stake `1` is genuinely unavailable through the UI, not just documented; existing guest default-entry flows still work untouched).
 
 ### 2026-08-17#12 — Guest bot economy (1/5): shared constant + stake-lane plumbing — PR TBD (issue #350)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-17) / Advisor spec `docs/COMMS/from-advisor/guest-mode-bot-economy.md`

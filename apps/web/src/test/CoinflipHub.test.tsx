@@ -878,10 +878,11 @@ describe('CoinflipHubScreen — guest mode chrome (issue #267)', () => {
     expect(screen.queryByTestId('hub-nav-account')).toBeNull();
   });
 
-  it('locks the bet amount — the preset buttons are disabled and inert (the Demo-Opponent only rests at one stake)', () => {
+  it('the bet amount is pre-armed but genuinely interactive, minus the reserved stake (issue #353)', () => {
     render(<CoinflipHubScreen {...baseProps({ isGuest: true, initialStake: 100 })} />);
     const preset = screen.getByTestId('hub-bet-100');
-    expect(preset).toBeDisabled();
+    expect(preset).not.toBeDisabled();
+    expect(screen.queryByTestId('hub-bet-1')).toBeNull(); // GUEST_HUMAN_RESERVED_STAKE withheld entirely
   });
 
   it('a non-guest hub still shows the full chrome (regression guard)', () => {
