@@ -24,6 +24,7 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { registerAdminRoutes } from './routes/admin.js';
 import { registerGamesRoutes } from './routes/games.js';
 import { registerOpenChallengesRoutes } from './routes/open-challenges.js';
+import { registerGuestOpenChallengesRoutes } from './routes/guest-open-challenges.js';
 import { registerLeaderboardRoutes } from './routes/leaderboard.js';
 import { registerWalletRoutes } from './routes/wallet.js';
 import { registerMatchesRoutes } from './routes/matches.js';
@@ -49,6 +50,7 @@ const API_PREFIXES = [
   '/wallet',
   '/games',
   '/open-challenges',
+  '/guest',
   '/leaderboard',
   '/matches',
   '/admin',
@@ -147,6 +149,11 @@ export function buildApp(
   registerAdminRoutes(app, auth, ledger, identity);
   registerGamesRoutes(app, matchmaking);
   registerOpenChallengesRoutes(app, matchmaking);
+  // Guest-scoped equivalent (issue #354) — reads the ISOLATED `guest.matchmaking` instance only,
+  // never the real one above. Additive, own route file: kept out of `open-challenges.ts` and out
+  // of `guest/index.ts` (issue #352, the guest bot-taker, is concurrently touching that file) to
+  // minimize collision surface — this only reads `guest`'s already-public `Matchmaking` API.
+  registerGuestOpenChallengesRoutes(app, guest.matchmaking);
   registerLeaderboardRoutes(app, matchHistory);
   registerWalletRoutes(app, auth, ledger);
   registerMatchesRoutes(app, auth, matchmaking, gameModules);
