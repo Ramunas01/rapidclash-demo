@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { motion } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { Trophy, X } from 'lucide-react';
-import type { AvatarId, GameMeta, OpenChallenge, Outcome, SettlementSummary } from '@rapidclash/shared';
+import { GUEST_HUMAN_RESERVED_STAKE, type AvatarId, type GameMeta, type OpenChallenge, type Outcome, type SettlementSummary } from '@rapidclash/shared';
 import type { GameView } from '../App.js';
 import { api } from '../api.js';
 import { formatClock } from '../format.js';
@@ -29,6 +29,13 @@ const DRAW_REMATCH_HOLD_MS = 2000;
 /** Bet presets within the shared 1–100 demo range (every demo game's BetRules). Rendered with the
  *  RC-icon credits display, not a text currency symbol (issue #324). */
 const BET_PRESETS = [1, 5, 10, 25, 50, 100];
+
+/** Presets withheld from a guest's bet grid (issue #353): `GUEST_HUMAN_RESERVED_STAKE` (1) is
+ *  reserved for human-to-human testing inside the isolated guest world
+ *  (`packages/shared/src/guest.ts`) — no guest bot ever rests at or claims it, so a guest must
+ *  never be able to select or post it through this control either. Withheld by construction (the
+ *  preset is never rendered as an option for a guest session), not merely disabled-with-a-label. */
+const GUEST_EXCLUDED_STAKES: readonly number[] = [GUEST_HUMAN_RESERVED_STAKE];
 
 /** Two-line time-control labelling (data-driven from the meta option). The big line is the
  *  duration derived from `baseMs`; the small line is the mode name parsed from `"Name · X min"`. */
@@ -160,9 +167,11 @@ export interface GameHubScreenProps {
   /** Anonymous guest session (CHARTER.md's guest-mode exception, issue #267). Curated/simplified
    *  chrome: hides the wallet chip (own-session balance still shows, just non-interactive), Open
    *  Games, the related-games rail, Bring-a-Rival, the footer, and the bottom nav (account/games
-   *  all lead to real-platform surfaces a guest session doesn't have). Also locks the bet amount
-   *  at `initialStake` — the permanently-resting Demo-Opponent only rests at ONE fixed stake, so
-   *  letting a guest pick a different one would break "PLAY pairs instantly". Default false. */
+   *  all lead to real-platform surfaces a guest session doesn't have). The bet control is
+   *  genuinely interactive (issue #353) — pre-armed at `initialStake` as a sensible default for a
+   *  guest who never touches it, but a guest can also pick any other offered preset; the grid
+   *  withholds `GUEST_HUMAN_RESERVED_STAKE` (1) so a guest can never select or post it. Default
+   *  false. */
   isGuest?: boolean;
 }
 
@@ -584,7 +593,7 @@ export function GameHub(props: GameHubProps) {
               timeControl={timeControl}
               selectedControl={selectedControl}
               onSelectControl={setSelectedControl}
-              betLocked={isGuest}
+              excludedStakes={isGuest ? GUEST_EXCLUDED_STAKES : undefined}
             />
           </div>
 
@@ -763,7 +772,7 @@ function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdi
  *  Play-a-Friend becomes the active Cancel, while the bet row freezes with the SAME visuals — but
  *  NO "Playing…" label); `noOpponent` shows the polite "No opponent found" note after expiry. */
 function PlayPanel({
-  playing, searching, noOpponent, armedStake, onArm, onPlay, onCancel, actionSlot, secondaryActionSlot, timeControl, selectedControl, onSelectControl, betLocked,
+  playing, searching, noOpponent, armedStake, onArm, onPlay, onCancel, actionSlot, secondaryActionSlot, timeControl, selectedControl, onSelectControl, excludedStakes,
 }: {
   playing: boolean;
   /** Pure search: freeze the bet row (no "Playing…") and turn Play-a-Friend into the active Cancel. */
@@ -775,10 +784,13 @@ function PlayPanel({
   onPlay(): void;
   /** Cancel the in-flight search (the hardened leaveQueue path, #153). */
   onCancel(): void;
-  /** Guest mode (issue #267): the bet amount is fixed at `armedStake` (the permanently-resting
-   *  Demo-Opponent only rests at one stake) — grey + inert like `frozen`, but independent of
-   *  playing/searching state. Default false (every other hub is unaffected). */
-  betLocked?: boolean;
+  /** Presets to withhold from the offered bet grid entirely (issue #353) — e.g. guest mode
+   *  withholds `GUEST_HUMAN_RESERVED_STAKE` so a guest can never select or post it. Enforced by
+   *  never rendering the preset as an option, not by disabling it in place. Independent of
+   *  playing/searching (those freeze the WHOLE grid via `frozen`; this narrows WHICH values are
+   *  ever offered). Default: none (every other hub is unaffected, offers the full BET_PRESETS
+   *  range). */
+  excludedStakes?: readonly number[];
   /** When provided, replaces the PLAY button in place — the game's transforming primary action
    *  (e.g. Crash's EJECT during flight, or the hub's waiting label during search). Null → the
    *  default PLAY button (the #1-bug fix: ONE button that transforms, never a second control). */
@@ -794,6 +806,9 @@ function PlayPanel({
   // treatment — the ONLY difference is the primary label (search shows the waiting slot, not
   // "Playing…") and that Play-a-Friend becomes Cancel during search.
   const frozen = playing || searching;
+  // The offered presets, minus anything withheld (issue #353) — computed once per render rather
+  // than filtered inline in the JSX below so the grid-column count (right below) can agree with it.
+  const presets = excludedStakes?.length ? BET_PRESETS.filter((v) => !excludedStakes.includes(v)) : BET_PRESETS;
   // "PLAY needs a bet" guided affordance (#143). PLAY stays enabled with no stake armed; pressing
   // it then GUIDES the user to the bet panel (smooth-scroll + red frame + a11y hint) instead of
   // dead-ending — it never starts a match. The cue clears the instant a bet is armed (no auto-play).
@@ -868,7 +883,7 @@ function PlayPanel({
         className={cn(
           'scroll-mt-24 scroll-mb-[calc(7rem_+_env(safe-area-inset-bottom))] rounded-xl transition-shadow',
           needsBet && 'ring-2 ring-destructive',
-          (frozen || betLocked) && 'pointer-events-none opacity-50',
+          frozen && 'pointer-events-none opacity-50',
         )}
       >
         <div className="mb-2.5 flex items-center justify-between">
@@ -877,12 +892,16 @@ function PlayPanel({
             {armedStake == null ? '—' : <Credits amount={armedStake} />}
           </span>
         </div>
-        <div className="grid grid-cols-6 gap-2">
-          {BET_PRESETS.map((v) => (
+        {/* grid-cols matches the OFFERED preset count, not BET_PRESETS.length — a withheld preset
+            (issue #353) reflows the remaining ones evenly rather than leaving a gap. Only two
+            counts exist in practice (6 full, 5 with one withheld), so a plain ternary is simpler
+            than a dynamic Tailwind class. */}
+        <div className={cn('grid gap-2', presets.length === BET_PRESETS.length ? 'grid-cols-6' : 'grid-cols-5')}>
+          {presets.map((v) => (
             <button
               key={v}
               type="button"
-              disabled={frozen || betLocked}
+              disabled={frozen}
               data-testid={`hub-bet-${v}`}
               onClick={() => onArm(v)}
               className={cn(

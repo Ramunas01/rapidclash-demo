@@ -626,9 +626,10 @@ describe('ChessHubScreen — guest mode chrome + fixed time control (issue #279)
     expect(screen.queryByTestId('home-footer')).toBeNull();
   });
 
-  it('locks the bet amount — the preset buttons are disabled and inert (matches Coinflip generically)', () => {
+  it('the bet amount is pre-armed but genuinely interactive, minus the reserved stake (issue #353, matches Coinflip generically)', () => {
     render(<ChessHubScreen {...baseProps({ isGuest: true, initialStake: 100, initialTimeControl: 'blitz5' })} />);
-    expect(screen.getByTestId('hub-bet-100')).toBeDisabled();
+    expect(screen.getByTestId('hub-bet-100')).not.toBeDisabled();
+    expect(screen.queryByTestId('hub-bet-1')).toBeNull(); // GUEST_HUMAN_RESERVED_STAKE withheld entirely
   });
 
   it('pre-arms the fixed guest time control with NO time-control picker shown, and PLAY sends it without any tap', () => {
