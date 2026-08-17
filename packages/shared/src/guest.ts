@@ -58,6 +58,73 @@ export const GUEST_CHESS_TIME_CONTROL = 'blitz5';
 export const GUEST_BLACKJACK_STAKE = 100;
 
 /**
+ * Stake permanently set aside for human-to-human testing in the guest world (issue #350 — the
+ * guest bot economy, `docs/COMMS/from-advisor/guest-mode-bot-economy.md`). No guest bot — waiter
+ * or taker, present or future — may ever rest at or claim this stake, so two humans who both open
+ * a guest session can deliberately meet each other at this one value instead of getting
+ * auto-paired with a bot.
+ *
+ * This deliberately echoes `tools/bot-crowd/src/config.ts`'s `HUMAN_RESERVED_STAKE = 100` —
+ * same "carve out one stake no bot will touch" pattern — but do NOT conflate the two:
+ * - `tools/bot-crowd`'s `HUMAN_RESERVED_STAKE` protects the TOP of the REAL matchmaking's stake
+ *   range (1–100), so a real signed-in human's 100-credit bet waits for another real human,
+ *   funded by `tools/bot-crowd`'s own real, ADR-010-earned balance.
+ * - This `GUEST_HUMAN_RESERVED_STAKE` protects the BOTTOM of the isolated GUEST world's own
+ *   1–100 range (`createGuestServices()`'s isolated `Matchmaking` + `EphemeralLedger`,
+ *   apps/server/src/guest/index.ts), whose bots are funded by nothing real at all
+ *   (`DEMO_BOT_NOTIONAL_BALANCE`) rather than `tools/bot-crowd`'s earned, real balance.
+ * Same shape of guardrail, opposite end of the range, two completely separate isolated worlds —
+ * a guest session can never see or touch a real 100-stake challenge, and a real player can never
+ * see or touch this 1-stake guest lane.
+ */
+export const GUEST_HUMAN_RESERVED_STAKE = 1;
+
+/**
+ * The curated games issue #350's stake-lane config (`GUEST_BOT_STAKE_LANES` below) covers —
+ * spelled out as its own literal union rather than reusing `GUEST_CURATED_GAMES`'s declared
+ * `readonly string[]` type (existing callers, e.g. `App.tsx`'s `GUEST_CURATED_GAMES.includes
+ * (gameId)`, rely on that staying a plain string array — narrowing it would ripple into them for
+ * no benefit here). This lets `GUEST_BOT_STAKE_LANES` be a fully-keyed `Record` with compile-time
+ * exhaustiveness instead. `guest.test.ts` in this package asserts the two lists stay in sync at
+ * runtime, so a future curated-game addition can't update one and silently forget the other.
+ */
+export type GuestCuratedGameId = 'coinflip' | 'chess' | 'blackjack';
+
+/**
+ * Per-curated-game stake lanes for the guest bot economy (issue #350, part 1/5 of
+ * `docs/COMMS/from-advisor/guest-mode-bot-economy.md` §B). Today `ensureDemoBotResting()`
+ * (apps/server/src/guest/index.ts) keeps exactly ONE resting bot identity per curated game, at
+ * exactly the one fixed stake above (`GUEST_COINFLIP_STAKE`/`GUEST_CHESS_STAKE`/
+ * `GUEST_BLACKJACK_STAKE`) — because the core's FIFO matchmaking pairs on the exact key
+ * `(gameId, stake, timeControlId)`, one identity can only ever rest at one stake. Issue #351
+ * (bot-waiter pools) generalizes that into several bot-waiter identities per game, one per
+ * distinct stake "lane" listed here — the same index-pairing pattern `DEMO_BOT_CHESS_IDS`/
+ * `DEMO_BOT_BLACKJACK_IDS` already use for their own pools (one array entry ⇔ one bot identity),
+ * just keyed on stake instead of on nothing.
+ *
+ * Shape: a plain array of stakes per game, no wrapper object. A stake key IS the entire config a
+ * lane needs to rest (the matchmaking queue key's other two parts — `gameId` and, for chess,
+ * `timeControlId` — are already fixed per game, see `GUEST_CHESS_TIME_CONTROL` above). #351 zips
+ * this array 1:1 against a same-length array of bot identities it mints, e.g.
+ * `demo-bot:coinflip:0` ↔ `GUEST_BOT_STAKE_LANES.coinflip[0]`.
+ *
+ * Values: 4 distinct stakes per game, all under 100 and excluding `GUEST_HUMAN_RESERVED_STAKE`
+ * (1) — a subset of the app's own bet presets (`BET_PRESETS` in
+ * `apps/web/src/screens/GameHub.tsx`, the same list `tools/bot-crowd`'s `STAKE_SET` uses).
+ * Cosmetic/tunable, not Owner-specified — see the spec's §B / "Ask".
+ *
+ * Guest-scoped only, by construction and by naming: keyed by curated game id, consumed only by
+ * `apps/server/src/guest/index.ts`'s isolated `Matchmaking` instance. Never import this into
+ * `tools/bot-crowd/src/config.ts` or any real (non-guest) matchmaking config — that would be
+ * exactly the invariant violation `guest-mode-bot-economy.md` §2 warns against.
+ */
+export const GUEST_BOT_STAKE_LANES: Readonly<Record<GuestCuratedGameId, readonly number[]>> = {
+  coinflip: [5, 10, 25, 50],
+  chess: [5, 10, 25, 50],
+  blackjack: [5, 10, 25, 50],
+};
+
+/**
  * The landing origins allowed to iframe-embed the guest surface (GUEST_MODE_CONTRACT.md §3/§5,
  * issue #271). ONE list, imported by both sides so neither can drift from the other:
  * - server (`server.ts`) echoes it verbatim into the CSP `frame-ancestors` directive.
