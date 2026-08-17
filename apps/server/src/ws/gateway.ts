@@ -62,6 +62,16 @@ const pendingGuestEvictions = new Map<string, ReturnType<typeof setTimeout>>();
 // bot never applies a move to — or crashes trying to broadcast for — a match that's already gone.
 const pendingBotMoves = new Map<string, ReturnType<typeof setTimeout>>();
 
+// Issue #352 (guest bot economy 3/5): a bot-taker's delayed claim of a guest's own resting stake,
+// keyed by matchId — at most one pending take per resting bet. Cancelled wherever that resting
+// bet can disappear out from under it before the timer fires (the guest cancels via queue.leave,
+// or abandons it via socket close) so a stale timer never fires a `takeChallenge` against a
+// matchId that's already been refunded and forgotten — mirrors `pendingForfeits`/
+// `pendingGuestEvictions`/`pendingBotMoves`'s own cancelable-timer pattern. Even an un-cancelled
+// fire is harmless by construction (`guest.takeGuestStake` swallows a gone-challenge
+// `ChallengeError` and no-ops), so this is hygiene, not a correctness requirement.
+const pendingGuestBotTakes = new Map<string, ReturnType<typeof setTimeout>>();
+
 const DEFAULT_FORFEIT_DELAY_MS = 60_000;
 const SWEEP_INTERVAL_MS = (() => {
   const n = parseInt(process.env.CHALLENGE_SWEEP_MS ?? '', 10);
@@ -87,6 +97,17 @@ function cancelPendingBotMove(matchId: string): void {
   }
 }
 
+/** Cancel a bot-taker's pending delayed claim for `matchId`, if one is scheduled — a no-op
+ *  otherwise (issue #352). Call wherever a guest's own resting bet can disappear before the
+ *  timer fires: they cancel it (`queue.leave`) or abandon it (socket close). */
+function cancelPendingGuestBotTake(matchId: string): void {
+  const pending = pendingGuestBotTakes.get(matchId);
+  if (pending !== undefined) {
+    clearTimeout(pending);
+    pendingGuestBotTakes.delete(matchId);
+  }
+}
+
 export function registerWsGateway(
   app: FastifyInstance,
   identity: Identity,
@@ -103,6 +124,22 @@ export function registerWsGateway(
   const forfeitDelayMs = (() => {
     const n = parseInt(process.env.FORFEIT_DELAY_MS ?? '', 10);
     return Number.isFinite(n) ? n : DEFAULT_FORFEIT_DELAY_MS;
+  })();
+
+  // Issue #352: how long a guest's own resting stake sits before a bot-taker claims it —
+  // deliberately not instant (an immediate claim would read as scripted, not "a person was
+  // found"), but short enough to still feel always-on. Sits comfortably inside the client's own
+  // "Searching…" minimum-dwell floor (DEMO_PRESENTATION.md: 2-4s) without needing to match it
+  // exactly — the dwell is a client-side floor, not a server contract; "Searching…" simply
+  // continues however long this actually takes. Env-overridable exactly like
+  // GUEST_BOT_THINK_MIN_MS/MAX_MS (guest/index.ts) so tests don't wait out real seconds.
+  const guestTakeMinMs = (() => {
+    const n = parseInt(process.env.GUEST_BOT_TAKE_MIN_MS ?? '', 10);
+    return Number.isFinite(n) ? n : 1_000;
+  })();
+  const guestTakeMaxMs = (() => {
+    const n = parseInt(process.env.GUEST_BOT_TAKE_MAX_MS ?? '', 10);
+    return Number.isFinite(n) ? n : 3_000;
   })();
 
   /** Resolve a display name for ANY id — bot/guest first (never a DB lookup), else the real
@@ -137,24 +174,36 @@ export function registerWsGateway(
 
   /**
    * Deliver match.start (per-player redacted) + initial match.your_turn to both players
-   * of a freshly-formed match. Shared by the typed-amount FIFO path and challenge.take.
+   * of a freshly-formed match. Shared by the typed-amount FIFO path, challenge.take, and (issue
+   * #352) a server-scheduled bot-taker claiming a guest's own resting stake.
+   *
+   * `curId`'s socket is looked up fresh from `connections` (not passed in) and guarded by
+   * `readyState`, exactly like `oppId`'s below — issue #352's bot-taker path calls this from a
+   * `setTimeout` callback with no live request-scoped socket in hand at all (a minted bot
+   * identity never has one), so this can no longer assume the caller's own connection is the
+   * "current" one still open. Harmless for the two existing synchronous call sites too: the
+   * socket they already had in hand IS what this now re-fetches, since it's the one connection
+   * currently processing that exact message.
    */
-  function deliverMatchStart(curId: string, curSocket: WsSocket, result: JoinMatched, gameId: string): void {
+  function deliverMatchStart(curId: string, result: JoinMatched, gameId: string): void {
     const mod = moduleByGame.get(gameId);
     playerMatch.set(curId, result.matchId);
     playerMatch.set(result.opponentId, result.matchId);
 
     // Each player gets the OTHER's public alias (already shown in the open-challenge feed — not
     // hidden game state). Falls back to the opaque id only if a name can't be resolved.
-    const curState = mod ? mod.viewFor(result.initialState, curId) : result.initialState;
-    send<MatchStartPayload>(curSocket, 'match.start', {
-      matchId: result.matchId,
-      opponent: result.opponentId,
-      opponentName: resolveUsername(result.opponentId),
-      gameId,
-      state: curState,
-      serverNow: Date.now(), // lets the client align its clock to server-authoritative timers
-    });
+    const curSocket = connections.get(curId);
+    if (curSocket && curSocket.readyState === 1) {
+      const curState = mod ? mod.viewFor(result.initialState, curId) : result.initialState;
+      send<MatchStartPayload>(curSocket, 'match.start', {
+        matchId: result.matchId,
+        opponent: result.opponentId,
+        opponentName: resolveUsername(result.opponentId),
+        gameId,
+        state: curState,
+        serverNow: Date.now(), // lets the client align its clock to server-authoritative timers
+      });
+    }
 
     const oppSocket = connections.get(result.opponentId);
     if (oppSocket && oppSocket.readyState === 1) {
@@ -172,7 +221,7 @@ export function registerWsGateway(
     if (mod) {
       for (const [pid, pSocket] of [
         [curId, curSocket],
-        [result.opponentId, connections.get(result.opponentId)],
+        [result.opponentId, oppSocket],
       ] as [string, WsSocket | undefined][]) {
         const lm = mod.legalMoves(result.initialState, pid);
         if (lm.length > 0 && pSocket?.readyState === 1) {
@@ -284,6 +333,62 @@ export function registerWsGateway(
     pendingBotMoves.set(matchId, handle);
   }
 
+  /**
+   * Issue #352 (guest bot economy 3/5, §C): schedule a bot-taker to claim a guest's own just-
+   * posted resting stake after a short human-ish delay — the mirror image of
+   * `maybeScheduleGuestBotMove` above (a bot's delayed MOVE inside an existing match) for the
+   * opposite direction: a bot's delayed CLAIM of a match that doesn't exist yet. Called once,
+   * right where `queue.join`'s "waiting" branch below learns a guest's stake found nobody resting
+   * — the exact dispatch point the ticket asked to find by tracing the join path, mirroring how
+   * `onDemoBotMatched` is invoked from the "matched" branch next to it.
+   *
+   * The reserved-stake rule (`GUEST_HUMAN_RESERVED_STAKE`) is NOT re-checked here — it's enforced
+   * inside `guest.takeGuestStake` itself, the single source of truth, so scheduling a take for a
+   * reserved stake is harmless (the timer fires, `takeGuestStake` refuses, nothing happens) rather
+   * than a second place this rule could drift from the first.
+   *
+   * Self-heals like every other timer in this file: if the resting bet is gone by the time this
+   * fires (a real human already took/cancelled it, it expired, or this exact timer was itself
+   * cancelled — see `cancelPendingGuestBotTake`), `takeGuestStake` returns undefined and this is a
+   * harmless no-op.
+   */
+  function maybeScheduleGuestBotTake(matchId: string, gameId: string, stake: number): void {
+    if (!guest) return;
+    const delayMs = guestTakeMinMs + Math.random() * (guestTakeMaxMs - guestTakeMinMs);
+    const handle = setTimeout(() => {
+      pendingGuestBotTakes.delete(matchId);
+      const result = guest.takeGuestStake(matchId, gameId, stake);
+      if (!result) return; // nothing to claim anymore, or the stake was reserved — no-op
+
+      // `JoinMatched.opponentId` is the GUEST here (the resting side `takeChallenge` claims) —
+      // it never carries the taker's OWN id, so find the freshly-minted bot id the same generic
+      // way `onDemoBotMatched` already does (issue #351's own pattern, flagged for reuse here:
+      // don't assume a well-known constant). `deliverMatchStart`'s `curId` must be the BOT's id
+      // (distinct from `result.opponentId`, the guest) — passing the guest for both would collapse
+      // "opponent" onto the guest's own id and misfire the reveal.
+      const formed = guest.matchmaking.getActiveMatch(result.matchId);
+      const botId = formed?.players.find(isDemoBotId);
+      if (botId === undefined) return; // defensive: can't happen, takeChallenge only just formed this match
+
+      // Same post-match bookkeeping as any other bot pairing (Coinflip submits its pick
+      // immediately and re-rests its lane; Chess/Blackjack mark their matched pool bot busy) —
+      // `onDemoBotMatched` dispatches generically on `MatchRecord.gameId` via `isDemoBotId` and
+      // has no idea (or need to know) the bot arrived by TAKING rather than being taken.
+      guest.onDemoBotMatched(result.matchId, Date.now());
+      // Deliver match.start + your_turn exactly like the synchronous queue.join/challenge.take
+      // paths do, reusing the same function now that it looks up sockets fresh rather than
+      // assuming a request-scoped one (see its doc comment). The bot has no socket, so its own
+      // send is a harmless no-op; the guest's live socket gets the honest reveal right here, not
+      // a moment before.
+      deliverMatchStart(botId, result, gameId);
+      // Blackjack's first decision is self-triggered off match formation (see
+      // `maybeScheduleGuestBotMove`'s own doc comment); Chess is a harmless no-op here since the
+      // guest — not the bot — is players[0] and so owes the first move, not the taker.
+      maybeScheduleGuestBotMove(result.matchId);
+    }, delayMs);
+    pendingGuestBotTakes.set(matchId, handle);
+  }
+
   // Server-authoritative expiry sweep: refund (in core) + notify owner & subscribers (OC6).
   // Factored so it can run against BOTH the real Matchmaking and (if guest mode is wired) the
   // guest one — critical for guest mode, not cosmetic: Coinflip's pick window resolves ONLY via
@@ -292,6 +397,7 @@ export function registerWsGateway(
   function runSweeps(mm: Matchmaking, isGuestMm: boolean): void {
     const expired = mm.sweepExpired(Date.now());
     for (const ex of expired) {
+      if (isGuestMm) cancelPendingGuestBotTake(ex.matchId); // #352: nothing left here to claim
       const ownerSocket = connections.get(ex.ownerId);
       if (ownerSocket?.readyState === 1) {
         send<ChallengeExpiredPayload>(ownerSocket, 'challenge.expired', { matchId: ex.matchId });
@@ -452,6 +558,11 @@ export function registerWsGateway(
       // Per-connection queue state for leaveQueue support
       let queuedGameId: string | null = null;
       let queuedStake: number | null = null;
+      // Issue #352: tracks the resting bet's own matchId so a scheduled bot-taker claim can be
+      // cancelled the moment this connection's own queue entry stops existing (leave, or an
+      // abandoned-on-close queue). Only ever set for a guest connection's own resting bet — see
+      // the queue.join handler below.
+      let queuedMatchId: string | null = null;
 
       socket.on('close', () => {
         // Drop this socket from every challenge feed it was subscribed to (this is
@@ -487,6 +598,10 @@ export function registerWsGateway(
           const s = queuedStake;
           queuedGameId = null;
           queuedStake = null;
+          if (queuedMatchId !== null) {
+            cancelPendingGuestBotTake(queuedMatchId);
+            queuedMatchId = null;
+          }
           try {
             const refund = mm.leaveQueue(playerId, g, s);
             // Guest activity must never publish into the real, shared challenge-feed channel
@@ -561,6 +676,7 @@ export function registerWsGateway(
               if (result.status === 'waiting') {
                 queuedGameId = gameId;
                 queuedStake = stake;
+                queuedMatchId = result.matchId;
                 send<QueueWaitingPayload>(socket, 'queue.waiting', {
                   gameId,
                   matchId: result.matchId,
@@ -578,11 +694,18 @@ export function registerWsGateway(
                     gameId,
                     added: openChallengeOf(result.matchId, playerId, stake, result.since, result.expiresAt, result.timeControlId),
                   });
+                } else if (guest) {
+                  // Issue #352: nobody was resting at this stake, so the GUEST is now the resting
+                  // side — schedule a bot-taker to claim it after a short delay. The reserved
+                  // stake (GUEST_HUMAN_RESERVED_STAKE) is refused inside `takeGuestStake` itself,
+                  // not re-checked here.
+                  maybeScheduleGuestBotTake(result.matchId, gameId, stake);
                 }
               } else {
                 // Match formed via the FIFO path — the waiter's resting bet is consumed.
                 queuedGameId = null;
                 queuedStake = null;
+                queuedMatchId = null;
                 // The guest was paired against a resting Demo-Opponent (issue #267, generalized
                 // per-game by issue #278): dispatches on the matched game internally — Coinflip
                 // submits its pick immediately through the normal applyMove path (viewFor
@@ -591,7 +714,7 @@ export function registerWsGateway(
                 if (guest && isDemoBotId(result.opponentId)) {
                   guest.onDemoBotMatched(result.matchId, Date.now());
                 }
-                deliverMatchStart(playerId, socket, result, gameId);
+                deliverMatchStart(playerId, result, gameId);
                 // Chess: the just-matched bot may owe the first move (it always plays the side
                 // that was already resting, i.e. players[0] — see matchmaking.ts's joinQueue).
                 // Coinflip: already picked above, so this is a harmless no-op (no legal moves left).
@@ -616,6 +739,10 @@ export function registerWsGateway(
               const refund = mm.leaveQueue(playerId, gameId, stake);
               queuedGameId = null;
               queuedStake = null;
+              if (queuedMatchId !== null) {
+                cancelPendingGuestBotTake(queuedMatchId); // #352: don't claim a bet the guest just cancelled
+                queuedMatchId = null;
+              }
               send(socket, 'queue.left', { gameId });
               // The owner cancelled — drop it from the feed (OC8). Never for a guest (see above).
               if (refund.matchId && !isGuest) {
@@ -675,7 +802,7 @@ export function registerWsGateway(
               if (guest && isDemoBotId(result.opponentId)) {
                 guest.onDemoBotMatched(result.matchId, Date.now());
               }
-              deliverMatchStart(playerId, socket, result, gameId);
+              deliverMatchStart(playerId, result, gameId);
               if (guest) maybeScheduleGuestBotMove(result.matchId);
               // The claimed bet leaves the feed (OC8). Never for a guest (see above).
               if (!isGuest) {
