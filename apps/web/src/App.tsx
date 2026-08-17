@@ -625,12 +625,13 @@ export function App() {
   }, []);
 
   // A tile pick on the guest picker (issue #279) routes straight into that game's hub with the
-  // guest's stake FIXED at the game's own guest-stake constant from `packages/shared` — per-game
+  // guest's stake PRE-ARMED at the game's own guest-stake constant from `packages/shared` — per-game
   // (GUEST_COINFLIP_STAKE / GUEST_CHESS_STAKE / GUEST_BLACKJACK_STAKE, all 100 today, #278 §6 /
   // #297) rather than reusing one constant across games, so a future guest game with a different
-  // ceiling can't silently drift from the pooled Demo-Opponent(s), which only ever rest at that
-  // exact stake (matching PlayPanel's betLocked in GameHub.tsx, which keeps the bet grid from
-  // offering any other).
+  // ceiling can't silently drift from the pooled Demo-Opponent(s), which rest at that exact stake.
+  // This is only a DEFAULT, not a lock (issue #353): PlayPanel's bet grid in GameHub.tsx is
+  // genuinely interactive for a guest, who may re-arm any other offered preset before pressing
+  // PLAY — the grid just withholds GUEST_HUMAN_RESERVED_STAKE (1) so a guest can never land there.
   // Chess additionally needs its fixed time control pre-armed (GUEST_CHESS_TIME_CONTROL, 'blitz5'
   // — the same shared constant #278's real bot pool rests at, imported here rather than
   // duplicated, now that #278 has actually landed) since guest mode has no time-control picker
@@ -722,10 +723,12 @@ export function App() {
   // Defense-in-depth (issue #283): whatever the trigger — a stray nav element this ticket missed,
   // browser back/forward, a future regression — a guest session must never sit on a hub screen
   // for a game outside GUEST_CURATED_GAMES. That combination is always a dead end: `isGuest`
-  // never resets mid-session, so the hub's bet control renders `betLocked={isGuest}` with no
-  // `prearmStake` to have armed it (pre-arming only ever happens for the guest's own curated
-  // entry, in `handleGuestSuccess` below) — PLAY can never succeed and there's no picker to back
-  // out to. Snap back to the guest's fixed curated entry point instead of leaving them stuck.
+  // never resets mid-session, and reaching an uncurated hub happens outside the guest's own
+  // curated entry (`handleGuestSelectGame` below is the only path that arms a stake and picks a
+  // time control for a guest) — there's no picker to back out to, and no reason to trust an
+  // uncurated hub's own queue-join wiring for an isolated guest session. Snap back to the guest's
+  // fixed curated entry point instead of leaving them on it, whether or not they'd have been able
+  // to arm a stake there.
   useEffect(() => {
     if (!isGuest || !isGameHubScreen(screen)) return;
     const gameId = screen.replace('-hub', '');

@@ -100,12 +100,13 @@ describe('App — guest game picker with Blackjack curated (issue #297, real GUE
     expect(screen.queryAllByTestId(/^guest-picker-/)).toHaveLength(3);
   });
 
-  it('picking Blackjack lands in the blackjack hub with the fixed stake pre-armed — no stake picker, no time-control concept', async () => {
+  it('picking Blackjack lands in the blackjack hub with the default stake pre-armed but genuinely interactive — no time-control concept (issue #353)', async () => {
     await enterAsGuest();
     fireEvent.click(screen.getByTestId('guest-picker-blackjack'));
 
     await waitFor(() => expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument());
-    expect(screen.getByTestId('hub-bet-100')).toBeDisabled(); // stake locked, same fixed value as Coinflip/Chess
+    expect(screen.getByTestId('hub-bet-100')).not.toBeDisabled(); // pre-armed default, no longer locked
+    expect(screen.queryByTestId('hub-bet-1')).toBeNull(); // GUEST_HUMAN_RESERVED_STAKE withheld entirely
     expect(screen.queryByTestId('hub-section-timecontrol')).toBeNull(); // Blackjack has no time-control concept
 
     openSocket(sockets[0]);
@@ -119,6 +120,21 @@ describe('App — guest game picker with Blackjack curated (issue #297, real GUE
     // never sets `guestTimeControl` (App.tsx, unlike Chess), so this is what actually crosses the
     // wire; the real proof of "no time-control picker" is the UI assertion above, not this value.
     expect(joins[0].payload.timeControlId).toBe(UNTIMED_TIME_CONTROL);
+  });
+
+  it('a guest can re-arm Blackjack to a non-default, non-reserved stake and post it (issue #353)', async () => {
+    await enterAsGuest();
+    fireEvent.click(screen.getByTestId('guest-picker-blackjack'));
+    await waitFor(() => expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('hub-bet-50'));
+    openSocket(sockets[0]);
+    fireEvent.click(screen.getByTestId('hub-play'));
+    const joins = sockets[0].send.mock.calls
+      .map((c) => JSON.parse(String(c[0])))
+      .filter((m: { type: string }) => m.type === 'queue.join');
+    expect(joins).toHaveLength(1);
+    expect(joins[0].payload).toMatchObject({ gameId: 'blackjack', stake: 50 });
   });
 
   it('a guest BLACKJACK win fires firstWin exactly once — the game-agnostic #271 condition genuinely covers blackjack, not just Coinflip/Chess', async () => {

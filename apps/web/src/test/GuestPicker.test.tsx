@@ -98,13 +98,41 @@ describe('App — guest game picker (issue #279)', () => {
     expect(screen.queryAllByTestId(/^guest-picker-/)).toHaveLength(3);
   });
 
-  it('picking Coinflip behaves exactly as before the picker existed (regression guard): lands on the guest coinflip hub, fixed stake locked', async () => {
+  it('picking Coinflip lands on the guest coinflip hub, pre-armed at the default stake but genuinely interactive (issue #353)', async () => {
     await enterAsGuest();
     fireEvent.click(screen.getByTestId('guest-picker-coinflip'));
 
     await waitFor(() => expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument());
-    expect(screen.getByTestId('hub-bet-100')).toBeDisabled(); // GUEST_COINFLIP_STAKE, locked
+    // Pre-armed at GUEST_COINFLIP_STAKE by default (a guest who never touches the control), but no
+    // longer locked — the preset is enabled and re-selectable, not disabled/inert.
+    expect(screen.getByTestId('hub-bet-100')).not.toBeDisabled();
     expect(screen.queryByTestId('hub-wallet-chip')).toBeNull(); // guest chrome still applies
+  });
+
+  it('GUEST_HUMAN_RESERVED_STAKE (1) is withheld from a guest coinflip bet grid entirely — never rendered as an option (issue #353)', async () => {
+    await enterAsGuest();
+    fireEvent.click(screen.getByTestId('guest-picker-coinflip'));
+    await waitFor(() => expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument());
+
+    expect(screen.queryByTestId('hub-bet-1')).toBeNull();
+  });
+
+  it('a guest can re-arm a non-default, non-reserved stake and post it (issue #353)', async () => {
+    await enterAsGuest();
+    fireEvent.click(screen.getByTestId('guest-picker-coinflip'));
+    await waitFor(() => expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument());
+
+    // Re-arm away from the GUEST_COINFLIP_STAKE (100) default onto a different offered preset.
+    fireEvent.click(screen.getByTestId('hub-bet-25'));
+    expect(screen.getByTestId('hub-bet-25')).toHaveClass('bg-brand');
+
+    openSocket(sockets[0]);
+    fireEvent.click(screen.getByTestId('hub-play'));
+    const joins = sockets[0].send.mock.calls
+      .map((c) => JSON.parse(String(c[0])))
+      .filter((m: { type: string }) => m.type === 'queue.join');
+    expect(joins).toHaveLength(1);
+    expect(joins[0].payload).toMatchObject({ gameId: 'coinflip', stake: 25 });
   });
 
   it('`ready` fires once the guest surface (the picker) is up — not gated on a specific hub screen', async () => {

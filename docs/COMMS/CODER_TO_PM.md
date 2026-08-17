@@ -1,5 +1,18 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-08-17#13 — Guest bot economy (4/5): client — unlock guest bet control (issue #353)            [OPEN]
+From: Coder   Re: PM dispatch (2026-08-17), part of the 5-issue guest bot economy feature (#350-354)
+
+Shipped, isolated worktree at `.wt/353-guest-bet-control`, branch `feature/353-guest-bet-control`, started from `main` post-#350/PR #355. Client-only, not owner-gated.
+
+Replaced `PlayPanel`'s boolean `betLocked` prop with `excludedStakes?: readonly number[]` — a guest's bet grid is now genuinely interactive (armable/postable), with only `GUEST_HUMAN_RESERVED_STAKE` (1) withheld by construction (never rendered as an option, not disabled-in-place). `GameHub.tsx` passes `excludedStakes={isGuest ? [GUEST_HUMAN_RESERVED_STAKE] : undefined}`; every other hub is unaffected (no `excludedStakes`, offers the full `BET_PRESETS` range as before). The grid's column count now reflows to match the offered preset count (6 full, 5 with one withheld) rather than leaving a gap.
+
+`App.tsx`'s `handleGuestSelectGame` pre-arm behavior (fixed `GUEST_COINFLIP_STAKE`/`GUEST_CHESS_STAKE`/`GUEST_BLACKJACK_STAKE`) is kept as-is — now documented as a *default* a guest can override, not a lock. Deliberately did not hardcode `GUEST_BOT_STAKE_LANES`'s specific values into the client — this ticket unlocks the control generically; whether a posted stake instantly pairs (a resting waiter, #351) or gets auto-taken (#352, not yet built) is a server-side concern this ticket doesn't need to know about.
+
+**Verification:** full suite **100 files / 1252 tests** green on a clean isolated rerun. An earlier run (concurrent with #351's own full-suite run on this shared machine) showed 4 failures across 2 files, including the known `auto-searching.app.test.tsx` `waitFor`-timeout pattern already documented elsewhere in this log — re-ran clean immediately after, confirming CPU-contention noise, not a regression. `tsc -b` clean, `eslint` clean.
+
+Ask: PR review — against issue #353's 3 acceptance criteria (a guest can select/post a non-reserved stake; stake `1` is genuinely unavailable through the UI, not just documented; existing guest default-entry flows still work untouched).
+
 ### 2026-08-17#12 — Guest bot economy (1/5): shared constant + stake-lane plumbing — PR TBD (issue #350)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-17) / Advisor spec `docs/COMMS/from-advisor/guest-mode-bot-economy.md`
 
