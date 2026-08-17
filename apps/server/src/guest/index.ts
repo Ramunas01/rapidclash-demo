@@ -2,8 +2,10 @@ import { randomUUID } from 'node:crypto';
 import {
   createEphemeralLedger,
   createMatchmaking,
+  ChallengeError,
   type EphemeralLedger,
   type Matchmaking,
+  type JoinMatched,
 } from '@rapidclash/core';
 import { coinflipModule } from '@rapidclash/game-coinflip';
 import { chessModule, type ChessMove } from '@rapidclash/game-chess';
@@ -14,6 +16,7 @@ import {
   GUEST_CURATED_GAMES,
   GUEST_CHESS_TIME_CONTROL,
   GUEST_BOT_STAKE_LANES,
+  GUEST_HUMAN_RESERVED_STAKE,
   isDemoBotId,
 } from '@rapidclash/shared';
 
@@ -270,6 +273,38 @@ export interface GuestServices {
    *  submission, no broadcast — the gateway owns all of that (mirrors its existing
    *  `pendingForfeits`/`pendingGuestEvictions` cancelable-timer pattern). */
   selectBotMove(gameId: string, state: GameState, botId: string, now: number): SelectedBotMove | undefined;
+  /**
+   * Issue #352 (guest bot economy 3/5, `docs/COMMS/from-advisor/guest-mode-bot-economy.md` §C) —
+   * the mirror image of `onDemoBotMatched`: THAT function claims a GUEST against an already-
+   * RESTING bot (bot-waiter, #351); THIS one claims a GUEST's own resting bet with a freshly-
+   * minted, single-use bot identity (bot-taker) — for whatever stake a guest posts that finds
+   * nobody resting (an off-lane stake, or a lane whose whole pool is currently mid-match).
+   *
+   * Rule (issue #352's own acceptance criteria, and #350's `GUEST_HUMAN_RESERVED_STAKE` doc
+   * comment): never claims `GUEST_HUMAN_RESERVED_STAKE` (1) — that stake is permanently reserved
+   * so two humans in guest mode can deliberately find each other. Enforced HERE, not just at the
+   * call site, so it holds regardless of how many callers this ever grows — the acceptance
+   * criteria explicitly asks this to be enforced in the matching logic, not merely documented.
+   *
+   * A fresh identity per call (`demo-bot:<gameId>:taker:<uuid>`), never one drawn from the
+   * `DEMO_BOT_*_IDS` waiter pools above: those pools are keyed and sized for THEIR OWN fixed
+   * lanes (`ensureDemoBotResting`'s "at most one idle pool bot rests per lane" invariant), and a
+   * take can happen at ANY stake a guest chooses, not just a configured lane — reusing a waiter
+   * identity here would either steal it out from under its own lane (breaking that invariant) or
+   * require a whole second per-stake pool for stakes that aren't known ahead of time. A minted
+   * taker is used exactly once (this one `takeChallenge` call) and never re-rests, so it needs no
+   * busy-tracking map the way the waiter pools do — there's nothing to double-book.
+   *
+   * Returns the formed match on success — the caller still owes the same match.start delivery +
+   * post-match bookkeeping as any other bot pairing; reuse `onDemoBotMatched(matchId, now)` for
+   * that (it dispatches on `MatchRecord.gameId` generically via `isDemoBotId`, unaware of *how*
+   * the bot got there), don't duplicate its logic here. Returns undefined if there's nothing to
+   * claim: the reserved stake, an uncurated `gameId` (defensive — `matchmaking` only ever queues
+   * curated games in practice), or the challenge is simply gone by the time this runs (already
+   * taken by a real human, cancelled, or TTL-expired) — a `ChallengeError`, caught and swallowed
+   * here exactly like every other self-healing sweep in this file, never thrown at the caller.
+   */
+  takeGuestStake(matchId: string, gameId: string, stake: number): JoinMatched | undefined;
 }
 
 export function createGuestServices(
@@ -448,9 +483,28 @@ export function createGuestServices(
     return undefined;
   }
 
+  function takeGuestStake(matchId: string, gameId: string, stake: number): JoinMatched | undefined {
+    // The single source of truth for the reservation — enforced here, not merely at whatever
+    // calls this (issue #352's acceptance criteria: "confirm this is actually enforced in the
+    // matching logic, not just documented").
+    if (stake === GUEST_HUMAN_RESERVED_STAKE) return undefined;
+    if (!GUEST_CURATED_GAMES.includes(gameId)) return undefined; // defensive — see doc comment above
+
+    const takerId = `demo-bot:${gameId}:taker:${randomUUID()}`;
+    ledger.adminCredit(takerId, DEMO_BOT_NOTIONAL_BALANCE, `demo-bot:init:${takerId}`);
+    try {
+      return matchmaking.takeChallenge(takerId, matchId);
+    } catch (err) {
+      // Gone by the time we got here — a real human already took/cancelled it, or it TTL-expired.
+      // Self-heals like every other sweep in this file: no match to claim, nothing to do.
+      if (err instanceof ChallengeError) return undefined;
+      throw err;
+    }
+  }
+
   ensureDemoBotResting(); // once at startup
 
-  return { ledger, matchmaking, usernameFor, onDemoBotMatched, ensureDemoBotResting, selectBotMove };
+  return { ledger, matchmaking, usernameFor, onDemoBotMatched, ensureDemoBotResting, selectBotMove, takeGuestStake };
 }
 
 export { GUEST_ID_PREFIX, GUEST_CURATED_GAMES };
