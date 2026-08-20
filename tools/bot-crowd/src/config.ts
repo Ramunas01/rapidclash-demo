@@ -180,8 +180,22 @@ export const config = {
   lowBalanceFactor: num('BOT_LOW_BALANCE_FACTOR', 5),
   topUpAmount: num('BOT_TOPUP_AMOUNT', 500),
 
-  /** Allowlist of human owner names a taker will claim (empty = any human — current behaviour). */
-  takerAllowNames: (process.env.TAKER_ALLOW_NAMES ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+  /**
+   * Username-prefix gate a taker's target owner must match (issue #368, replacing the earlier
+   * exact-name `TAKER_ALLOW_NAMES` allowlist from #362 outright — not layered alongside it). Any
+   * self-registered account whose name starts with this prefix qualifies automatically, no Owner
+   * provisioning step needed — matching the existing single `Demo` account's own naming
+   * convention already used elsewhere in this project.
+   *
+   * Defaults to `''` (any human, current ungated-roster behaviour) — same "0/empty = disabled"
+   * sentinel every other `TAKER_*` value here uses. `isTakeable` is shared by every taker, gated
+   * VM and the general 26-bot roster alike, so a non-empty default here would silently narrow the
+   * general roster's takers too (PM caught this pre-merge: the advisor spec's own §4 says "no
+   * change to the general roster's behaviour", which a default of `'Demo'` would violate). The
+   * always-on gated-taker VM sets this explicitly — `TAKER_ALLOW_PREFIX=Demo` — the same way it
+   * already sets `TAKER_ONLY_GAMES` and `TAKER_EXCLUDE_STAKE`.
+   */
+  takerAllowPrefix: process.env.TAKER_ALLOW_PREFIX ?? '',
   /** Only claim challenges at this stake (0 = any non-reserved stake — current behaviour). */
   takerStake: num('TAKER_STAKE', 0),
   /**
@@ -193,15 +207,14 @@ export const config = {
    * touches" shape, opposite mechanism, see that constant's own doc comment for why the two
    * must stay separate.
    *
-   * Purpose: two allow-listed reserved investor accounts (`TAKER_ALLOW_NAMES`) can deliberately
-   * post/JOIN each other at this one stake — e.g. to demo a human-vs-human match end to end —
-   * without the gated taker sniping it first.
+   * Purpose: two `Demo*`-prefixed reserved investor accounts (`TAKER_ALLOW_PREFIX`) can
+   * deliberately post/JOIN each other at this one stake — e.g. to demo a human-vs-human match end
+   * to end — without the gated taker sniping it first.
    *
    * `0` (the default) means "no stake excluded" — a no-op, matching `takerStake`'s own
-   * "0 = disabled" sentinel, so this has zero effect on the general (ungated) roster or on any
-   * deployment that doesn't opt in. The always-on gated-taker VM sets this alongside
-   * `TAKER_ALLOW_NAMES`, e.g. `TAKER_EXCLUDE_STAKE=10`. Pick a value that is (a) one of the
-   * app's own bet presets (`BET_PRESETS`, apps/web/src/screens/GameHub.tsx) — a real account can
+   * "0 = disabled" sentinel, so this has zero effect regardless of `TAKER_ALLOW_PREFIX`. The
+   * always-on gated-taker VM sets this explicitly, e.g. `TAKER_EXCLUDE_STAKE=10`. Pick a value
+   * that is (a) one of the app's own bet presets (`BET_PRESETS`, apps/web/src/screens/GameHub.tsx) — a real account can
    * only ever POST a stake the UI actually offers — and (b) NOT one of `GATED_RESTER_STAKES`: a
    * resting bot-waiter sitting at the same stake would auto-pair with whichever reserved account
    * posts first, defeating the whole point.
