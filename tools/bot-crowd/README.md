@@ -62,8 +62,11 @@ crowd covering only the listed games — this is what `docs/DEMO_TAKER_VM_SETUP.
 always-on VM runs, on the **real ledger**, for a reserved investor-demo account
 (never the general 26-bot roster's games). Per listed game:
 
-- **1 taker**, gated by `TAKER_ALLOW_NAMES` (and optionally `TAKER_STAKE`) — claims
-  only an allow-listed human's posted challenge. This is the only gated part.
+- **1 taker**, gated by `TAKER_ALLOW_NAMES` — claims *any* stake an allow-listed
+  human posts (optionally narrowed to one exact stake via `TAKER_STAKE`), except
+  `TAKER_EXCLUDE_STAKE` (issue #362) — one reserved stake the taker never claims,
+  so two allow-listed reserved accounts can deliberately pair with each other
+  there. This is the only gated part.
 - **A resting pool** at each of `GATED_RESTER_STAKES`'s stakes (`src/config.ts`) —
   several `🤖<game>-rest-<stake>` identities, one per stake, all policy `rester`.
   These are **not** allowlist-gated: a resting bot-waiter is already safe for any
@@ -114,6 +117,7 @@ challenges — press JOIN on one to play it to settlement.
 | `TAKER_ONLY_GAMES`      | *(unset)*               | Comma-separated game ids → gated mode (see above). Unset = full general roster. |
 | `TAKER_ALLOW_NAMES`     | *(unset)*               | Comma-separated human owner names a gated taker will claim. Empty = any human. Resters are never gated by this. |
 | `TAKER_STAKE`           | `0`                     | Gated taker claims only this stake. `0` = any non-reserved stake. |
+| `TAKER_EXCLUDE_STAKE`   | `0`                     | Gated taker never claims this stake (issue #362). `0` = none excluded. |
 
 > The `SERVER_URL` must reach the server's WebSocket too; the WS URL is derived from
 > it (`http→ws`, `https→wss`, same host/path) + `/ws`.

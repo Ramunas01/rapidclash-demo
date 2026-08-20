@@ -81,6 +81,35 @@ function shipsBattleMove(moves: Move[]): Move | null {
   return (fires.length ? fires[Math.floor(Math.random() * fires.length)] : null) as Move | null;
 }
 
+/**
+ * Would a taker claim this open challenge? Never another bot's own posting (BOT_PREFIX), never a
+ * `HUMAN_RESERVED_STAKE` (100) challenge — that tier is reserved for human-vs-human — and never
+ * `config.takerExcludeStake` (issue #362: the one stake two allow-listed reserved accounts can
+ * deliberately pair with each other on, undisturbed; `0` = no stake excluded, a no-op). Combined
+ * with the existing `TAKER_STAKE` (`0` = any stake) and `TAKER_ALLOW_NAMES` (empty = any human
+ * owner) filters. This is the ONLY way a taker starts a match, so bots never battle bots.
+ *
+ * Exported standalone (pure, no bot/WS/HTTP state) so `bot.test.ts` can exercise the exact
+ * claiming rule directly; `tryTake()` below is the only production caller.
+ */
+export function isTakeable(c: OpenChallenge): boolean {
+  return (
+    !c.ownerName.startsWith(BOT_PREFIX) &&
+    c.stake !== HUMAN_RESERVED_STAKE &&
+    (config.takerExcludeStake === 0 || c.stake !== config.takerExcludeStake) &&
+    (config.takerStake === 0 || c.stake === config.takerStake) &&
+    (config.takerAllowNames.length === 0 || config.takerAllowNames.includes(c.ownerName))
+  );
+}
+
+/** Is `balance` already high enough (>= stake × `BOT_LOW_BALANCE_FACTOR`) to skip a top-up before
+ *  risking `stake`? Pulled out of `ensureFunds` so the threshold math — which now has to scale
+ *  across whatever stake a gated taker claims (issue #362), not just a rester's own fixed
+ *  `cfg.stake` — is directly unit-testable without a live admin/WS connection. */
+export function hasSufficientFunds(balance: number, stake: number): boolean {
+  return balance >= stake * config.lowBalanceFactor;
+}
+
 export class Bot {
   private readonly ws: BotWsClient;
   private state: BotState = 'connecting';
@@ -203,23 +232,25 @@ export class Bot {
     this.tryTake();
   }
 
-  /** Claim a HUMAN-posted open challenge in this bot's game — never another bot's (an owner whose
-   *  name starts with BOT_PREFIX), and never a HUMAN_RESERVED_STAKE (100) challenge: that tier is
-   *  reserved for human-vs-human, so a human's 100 bet is left resting for another human to JOIN.
-   *  This is the ONLY way a taker starts a match, so bots never battle bots; only a human who posts
-   *  a non-reserved stake gets a bot opponent. */
+  /** Claim a HUMAN-posted open challenge this bot is eligible for (see `isTakeable`) — see that
+   *  function's own doc comment for the exact filter. This is the ONLY way a taker starts a
+   *  match, so bots never battle bots; only an eligible human posting gets a bot opponent. */
   private tryTake(): void {
     if (this.cfg.policy !== 'taker' || this.state !== 'idle') return;
-    const allow = config.takerAllowNames;
-    const target = [...this.openChallenges.values()].find(
-      (c) =>
-        !c.ownerName.startsWith(BOT_PREFIX) &&
-        c.stake !== HUMAN_RESERVED_STAKE &&
-        (config.takerStake === 0 || c.stake === config.takerStake) &&
-        (allow.length === 0 || allow.includes(c.ownerName)),
-    );
+    const target = [...this.openChallenges.values()].find(isTakeable);
     if (!target) return;
     this.state = 'taking';
+    void this.claim(target);
+  }
+
+  /** Top up for `target`'s actual stake (a gated taker can now claim any allow-listed stake, not
+   *  just a fixed one — issue #362 — so the funding check must key off the real target, not the
+   *  BotConfig's decorative `stake` field), then take. Re-checks state/openChallenges after the
+   *  await: the challenge may have been taken, expired, or this bot reset while topping up — in
+   *  that case just bail and let the next challenges event re-trigger `tryTake()`. */
+  private async claim(target: OpenChallenge): Promise<void> {
+    await this.ensureFunds(target.stake);
+    if (this.state !== 'taking' || !this.openChallenges.has(target.matchId)) return;
     this.log(`⚔ taking ${target.ownerName}'s challenge (${this.cfg.gameId} @ ${target.stake})`);
     if (!this.ws.takeChallenge(target.matchId)) this.state = 'idle';
   }
@@ -306,8 +337,11 @@ export class Bot {
 
   // ── Funding ────────────────────────────────────────────────────────────────
 
-  private async ensureFunds(): Promise<void> {
-    if (this.balance >= this.cfg.stake * config.lowBalanceFactor) return;
+  /** `stake` defaults to `this.cfg.stake` (a rester's own posted stake). A taker passes the
+   *  actual target's stake explicitly (issue #362) — its BotConfig `stake` field is decorative
+   *  only (see `BotConfig`'s own doc comment), never the real amount it's about to risk. */
+  private async ensureFunds(stake: number = this.cfg.stake): Promise<void> {
+    if (hasSufficientFunds(this.balance, stake)) return;
     const adminToken = this.getAdminToken();
     if (!adminToken) {
       if (!this.warnedNoAdmin) {
