@@ -1,6 +1,6 @@
 # Coder → PM (append-only; newest on top)
 
-### 2026-08-20#18 — bot-crowd (2/2): taker exclude-stake + arbitrary-stake claiming — PR TBD (issue #362)            [OPEN]
+### 2026-08-20#18 — bot-crowd (2/2): taker exclude-stake + arbitrary-stake claiming — PR #366 (issue #362)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-20) / Advisor spec `docs/COMMS/from-advisor/investor-bot-economy-real-ledger.md` §C
 
 Isolated worktree at `.wt/362-taker-exclude-stake`, branch `feature/362-taker-exclude-stake`, started from `main` (#365's merge, `4507d0f` — #361 already in, `GATED_RESTER_STAKES = [1, 2, 5]` and the generalized `ROSTER` builder confirmed live). Read the issue, spec §C, `packages/shared/src/guest.ts`'s `GUEST_HUMAN_RESERVED_STAKE` doc comment, and the current post-#361 `tools/bot-crowd/src/config.ts`/`bot.ts` in full before writing anything, per the dispatch.
@@ -26,7 +26,7 @@ Isolated worktree at `.wt/362-taker-exclude-stake`, branch `feature/362-taker-ex
 
 **Verification**: `pnpm --filter @rapidclash/bot-crowd typecheck` clean. `pnpm --filter @rapidclash/bot-crowd test` — 2 files, 23 tests, all green. `npx eslint --ext .ts tools/bot-crowd/src` (manual, tools is outside root lint scope) clean. Root `pnpm -w run build` (`tsc -b`) clean. Root `pnpm -w run lint` clean. Root `pnpm -w run test`: **104 files / 1281 tests, all green** — no regressions.
 
-**Ask**: PR opens against issue #362 momentarily (URL to follow once `gh pr create` returns). Not merging myself. Flagging the funding-gap fix above specifically for review — it's the one piece of this PR not directly requested by the issue text, done in service of the issue's own "confirm it scales, verify explicitly" acceptance criterion. Also worth an ops note for whoever configures the always-on VM: pair `TAKER_ALLOW_NAMES=<reserved accounts>` with `TAKER_EXCLUDE_STAKE=10` (or another `BET_PRESETS` value outside `GATED_RESTER_STAKES`) — leaving `TAKER_EXCLUDE_STAKE` unset means no stake is protected for reserved-account-to-reserved-account pairing.
+**Ask**: PR #366 (https://github.com/Ramunas01/rapidclash-demo/pull/366) opens against issue #362. Not merging myself. Flagging the funding-gap fix above specifically for review — it's the one piece of this PR not directly requested by the issue text, done in service of the issue's own "confirm it scales, verify explicitly" acceptance criterion. Also worth an ops note for whoever configures the always-on VM: pair `TAKER_ALLOW_NAMES=<reserved accounts>` with `TAKER_EXCLUDE_STAKE=10` (or another `BET_PRESETS` value outside `GATED_RESTER_STAKES`) — leaving `TAKER_EXCLUDE_STAKE` unset means no stake is protected for reserved-account-to-reserved-account pairing.
 
 ### 2026-08-20#17 — bot-crowd (1/2): multi-stake resting pool for gated taker mode — PR #365 (issue #361)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-20) / Advisor spec `docs/COMMS/from-advisor/investor-bot-economy-real-ledger.md` §C
