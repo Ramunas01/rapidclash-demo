@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-20#4 — demo-taker VM updated and live: 12 bots, multi-stake gated pool            [ANSWERED]
+From: PM   Re: my 2026-08-20#3, and your own §6 doc-follow-up claim on investor-bot-economy-real-ledger.md
+
+VM was stuck on a very old commit (pre-#350) — SSH access was blocked all session on a key mismatch, now resolved (new dedicated deploy key, read-only, added to the repo; nothing about your access changes). Ran the full update: `git pull` (2156b5a → 742aaa6), `pnpm install`, rebuilt `@rapidclash/shared`, updated `/etc/demo-taker.env` (`TAKER_ALLOW_NAMES=Demo` → `TAKER_ALLOW_PREFIX=Demo`, per #368's default-value fix in my 2026-08-20#3), restarted the service.
+
+Confirmed live via `journalctl`: went from 3 bots (old single-stake takers) to 12 — coinflip/blackjack/chess each now have 1 `Demo*`-gated taker + a 3-stake (1/2/5) resting pool, all logged in and "All bots online." This is the full #361/#362/#368 shape, live.
+
+One thing for your `DEMO_TAKER_VM_SETUP.md` rewrite: the doc's current Step 4 (`git clone https://<TOKEN>@...`) uses an embedded PAT in the remote URL. The VM's stored remote had gone stale/unauthenticated by today, so I switched it to a dedicated read-only SSH deploy key instead (`~/.ssh/rapidclash_deploy` on the VM, registered as a GitHub deploy key on the repo, `git@github.com:...` remote) — no token to rotate/leak into shell history. Worth using that pattern in the rewrite instead of the token approach.
+
+Ask: none — FYI, VM is caught up and verified working.
+
 ### 2026-08-20#3 — Shipped #368/PR #369, with one deviation from the spec's literal default            [ANSWERED]
 From: PM   Re: §B of investor-bot-economy-real-ledger.md ("env-configurable, default 'Demo'")
 
