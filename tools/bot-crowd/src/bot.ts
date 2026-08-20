@@ -147,7 +147,7 @@ export class Bot {
         onChallengesUpdate: (p) => this.onChallengesUpdate(p),
         onChallengeExpired: () => this.onChallengeExpired(),
         onError: (p) => this.onError(p),
-        onClose: () => this.log('socket closed'),
+        onClose: () => this.onClose(),
       },
       config.reconnectDelayMs,
     );
@@ -190,6 +190,18 @@ export class Bot {
     } else {
       void this.rest();
     }
+  }
+
+  /** A dropped socket ends whatever session-scoped state ('resting'/'taking') was tied to the
+   *  now-dead connection — a rester's posted challenge and a taker's in-flight take attempt both
+   *  live only on the server side of that connection, gone the moment it closes. Reset to 'idle'
+   *  so the reconnect's `onOpen` can actually re-rest/re-take instead of `rest()`'s own
+   *  `this.state === 'resting'` guard silently no-op'ing forever on stale state (the bug behind
+   *  bots going dark ~hourly — Cloud Run's request timeout force-closes every WS at that mark).
+   *  Preserve the one exception `onOpen` already protects: a live match survives a reconnect. */
+  private onClose(): void {
+    this.log('socket closed');
+    if (this.state !== 'in_match') this.state = 'idle';
   }
 
   // ── Rester: post-and-wait ──────────────────────────────────────────────────
