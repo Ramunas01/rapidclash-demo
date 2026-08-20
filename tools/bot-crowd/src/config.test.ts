@@ -69,20 +69,20 @@ describe('ROSTER — gated mode (TAKER_ONLY_GAMES set, issue #361)', () => {
     for (const b of ROSTER.filter((x) => x.policy === 'rester')) expect(b.name.startsWith(BOT_PREFIX)).toBe(true);
   });
 
-  it('gated resters are not allowlist-gated — TAKER_ALLOW_NAMES only scopes the taker path', async () => {
-    // Allowlist gating lives entirely in bot.ts's tryTake(), which only runs for policy 'taker'
+  it('gated resters are not prefix-gated — TAKER_ALLOW_PREFIX only scopes the taker path (issue #368)', async () => {
+    // Prefix gating lives entirely in bot.ts's tryTake(), which only runs for policy 'taker'
     // (see `if (this.cfg.policy !== 'taker' || this.state !== 'idle') return;`). BotConfig itself
-    // has no allowlist field, so a rester entry has no way to carry gating even if TAKER_ALLOW_NAMES
-    // is set — this is the acceptance criterion ("resters are NOT allowlist-gated") holding by
-    // construction, asserted here so a future refactor can't silently add gating to resters.
+    // has no allow-prefix field, so a rester entry has no way to carry gating even if
+    // TAKER_ALLOW_PREFIX is set — this is the acceptance criterion ("resters are NOT gated") holding
+    // by construction, asserted here so a future refactor can't silently add gating to resters.
     const { ROSTER, config } = await loadConfig({
       TAKER_ONLY_GAMES: 'coinflip',
-      TAKER_ALLOW_NAMES: 'Demo,Investor1',
+      TAKER_ALLOW_PREFIX: 'Demo',
     });
     const resters = ROSTER.filter((b) => b.policy === 'rester');
     expect(resters.length).toBeGreaterThan(0);
-    expect(config.takerAllowNames).toEqual(['Demo', 'Investor1']);
-    for (const b of resters) expect(Object.prototype.hasOwnProperty.call(b, 'allowNames')).toBe(false);
+    expect(config.takerAllowPrefix).toBe('Demo');
+    for (const b of resters) expect(Object.prototype.hasOwnProperty.call(b, 'allowPrefix')).toBe(false);
   });
 });
 
@@ -95,6 +95,23 @@ describe('GATED_RESTER_STAKES', () => {
       expect(stake).toBeGreaterThan(0);
       expect(stake).toBeLessThan(HUMAN_RESERVED_STAKE);
     }
+  });
+});
+
+describe('config.takerAllowPrefix (issue #368)', () => {
+  it("defaults to 'Demo' — a self-registered Demo*-named account qualifies with zero config", async () => {
+    const { config } = await loadConfig({ TAKER_ALLOW_PREFIX: undefined });
+    expect(config.takerAllowPrefix).toBe('Demo');
+  });
+
+  it('reads TAKER_ALLOW_PREFIX from the environment, like the other TAKER_* config values', async () => {
+    const { config } = await loadConfig({ TAKER_ALLOW_PREFIX: 'Investor' });
+    expect(config.takerAllowPrefix).toBe('Investor');
+  });
+
+  it('an explicit empty string disables the gate entirely (matches the old "empty = any human" sentinel)', async () => {
+    const { config } = await loadConfig({ TAKER_ALLOW_PREFIX: '' });
+    expect(config.takerAllowPrefix).toBe('');
   });
 });
 

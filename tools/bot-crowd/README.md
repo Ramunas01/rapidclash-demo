@@ -62,11 +62,14 @@ crowd covering only the listed games — this is what `docs/DEMO_TAKER_VM_SETUP.
 always-on VM runs, on the **real ledger**, for a reserved investor-demo account
 (never the general 26-bot roster's games). Per listed game:
 
-- **1 taker**, gated by `TAKER_ALLOW_NAMES` — claims *any* stake an allow-listed
-  human posts (optionally narrowed to one exact stake via `TAKER_STAKE`), except
+- **1 taker**, gated by `TAKER_ALLOW_PREFIX` (issue #368, default `Demo`) — claims
+  *any* stake posted by an account whose username starts with that prefix
+  (optionally narrowed to one exact stake via `TAKER_STAKE`), except
   `TAKER_EXCLUDE_STAKE` (issue #362) — one reserved stake the taker never claims,
-  so two allow-listed reserved accounts can deliberately pair with each other
-  there. This is the only gated part.
+  so two `Demo*`-prefixed accounts can deliberately pair with each other there.
+  No Owner provisioning step is needed: any self-registered account named
+  `Demo<anything>` qualifies automatically, the same Charter-step-1 flow as any
+  real account. This is the only gated part.
 - **A resting pool** at each of `GATED_RESTER_STAKES`'s stakes (`src/config.ts`) —
   several `🤖<game>-rest-<stake>` identities, one per stake, all policy `rester`.
   These are **not** allowlist-gated: a resting bot-waiter is already safe for any
@@ -115,7 +118,7 @@ challenges — press JOIN on one to play it to settlement.
 | `BOT_LOW_BALANCE_FACTOR`| `5`                     | Top up when `balance < stake × factor`.                       |
 | `BOT_TOPUP_AMOUNT`      | `500`                   | Credits added per top-up.                                      |
 | `TAKER_ONLY_GAMES`      | *(unset)*               | Comma-separated game ids → gated mode (see above). Unset = full general roster. |
-| `TAKER_ALLOW_NAMES`     | *(unset)*               | Comma-separated human owner names a gated taker will claim. Empty = any human. Resters are never gated by this. |
+| `TAKER_ALLOW_PREFIX`    | `Demo`                  | Username prefix (case-sensitive) an owner name must start with for a taker to claim it. `''` (empty string) = any human. Resters are never gated by this. |
 | `TAKER_STAKE`           | `0`                     | Gated taker claims only this stake. `0` = any non-reserved stake. |
 | `TAKER_EXCLUDE_STAKE`   | `0`                     | Gated taker never claims this stake (issue #362). `0` = none excluded. |
 
