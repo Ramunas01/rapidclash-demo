@@ -42,20 +42,27 @@ describe('ROSTER — gated mode (TAKER_ONLY_GAMES set, issue #361)', () => {
 
     expect(ROSTER).toHaveLength(2 * (1 + GATED_RESTER_STAKES.length));
 
+    const allNames = new Set<string>();
     for (const g of ['coinflip', 'chess']) {
       const gameBots = ROSTER.filter((b) => b.gameId === g);
       const takers = gameBots.filter((b) => b.policy === 'taker');
       const resters = gameBots.filter((b) => b.policy === 'rester');
 
       expect(takers).toHaveLength(1);
-      expect(takers[0].name).toBe(`${BOT_PREFIX}${g}-taker`);
+      // Names are no longer game/stake-encoded (issue #375) — just BOT_PREFIX + '@' + a Pool 2 handle.
+      expect(takers[0].name).toMatch(new RegExp(`^${BOT_PREFIX}@[a-z]+$`));
 
       expect(resters).toHaveLength(GATED_RESTER_STAKES.length);
       const resterStakes = resters.map((b) => b.stake).sort((a, b) => a - b);
       expect(resterStakes).toEqual([...GATED_RESTER_STAKES].sort((a, b) => a - b));
       expect(new Set(resters.map((b) => b.stake)).size).toBe(GATED_RESTER_STAKES.length); // distinct stakes
-      for (const b of resters) expect(b.name).toBe(`${BOT_PREFIX}${g}-rest-${b.stake}`);
+      for (const b of resters) expect(b.name).toMatch(new RegExp(`^${BOT_PREFIX}@[a-z]+$`));
+
+      for (const b of gameBots) allNames.add(b.name);
     }
+    // Every identity in this scenario got a distinct name (positional assignment, no collisions).
+    const totalBots = ROSTER.length;
+    expect(allNames.size).toBe(totalBots);
   });
 
   it('keeps chess entries (taker + every rester) on the rapid10 control; leaves other games untimed', async () => {
@@ -86,15 +93,65 @@ describe('ROSTER — gated mode (TAKER_ONLY_GAMES set, issue #361)', () => {
   });
 });
 
-describe('GATED_RESTER_STAKES', () => {
+describe('bot name pools stay disjoint across rosters (issue #375)', () => {
+  it('the general roster (Pool 1) has 26 distinct names', async () => {
+    const { ROSTER } = await loadConfig({ TAKER_ONLY_GAMES: undefined });
+    expect(new Set(ROSTER.map((b) => b.name)).size).toBe(26);
+  });
+
+  it('no gated-roster name collides with a general-roster name, for the real deployment config (coinflip,blackjack,chess)', async () => {
+    const { ROSTER: generalRoster } = await loadConfig({ TAKER_ONLY_GAMES: undefined });
+    const { ROSTER: gatedRoster } = await loadConfig({ TAKER_ONLY_GAMES: 'coinflip,blackjack,chess' });
+    const generalNames = new Set(generalRoster.map((b) => b.name));
+    for (const b of gatedRoster) expect(generalNames.has(b.name)).toBe(false);
+  });
+
+  it('every ROSTER name (both branches) is exactly BOT_PREFIX + "@" + a lowercase handle', async () => {
+    const { ROSTER: generalRoster, BOT_PREFIX } = await loadConfig({ TAKER_ONLY_GAMES: undefined });
+    const { ROSTER: gatedRoster } = await loadConfig({ TAKER_ONLY_GAMES: 'coinflip,blackjack,chess' });
+    const shape = new RegExp(`^${BOT_PREFIX}@[a-z]+$`);
+    for (const b of [...generalRoster, ...gatedRoster]) expect(b.name).toMatch(shape);
+  });
+});
+
+describe('GATED_RESTER_STAKES (issue #375: 3 lanes, 2 randomized once at startup)', () => {
   it('is a small, distinct, modest stake set below HUMAN_RESERVED_STAKE (real ledger — kept low)', async () => {
     const { GATED_RESTER_STAKES, HUMAN_RESERVED_STAKE } = await loadConfig({});
-    expect(GATED_RESTER_STAKES.length).toBeGreaterThanOrEqual(2);
+    expect(GATED_RESTER_STAKES.length).toBe(3);
     expect(new Set(GATED_RESTER_STAKES).size).toBe(GATED_RESTER_STAKES.length); // all distinct
     for (const stake of GATED_RESTER_STAKES) {
       expect(stake).toBeGreaterThan(0);
       expect(stake).toBeLessThan(HUMAN_RESERVED_STAKE);
     }
+  });
+
+  it('Lane A is 1 or 10, Lane B is 5 or 50, Lane C is fixed 25 — every value a real BET_PRESETS entry', async () => {
+    const { GATED_RESTER_STAKES } = await loadConfig({});
+    const [laneA, laneB, laneC] = GATED_RESTER_STAKES;
+    expect([1, 10]).toContain(laneA);
+    expect([5, 50]).toContain(laneB);
+    expect(laneC).toBe(25);
+  });
+
+  it('the three lanes are mutually distinct by construction, regardless of which random branch each lands on', async () => {
+    // {1,10} / {5,50} / {25} are disjoint sets, so distinctness holds no matter which of the 4
+    // (laneA × laneB) random combinations gets drawn — load repeatedly to exercise more than one.
+    for (let i = 0; i < 10; i++) {
+      const { GATED_RESTER_STAKES } = await loadConfig({});
+      expect(new Set(GATED_RESTER_STAKES).size).toBe(3);
+    }
+  });
+
+  it('is re-drawn fresh per module load (randomized at startup, not a fixed literal anymore)', async () => {
+    // Not a hard assertion on any one run (it's random), but sampling several loads should not
+    // always produce the exact same tuple — guards against someone "fixing" the randomization
+    // back to a static literal without updating this test.
+    const draws = new Set<string>();
+    for (let i = 0; i < 20; i++) {
+      const { GATED_RESTER_STAKES } = await loadConfig({});
+      draws.add(GATED_RESTER_STAKES.join(','));
+    }
+    expect(draws.size).toBeGreaterThan(1);
   });
 });
 
@@ -131,12 +188,12 @@ describe('config.takerExcludeStake (issue #362)', () => {
     expect(config.takerExcludeStake).toBe(0);
   });
 
-  it('the recommended gated deployment value is distinct from every GATED_RESTER_STAKES entry', async () => {
-    // Not a hard code invariant (it's an env var an operator sets), but the README/config doc
-    // comments both recommend TAKER_EXCLUDE_STAKE=10 — assert that recommendation itself doesn't
-    // collide with the resting pool (a rester resting at the same stake would auto-pair with
-    // whichever reserved account posts first, defeating the whole point of the exclusion).
-    const { config, GATED_RESTER_STAKES } = await loadConfig({ TAKER_EXCLUDE_STAKE: '10' });
-    expect(GATED_RESTER_STAKES).not.toContain(config.takerExcludeStake);
-  });
+  // NOTE (issue #375): there used to be a test here asserting the recommended
+  // TAKER_EXCLUDE_STAKE=10 is always distinct from GATED_RESTER_STAKES. That invariant no longer
+  // holds structurally: GATED_RESTER_STAKES's 3 lanes are now randomized once at startup (Lane A:
+  // 1 or 10; Lane B: 5 or 50; Lane C: fixed 25), and together the lanes' possible values span
+  // every non-reserved BET_PRESETS entry (1, 5, 10, 25, 50) — so there is no single fixed
+  // TAKER_EXCLUDE_STAKE left that can be *guaranteed* distinct from whatever GATED_RESTER_STAKES
+  // draws at boot. `config.ts`'s `takerExcludeStake` doc comment spells this out; it's now a
+  // best-effort operator choice, not a config-time-checkable invariant, so it isn't asserted here.
 });

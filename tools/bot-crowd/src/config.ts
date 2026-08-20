@@ -62,8 +62,49 @@ const takerOnlyGames = (process.env.TAKER_ONLY_GAMES ?? '').split(',').map((s) =
  * the general roster's own default rester behaviour (ADR-010: it risks its own real funded
  * balance, so the "never the house" honesty test holds regardless of who joins it). Gating only
  * matters for taking (issue #362) — don't gate these.
+ *
+ * Issue #375 widened this from a fixed `[1, 2, 5]` (2 wasn't even a real `BET_PRESETS` value, and
+ * the set was "boring" — always the same 3 numbers) to 3 lanes, two of which pick their concrete
+ * stake randomly ONCE at startup — the same one-time-at-boot randomization `randStake()` already
+ * uses for the general roster below (not re-randomized on repost, so a lane's stake is stable for
+ * the life of the process):
+ *   - Lane A: 1 or 10
+ *   - Lane B: 5 or 50
+ *   - Lane C: 25, fixed (Owner's explicit call — not randomized)
+ * All three are real `BET_PRESETS` entries. The three lanes' possible value SETS are disjoint
+ * ({1,10} / {5,50} / {25}), so whichever branch each of Lane A/B picks, the resulting 3 stakes are
+ * always mutually distinct — the "GATED_RESTER_STAKES are distinct" property below still holds,
+ * it just can no longer be read off this file as a static literal (see `takerExcludeStake`'s doc
+ * comment for the operational consequence of that).
  */
-export const GATED_RESTER_STAKES = [1, 2, 5] as const;
+const GATED_RESTER_LANE_A = Math.random() < 0.5 ? 1 : 10;
+const GATED_RESTER_LANE_B = Math.random() < 0.5 ? 5 : 50;
+const GATED_RESTER_LANE_C = 25;
+export const GATED_RESTER_STAKES = [GATED_RESTER_LANE_A, GATED_RESTER_LANE_B, GATED_RESTER_LANE_C] as const;
+
+/**
+ * Pool 2 — gated VM roster handles (issue #375), reserved so the gated roster (below, the
+ * `takerOnlyGames.length` branch) can never mint a username that collides with Pool 1 (the
+ * general roster's own literal names, in `ROSTER`'s other branch): the two rosters can run as
+ * separate live processes against the same server at once, so they must never fight over one
+ * account/session.
+ *
+ * The gated branch is built dynamically from `TAKER_ONLY_GAMES`
+ * (`takerOnlyGames.flatMap(...)` below), so names are assigned by POSITION, not by game id — index
+ * `i` is a pure function of a game's slot in `takerOnlyGames` and its identity's slot within that
+ * game (1 taker + `GATED_RESTER_STAKES.length` resters), so the same env config produces the same
+ * names on every restart without a static per-game table (robust to `TAKER_ONLY_GAMES` changing).
+ * Today's real deployment always uses exactly 3 games × 4 identities = 12 names — this pool's 34
+ * gives ample headroom; `% length` below is just a safety net against running off the end, not an
+ * expected path.
+ */
+const GATED_ROSTER_NAMES = [
+  'knightfall', 'tileflip', 'rockdrop', 'moonshot', 'wheelman', 'snakeeyes', 'ninepoint',
+  'hexpick', 'lowmulti', 'facecard', 'dxbn', 'highroller', 'crazypov', 'hitme', 'nightowl',
+  'pipfarm', 'zenmode', 'bluffcity', 'fastlane', 'coinflipper', 'minerboy', 'redstack',
+  'skyhook', 'tapout', 'bigshortie', 'lastcall', 'runitup', 'ghostpip', 'jokerz', 'saltyrun',
+  'deepstack', 'mrsteady', 'clutchking', 'sidebet',
+] as const;
 
 /**
  * Roster: 26 bots, all 🤖-prefixed — per live game (coinflip, rps, chess, blackjack, mines, crash, roulette, ships-battle, dice, baccarat, keno, limbo, hilo):
@@ -90,20 +131,29 @@ export const GATED_RESTER_STAKES = [1, 2, 5] as const;
  * same reason `GUEST_BOT_STAKE_LANES` needs one identity per lane rather than one bot cycling
  * stakes). The taker's `stake` field stays 1 — it's unused for a taker (BotConfig's own doc
  * comment: a taker matches whatever the human posted), kept only for a readable startup log line.
+ *
+ * Names (issue #375): every literal below is a human-sounding handle from Pool 1 (see the issue),
+ * one per entry, `${BOT_PREFIX}@<handle>` shaped. The gated branch instead pulls from
+ * `GATED_ROSTER_NAMES` (Pool 2, above) by position — the two pools are disjoint by construction so
+ * the two rosters never collide on a username even run as separate live processes at once.
  */
 export const ROSTER: BotConfig[] = takerOnlyGames.length
-  ? takerOnlyGames.flatMap((g) => {
+  ? takerOnlyGames.flatMap((g, gi) => {
       const chessControl = g === 'chess' ? { timeControlId: 'rapid10' as const } : {};
+      const identitiesPerGame = 1 + GATED_RESTER_STAKES.length;
+      const base = gi * identitiesPerGame;
+      const gatedName = (offset: number) =>
+        `${BOT_PREFIX}@${GATED_ROSTER_NAMES[(base + offset) % GATED_ROSTER_NAMES.length]}`;
       return [
         {
-          name: `${BOT_PREFIX}${g}-taker`,
+          name: gatedName(0),
           gameId: g,
           stake: 1,
           policy: 'taker' as const,
           ...chessControl,
         },
-        ...GATED_RESTER_STAKES.map((stake) => ({
-          name: `${BOT_PREFIX}${g}-rest-${stake}`,
+        ...GATED_RESTER_STAKES.map((stake, si) => ({
+          name: gatedName(1 + si),
           gameId: g,
           stake,
           policy: 'rester' as const,
@@ -113,33 +163,33 @@ export const ROSTER: BotConfig[] = takerOnlyGames.length
     })
   : [
   // 1 rester per game at a random stake (STAKE_SET, chosen at startup) —
-  { name: '🤖C-3PO-coin', gameId: 'coinflip', stake: randStake(), policy: 'rester' },
-  { name: '🤖BB-RPS', gameId: 'rps', stake: randStake(), policy: 'rester' },
-  { name: '🤖Chewie-chess', gameId: 'chess', stake: randStake(), policy: 'rester', timeControlId: 'rapid10' },
-  { name: '🤖IG-BJack', gameId: 'blackjack', stake: randStake(), policy: 'rester' },
-  { name: '🤖L3-mines', gameId: 'mines', stake: randStake(), policy: 'rester' },
-  { name: '🤖0-0-0-Crash', gameId: 'crash', stake: randStake(), policy: 'rester' },
-  { name: '🤖Q9-Roulette', gameId: 'roulette', stake: randStake(), policy: 'rester' },
-  { name: '🤖ADM-ships', gameId: 'ships-battle', stake: randStake(), policy: 'rester' },
-  { name: '🤖D6-dice', gameId: 'dice', stake: randStake(), policy: 'rester' },
-  { name: '🤖BC-baccarat', gameId: 'baccarat', stake: randStake(), policy: 'rester' },
-  { name: '🤖CB-keno', gameId: 'keno', stake: randStake(), policy: 'rester' },
-  { name: '🤖GNK-limbo', gameId: 'limbo', stake: randStake(), policy: 'rester' },
-  { name: '🤖R4-hilo', gameId: 'hilo', stake: randStake(), policy: 'rester' },
+  { name: `${BOT_PREFIX}@flipmaster`, gameId: 'coinflip', stake: randStake(), policy: 'rester' },
+  { name: `${BOT_PREFIX}@threehands`, gameId: 'rps', stake: randStake(), policy: 'rester' },
+  { name: `${BOT_PREFIX}@chessking`, gameId: 'chess', stake: randStake(), policy: 'rester', timeControlId: 'rapid10' },
+  { name: `${BOT_PREFIX}@twentyup`, gameId: 'blackjack', stake: randStake(), policy: 'rester' },
+  { name: `${BOT_PREFIX}@sweeper`, gameId: 'mines', stake: randStake(), policy: 'rester' },
+  { name: `${BOT_PREFIX}@rocketman`, gameId: 'crash', stake: randStake(), policy: 'rester' },
+  { name: `${BOT_PREFIX}@redblack`, gameId: 'roulette', stake: randStake(), policy: 'rester' },
+  { name: `${BOT_PREFIX}@goldrush`, gameId: 'ships-battle', stake: randStake(), policy: 'rester' },
+  { name: `${BOT_PREFIX}@sixsided`, gameId: 'dice', stake: randStake(), policy: 'rester' },
+  { name: `${BOT_PREFIX}@punto`, gameId: 'baccarat', stake: randStake(), policy: 'rester' },
+  { name: `${BOT_PREFIX}@luckyseven`, gameId: 'keno', stake: randStake(), policy: 'rester' },
+  { name: `${BOT_PREFIX}@liftoff`, gameId: 'limbo', stake: randStake(), policy: 'rester' },
+  { name: `${BOT_PREFIX}@highcard`, gameId: 'hilo', stake: randStake(), policy: 'rester' },
   // 1 taker per game — claims only HUMAN-posted challenges (never a bot's) —
-  { name: '🤖HK-CoinLover', gameId: 'coinflip', stake: 5, policy: 'taker' },
-  { name: '🤖2-RockEater', gameId: 'rps', stake: 5, policy: 'taker' },
-  { name: '🤖FX-chess', gameId: 'chess', stake: 5, policy: 'taker' },
-  { name: '🤖AP-BJexpert', gameId: 'blackjack', stake: 5, policy: 'taker' },
-  { name: '🤖BD-MineDetonator', gameId: 'mines', stake: 5, policy: 'taker' },
-  { name: '🤖C1-CrashLover', gameId: 'crash', stake: 5, policy: 'taker' },
-  { name: '🤖8D8-RouletteGamer', gameId: 'roulette', stake: 5, policy: 'taker' },
-  { name: '🤖SY-ShipsSinker', gameId: 'ships-battle', stake: 5, policy: 'taker' },
-  { name: '🤖D6-DiceRoller', gameId: 'dice', stake: 5, policy: 'taker' },
-  { name: '🤖BC-BaccaratPro', gameId: 'baccarat', stake: 5, policy: 'taker' },
-  { name: '🤖CB-KenoCaller', gameId: 'keno', stake: 5, policy: 'taker' },
-  { name: '🤖GNK-LimboDiver', gameId: 'limbo', stake: 5, policy: 'taker' },
-  { name: '🤖R4-HiloGuesser', gameId: 'hilo', stake: 5, policy: 'taker' },
+  { name: `${BOT_PREFIX}@tailsonly`, gameId: 'coinflip', stake: 5, policy: 'taker' },
+  { name: `${BOT_PREFIX}@scissorking`, gameId: 'rps', stake: 5, policy: 'taker' },
+  { name: `${BOT_PREFIX}@gambit`, gameId: 'chess', stake: 5, policy: 'taker' },
+  { name: `${BOT_PREFIX}@splitaces`, gameId: 'blackjack', stake: 5, policy: 'taker' },
+  { name: `${BOT_PREFIX}@lowball`, gameId: 'mines', stake: 5, policy: 'taker' },
+  { name: `${BOT_PREFIX}@zerospin`, gameId: 'crash', stake: 5, policy: 'taker' },
+  { name: `${BOT_PREFIX}@dealerdan`, gameId: 'roulette', stake: 5, policy: 'taker' },
+  { name: `${BOT_PREFIX}@overshoot`, gameId: 'ships-battle', stake: 5, policy: 'taker' },
+  { name: `${BOT_PREFIX}@rollone`, gameId: 'dice', stake: 5, policy: 'taker' },
+  { name: `${BOT_PREFIX}@banco`, gameId: 'baccarat', stake: 5, policy: 'taker' },
+  { name: `${BOT_PREFIX}@ninehundred`, gameId: 'keno', stake: 5, policy: 'taker' },
+  { name: `${BOT_PREFIX}@headsup`, gameId: 'limbo', stake: 5, policy: 'taker' },
+  { name: `${BOT_PREFIX}@superble`, gameId: 'hilo', stake: 5, policy: 'taker' },
 ];
 
 function num(envName: string, fallback: number): number {
@@ -214,10 +264,20 @@ export const config = {
    * `0` (the default) means "no stake excluded" — a no-op, matching `takerStake`'s own
    * "0 = disabled" sentinel, so this has zero effect regardless of `TAKER_ALLOW_PREFIX`. The
    * always-on gated-taker VM sets this explicitly, e.g. `TAKER_EXCLUDE_STAKE=10`. Pick a value
-   * that is (a) one of the app's own bet presets (`BET_PRESETS`, apps/web/src/screens/GameHub.tsx) — a real account can
-   * only ever POST a stake the UI actually offers — and (b) NOT one of `GATED_RESTER_STAKES`: a
-   * resting bot-waiter sitting at the same stake would auto-pair with whichever reserved account
-   * posts first, defeating the whole point.
+   * that is (a) one of the app's own bet presets (`BET_PRESETS`, apps/web/src/screens/GameHub.tsx) —
+   * a real account can only ever POST a stake the UI actually offers — and (b) ideally not one
+   * `GATED_RESTER_STAKES` lands on: a resting bot-waiter sitting at the same stake would
+   * auto-pair with whichever reserved account posts first, defeating the whole point.
+   *
+   * NOTE (issue #375): `GATED_RESTER_STAKES` is no longer a static literal you can just read off
+   * this file and avoid — two of its three lanes are randomized once at startup (Lane A: 1 or 10;
+   * Lane B: 5 or 50; Lane C: fixed 25), and together the three lanes' possible values span every
+   * non-reserved `BET_PRESETS` entry. So no single fixed `TAKER_EXCLUDE_STAKE` can be *guaranteed*
+   * distinct from the actual startup draw anymore — this is now a best-effort operator choice
+   * (e.g. `10`, still a reasonable pick), not a hard invariant enforceable at config-authoring
+   * time. If a collision does land, the exclude-stake carve-out simply degrades to "the reserved
+   * pair might get auto-taken by the resting bot instead of each other" for that one process
+   * lifetime — it does not violate ADR-010 (the rester still risks its own real funded balance).
    */
   takerExcludeStake: num('TAKER_EXCLUDE_STAKE', 0),
   /** Re-exposes the hoisted module const so callers can read it off `config` too. */
