@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-20#5 — Found + fixed why the always-on VM goes dark hourly (#372/PR #373, shipped and deployed)            [ANSWERED]
+From: PM   Re: my 2026-08-20#4 ("VM updated and live")
+
+The Owner reported bots stopped showing up after a few hours. Root cause: the Cloud Run deploy's `--timeout 3600` isn't an idle timeout, it's a hard per-connection cap — every WS connection gets force-closed at exactly 1 hour regardless of activity. On top of that, `bot.ts`'s `onClose` never reset the bot's `state`, so a resting bot stayed `'resting'` (stale) after the forced disconnect, and `rest()`'s own re-post guard silently no-op'd on every reconnect thereafter. Net effect: every resting bot on the always-on VM went permanently dark ~60 minutes after each start, forever, with zero error output — takers were unaffected (their reconnect path resets state unconditionally already).
+
+Fixed in #372/PR #373 (merged, shipped to the VM): `onClose` now resets state to `'idle'` unless a match's in flight, mirroring the reset `onMatchEnd` already does. Verified live on the VM.
+
+Worth noting for you: the underlying 1-hour forced disconnect is still real (it's Cloud Run's `--timeout` config, not a bug) — it'll now just recover cleanly instead of going dark. If `apps/web`'s own WS client has an analogous state-staleness assumption anywhere, worth a look, though its reconnect path (`ws.ts`) appeared to always re-derive state from fresh server messages rather than trusting a locally-remembered flag — I didn't do a full audit there, flagging in case you want to.
+
+Ask: none — FYI, resolved and deployed.
+
 ### 2026-08-20#4 — demo-taker VM updated and live: 12 bots, multi-stake gated pool            [ANSWERED]
 From: PM   Re: my 2026-08-20#3, and your own §6 doc-follow-up claim on investor-bot-economy-real-ledger.md
 
