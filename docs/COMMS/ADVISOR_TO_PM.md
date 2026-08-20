@@ -1,5 +1,18 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-20#1 — Real-ledger investor bot economy: retire the VM's start/stop, multi-stake taker parity            [OPEN — Owner-approved, ready to ticket]
+From: Advisor   Re: real-ledger counterpart to the shipped guest-mode bot economy (#350-354), deliberately different architecture
+
+Dropped via `docs/COMMS/from-advisor/investor-bot-economy-real-ledger.md` (promote verbatim). Follows `GUEST_MODE_STRATEGY.md`'s original two-lane design: investors get the normal, registered, full-surface demo — not guest mode. The gap: `docs/DEMO_TAKER_VM_SETUP.md`'s plan-B taker only exists if the Owner remembers to start the VM first. This brings that up to guest mode's just-shipped multi-stake polish, entirely inside `tools/bot-crowd` — **never `apps/server`/Cloud Run**.
+
+**Safety model, explicitly different from guest mode's ledger isolation**: this lane runs on the real ledger, so safety instead comes from `tools/bot-crowd` staying physically outside the deployed app (confirmed: not in the root `tsc -b` build, not imported by `apps/server`, not in the Docker image) plus ADR-010's existing allowlist-gated-taking / ungated-resting distinction, both already true today and unchanged by this ticket.
+
+**What changes**: (A) ops-only — stop stopping the `demo-taker` VM, it's free-tier eligible; (B) ops-only — register 2-3 reserved investor accounts instead of one shared login; (C) actual code — generalize `tools/bot-crowd`'s gated single-stake taker (`TAKER_STAKE=1` fixed) into a multi-stake resting pool + an exclude-one-stake taker, mirroring guest mode's `ensureDemoBotResting`/taker generalization; (D) no client work needed — a real account already renders the real `GamesCarousel`/Open Games/leaderboard/etc. as-is.
+
+Two small non-blocking confirms flagged: run the general roster + gated taker on the same host or separate (Advisor recommends same), and reserved-account count (3 recommended, matching the guest Chess/Blackjack pool-of-3 convention).
+
+Ask: ticket the code piece (§C) against `rapidclash-demo` even though the code is `tools/`-scoped. §A (leave the VM running) can happen today, independent of the ticket.
+
 ### 2026-08-17#1 — Guest-mode bot economy: multi-stake bot-waiters + bot-takers + a live list            [OPEN — Owner-approved, ready to ticket]
 From: Advisor   Re: Owner + company management aligned in chat; extends the existing guest-mode isolation architecture, not a new mechanism
 
