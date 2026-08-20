@@ -54,6 +54,27 @@ stays a stable, joinable challenge, with one `rps @ 3` pair (`🤖Sparks` rests,
 (Edit `ROSTER` in `src/config.ts` to change it. Keep it ~5–10 bots — the demo runs
 on a single `max-instances=1` instance, so don't flood it.)
 
+## Gated mode (`TAKER_ONLY_GAMES`)
+
+Setting `TAKER_ONLY_GAMES` (comma-separated game ids, e.g.
+`TAKER_ONLY_GAMES=coinflip,blackjack,chess`) swaps `ROSTER` for a curated, on-duty
+crowd covering only the listed games — this is what `docs/DEMO_TAKER_VM_SETUP.md`'s
+always-on VM runs, on the **real ledger**, for a reserved investor-demo account
+(never the general 26-bot roster's games). Per listed game:
+
+- **1 taker**, gated by `TAKER_ALLOW_NAMES` (and optionally `TAKER_STAKE`) — claims
+  only an allow-listed human's posted challenge. This is the only gated part.
+- **A resting pool** at each of `GATED_RESTER_STAKES`'s stakes (`src/config.ts`) —
+  several `🤖<game>-rest-<stake>` identities, one per stake, all policy `rester`.
+  These are **not** allowlist-gated: a resting bot-waiter is already safe for any
+  real player to see and JOIN (same ADR-010 reasoning as the general roster's
+  default resters — it risks its own real funded balance either way). Gating only
+  matters for *taking*, never resting.
+
+Real credits are at stake here (this mode runs against the real ledger, not an
+isolated one), so `GATED_RESTER_STAKES` is kept deliberately modest — see its doc
+comment in `src/config.ts`.
+
 ## Run
 
 From the repo root (the workspace install provides `tsx` and the shared types):
@@ -90,9 +111,24 @@ challenges — press JOIN on one to play it to settlement.
 | `BOT_RECONNECT_DELAY_MS`| `2000`                  | Delay before reconnecting a dropped socket.                    |
 | `BOT_LOW_BALANCE_FACTOR`| `5`                     | Top up when `balance < stake × factor`.                       |
 | `BOT_TOPUP_AMOUNT`      | `500`                   | Credits added per top-up.                                      |
+| `TAKER_ONLY_GAMES`      | *(unset)*               | Comma-separated game ids → gated mode (see above). Unset = full general roster. |
+| `TAKER_ALLOW_NAMES`     | *(unset)*               | Comma-separated human owner names a gated taker will claim. Empty = any human. Resters are never gated by this. |
+| `TAKER_STAKE`           | `0`                     | Gated taker claims only this stake. `0` = any non-reserved stake. |
 
 > The `SERVER_URL` must reach the server's WebSocket too; the WS URL is derived from
 > it (`http→ws`, `https→wss`, same host/path) + `/ws`.
+
+## Tests
+
+This package's tests are **not** part of the root `pnpm -w run test` suite (see
+"Not shipped" below — `tools/*` sits outside the root test globs same as it sits
+outside the root build). Run them from here instead:
+
+```bash
+pnpm --filter @rapidclash/bot-crowd test
+# or, from this directory:
+pnpm test
+```
 
 ## Not shipped
 

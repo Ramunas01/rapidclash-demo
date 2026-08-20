@@ -43,9 +43,27 @@ export const STAKE_SET = [1, 5, 10, 25, 50, 100] as const;
 const RESTER_STAKES = STAKE_SET.filter((s) => s !== HUMAN_RESERVED_STAKE);
 const randStake = (): number => RESTER_STAKES[Math.floor(Math.random() * RESTER_STAKES.length)];
 
-/** When set (e.g. TAKER_ONLY_GAMES=coinflip,blackjack,chess), ROSTER becomes one taker per listed
- *  game and NO resters — a gated, on-duty "Demo" crowd. Empty = the full 26-bot roster (default). */
+/** When set (e.g. TAKER_ONLY_GAMES=coinflip,blackjack,chess), ROSTER becomes a gated, on-duty
+ *  crowd for just the listed games: one allowlist-gated TAKER per game (unchanged), plus a
+ *  multi-stake resting pool — see `GATED_RESTER_STAKES` below (issue #361). Empty = the full
+ *  26-bot general roster (default). */
 const takerOnlyGames = (process.env.TAKER_ONLY_GAMES ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+
+/**
+ * Stakes gated mode's resting bot-waiters post at — one identity per game per stake here (issue
+ * #361, generalizing the old single-stake-1 gated rester the same way guest mode's
+ * `ensureDemoBotResting` was generalized to `GUEST_BOT_STAKE_LANES` in #351). This is the REAL
+ * ledger (unlike guest mode's isolated one), so — per the advisor spec's own reasoning ("bet 1¢,
+ * so drift is tiny — free insurance") — keep these modest: small, distinct, well under
+ * `HUMAN_RESERVED_STAKE` (100, which stays untouched by any bot either way).
+ *
+ * These resters are NOT allowlist-gated (unlike the gated taker) — a resting bot-waiter is
+ * already safe for any real player to see and JOIN, the existing, already-charter-safe point of
+ * the general roster's own default rester behaviour (ADR-010: it risks its own real funded
+ * balance, so the "never the house" honesty test holds regardless of who joins it). Gating only
+ * matters for taking (issue #362) — don't gate these.
+ */
+export const GATED_RESTER_STAKES = [1, 2, 5] as const;
 
 /**
  * Roster: 26 bots, all 🤖-prefixed — per live game (coinflip, rps, chess, blackjack, mines, crash, roulette, ships-battle, dice, baccarat, keno, limbo, hilo):
@@ -65,15 +83,34 @@ const takerOnlyGames = (process.env.TAKER_ONLY_GAMES ?? '').split(',').map((s) =
  * fleet (the `auto` move) then fires random un-probed squares — see `shipsBattleMove` in bot.ts.
  *
  * NOTE: the crash/roulette/ships-battle bots only resolve via real human JOINs (no bot-vs-bot), same as the rest.
+ *
+ * Gated mode (TAKER_ONLY_GAMES set, issue #361) is built the same "one BotConfig entry per
+ * identity" way — each of `GATED_RESTER_STAKES`'s stakes mints its own rester `Bot` instance, so
+ * they rest independently (Matchmaking pairs on the exact `(gameId, stake, timeControlId)` key,
+ * same reason `GUEST_BOT_STAKE_LANES` needs one identity per lane rather than one bot cycling
+ * stakes). The taker's `stake` field stays 1 — it's unused for a taker (BotConfig's own doc
+ * comment: a taker matches whatever the human posted), kept only for a readable startup log line.
  */
 export const ROSTER: BotConfig[] = takerOnlyGames.length
-  ? takerOnlyGames.map((g) => ({
-      name: `${BOT_PREFIX}${g}-taker`,
-      gameId: g,
-      stake: 1,
-      policy: 'taker' as const,
-      ...(g === 'chess' ? { timeControlId: 'rapid10' } : {}),
-    }))
+  ? takerOnlyGames.flatMap((g) => {
+      const chessControl = g === 'chess' ? { timeControlId: 'rapid10' as const } : {};
+      return [
+        {
+          name: `${BOT_PREFIX}${g}-taker`,
+          gameId: g,
+          stake: 1,
+          policy: 'taker' as const,
+          ...chessControl,
+        },
+        ...GATED_RESTER_STAKES.map((stake) => ({
+          name: `${BOT_PREFIX}${g}-rest-${stake}`,
+          gameId: g,
+          stake,
+          policy: 'rester' as const,
+          ...chessControl,
+        })),
+      ];
+    })
   : [
   // 1 rester per game at a random stake (STAKE_SET, chosen at startup) —
   { name: '🤖C-3PO-coin', gameId: 'coinflip', stake: randStake(), policy: 'rester' },
