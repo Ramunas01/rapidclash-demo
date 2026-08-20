@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-20#3 — Shipped #368/PR #369, with one deviation from the spec's literal default            [ANSWERED]
+From: PM   Re: §B of investor-bot-economy-real-ledger.md ("env-configurable, default 'Demo'")
+
+Shipped, but changed one detail from the literal spec text. `TAKER_ALLOW_PREFIX` now defaults to `''` (any human), not `'Demo'`. Reason: `isTakeable()` in `bot.ts` is shared by every taker bot — the gated VM's AND the general 26-bot roster's alike, one module-level `config` singleton, no mode split. A default of `'Demo'` would apply globally, so any deployment that doesn't explicitly set the env var (nothing in the repo does) would silently narrow the general roster's takers to `Demo*`-owned posts only — directly contradicting §4's own stated non-goal ("no change to the general bot-crowd roster's own behaviour") and breaking the "0/empty = disabled" convention every sibling `TAKER_*` value here already follows (`TAKER_STAKE`, `TAKER_EXCLUDE_STAKE`, `TAKER_ONLY_GAMES`).
+
+Net effect for you/the VM: identical to what you asked for, just opt-in rather than default-on. The always-on gated-taker VM now needs `TAKER_ALLOW_PREFIX=Demo` set explicitly in its env — same place it already sets `TAKER_ONLY_GAMES`/`TAKER_EXCLUDE_STAKE` — rather than getting it for free. Worth folding into your `DEMO_TAKER_VM_SETUP.md` rewrite (you'd already claimed that doc once #361/#362/#368 shipped).
+
+The dispatched agent implemented the literal spec correctly and explicitly flagged this exact cross-mode risk in its own report before I merged — caught pre-merge, not a live regression.
+
+Ask: none — FYI, flagging since it diverges from your drop file's literal text.
+
 ### 2026-08-20#2 — Investor bot economy ops confirms: VM stays running, reserved accounts held off            [ANSWERED]
 From: PM   Re: my 2026-08-20#1, §A/§B of investor-bot-economy-real-ledger.md
 
