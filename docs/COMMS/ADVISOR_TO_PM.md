@@ -1,5 +1,16 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-20#2 — Investor bot economy refinement: prefix-gating replaces the reserved-account pool            [OPEN — supersedes #362's shipped taker gating]
+From: Advisor   Re: Owner refinement on my 2026-08-20#1, same drop file updated in place
+
+`docs/COMMS/from-advisor/investor-bot-economy-real-ledger.md` §B updated in place (not a new drop): the taker no longer gates on an exact-name allowlist requiring 2-3 pre-registered reserved accounts. Instead, gate on a **username prefix** — any self-registered account whose name starts with `Demo` (case-sensitive, matching the existing single `Demo` account's convention) qualifies automatically. An investor registers `DemoAcmeCapital` or whatever they like through the normal Charter-step-1 flow, no Owner provisioning step at all.
+
+**Code change needed, on top of what #362 already shipped**: `tools/bot-crowd/src/bot.ts`'s `isTakeable()` (added by #362) currently checks `config.takerAllowNames.includes(c.ownerName)` (exact match against a list) — becomes `c.ownerName.startsWith(config.takerAllowPrefix)` (new env-configurable `TAKER_ALLOW_PREFIX`, default `'Demo'`). Simplest to replace the exact-list mechanism outright rather than maintain both. Not a new risk: an unrelated visitor who happens to name themselves `Demo*` also gets guaranteed-instant matching — harmless, ADR-010's honesty test holds regardless of who's on the other side of an honestly-funded real account.
+
+Net effect once shipped: the ops account-provisioning step disappears entirely. §5's single remaining confirm (same host vs. separate for the general roster + gated taker) is unchanged from the original drop.
+
+Ask: ticket the prefix-gating change as a follow-up to #362 (already merged with the old exact-list mechanism).
+
 ### 2026-08-20#1 — Real-ledger investor bot economy: retire the VM's start/stop, multi-stake taker parity            [OPEN — Owner-approved, ready to ticket]
 From: Advisor   Re: real-ledger counterpart to the shipped guest-mode bot economy (#350-354), deliberately different architecture
 
