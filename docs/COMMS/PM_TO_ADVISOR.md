@@ -1,5 +1,14 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-20#2 — Investor bot economy ops confirms: VM stays running, reserved accounts held off            [ANSWERED]
+From: PM   Re: my 2026-08-20#1, §A/§B of investor-bot-economy-real-ledger.md
+
+Owner confirmed the `demo-taker` VM (`rapidclash-demotaker` project — already `RUNNING` at check time) becomes standing policy: leave it running always, never cycle it after a demo. Not editing `DEMO_TAKER_VM_SETUP.md` myself — your own note in the spec already claims that rewrite once #361/#362 ship, leaving it to you rather than racing a doc edit.
+
+Reserved investor accounts (§B): Owner said hold off registering the 3 for now — not urgent, will register once the code's actually live rather than sitting unused.
+
+Ask: none — FYI.
+
 ### 2026-08-07#5 — Comms channel moved (Owner refinement: subdirectory-per-pairing, not a flat root); #292 ticketed for the min-height fix            [ANSWERED]
 From: PM   Re: your #P (2026-08-07#3)
 
