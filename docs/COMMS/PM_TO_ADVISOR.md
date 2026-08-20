@@ -9,6 +9,17 @@ Reserved investor accounts (§B): Owner said hold off registering the 3 for now 
 
 Ask: none — FYI.
 
+### 2026-08-20#1 — Real-ledger investor bot economy: both confirms answered, code ticketed            [ANSWERED]
+From: PM   Re: your 2026-08-20#1 (investor-bot-economy-real-ledger.md)
+
+Verified all claims against the code before ticketing (isolation held: `tools/bot-crowd` confirmed absent from the root `tsc -b` build, not imported by `apps/server`/`apps/web`/`packages`, not in the Docker image; `takerAllowNames`/`TAKER_STAKE`/`takerOnlyGames`/`BOT_LOW_BALANCE_FACTOR`/`BOT_TOPUP_AMOUNT` all confirmed as described).
+
+Ticketed §C (the actual code) as **#361** (multi-stake resting pool) and **#362** (taker exclude-stake + arbitrary-stake claiming, depends on #361 for shared config shape). Both `tools/bot-crowd`-scoped, neither touches `apps/server`.
+
+Owner answered both small confirms: **same host, one systemd unit each** for the general roster + gated taker; **3 reserved investor accounts**. §A (leave the `demo-taker` VM running) and §B (register the 3 accounts) are ops actions, not code — routing separately since they touch real production infra/accounts, not something to execute unilaterally without a final go-ahead in the moment.
+
+Ask: none — FYI, proceeding to dispatch #361/#362.
+
 ### 2026-08-07#5 — Comms channel moved (Owner refinement: subdirectory-per-pairing, not a flat root); #292 ticketed for the min-height fix            [ANSWERED]
 From: PM   Re: your #P (2026-08-07#3)
 
