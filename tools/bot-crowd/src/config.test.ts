@@ -97,3 +97,29 @@ describe('GATED_RESTER_STAKES', () => {
     }
   });
 });
+
+describe('config.takerExcludeStake (issue #362)', () => {
+  it('defaults to 0 — "no stake excluded", a no-op matching takerStake\'s own sentinel', async () => {
+    const { config } = await loadConfig({ TAKER_EXCLUDE_STAKE: undefined });
+    expect(config.takerExcludeStake).toBe(0);
+  });
+
+  it('reads TAKER_EXCLUDE_STAKE from the environment, like the other TAKER_* config values', async () => {
+    const { config } = await loadConfig({ TAKER_EXCLUDE_STAKE: '10' });
+    expect(config.takerExcludeStake).toBe(10);
+  });
+
+  it('falls back to 0 for a non-numeric override (same "ignore garbage" behaviour as num() elsewhere)', async () => {
+    const { config } = await loadConfig({ TAKER_EXCLUDE_STAKE: 'not-a-number' });
+    expect(config.takerExcludeStake).toBe(0);
+  });
+
+  it('the recommended gated deployment value is distinct from every GATED_RESTER_STAKES entry', async () => {
+    // Not a hard code invariant (it's an env var an operator sets), but the README/config doc
+    // comments both recommend TAKER_EXCLUDE_STAKE=10 — assert that recommendation itself doesn't
+    // collide with the resting pool (a rester resting at the same stake would auto-pair with
+    // whichever reserved account posts first, defeating the whole point of the exclusion).
+    const { config, GATED_RESTER_STAKES } = await loadConfig({ TAKER_EXCLUDE_STAKE: '10' });
+    expect(GATED_RESTER_STAKES).not.toContain(config.takerExcludeStake);
+  });
+});

@@ -184,6 +184,29 @@ export const config = {
   takerAllowNames: (process.env.TAKER_ALLOW_NAMES ?? '').split(',').map((s) => s.trim()).filter(Boolean),
   /** Only claim challenges at this stake (0 = any non-reserved stake — current behaviour). */
   takerStake: num('TAKER_STAKE', 0),
+  /**
+   * One stake a taker will NEVER claim (issue #362) — mirrors `GUEST_HUMAN_RESERVED_STAKE`'s
+   * naming/intent (`packages/shared/src/guest.ts`) but deliberately NOT imported/reused: that
+   * constant protects the BOTTOM of the isolated guest world's own stake range, funded by
+   * nothing real; this protects one deliberately-chosen stake on the REAL ledger, funded by
+   * `tools/bot-crowd`'s own real, ADR-010-earned balance — same "carve out a stake no bot
+   * touches" shape, opposite mechanism, see that constant's own doc comment for why the two
+   * must stay separate.
+   *
+   * Purpose: two allow-listed reserved investor accounts (`TAKER_ALLOW_NAMES`) can deliberately
+   * post/JOIN each other at this one stake — e.g. to demo a human-vs-human match end to end —
+   * without the gated taker sniping it first.
+   *
+   * `0` (the default) means "no stake excluded" — a no-op, matching `takerStake`'s own
+   * "0 = disabled" sentinel, so this has zero effect on the general (ungated) roster or on any
+   * deployment that doesn't opt in. The always-on gated-taker VM sets this alongside
+   * `TAKER_ALLOW_NAMES`, e.g. `TAKER_EXCLUDE_STAKE=10`. Pick a value that is (a) one of the
+   * app's own bet presets (`BET_PRESETS`, apps/web/src/screens/GameHub.tsx) — a real account can
+   * only ever POST a stake the UI actually offers — and (b) NOT one of `GATED_RESTER_STAKES`: a
+   * resting bot-waiter sitting at the same stake would auto-pair with whichever reserved account
+   * posts first, defeating the whole point.
+   */
+  takerExcludeStake: num('TAKER_EXCLUDE_STAKE', 0),
   /** Re-exposes the hoisted module const so callers can read it off `config` too. */
   takerOnlyGames,
 };
