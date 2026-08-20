@@ -99,9 +99,9 @@ describe('GATED_RESTER_STAKES', () => {
 });
 
 describe('config.takerAllowPrefix (issue #368)', () => {
-  it("defaults to 'Demo' — a self-registered Demo*-named account qualifies with zero config", async () => {
+  it("defaults to '' (any human) — matches the other TAKER_* \"disabled\" sentinels, general roster unaffected", async () => {
     const { config } = await loadConfig({ TAKER_ALLOW_PREFIX: undefined });
-    expect(config.takerAllowPrefix).toBe('Demo');
+    expect(config.takerAllowPrefix).toBe('');
   });
 
   it('reads TAKER_ALLOW_PREFIX from the environment, like the other TAKER_* config values', async () => {

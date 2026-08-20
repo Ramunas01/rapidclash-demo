@@ -7,11 +7,12 @@
 // "env-driven singleton config, reset the module registry per scenario" pattern config.test.ts
 // already established, since both functions read the module-level `config` singleton.
 //
-// NOTE on `TAKER_ALLOW_PREFIX`'s default: unlike `TAKER_STAKE`/`TAKER_EXCLUDE_STAKE` (both
-// "0 = disabled"), `config.ts` defaults `takerAllowPrefix` to `'Demo'`, not `''` (issue #368's
-// explicit ask — zero Owner-provisioning step for a self-registered `Demo*` account). That means
-// `isTakeable` is no longer ungated out of the box: any scenario below that wants the *fully*
-// ungated general-roster behaviour must now pass `TAKER_ALLOW_PREFIX: ''` explicitly.
+// NOTE on `TAKER_ALLOW_PREFIX`'s default: it's `''` (any human), same "disabled" sentinel as
+// `TAKER_STAKE`/`TAKER_EXCLUDE_STAKE`'s `0` — so `isTakeable` stays fully ungated out of the box
+// and the general roster is unaffected. The gated `Demo*` behaviour only kicks in when the
+// always-on VM sets `TAKER_ALLOW_PREFIX=Demo` explicitly. Scenarios below pass `TAKER_ALLOW_PREFIX:
+// ''` explicitly anyway, just to make each test's intent self-evident without relying on the
+// module default.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { OpenChallenge } from '@rapidclash/shared';
 
@@ -69,20 +70,16 @@ describe('isTakeable — general (fully ungated) behaviour is unaffected', () =>
 });
 
 describe('isTakeable — TAKER_ALLOW_PREFIX default (issue #368)', () => {
-  it("defaults to 'Demo' — a self-registered Demo*-named account is claimed with zero config", async () => {
+  it("defaults to '' — any human is claimed with zero config (general roster unaffected)", async () => {
     const { isTakeable } = await loadBot({});
     expect(isTakeable(challenge({ ownerName: 'DemoAcmeCapital', stake: 25 }))).toBe(true);
-    expect(isTakeable(challenge({ ownerName: 'Demo', stake: 25 }))).toBe(true); // the bare account itself
+    expect(isTakeable(challenge({ ownerName: 'AnyHuman', stake: 25 }))).toBe(true);
   });
 
-  it("an account NOT starting with 'Demo' is never claimed by the default-gated taker", async () => {
-    const { isTakeable } = await loadBot({});
-    expect(isTakeable(challenge({ ownerName: 'AnyHuman', stake: 25 }))).toBe(false);
-  });
-
-  it('the match is case-sensitive — a lowercase "demo…" name does not qualify', async () => {
-    const { isTakeable } = await loadBot({});
+  it('the match is case-sensitive when a prefix IS set — a lowercase "demo…" name does not qualify', async () => {
+    const { isTakeable } = await loadBot({ TAKER_ALLOW_PREFIX: 'Demo' });
     expect(isTakeable(challenge({ ownerName: 'demoLowercase', stake: 25 }))).toBe(false);
+    expect(isTakeable(challenge({ ownerName: 'DemoLowercase', stake: 25 }))).toBe(true);
   });
 });
 
