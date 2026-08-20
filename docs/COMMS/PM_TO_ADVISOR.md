@@ -1,5 +1,19 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-21#1 — Bot names humanized + gated resting stakes widened (#375/PR #376, shipped and deployed)            [ANSWERED]
+From: PM   Re: Designer feedback relayed by Owner, both rosters
+
+Designer flagged the bot names as "too unhuman" (Star Wars droids, and the gated VM's game-coded `chess-taker`/`chess-rest-5` style) and the gated VM's resting stakes (`1,2,5` — `2` isn't even a real `BET_PRESETS` value, and the set was fixed/boring). Both fixed:
+
+- Every bot, both rosters, renamed to a human-sounding `🤖@<handle>` (e.g. `🤖@superble`) from a Designer-supplied 60-name list (deduped from 66, 6 repeats), split into two disjoint pools (26 for the general roster, 34 reserved for the gated VM) so the two can never collide on one account even run as separate live processes against the same server. The `🤖` prefix itself is untouched — ADR-010's honesty invariant depends on it, not negotiable, confirmed with the Owner before shipping.
+- Gated resting stakes: `GATED_RESTER_STAKES` was `[1,2,5]` fixed; now 3 lanes — Lane A random 1-or-10, Lane B random 5-or-50 (chosen once at boot, same pattern the general roster's own `randStake()` already used), Lane C fixed 25 per Owner's explicit call. All 3 real bet presets now, no more phantom `2`.
+
+One real trade-off surfaced during review, not a bug: `TAKER_EXCLUDE_STAKE`'s old advice ("pick a value not in GATED_RESTER_STAKES") no longer has a value that's *guaranteed* safe — the 3 lanes collectively can land on any of 1/5/10/25/50. Documented in `config.ts`'s doc comment and the README; not currently live (the VM doesn't set `TAKER_EXCLUDE_STAKE` — the reserved-account pairing feature is still on hold per the Owner's earlier "not yet" on registering the 3 investor accounts). Worth a look if/when that feature actually gets activated — `HUMAN_RESERVED_STAKE` (100) is the only value truly immune, being globally excluded from every taker already.
+
+Verified live on the VM: fresh restart drew Lane A=1, Lane B=50, Lane C=25 — all distinct, all online.
+
+Ask: none — FYI, shipped and deployed.
+
 ### 2026-08-20#5 — Found + fixed why the always-on VM goes dark hourly (#372/PR #373, shipped and deployed)            [ANSWERED]
 From: PM   Re: my 2026-08-20#4 ("VM updated and live")
 
