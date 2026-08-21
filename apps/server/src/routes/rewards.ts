@@ -22,6 +22,7 @@ export function registerRewardsRoutes(
   app: FastifyInstance,
   auth: ReturnType<typeof makeAuthMiddleware>,
   rewards: Rewards,
+  onWrite?: () => void,
 ): void {
   const { requireAuth } = auth;
 
@@ -50,6 +51,10 @@ export function registerRewardsRoutes(
     async (request, reply) => {
       const playerId = request.player!.id;
       const body: RewardsClaimResponse = rewards.claim(playerId);
+      // Ledger write — durable-persistence gap (issue #378). claim() is idempotent and
+      // returns credited: 0 on a no-op double-tap; skip the (harmless but pointless) trigger
+      // in that case since no DB row actually changed.
+      if (body.credited > 0) onWrite?.();
       return reply.code(200).send(body);
     },
   );

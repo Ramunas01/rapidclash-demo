@@ -1,4 +1,4 @@
-import { describe, beforeEach, afterEach, it, expect } from 'vitest';
+import { describe, beforeEach, afterEach, it, expect, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import type { FastifyInstance } from 'fastify';
 import { createServices, buildApp, type AppServices } from '../server.js';
@@ -118,6 +118,71 @@ describe('GET /rewards + POST /rewards/claim (issue #306)', () => {
   it('POST /rewards/claim returns 401 without a bearer token', async () => {
     const res = await app.inject({ method: 'POST', url: '/rewards/claim' });
     expect(res.statusCode).toBe(401);
+  });
+
+  // AppOptions.onWrite (issue #378) — the durable-persistence hook that fires the GCS
+  // snapshotter's debounced trigger() on non-settlement writes. rewards.claim() is
+  // idempotent and returns credited: 0 on a no-op double-tap without touching the DB, so
+  // the route only fires the hook when credited > 0 (see routes/rewards.ts).
+  describe('onWrite hook (issue #378)', () => {
+    it('fires onWrite when a real claim credits a positive amount', async () => {
+      const onWrite = vi.fn();
+      const db = new Database(':memory:');
+      const services = createServices(db, []);
+      const app = buildApp(services, [], { seedAdmin: false, onWrite });
+      try {
+        const reg = await app.inject({
+          method: 'POST',
+          url: '/auth/register',
+          payload: { username: 'zola', password: 'pw' },
+        });
+        const { token: zolaToken, playerId: zolaId } = reg.json<{ token: string; playerId: string }>();
+        // Two settlements, same as the "claim empties claimable_balance" test above: the
+        // first crosses into Wood (0% rakeback on the crossing match itself), the second
+        // earns real rakeback at Wood's 1% — a single settlement alone can land at 0.
+        services.rewards.recordMatchSettlement(zolaId, 100, 0.125, 'win');
+        services.rewards.recordMatchSettlement(zolaId, 1000, 0.1, 'win');
+        onWrite.mockClear(); // ignore the registration's own onWrite call above
+
+        const res = await app.inject({
+          method: 'POST',
+          url: '/rewards/claim',
+          headers: { authorization: `Bearer ${zolaToken}` },
+        });
+        expect(res.statusCode).toBe(200);
+        expect(res.json<RewardsClaimResponse>().credited).toBeGreaterThan(0);
+        expect(onWrite).toHaveBeenCalledTimes(1);
+      } finally {
+        await app.close();
+      }
+    });
+
+    it('does NOT fire onWrite on a no-op claim (credited: 0)', async () => {
+      const onWrite = vi.fn();
+      const db = new Database(':memory:');
+      const services = createServices(db, []);
+      const app = buildApp(services, [], { seedAdmin: false, onWrite });
+      try {
+        const reg = await app.inject({
+          method: 'POST',
+          url: '/auth/register',
+          payload: { username: 'yara', password: 'pw' },
+        });
+        const { token: yaraToken } = reg.json<{ token: string; playerId: string }>();
+        onWrite.mockClear();
+
+        const res = await app.inject({
+          method: 'POST',
+          url: '/rewards/claim',
+          headers: { authorization: `Bearer ${yaraToken}` },
+        });
+        expect(res.statusCode).toBe(200);
+        expect(res.json<RewardsClaimResponse>().credited).toBe(0);
+        expect(onWrite).not.toHaveBeenCalled();
+      } finally {
+        await app.close();
+      }
+    });
   });
 
   it('a guest session never accrues rewards — guest matchmaking is not wired to Rewards', async () => {

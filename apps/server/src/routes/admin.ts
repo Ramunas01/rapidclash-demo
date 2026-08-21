@@ -8,6 +8,7 @@ export function registerAdminRoutes(
   auth: ReturnType<typeof makeAuthMiddleware>,
   ledger: Ledger,
   identity: Identity,
+  onWrite?: () => void,
 ): void {
   const { requireAuth, requireAdmin } = auth;
   const preHandler = [requireAuth, requireAdmin];
@@ -36,6 +37,9 @@ export function registerAdminRoutes(
       }
 
       const entry = ledger.adminCredit(id, amount, idempotencyKey);
+      // Ledger write — durable-persistence gap (issue #378): fire on the success path only,
+      // never from the 400/404 branches above.
+      onWrite?.();
       return reply.code(200).send(entry);
     },
   );

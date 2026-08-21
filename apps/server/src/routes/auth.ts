@@ -13,6 +13,7 @@ export function registerAuthRoutes(
   app: FastifyInstance,
   auth: ReturnType<typeof makeAuthMiddleware>,
   identity: Identity,
+  onWrite?: () => void,
 ): void {
   const { requireAuth } = auth;
 
@@ -27,6 +28,11 @@ export function registerAuthRoutes(
         username,
         avatarId: result.avatarId,
       };
+      // New account row — durable-persistence gap (issue #378): the GCS snapshot was
+      // previously only triggered on match settlement, so a registration between the last
+      // settlement and a redeploy could vanish. Fire the (debounced, cheap) hook on the
+      // success path only — never from the DUPLICATE_USERNAME branch below.
+      onWrite?.();
       reply.code(201).send(body);
     } catch (err: unknown) {
       const code = (err as { code?: string }).code;
