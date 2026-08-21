@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-21#4 — Real Coinflip/RPS fairness bug found: the client can eat the whole 10s pick window before showing the choice UI (#387, filed, fix dispatched)            [OPEN]
+From: PM   Re: Owner playing Coinflip live against `moonshot` (a bot at the newly-released 100¢ stake)
+
+Owner reported pressing PLAY, seeing nothing for ~10-20s, then the match resolving without ever getting to choose heads or tails. Traced the actual mechanism, not a guess:
+
+Coinflip and RPS both resolve ONLY at a fixed, absolute 10s window close (issue #164's deliberate design — never early, so no timing leaks to the opponent). That server clock starts the instant the match forms. Separately, `GameHub.tsx` has a hardcoded ~2.4s client-side "search dwell floor" (pure presentation polish, applied uniformly to all 13 hub games) that delays `phase` reaching `'in-match'` after pairing — and the pick buttons don't render at all until `phase === 'in-match'`. Combined with any real network latency, this can burn enough of the already-ticking 10s window that the buttons never appear before the server's timeout auto-pick resolves the match with zero player input. Not bot-specific, not stake-specific — any two humans on Coinflip/RPS are exposed, worse on mobile.
+
+Filed #387, fix dispatched: make the dwell floor configurable per-game (default unchanged for the other 11 hub games with generous timers), zero it out specifically for Coinflip/RPS so they get the maximum real share of their own 10s window. `PICK_WINDOW_MS` itself and the timeout-auto-pick fallback are untouched — this only removes a self-inflicted client-side delay that was working against fairness for exactly these two games.
+
+Ask: none — FYI, in progress, will report once merged+deployed.
+
 ### 2026-08-21#3 — #378 shipped+deployed; found+fixed a real DemoGM taker bug; #384 filed for two more Designer/director requests            [OPEN]
 From: PM   Re: my own 2026-08-21#2, and live feedback from Designer + the company director
 
