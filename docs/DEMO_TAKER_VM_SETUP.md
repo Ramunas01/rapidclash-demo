@@ -1,6 +1,6 @@
 # Gated demo-taker VM setup (plan-B)
 
-A small, **always-on** Google Cloud VM that runs `tools/bot-crowd` in its **gated** mode: for each curated game (coinflip, blackjack, chess) it stands up one allowlist-gated **taker** plus a **3-lane resting pool**, 12 bots total. Any self-registered account whose name starts with `Demo` (e.g. `DemoAcme`, `DemoGM`) gets a near-instant, honestly-labelled `🤖` opponent at almost any stake, any time of day — no VM start/stop, no Owner action needed once it's running. Project: **`rapidclash-demotaker`**.
+A small, **always-on** Google Cloud VM that runs `tools/bot-crowd` in its **gated** mode: for each curated game it stands up one allowlist-gated **taker** plus a **weighted resting pool** (`gameId:N` in `TAKER_ONLY_GAMES`, issue #393 — `N` resters per game, default 1 if omitted), currently 32 bots across all 12 non-Ships-Battle games. Any self-registered account whose name starts with `Demo` (e.g. `DemoAcme`, `DemoGM`) gets a near-instant, honestly-labelled `🤖` opponent at almost any stake, any time of day — no VM start/stop, no Owner action needed once it's running. Project: **`rapidclash-demotaker`**.
 
 **Standing policy (confirmed with the Owner): leave this VM running always. Do not stop it between demos.** It replaced the old start-before/stop-after plan-B — see §8.
 
@@ -80,12 +80,14 @@ Put the demo config in an env file readable only by you — **do not** bake the 
 sudo tee /etc/demo-taker.env >/dev/null <<'ENV'
 SERVER_URL=https://rapidclash-847070222251.us-central1.run.app
 ADMIN_PASSWORD=REPLACE_WITH_SERVER_ADMIN_PASSWORD
-TAKER_ONLY_GAMES=coinflip,blackjack,chess
+TAKER_ONLY_GAMES=coinflip:3,blackjack:3,chess:3,rps:3,mines,crash,roulette,dice,baccarat,keno,limbo,hilo
 TAKER_ALLOW_PREFIX=Demo
 ENV
 sudo nano /etc/demo-taker.env      # replace the admin password line, save (Ctrl-O, Enter, Ctrl-X)
 sudo chmod 600 /etc/demo-taker.env
 ```
+
+**`TAKER_ONLY_GAMES` weight suffix (issue #393).** Each entry is `gameId[:N]` — `N` is the number of resting bot-waiters for that game (a bare `gameId` with no suffix defaults to `N=1`). Every listed game gets exactly one taker regardless of weight; weight only controls rester count/variety. The whole roster is capped at a fixed 34-name budget (`GATED_ROSTER_NAMES` in `src/config.ts`) — games are allocated in list order, and the instant a game's block (`1 + weight`) doesn't fit what's left, that game **and every game after it in the list** are silently dropped (one informational log line at startup, not an error). Put the games you most need on-screen first. The example above (32 of 34 identities) is the live config as of 2026-08-21 — change it as the Owner's/Designer's presence preferences change, it's not a fixed prescription.
 
 **Do not set `TAKER_STAKE`.** Leaving it unset (the default, `0`) means "claim any non-reserved stake" — the whole point of this setup. Setting it to a fixed value (e.g. `TAKER_STAKE=1`) is a real bug that has bitten this VM before: a leftover `TAKER_STAKE=1` from the old single-stake plan-B silently stopped 5¢/10¢ bets from ever being taken, with only 1¢ working. If you're rebuilding this VM from an older snapshot or notes, check `/etc/demo-taker.env` doesn't have this line.
 
@@ -134,7 +136,7 @@ sudo systemctl start demo-taker       # start it now
 journalctl -u demo-taker -f
 ```
 
-You should see **12 bots** come online — for each of coinflip/blackjack/chess: one `🤖@<handle>` taker plus a 3-stake resting pool (two of the three lanes pick their stake randomly at boot, so exact numbers vary run to run) — ending in `All bots online`. Bot names are human-sounding handles (e.g. `🤖@knightfall`), not game-coded names.
+You should see bots come online for every game in `TAKER_ONLY_GAMES` — one `🤖@<handle>` taker plus its configured number of resters per game (each rester's stake is drawn randomly at boot, so exact numbers vary run to run) — ending in `All bots online`. With the example config above that's **32 bots**. Bot names are human-sounding handles (e.g. `🤖@knightfall`), not game-coded names.
 
 On your phone/laptop: **register a new account whose name starts with `Demo`** (e.g. `DemoTest`, exact case — the prefix match is case-sensitive), open Coinflip, set **any stake except `2¢`** (the one human-reserved tier — reachable via a tap-again gesture on the `1¢` preset, not its own button), press **PLAY** — within ~1s a gated taker should claim it and the match should settle. Posting at `2¢` instead should sit unclaimed, waiting for a real second `Demo*` account to join it — that's deliberate (see §9). Try blackjack and chess too. Press Ctrl-C to leave the log view (the service keeps running).
 
@@ -158,7 +160,7 @@ One stake tier is reserved for human-vs-human testing — a taker will never cla
 
 This lets two `Demo*`-prefixed testers line up a genuine human-vs-human match (e.g. to demo real matchmaking, not just the bot) by both posting/joining at `2¢` — the gated taker leaves it alone.
 
-**`100¢` was released back to normal bot-claimable use by issue #384** (shipped and live on this VM): it was the original reserved tier, but now that `2¢` covers the human-only-testing role on its own, `100¢` no longer needs to be off-limits — the taker claims it like any other stake, and the resting pool's Lane C now alternates randomly between `25¢` and `100¢` (see `GATED_RESTER_STAKES` in `src/config.ts`). Current authoritative value: `tools/bot-crowd/src/config.ts`'s `HUMAN_RESERVED_STAKES` (should read `[2]`).
+**`100¢` was released back to normal bot-claimable use by issue #384** (shipped and live on this VM): it was the original reserved tier, but now that `2¢` covers the human-only-testing role on its own, `100¢` no longer needs to be off-limits — the taker claims it like any other stake, and resters draw it like any other non-reserved value (issue #393 removed the old fixed 3-lane stake system in favor of each rester independently drawing from the same pool the general roster uses). Current authoritative value: `tools/bot-crowd/src/config.ts`'s `HUMAN_RESERVED_STAKES` (should read `[2]`).
 
 ---
 
