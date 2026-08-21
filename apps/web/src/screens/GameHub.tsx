@@ -231,6 +231,13 @@ interface GameHubProps extends GameHubScreenProps {
    *  game area to fire `onRevealComplete`. Omitted → the bar lights on the fixed BAR_VERDICT_BEAT_MS
    *  beat and the balance syncs immediately (byte-identical to today for every other game). */
   gateResultOnReveal?: boolean;
+  /** Override for the "Searching…" dwell floor below (issue #387). Coinflip and RPS pass 0: their
+   *  entire round IS the server's fixed 10s pick window (PICK_WINDOW_MS, resolves ONLY at expiry —
+   *  never early), so burning ~2.4s of it on a purely cosmetic hold risks the window elapsing before
+   *  the pick buttons ever render, resolving the match via the timeout auto-pick with no player
+   *  input. Every other hub game omits this (undefined → the existing 2400ms default), so their dwell
+   *  is byte-identical to before this prop existed. */
+  searchFloorMs?: number;
 }
 
 /** A 1s ticking clock for countdowns (cosmetic; expiry is server-authoritative). */
@@ -255,7 +262,7 @@ function useNow(active: boolean): number {
  */
 export function GameHub(props: GameHubProps) {
   const {
-    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar,
+    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar, searchFloorMs = 2400,
     token, playerId, username, avatarId = 'default', opponentId, opponentName, serverClockOffset = 0, balance, currentMatchId, gameState, legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
     onPlay, onCancel, onTakeChallenge, onTakePublicChallenge, onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, onTrackChallenges,
@@ -333,7 +340,10 @@ export function GameHub(props: GameHubProps) {
   // minimum even if a match is already resting, so pairing never snaps in with zero delay. A
   // presentation floor only — it never blocks/delays real pairing (the match is already live
   // server-side; we just defer the in-match *visual* a beat). Untouched on the JOIN path.
-  const SEARCH_FLOOR_MS = 2400;
+  // Duration comes from `searchFloorMs` (defaults to 2400 above) — Coinflip/RPS pass 0 (#387) so
+  // `elapsed < SEARCH_FLOOR_MS` below is never true (elapsed is never negative) and the hold never
+  // arms, naturally collapsing this whole mechanism to a no-op for them without a special-cased path.
+  const SEARCH_FLOOR_MS = searchFloorMs;
   const searchStartRef = useRef<number | null>(null);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [holdSearch, setHoldSearch] = useState(false);

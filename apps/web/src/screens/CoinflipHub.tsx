@@ -330,6 +330,11 @@ export function CoinflipHubScreen(props: GameHubScreenProps) {
       suppressResultOverlay
       holdResultMs={HOLD_RESULT_MS}
       ownBarResult
+      // #387: Coinflip's entire round IS the server's fixed 10s pick window (PICK_WINDOW_MS,
+      // resolves ONLY at expiry) — the default ~2.4s "Searching…" dwell floor could burn enough of
+      // it that the pick buttons never render before the window elapses. Zero hold here maximizes
+      // the player's real share of that window; every other hub game keeps the default.
+      searchFloorMs={0}
       {...props}
     />
   );
