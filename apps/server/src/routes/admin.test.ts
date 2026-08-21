@@ -1,4 +1,4 @@
-import { describe, beforeEach, afterEach, it, expect } from 'vitest';
+import { describe, beforeEach, afterEach, it, expect, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import type { FastifyInstance } from 'fastify';
 import type { GameModule } from '@rapidclash/shared';
@@ -156,6 +156,89 @@ describe('POST /admin/players/:id/credit', () => {
       payload: { amount: 100, idempotencyKey: 'no-such-player' },
     });
     expect(res.statusCode).toBe(404);
+  });
+});
+
+// AppOptions.onWrite (issue #378) — the durable-persistence hook that fires the GCS
+// snapshotter's debounced trigger() on non-settlement writes. Scoped strictly to
+// /admin/players/:id/credit — clear-password is out of scope for #378 and untouched.
+describe('POST /admin/players/:id/credit — onWrite hook (issue #378)', () => {
+  it('fires onWrite exactly once on a successful credit', async () => {
+    const onWrite = vi.fn();
+    const db = new Database(':memory:');
+    const services = createServices(db, []);
+    const app = buildApp(services, [], { seedAdmin: false, onWrite });
+    try {
+      const adminResult = await services.identity.register('admin', 'adminpw', 'admin');
+      const playerReg = await app.inject({
+        method: 'POST',
+        url: '/auth/register',
+        payload: { username: 'alice', password: 'pw' },
+      });
+      const { playerId } = playerReg.json<{ playerId: string }>();
+      onWrite.mockClear(); // ignore the registration's own onWrite call above
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/admin/players/${playerId}/credit`,
+        headers: { authorization: `Bearer ${adminResult.token}` },
+        payload: { amount: 500, idempotencyKey: 'onwrite-check' },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(onWrite).toHaveBeenCalledTimes(1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('does NOT fire onWrite on a 400 (invalid amount)', async () => {
+    const onWrite = vi.fn();
+    const db = new Database(':memory:');
+    const services = createServices(db, []);
+    const app = buildApp(services, [], { seedAdmin: false, onWrite });
+    try {
+      const adminResult = await services.identity.register('admin', 'adminpw', 'admin');
+      const playerReg = await app.inject({
+        method: 'POST',
+        url: '/auth/register',
+        payload: { username: 'bob', password: 'pw' },
+      });
+      const { playerId } = playerReg.json<{ playerId: string }>();
+      onWrite.mockClear();
+
+      const res = await app.inject({
+        method: 'POST',
+        url: `/admin/players/${playerId}/credit`,
+        headers: { authorization: `Bearer ${adminResult.token}` },
+        payload: { amount: 0, idempotencyKey: 'bad-amount' },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(onWrite).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('does NOT fire onWrite on a 404 (unknown playerId)', async () => {
+    const onWrite = vi.fn();
+    const db = new Database(':memory:');
+    const services = createServices(db, []);
+    const app = buildApp(services, [], { seedAdmin: false, onWrite });
+    try {
+      const adminResult = await services.identity.register('admin', 'adminpw', 'admin');
+      onWrite.mockClear();
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/admin/players/00000000-0000-0000-0000-000000000000/credit',
+        headers: { authorization: `Bearer ${adminResult.token}` },
+        payload: { amount: 100, idempotencyKey: 'no-such-player' },
+      });
+      expect(res.statusCode).toBe(404);
+      expect(onWrite).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
   });
 });
 

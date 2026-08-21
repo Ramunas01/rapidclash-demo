@@ -31,7 +31,10 @@ if (snapshotter.enabled) {
 db = new Database(dbPath);
 const services = createServices(db, gameModules, { onSettled: () => snapshotter.trigger() });
 
-const app = buildApp(services, gameModules);
+// #378: registration/admin-credit/reward-claim also need to durably persist, not just
+// settlement — same debounced snapshotter.trigger(), just wired at the route layer via
+// AppOptions.onWrite instead of ServicesOptions.onSettled.
+const app = buildApp(services, gameModules, { onWrite: () => snapshotter.trigger() });
 
 // Monthly volume-bonus close (issue #306): no existing cron/scheduler in this repo — same
 // same-process setInterval approach as the snapshotter's debounced trigger() above, just on a

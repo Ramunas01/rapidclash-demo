@@ -1,4 +1,4 @@
-import { describe, beforeEach, afterEach, it, expect } from 'vitest';
+import { describe, beforeEach, afterEach, it, expect, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import type { FastifyInstance } from 'fastify';
 import { createServices, buildApp, type AppServices } from '../server.js';
@@ -50,6 +50,54 @@ describe('POST /auth/register', () => {
       payload: { username: 'alice', password: 'pw2' },
     });
     expect(res.statusCode).toBe(409);
+  });
+});
+
+// AppOptions.onWrite (issue #378) — the durable-persistence hook that fires the GCS
+// snapshotter's debounced trigger() on non-settlement writes. Mirrors the wiring pattern
+// snapshot.test.ts uses to verify ServicesOptions.onSettled fires from a real settlement.
+describe('POST /auth/register — onWrite hook (issue #378)', () => {
+  it('fires onWrite exactly once on a successful registration', async () => {
+    const onWrite = vi.fn();
+    const db = new Database(':memory:');
+    const services = createServices(db, []);
+    const app = buildApp(services, [], { seedAdmin: false, onWrite });
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/register',
+        payload: { username: 'zoe', password: 'pw' },
+      });
+      expect(res.statusCode).toBe(201);
+      expect(onWrite).toHaveBeenCalledTimes(1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('does NOT fire onWrite on a duplicate-username 409', async () => {
+    const onWrite = vi.fn();
+    const db = new Database(':memory:');
+    const services = createServices(db, []);
+    const app = buildApp(services, [], { seedAdmin: false, onWrite });
+    try {
+      await app.inject({
+        method: 'POST',
+        url: '/auth/register',
+        payload: { username: 'zoe', password: 'pw' },
+      });
+      onWrite.mockClear();
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/register',
+        payload: { username: 'zoe', password: 'pw2' },
+      });
+      expect(res.statusCode).toBe(409);
+      expect(onWrite).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
   });
 });
 

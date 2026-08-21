@@ -41,6 +41,13 @@ export interface AppOptions {
   /** Serve the built PWA (apps/web/dist) + SPA fallback. Default: auto (on when the dist exists).
    *  Production (the Docker image) ships the dist; dev/tests have none and use the Vite proxy. */
   serveStatic?: boolean;
+  /** Called after any successful non-settlement DB write that should also durably persist
+   *  (registration, admin-credit, reward-claim — issue #378). Settlement already has its own
+   *  hook (ServicesOptions.onSettled, wired into createMatchmaking); this one lives at the
+   *  route layer because these three writes happen in route handlers with direct service
+   *  access, not inside matchmaking internals. The server wires this to the same GCS
+   *  snapshotter's debounced trigger() as onSettled; omitted in tests/local dev → no-op. */
+  onWrite?: () => void;
 }
 
 // Anything under these prefixes is the API (or the WS upgrade) — an unknown path here must
@@ -137,7 +144,7 @@ export function buildApp(
   app.register(FastifyRateLimit, { global: false });
 
   const auth = makeAuthMiddleware(identity);
-  registerAuthRoutes(app, auth, identity);
+  registerAuthRoutes(app, auth, identity, opts.onWrite);
   // Same reason as the `/ws` comment below: a direct `app.post()` call here would run
   // synchronously, before avvio has booted the FastifyRateLimit plugin registered above —
   // its `onRoute` hook wouldn't exist yet, so the route's `config.rateLimit` would silently
@@ -146,7 +153,7 @@ export function buildApp(
   app.register(async (instance) => {
     registerGuestAuthRoutes(instance, identity, guest);
   });
-  registerAdminRoutes(app, auth, ledger, identity);
+  registerAdminRoutes(app, auth, ledger, identity, opts.onWrite);
   registerGamesRoutes(app, matchmaking);
   registerOpenChallengesRoutes(app, matchmaking);
   // Guest-scoped equivalent (issue #354) — reads the ISOLATED `guest.matchmaking` instance only,
@@ -160,7 +167,7 @@ export function buildApp(
   // POST /rewards/claim opts into config.rateLimit too — same boot-order reason as
   // /auth/guest above: nest it so it registers after FastifyRateLimit's onRoute hook exists.
   app.register(async (instance) => {
-    registerRewardsRoutes(instance, auth, rewards);
+    registerRewardsRoutes(instance, auth, rewards, opts.onWrite);
   });
 
   // The `/ws` route must be added *after* @fastify/websocket has loaded, otherwise the
