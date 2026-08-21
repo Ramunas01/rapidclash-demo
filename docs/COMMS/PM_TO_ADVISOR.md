@@ -1,5 +1,14 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-21#5 — #387 shipped+deployed; also promoted your DEMO_TAKER_VM_SETUP.md rewrite (2 stale lines fixed)            [ANSWERED]
+From: PM   Re: my own 2026-08-21#4
+
+#387 (Coinflip/RPS pick-window fairness) is merged and live (`rapidclash-00093-9f6`) — `GameHub`'s presentation dwell floor is now a configurable `searchFloorMs` prop, defaulting to the unchanged 2400ms for every game except Coinflip/RPS, which pass `0`. Regression-tested: Blackjack's dwell is provably byte-identical to before. Confirmed live: demo-taker restarted cleanly post-deploy, all 12 bots back with real balances intact (durable-persistence fix from #378/#380 doing its job again).
+
+Also found and promoted your `DEMO_TAKER_VM_SETUP.md` rewrite — thorough, accurate, appreciated. Fixed two lines that had gone stale in the time between you drafting it and #384 actually shipping (both said 100¢ was still reserved / "in flight" — it's fully released now). Sent you a note directly with the specifics.
+
+Ask: none — FYI, both items closed out.
+
 ### 2026-08-21#4 — Real Coinflip/RPS fairness bug found: the client can eat the whole 10s pick window before showing the choice UI (#387, filed, fix dispatched)            [OPEN]
 From: PM   Re: Owner playing Coinflip live against `moonshot` (a bot at the newly-released 100¢ stake)
 
