@@ -1,5 +1,55 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-21#1 — Gated VM: weighted per-game rester config, hard-capped at the existing 34-name pool            [OWNER-APPROVED — ready to ticket]
+From: Advisor   Dropped via `docs/COMMS/from-advisor/gated-vm-weighted-games.md` (promoted verbatim)
+
+**Status: OWNER-APPROVED — ready to ticket.** Replaces both earlier ideas (uniform lane-count change, separate "spare seats" vector) with one mechanism. `GATED_ROSTER_NAMES` stays at 34 — Owner explicitly confirmed no padding, that number is fixed as-is.
+
+## 1. Why
+
+Designer wants visual variety across all 12 currently-displayed games (every game gets at least one taker so any game an investor tries gets a match, plus at least one resting bot-waiter for visible variety), with some games allowed extra presence beyond the baseline. Doing this as two coordinated parameters (a game list + a separate distribution vector) is more moving parts than needed — fold it into the one parameter already there.
+
+## 2. What changes — all in `tools/bot-crowd/src/config.ts`
+
+### A. `TAKER_ONLY_GAMES` grows an optional weight suffix
+`gameId[:N]` — `N` omitted defaults to `1`. Example: `TAKER_ONLY_GAMES=coinflip:3,blackjack:3,chess:3,rps:3,mines,crash,roulette,dice,baccarat,keno,limbo,hilo` (the un-suffixed entries are weight 1). Each game still gets exactly **one taker** regardless of weight — weight controls **rester count only**.
+
+### B. Resters generated via the existing `randStake()` helper, looped
+Replace `GATED_RESTER_STAKES`'s three hand-crafted named lanes (`GATED_RESTER_LANE_A/B/C`) with: for each game, call the general roster's own `randStake()` (already filters `HUMAN_RESERVED_STAKES`) once per requested rester. Net simpler than what's there today — no bespoke lane logic to maintain, and stake variety scales naturally with weight instead of being fixed at 3 flavors.
+
+### C. Name-index math: running offset, not a flat multiply
+Today's `base = gi * identitiesPerGame` assumes every game costs the same number of identities. With variable weights it needs a running sum of `(1 taker + previous games' resters)` instead. Contained change, same function.
+
+### D. Overflow policy — exact rule, so nobody has to improvise it mid-review
+Process `TAKER_ONLY_GAMES` **in list order**. For each game, its full block (1 taker + its N resters) is allocated **atomically** against the remaining `GATED_ROSTER_NAMES` budget. **The moment a game's whole block doesn't fit in what's left, drop that game and every game after it in the list — entirely, not partially.** No error, no startup failure, no validation prompt — silent by design, per the Owner's explicit call. Do emit one informational log line at startup naming which game(s), if any, got dropped and why (budget, not a bug) — purely for whoever's debugging "why did I only see 10 games," not a blocker.
+
+Rule of thumb this produces: **earlier entries in the list are guaranteed; later entries are only as safe as the budget** — put the games you most need on-screen first.
+
+### E. `GATED_ROSTER_NAMES` — no change
+Stays at its current 34 entries. Not a scope item here.
+
+## 3. Deployment-sequencing warning — read before merging
+
+**The live VM's current env is `TAKER_ONLY_GAMES=coinflip,blackjack,chess` — no suffixes.** Under the new default-weight-1 semantics, deploying this code *without* also updating that env file will silently shrink those three games from their current 3 resters each down to 1 — a real regression on what's already live, not just a no-op for new games. **The env file update and the code deploy must land together**, not code-first-then-env-later. Flagging this explicitly because it's exactly the kind of gap that bit this VM once already (the `TAKER_STAKE=1` leftover).
+
+## 4. Illustrative example only — not a mandated distribution
+
+One valid assignment matching the "12 taker + 12 baseline rester + flexible extra" shape discussed, shown only to demonstrate the mechanism — **the actual weights are the Owner's/Designer's call once this ships**, not mine to prescribe:
+
+```
+TAKER_ONLY_GAMES=coinflip:3,blackjack:3,chess:3,rps:3,mines,crash,roulette,dice,baccarat,keno,limbo,hilo
+```
+12 takers + (4×3 + 8×1) = 12 + 20 = **32 identities**, 2 under the 34 cap — room to bump two more games by one each if the full budget should be used. Exact numbers, and which games get the extra presence, are a product call for whenever the Owner/Designer actually sets this.
+
+## 5. Suggested test coverage (small, targeted)
+- Weights summing exactly to 34 → every game's full block allocated, nothing dropped.
+- Weights summing over 34 → correct atomic drop of the trailing game(s), never a partial (taker-less rester or rester-less taker) block.
+- A bare `gameId` (no suffix) → weight 1, matching today's minimum.
+
+## Ask
+
+Ticket the above (§2 A-D is the code; §3 is a same-PR ops step, not a follow-up). Small, contained — similar size to the earlier multi-stake resting-pool work (#365).
+
 ### 2026-08-20#2 — Investor bot economy refinement: prefix-gating replaces the reserved-account pool            [OPEN — supersedes #362's shipped taker gating]
 From: Advisor   Re: Owner refinement on my 2026-08-20#1, same drop file updated in place
 
