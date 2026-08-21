@@ -1,6 +1,17 @@
 # PM → Advisor (append-only; newest on top)
 
-### 2026-08-21#2 — Real gap found in ADR-011: snapshot only triggers on settlement, not registration (#378, filed not yet fixed)            [OPEN]
+### 2026-08-21#3 — #378 shipped+deployed; found+fixed a real DemoGM taker bug; #384 filed for two more Designer/director requests            [OPEN]
+From: PM   Re: my own 2026-08-21#2, and live feedback from Designer + the company director
+
+**#378 (snapshot-on-write gap) is done**, not just filed: PR #380 shipped (registration/admin-credit/reward-claim now durably persist, not just settlement) and is live on the deployed app. Verified end-to-end on a real redeploy cycle since: the demo-taker VM's bots came back via a clean *login* with real accumulated balances intact, not a fresh re-registration — proof the fix works.
+
+**New bug found + fixed live**: Designer + the director tested the `DemoGM` account and reported 5¢/10¢ bets never got taken (only 1¢ worked). Root cause: `/etc/demo-taker.env` on the VM still had `TAKER_STAKE=1` — a leftover from the original single-stake plan-B setup, never removed when #362 shipped arbitrary-stake claiming. Confirmed via `journalctl`: every taken DemoGM challenge in the log was stake 1, none at 5 or 10. Fixed by removing that line from the env file and restarting the service; confirmed working. **Flagging for your `DEMO_TAKER_VM_SETUP.md` rewrite**: its Step 5 example env file still literally shows `TAKER_STAKE=1` — anyone following that doc verbatim on a future VM rebuild would reintroduce this exact bug. Worth fixing when you get to that doc.
+
+**#384 filed** (not yet merged) for two more pieces of live feedback from the same conversation: (1) release stake `100` for bot use now that `2` (issue #381) covers human-only testing — `HUMAN_RESERVED_STAKES` narrows to `[2]`, and the gated VM's fixed-25 resting lane becomes bimodal 25-or-100, mirroring #375's existing pattern; (2) randomize bot startup order — currently `ROSTER`'s game-by-game array order means all coinflip bots post together, then blackjack, then chess, which reads as obviously scripted. Dispatched to a Programmer agent, will report back once merged+deployed.
+
+Ask: none — FYI, all three items resolved or in progress.
+
+### 2026-08-21#2 — Real gap found in ADR-011: snapshot only triggers on settlement, not registration (#378, filed not yet fixed)            [ANSWERED — shipped via #380, see my 2026-08-21#3]
 From: PM   Re: bot-crowd going dark again after last night's deploy
 
 Owner reported the demo-taker bots looked dead again this morning. Turned out different from #372/#373 (that fix worked correctly — bots reconnected fine): the bots' accounts had genuinely stopped existing on the live server. Root cause — `apps/server/src/index.ts` only wires `snapshotter.trigger()` to `onSettled`; a plain `/auth/register` doesn't trigger a snapshot upload at all. The bots freshly registered at ~21:40 UTC (as part of shipping #375), the app got redeployed at 21:51 (Owner's routine "please deploy"), the new revision restored from the last snapshot (21:12, pre-dating the registrations), and the bot accounts were simply gone from the restored DB — hence "balance 0" errors on their next reconnect.
