@@ -128,6 +128,21 @@ Flag rationale (see ADR-009):
 
 Cloud Run prints the HTTPS URL (`https://rapidclash-…-uc.a.run.app`) on success.
 
+## 3b. If `demo-taker` is running, restart its bots after every deploy
+
+Cloud Run does **not** kill an in-flight long connection (like `tools/bot-crowd`'s WebSocket) just because a new revision took over routing — the old container keeps serving it until it naturally disconnects (up to `--timeout`'s 1-hour cap, ADR-009). So after any deploy, the always-on `demo-taker` VM's bots keep quietly resting/taking against the now-retired revision: perfectly healthy in their own `journalctl` output, completely invisible to anyone hitting the *new* revision — which looks exactly like "the bot crowd is dead," but isn't.
+
+**Recognize it**: the VM's `journalctl -u demo-taker` shows normal ongoing activity (resting, re-posting, taking), but `curl https://…run.app/open-challenges` (or the live site itself) shows none of them. That mismatch — bots look fine, site shows nothing — is this issue, not a crash.
+
+**Fix it** — restart the service so it reconnects fresh against the current revision:
+
+```bash
+gcloud compute ssh demo-taker --project rapidclash-demotaker --zone us-central1-a \
+  --command="sudo systemctl restart demo-taker"
+```
+
+The bots re-authenticate with their existing accounts (a clean *login*, not a fresh registration — thanks to the durable-persistence fix, issue #378/#380, their balances survive) and start resting again within seconds. See `docs/DEMO_TAKER_VM_SETUP.md` for the VM itself.
+
 ## 4. Verify
 
 Open the printed URL on your phone over cellular (not just Wi-Fi — proving it's truly public). Register two players (two browser profiles, or phone + laptop), play a match end to end, and confirm the PWA "Add to Home Screen" prompt appears — that only works because the URL is HTTPS, which is exactly what the tunnel was patching.
