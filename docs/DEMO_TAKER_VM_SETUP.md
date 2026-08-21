@@ -1,8 +1,8 @@
-# Reserved "Demo" takers — VM setup (plan-B)
+# Gated demo-taker VM setup (plan-B)
 
-A tiny always-available Google Cloud VM that runs the gated `bot-crowd` (3 takers: coinflip / blackjack / chess, answering only the **`Demo`** account at 1¢). Set it up **once**; then for each demo you just **start the VM** (the bots auto-launch on boot) and **stop it** afterwards — so it's off-duty and costs almost nothing the rest of the time.
+A small, **always-on** Google Cloud VM that runs `tools/bot-crowd` in its **gated** mode: for each curated game (coinflip, blackjack, chess) it stands up one allowlist-gated **taker** plus a **3-lane resting pool**, 12 bots total. Any self-registered account whose name starts with `Demo` (e.g. `DemoAcme`, `DemoGM`) gets a near-instant, honestly-labelled `🤖` opponent at almost any stake, any time of day — no VM start/stop, no Owner action needed once it's running. Project: **`rapidclash-demotaker`**.
 
-Prereqs: the `bot-crowd` gating change (ADVISOR_TO_PM 2026-07-11#5) is merged; you have the server admin password; and a way to pull the **private** repo onto the VM (a GitHub read-only token — see Step 4). Project: **`rapidclash-demotaker`**.
+**Standing policy (confirmed with the Owner): leave this VM running always. Do not stop it between demos.** It replaced the old start-before/stop-after plan-B — see §8.
 
 Everything below is copy-paste. If a step wedges, hand the PM this doc and the exact error.
 
@@ -23,17 +23,17 @@ gcloud compute instances create demo-taker \
 ```
 
 Notes:
-- `e2-micro` in `us-central1` / `us-west1` / `us-east1` is in the free tier. We'll keep it **stopped** between demos anyway, so cost is just the 10 GB disk (a few cents/month).
+- `e2-micro` in `us-central1` / `us-west1` / `us-east1` is in the free tier — negligible cost running continuously.
 - The bots only make **outbound** connections (they're clients), so **no firewall / open ports** are needed — leave ingress closed.
 - If it complains the Compute API isn't enabled, run `gcloud services enable compute.googleapis.com` and retry.
 
 ## 2. Connect to the VM
 
 ```bash
-gcloud compute ssh demo-taker --zone=us-central1-a
+gcloud compute ssh demo-taker --zone=us-central1-a --ssh-key-file ~/.ssh/demo_taker_wsl
 ```
 
-(Or click **SSH** next to the instance in the console — a browser terminal, handy if you're not at your own machine.)
+From WSL, pass `--ssh-key-file ~/.ssh/demo_taker_wsl` explicitly — the default key doesn't match what's registered for this instance. (Or click **SSH** next to the instance in the console — a browser terminal, no key needed.)
 
 Everything from here runs **inside the VM**.
 
@@ -48,20 +48,29 @@ sudo corepack enable
 node -v && corepack prepare pnpm@latest --activate && pnpm -v
 ```
 
-## 4. Get the repo (it's private) and install
+## 4. Get the repo (it's private) via a read-only deploy key
 
-Create a **fine-grained, read-only GitHub token** (github.com → Settings → Developer settings → Personal access tokens → Fine-grained → repo `rapidclash-demo`, Contents: Read-only). Then:
+Use a **dedicated, read-only GitHub deploy key** — not an embedded PAT in the remote URL (a PAT in the URL sits in shell history/`.git/config` in plaintext and needs manual rotation; a deploy key doesn't).
 
+On the VM, generate a key and print the public half:
 ```bash
+ssh-keygen -t ed25519 -C "rapidclash-demotaker" -f ~/.ssh/rapidclash_deploy -N ""
+cat ~/.ssh/rapidclash_deploy.pub
+```
+Add it on GitHub: repo → **Settings → Deploy keys → Add deploy key** — paste the printed key, leave **"Allow write access" unchecked** (read-only). Then, on the VM:
+```bash
+cat >> ~/.ssh/config <<'CFG'
+Host github.com
+  IdentityFile ~/.ssh/rapidclash_deploy
+  IdentitiesOnly yes
+CFG
 cd ~
-git clone https://<YOUR_TOKEN>@github.com/Ramunas01/rapidclash-demo.git
+git clone git@github.com:Ramunas01/rapidclash-demo.git
 cd rapidclash-demo
 pnpm install
 # build the shared types the bot imports (safe even if already built)
 pnpm --filter @rapidclash/shared run build
 ```
-
-Then delete the token from your shell history if you like: `history -c`. (The clone keeps working; the token was only needed to fetch.)
 
 ## 5. Create the config file (kept private)
 
@@ -72,12 +81,17 @@ sudo tee /etc/demo-taker.env >/dev/null <<'ENV'
 SERVER_URL=https://rapidclash-847070222251.us-central1.run.app
 ADMIN_PASSWORD=REPLACE_WITH_SERVER_ADMIN_PASSWORD
 TAKER_ONLY_GAMES=coinflip,blackjack,chess
-TAKER_ALLOW_NAMES=Demo
-TAKER_STAKE=1
+TAKER_ALLOW_PREFIX=Demo
 ENV
 sudo nano /etc/demo-taker.env      # replace the admin password line, save (Ctrl-O, Enter, Ctrl-X)
 sudo chmod 600 /etc/demo-taker.env
 ```
+
+**Do not set `TAKER_STAKE`.** Leaving it unset (the default, `0`) means "claim any non-reserved stake" — the whole point of this setup. Setting it to a fixed value (e.g. `TAKER_STAKE=1`) is a real bug that has bitten this VM before: a leftover `TAKER_STAKE=1` from the old single-stake plan-B silently stopped 5¢/10¢ bets from ever being taken, with only 1¢ working. If you're rebuilding this VM from an older snapshot or notes, check `/etc/demo-taker.env` doesn't have this line.
+
+**`TAKER_ALLOW_PREFIX`, not `TAKER_ALLOW_NAMES`.** The old exact-name allowlist (`TAKER_ALLOW_NAMES=Demo`) was replaced outright — any account starting with `Demo` now qualifies automatically, no need to pre-register specific accounts. This must be **set explicitly** (it defaults to empty/any-human, on purpose, so the *general* 26-bot roster elsewhere never accidentally narrows to `Demo*` too).
+
+Optional: `TAKER_EXCLUDE_STAKE=<n>` reserves one more stake so two `Demo*` accounts can deliberately play *each other* without the gated taker sniping it. Not currently set on this VM (the Owner has held off on activating the reserved-account-pairing feature) — see `tools/bot-crowd/src/config.ts`'s doc comment on `takerExcludeStake` before turning it on; no single value is *guaranteed* free of the resting pool's randomized lanes anymore, only a best-effort pick.
 
 (If you'd rather not use the admin password at all, delete that line — the bots still run on their signup grant; top-ups just turn off.)
 
@@ -92,7 +106,7 @@ echo "user=$(whoami)  home=$HOME  pnpm=$(command -v pnpm)"
 ```bash
 sudo tee /etc/systemd/system/demo-taker.service >/dev/null <<UNIT
 [Unit]
-Description=RapidClash reserved demo takers (plan-B)
+Description=RapidClash gated demo takers (plan-B, always-on)
 After=network-online.target
 Wants=network-online.target
 
@@ -120,27 +134,42 @@ sudo systemctl start demo-taker       # start it now
 journalctl -u demo-taker -f
 ```
 
-You should see the three bots register/log in and `All bots online`. Leave that running and, on your phone/laptop: log into the **`Demo`** account (exact spelling), open **Coinflip**, set **1¢**, press **PLAY** — within ~1s a `🤖coinflip-taker` should claim it and the match should settle. Try blackjack and chess too. Press Ctrl-C to leave the log view (the service keeps running).
+You should see **12 bots** come online — for each of coinflip/blackjack/chess: one `🤖@<handle>` taker plus a 3-stake resting pool (two of the three lanes pick their stake randomly at boot, so exact numbers vary run to run) — ending in `All bots online`. Bot names are human-sounding handles (e.g. `🤖@knightfall`), not game-coded names.
 
-## 8. Day-to-day: start before a demo, stop after
+On your phone/laptop: **register a new account whose name starts with `Demo`** (e.g. `DemoTest`, exact case — the prefix match is case-sensitive), open Coinflip, set **any stake except `2¢`** (the one human-reserved tier — reachable via a tap-again gesture on the `1¢` preset, not its own button), press **PLAY** — within ~1s a gated taker should claim it and the match should settle. Posting at `2¢` instead should sit unclaimed, waiting for a real second `Demo*` account to join it — that's deliberate (see §9). Try blackjack and chess too. Press Ctrl-C to leave the log view (the service keeps running).
 
-The VM does **not** need to run between demos. Keep it stopped (off-duty, no idle bots on the live lobby, ~no cost). When a demo needs plan-B:
+## 8. Day-to-day: always-on, no start/stop
 
+**This VM stays running continuously — do not stop it between demos.** This is a deliberate change from the original plan-B (which had the Owner start it before each demo and stop it after): an investor can now show up at any hour, self-register a `Demo*`-prefixed account, and immediately have a bot opponent, with zero prep. `e2-micro` costs are negligible running 24/7.
+
+**Restart the bot service after every main-app deploy.** The Cloud Run deploy creates a new revision; the VM's WebSocket connections keep talking to whatever revision they connected to, which becomes invisible/stale once a new one is live. After deploying `rapidclash-demo`, always:
 ```bash
-gcloud compute instances start demo-taker --zone=us-central1-a     # ~30s; bots auto-launch on boot
-# … run the demo …
-gcloud compute instances stop  demo-taker --zone=us-central1-a
+gcloud compute ssh demo-taker --zone=us-central1-a --ssh-key-file ~/.ssh/demo_taker_wsl \
+  --command "sudo systemctl restart demo-taker"
 ```
+This isn't optional cleanup — skipping it means the bots silently stop responding to new challenges until someone notices and restarts manually.
 
-(Both are one-click in the console too — the ⋮ menu on the instance → Start / Stop.) Because the service is `enable`d, a fresh boot brings the takers online on its own; nobody needs to SSH in during the demo.
+If you ever do need to fully retire it: `gcloud compute instances stop demo-taker --zone=us-central1-a` (or `delete`, §"Tear it all down" below).
+
+## 9. Why one stake is never taken
+
+One stake tier is reserved for human-vs-human testing — a taker will never claim a challenge there, and no resting bot ever posts there either, so any open challenge you see at this stake in the lobby is genuinely human-posted:
+- **`2¢`** (issue #381): reachable only via a **tap-again gesture** on the `1¢` preset in the bet UI (`apps/web/src/screens/GameHub.tsx`) — deliberately not its own preset button, so it stays a "testers who know about it" tier rather than a visible option.
+
+This lets two `Demo*`-prefixed testers line up a genuine human-vs-human match (e.g. to demo real matchmaking, not just the bot) by both posting/joining at `2¢` — the gated taker leaves it alone.
+
+**`100¢` was released back to normal bot-claimable use by issue #384** (shipped and live on this VM): it was the original reserved tier, but now that `2¢` covers the human-only-testing role on its own, `100¢` no longer needs to be off-limits — the taker claims it like any other stake, and the resting pool's Lane C now alternates randomly between `25¢` and `100¢` (see `GATED_RESTER_STAKES` in `src/config.ts`). Current authoritative value: `tools/bot-crowd/src/config.ts`'s `HUMAN_RESERVED_STAKES` (should read `[2]`).
 
 ---
 
 ## Troubleshooting
 
-- **Bots start but never take the `Demo` challenge.** Check the account name is exactly `Demo` (case-sensitive) and matches `TAKER_ALLOW_NAMES`; that the bet is **1¢** (matches `TAKER_STAKE=1`); and that you **posted** (pressed PLAY) rather than joined. `journalctl -u demo-taker -e` shows what it sees.
+- **Bots start but never take a `Demo*` challenge.** Check the account name genuinely starts with `Demo` (case-sensitive) and that `TAKER_ALLOW_PREFIX=Demo` is actually set in `/etc/demo-taker.env` (it does **not** default to `Demo` — it defaults to empty/any-human, and must be set explicitly on this VM). Check the stake isn't `2¢` (§9 — reserved, never taken by design). Check you **posted** (pressed PLAY) rather than joined. `journalctl -u demo-taker -e` shows what it saw.
+- **Only `1¢` bets get taken, nothing else.** This is the `TAKER_STAKE=1` leftover bug (§5) — check `/etc/demo-taker.env` for a `TAKER_STAKE` line and delete it, then `sudo systemctl restart demo-taker`.
+- **Bots go dark a while after the VM's been up, then reconnect on their own.** Expected and self-healing (issues #372/#373): Cloud Run's `--timeout 3600` force-closes every WebSocket at the 1-hour mark regardless of activity; the bots now detect this and automatically re-rest/re-take on reconnect. No action needed — if a bot stays dark for more than a minute or two after that, something else is wrong; check the log.
+- **Bots went dark right after a main-app deploy and don't recover on their own.** This is the stale-revision issue (§8), not the hourly reconnect above — restart the service manually.
 - **`socket closed` / can't connect.** Confirm `SERVER_URL` is the live `https://…run.app` (the WS URL is derived as `wss://…/ws`). The VM needs outbound internet — default on GCE.
 - **`admin login failed`.** Wrong/empty `ADMIN_PASSWORD` — harmless: top-ups just disable, bots run on their grant. Fix the env file and `sudo systemctl restart demo-taker` if you want top-ups.
 - **Change the config later.** Edit `/etc/demo-taker.env`, then `sudo systemctl restart demo-taker`.
-- **Update the code later.** `cd ~/rapidclash-demo && git pull && pnpm install && pnpm --filter @rapidclash/shared run build && sudo systemctl restart demo-taker`.
+- **Update the code later.** `cd ~/rapidclash-demo && git pull && pnpm install && pnpm --filter @rapidclash/shared run build && sudo systemctl restart demo-taker` — pulls over the SSH deploy key set up in §4, no token to manage.
 - **Tear it all down.** `gcloud compute instances delete demo-taker --zone=us-central1-a`.
