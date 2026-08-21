@@ -54,11 +54,13 @@ runs on a single `max-instances=1` instance, so don't flood it.)
 
 ## Gated mode (`TAKER_ONLY_GAMES`)
 
-Setting `TAKER_ONLY_GAMES` (comma-separated game ids, e.g.
-`TAKER_ONLY_GAMES=coinflip,blackjack,chess`) swaps `ROSTER` for a curated, on-duty
-crowd covering only the listed games — this is what `docs/DEMO_TAKER_VM_SETUP.md`'s
-always-on VM runs, on the **real ledger**, for a reserved investor-demo account
-(never the general 26-bot roster's games). Per listed game:
+Setting `TAKER_ONLY_GAMES` (comma-separated game ids, each with an optional
+`:N` weight suffix, e.g. `TAKER_ONLY_GAMES=coinflip:3,blackjack,chess:2`) swaps
+`ROSTER` for a curated, on-duty crowd covering only the listed games — this is
+what `docs/DEMO_TAKER_VM_SETUP.md`'s always-on VM runs, on the **real ledger**,
+for a reserved investor-demo account (never the general 26-bot roster's
+games). `N` is optional and defaults to `1` when omitted (`blackjack` above is
+the same as `blackjack:1`). Per listed game:
 
 - **1 taker**, gated by `TAKER_ALLOW_PREFIX` (issue #368; the always-on VM sets
   this to `Demo`) — claims *any* stake posted by an account whose username
@@ -68,24 +70,34 @@ always-on VM runs, on the **real ledger**, for a reserved investor-demo account
   deliberately pair with each other there. No Owner provisioning step is
   needed: any self-registered account named `Demo<anything>` qualifies
   automatically, the same Charter-step-1 flow as any real account. This is the
-  only gated part.
-- **A resting pool** at each of `GATED_RESTER_STAKES`'s 3 lanes (`src/config.ts`) —
-  one human-sounding `🤖@<handle>` identity per lane, all policy `rester`. All
-  three lanes pick their stake randomly once at startup (Lane A: 1 or 10; Lane B:
-  5 or 50; Lane C: 25 or 100, issue #384) — see the doc comment on
-  `GATED_RESTER_STAKES` for why (issues #375, #384). These are **not**
-  allowlist-gated: a resting bot-waiter is
-  already safe for any real player to see and JOIN (same ADR-010 reasoning as the
-  general roster's default resters — it risks its own real funded balance either
-  way). Gating only matters for *taking*, never resting.
+  only gated part. Weight has no effect on the taker — every listed game
+  always gets exactly one.
+- **N resting bot-waiters**, where N is that game's weight (issue #393,
+  replacing the old fixed-3-lane `GATED_RESTER_STAKES` system) — each a
+  distinct human-sounding `🤖@<handle>` identity, policy `rester`, each posting
+  its own stake drawn from the same `randStake()` pool the general roster's
+  resters use (`STAKE_SET` minus `HUMAN_RESERVED_STAKES`). Multiple resters on
+  one game can land on the same stake — that's fine, `Matchmaking` pairs on
+  the exact `(gameId, stake, timeControlId)` tuple, so same-stake resters are
+  just independent open challenges. Resters are **not** allowlist-gated: a
+  resting bot-waiter is already safe for any real player to see and JOIN (same
+  ADR-010 reasoning as the general roster's default resters — it risks its own
+  real funded balance either way). Gating only matters for *taking*, never
+  resting.
 
-Names for gated mode come from a separate, reserved handle pool (`GATED_ROSTER_NAMES`
-in `src/config.ts`) so a gated-mode process can never mint a username that collides
-with the general roster's, even run as a separate process against the same server.
+Names for gated mode come from a separate, reserved 34-entry handle pool
+(`GATED_ROSTER_NAMES` in `src/config.ts`) so a gated-mode process can never mint
+a username that collides with the general roster's, even run as a separate
+process against the same server. That pool is also a hard **budget**: each
+game's block costs `1 + weight` names, allocated atomically in
+`TAKER_ONLY_GAMES` list order. The instant a game's block would overflow the
+remaining budget, that game and every game after it in the list are dropped
+entirely (never a partial block) — logged once at startup when it happens. See
+the doc comments on `GATED_ROSTER_NAMES` and `ROSTER` in `src/config.ts` for
+the exact rule.
 
 Real credits are at stake here (this mode runs against the real ledger, not an
-isolated one), so `GATED_RESTER_STAKES` is kept deliberately modest — see its doc
-comment in `src/config.ts`.
+isolated one) — keep weight totals modest for a presentation-sized crowd.
 
 ## Run
 
@@ -123,10 +135,10 @@ challenges — press JOIN on one to play it to settlement.
 | `BOT_RECONNECT_DELAY_MS`| `2000`                  | Delay before reconnecting a dropped socket.                    |
 | `BOT_LOW_BALANCE_FACTOR`| `5`                     | Top up when `balance < stake × factor`.                       |
 | `BOT_TOPUP_AMOUNT`      | `500`                   | Credits added per top-up.                                      |
-| `TAKER_ONLY_GAMES`      | *(unset)*               | Comma-separated game ids → gated mode (see above). Unset = full general roster. |
+| `TAKER_ONLY_GAMES`      | *(unset)*               | Comma-separated game ids, each with an optional `:N` weight suffix (default `1`) → gated mode (see above). Unset = full general roster. |
 | `TAKER_ALLOW_PREFIX`    | *(unset = `''`)*        | Username prefix (case-sensitive) an owner name must start with for a taker to claim it. `''` (empty, the default) = any human — same "disabled" sentinel as `TAKER_STAKE`/`TAKER_EXCLUDE_STAKE`. The always-on gated-taker VM sets this to `Demo` explicitly. Resters are never gated by this. |
 | `TAKER_STAKE`           | `0`                     | Gated taker claims only this stake. `0` = any non-reserved stake. |
-| `TAKER_EXCLUDE_STAKE`   | `0`                     | Gated taker never claims this stake (issue #362). `0` = none excluded. `GATED_RESTER_STAKES`'s lanes are randomized once at startup (issue #375), so no fixed value here is *guaranteed* distinct from them anymore — see `takerExcludeStake`'s doc comment in `src/config.ts`. |
+| `TAKER_EXCLUDE_STAKE`   | `0`                     | Gated taker never claims this stake (issue #362). `0` = none excluded. Gated resters draw their stake at random per-identity (issue #393), so no fixed value here is *guaranteed* distinct from every rester's draw — see `takerExcludeStake`'s doc comment in `src/config.ts`. |
 
 > The `SERVER_URL` must reach the server's WebSocket too; the WS URL is derived from
 > it (`http→ws`, `https→wss`, same host/path) + `/ws`.

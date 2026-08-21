@@ -34,13 +34,14 @@ describe('ROSTER — general (non-gated) mode is unaffected', () => {
   });
 });
 
-describe('ROSTER — gated mode (TAKER_ONLY_GAMES set, issue #361)', () => {
-  it('adds a resting pool at GATED_RESTER_STAKES alongside the existing taker, per curated game', async () => {
-    const { ROSTER, GATED_RESTER_STAKES, BOT_PREFIX } = await loadConfig({
+describe('ROSTER — gated mode (TAKER_ONLY_GAMES set, issue #361; weighted resters, issue #393)', () => {
+  it('adds a per-game weighted resting pool alongside the existing taker (bare gameIds default to weight 1)', async () => {
+    const { ROSTER, BOT_PREFIX } = await loadConfig({
       TAKER_ONLY_GAMES: 'coinflip,chess',
     });
 
-    expect(ROSTER).toHaveLength(2 * (1 + GATED_RESTER_STAKES.length));
+    // Bare gameIds (no ':N' suffix) default to weight 1 — 1 taker + 1 rester per game.
+    expect(ROSTER).toHaveLength(2 * (1 + 1));
 
     const allNames = new Set<string>();
     for (const g of ['coinflip', 'chess']) {
@@ -52,17 +53,41 @@ describe('ROSTER — gated mode (TAKER_ONLY_GAMES set, issue #361)', () => {
       // Names are no longer game/stake-encoded (issue #375) — just BOT_PREFIX + '@' + a Pool 2 handle.
       expect(takers[0].name).toMatch(new RegExp(`^${BOT_PREFIX}@[a-z]+$`));
 
-      expect(resters).toHaveLength(GATED_RESTER_STAKES.length);
-      const resterStakes = resters.map((b) => b.stake).sort((a, b) => a - b);
-      expect(resterStakes).toEqual([...GATED_RESTER_STAKES].sort((a, b) => a - b));
-      expect(new Set(resters.map((b) => b.stake)).size).toBe(GATED_RESTER_STAKES.length); // distinct stakes
-      for (const b of resters) expect(b.name).toMatch(new RegExp(`^${BOT_PREFIX}@[a-z]+$`));
+      expect(resters).toHaveLength(1);
+      for (const b of resters) {
+        expect(b.name).toMatch(new RegExp(`^${BOT_PREFIX}@[a-z]+$`));
+        expect(b.stake).toBeGreaterThan(0);
+      }
 
       for (const b of gameBots) allNames.add(b.name);
     }
     // Every identity in this scenario got a distinct name (positional assignment, no collisions).
     const totalBots = ROSTER.length;
     expect(allNames.size).toBe(totalBots);
+  });
+
+  it('a weight suffix (gameId:N) produces N resters for that game', async () => {
+    const { ROSTER } = await loadConfig({ TAKER_ONLY_GAMES: 'coinflip:3,blackjack' });
+
+    const coinflipBots = ROSTER.filter((b) => b.gameId === 'coinflip');
+    expect(coinflipBots.filter((b) => b.policy === 'taker')).toHaveLength(1);
+    expect(coinflipBots.filter((b) => b.policy === 'rester')).toHaveLength(3);
+
+    const blackjackBots = ROSTER.filter((b) => b.gameId === 'blackjack');
+    expect(blackjackBots.filter((b) => b.policy === 'taker')).toHaveLength(1);
+    expect(blackjackBots.filter((b) => b.policy === 'rester')).toHaveLength(1); // bare id → weight 1
+
+    expect(ROSTER).toHaveLength((1 + 3) + (1 + 1));
+  });
+
+  it('multiple resters for the same game CAN land on the same stake (no disjointness requirement anymore)', async () => {
+    // With enough resters on one game, at least one repeat stake is overwhelmingly likely from the
+    // 5-value RESTER_STAKES pool (STAKE_SET minus HUMAN_RESERVED_STAKES) — assert the mechanism
+    // allows it (no crash, no de-duplication) rather than asserting a specific draw.
+    const { ROSTER } = await loadConfig({ TAKER_ONLY_GAMES: 'coinflip:8' });
+    const resters = ROSTER.filter((b) => b.policy === 'rester');
+    expect(resters).toHaveLength(8);
+    for (const b of resters) expect(b.stake).toBeGreaterThan(0);
   });
 
   it('keeps chess entries (taker + every rester) on the rapid10 control; leaves other games untimed', async () => {
@@ -128,45 +153,117 @@ describe('HUMAN_RESERVED_STAKES (issue #381: generalized from the single HUMAN_R
   });
 });
 
-describe('GATED_RESTER_STAKES (issue #375: 3 lanes, 2 randomized once at startup; issue #384: Lane C joins them)', () => {
-  it('is a small, distinct stake set that never lands on the OTHER reserved tier (2) either (issue #381)', async () => {
-    const { GATED_RESTER_STAKES, HUMAN_RESERVED_STAKES } = await loadConfig({});
-    expect(GATED_RESTER_STAKES.length).toBe(3);
-    expect(new Set(GATED_RESTER_STAKES).size).toBe(GATED_RESTER_STAKES.length); // all distinct
-    for (const stake of GATED_RESTER_STAKES) {
-      expect(stake).toBeGreaterThan(0);
-      expect(stake).toBeLessThanOrEqual(100); // Lane C can now draw 100 (issue #384)
-      expect(HUMAN_RESERVED_STAKES.includes(stake)).toBe(false);
+describe('gated mode: weighted resters + the 34-name budget / overflow policy (issue #393)', () => {
+  // GATED_ROSTER_NAMES is a 34-entry pool (not exported — its size is the spec'd budget itself,
+  // see config.ts). Each game's block costs `1 (taker) + weight (resters)` names.
+
+  it('a bare gameId (no ":N" suffix) defaults to weight 1 — matches today\'s old fixed minimum', async () => {
+    const { ROSTER } = await loadConfig({ TAKER_ONLY_GAMES: 'blackjack' });
+    expect(ROSTER.filter((b) => b.policy === 'taker')).toHaveLength(1);
+    expect(ROSTER.filter((b) => b.policy === 'rester')).toHaveLength(1);
+  });
+
+  it('a malformed/non-numeric weight suffix falls back to weight 1, tolerantly (no throw)', async () => {
+    const { ROSTER } = await loadConfig({ TAKER_ONLY_GAMES: 'blackjack:abc,chess:,coinflip:-3,rps:0' });
+    for (const g of ['blackjack', 'chess', 'coinflip', 'rps']) {
+      expect(ROSTER.filter((b) => b.gameId === g && b.policy === 'rester')).toHaveLength(1);
     }
   });
 
-  it('Lane A is 1 or 10, Lane B is 5 or 50, Lane C is 25 or 100 (issue #384) — every value a real BET_PRESETS entry', async () => {
-    const { GATED_RESTER_STAKES } = await loadConfig({});
-    const [laneA, laneB, laneC] = GATED_RESTER_STAKES;
-    expect([1, 10]).toContain(laneA);
-    expect([5, 50]).toContain(laneB);
-    expect([25, 100]).toContain(laneC);
+  it('weights summing exactly to the 34-name budget: every game gets its full block, nothing dropped', async () => {
+    // Blocks (1 + weight): coinflip 8, blackjack 8, chess 8, rps 10 → 8+8+8+10 = 34, exact fit.
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { ROSTER } = await loadConfig({ TAKER_ONLY_GAMES: 'coinflip:7,blackjack:7,chess:7,rps:9' });
+
+    for (const [g, weight] of [
+      ['coinflip', 7],
+      ['blackjack', 7],
+      ['chess', 7],
+      ['rps', 9],
+    ] as const) {
+      expect(ROSTER.filter((b) => b.gameId === g && b.policy === 'taker')).toHaveLength(1);
+      expect(ROSTER.filter((b) => b.gameId === g && b.policy === 'rester')).toHaveLength(weight);
+    }
+    expect(ROSTER).toHaveLength(34);
+    expect(new Set(ROSTER.map((b) => b.name)).size).toBe(34); // every identity got a distinct name
+
+    // Fits exactly — no drop, so the informational log must NOT fire.
+    const droppedLogs = logSpy.mock.calls.filter((args) => String(args[0]).includes('dropped'));
+    expect(droppedLogs).toHaveLength(0);
+    logSpy.mockRestore();
   });
 
-  it('the three lanes are mutually distinct by construction, regardless of which random branch each lands on', async () => {
-    // {1,10} / {5,50} / {25,100} are disjoint sets, so distinctness holds no matter which of the 8
-    // (laneA × laneB × laneC) random combinations gets drawn — load repeatedly to exercise more than one.
-    for (let i = 0; i < 10; i++) {
-      const { GATED_RESTER_STAKES } = await loadConfig({});
-      expect(new Set(GATED_RESTER_STAKES).size).toBe(3);
-    }
+  it('weights summing over budget: the trailing game is dropped atomically; earlier (kept) games are unaffected', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    // Same exact-fit 34 config as above, PLUS a 5th game appended — its block (1 + 1 = 2) cannot
+    // fit in the 0 names left over, so 'mines' must be dropped entirely (never a taker-less rester
+    // or rester-less taker for it).
+    const noOverflowEnv = { TAKER_ONLY_GAMES: 'coinflip:7,blackjack:7,chess:7,rps:9' };
+    const overflowEnv = { TAKER_ONLY_GAMES: 'coinflip:7,blackjack:7,chess:7,rps:9,mines' };
+
+    const { ROSTER: baseline } = await loadConfig(noOverflowEnv);
+    const { ROSTER: withOverflow } = await loadConfig(overflowEnv);
+
+    // 'mines' never appears at all — no partial block.
+    expect(withOverflow.some((b) => b.gameId === 'mines')).toBe(false);
+    expect(withOverflow).toHaveLength(34);
+
+    // The 4 kept games' identities (name, gameId, policy — everything except the randomized
+    // `stake`) are byte-for-byte identical whether or not 'mines' was appended afterward.
+    const strip = (roster: typeof baseline) =>
+      roster.map((b) => ({ name: b.name, gameId: b.gameId, policy: b.policy }));
+    expect(strip(withOverflow)).toEqual(strip(baseline));
+
+    // Exactly one informational log, naming the dropped game and calling out the budget (not a bug).
+    const droppedLogs = logSpy.mock.calls.filter((args) => String(args[0]).includes('dropped'));
+    expect(droppedLogs).toHaveLength(1);
+    expect(String(droppedLogs[0][0])).toContain('mines');
+    expect(String(droppedLogs[0][0]).toLowerCase()).toContain('budget');
+    expect(String(droppedLogs[0][0]).toLowerCase()).toContain('not a bug');
+    logSpy.mockRestore();
   });
 
-  it('is re-drawn fresh per module load (randomized at startup, not a fixed literal anymore)', async () => {
-    // Not a hard assertion on any one run (it's random), but sampling several loads should not
-    // always produce the exact same tuple — guards against someone "fixing" the randomization
-    // back to a static literal without updating this test.
-    const draws = new Set<string>();
-    for (let i = 0; i < 20; i++) {
-      const { GATED_RESTER_STAKES } = await loadConfig({});
-      draws.add(GATED_RESTER_STAKES.join(','));
+  it('overflow cascades: a later game that would fit the FULL budget on its own is still dropped once an earlier game already overflowed', async () => {
+    // 'coinflip:40' alone needs a block of 41 > 34, so it overflows immediately (nothing used yet).
+    // 'chess' (bare, block 2) would easily fit a fresh 34-name budget by itself, but per the atomic
+    // list-order rule it must ALSO be dropped, because it comes after the first overflowing game.
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const { ROSTER } = await loadConfig({ TAKER_ONLY_GAMES: 'coinflip:40,chess' });
+
+    expect(ROSTER).toHaveLength(0); // both games dropped, no partial output
+
+    const droppedLogs = logSpy.mock.calls.filter((args) => String(args[0]).includes('dropped'));
+    expect(droppedLogs).toHaveLength(1);
+    expect(String(droppedLogs[0][0])).toContain('coinflip');
+    expect(String(droppedLogs[0][0])).toContain('chess');
+    logSpy.mockRestore();
+  });
+
+  it('the drop-log fires only when something was actually dropped — a normal, well-within-budget boot logs nothing extra', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await loadConfig({ TAKER_ONLY_GAMES: 'coinflip,blackjack,chess' }); // 3 games × 2 = 6, nowhere near 34
+    const droppedLogs = logSpy.mock.calls.filter((args) => String(args[0]).includes('dropped'));
+    expect(droppedLogs).toHaveLength(0);
+    logSpy.mockRestore();
+  });
+
+  it('resters draw from randStake() (STAKE_SET minus HUMAN_RESERVED_STAKES) — multiple resters on one game CAN share a stake', async () => {
+    const { ROSTER, HUMAN_RESERVED_STAKES } = await loadConfig({ TAKER_ONLY_GAMES: 'coinflip:8' });
+    const resters = ROSTER.filter((b) => b.policy === 'rester');
+    expect(resters).toHaveLength(8);
+    for (const b of resters) {
+      expect(b.stake).toBeGreaterThan(0);
+      expect(HUMAN_RESERVED_STAKES.includes(b.stake)).toBe(false);
     }
-    expect(draws.size).toBeGreaterThan(1);
+    // Not a hard assertion (stakes are random), but with 8 draws from a 5-value pool a collision is
+    // overwhelmingly likely — sample repeatedly so the "shared stakes are fine" property is exercised.
+    let sawCollision = false;
+    for (let i = 0; i < 20 && !sawCollision; i++) {
+      const { ROSTER: r } = await loadConfig({ TAKER_ONLY_GAMES: 'coinflip:8' });
+      const stakes = r.filter((b) => b.policy === 'rester').map((b) => b.stake);
+      sawCollision = new Set(stakes).size < stakes.length;
+    }
+    expect(sawCollision).toBe(true);
   });
 });
 
@@ -203,13 +300,14 @@ describe('config.takerExcludeStake (issue #362)', () => {
     expect(config.takerExcludeStake).toBe(0);
   });
 
-  // NOTE (issue #375, updated #384): there used to be a test here asserting the recommended
-  // TAKER_EXCLUDE_STAKE=10 is always distinct from GATED_RESTER_STAKES. That invariant no longer
-  // holds structurally: GATED_RESTER_STAKES's 3 lanes are now all randomized once at startup (Lane
-  // A: 1 or 10; Lane B: 5 or 50; Lane C: 25 or 100 as of #384), and together the lanes' possible
-  // values span every non-reserved BET_PRESETS entry (1, 5, 10, 25, 50, 100) — so there is no
-  // single fixed TAKER_EXCLUDE_STAKE left that can be *guaranteed* distinct from whatever
-  // GATED_RESTER_STAKES draws at boot. `config.ts`'s `takerExcludeStake` doc comment spells this
-  // out; it's now a best-effort operator choice, not a config-time-checkable invariant, so it
-  // isn't asserted here.
+  // NOTE (issue #375, updated #384, #393): there used to be a test here asserting the recommended
+  // TAKER_EXCLUDE_STAKE=10 is always distinct from the gated resters' stakes. That invariant
+  // doesn't hold structurally: issue #393 replaced the old fixed-3-lane GATED_RESTER_STAKES with a
+  // per-game, per-rester randStake() draw (same pool the general roster's own resters use —
+  // STAKE_SET minus HUMAN_RESERVED_STAKES), so the possible values span every non-reserved
+  // BET_PRESETS entry (1, 5, 10, 25, 50, 100) regardless of how many resters a game has — there is
+  // no single fixed TAKER_EXCLUDE_STAKE left that can be *guaranteed* distinct from every gated
+  // rester's actual draw at boot. `config.ts`'s `takerExcludeStake` doc comment spells this out;
+  // it's a best-effort operator choice, not a config-time-checkable invariant, so it isn't
+  // asserted here.
 });

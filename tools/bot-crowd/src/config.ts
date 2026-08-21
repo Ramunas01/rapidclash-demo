@@ -50,47 +50,25 @@ export const STAKE_SET = [1, 5, 10, 25, 50, 100] as const;
 const RESTER_STAKES = STAKE_SET.filter((s) => !HUMAN_RESERVED_STAKES.includes(s));
 const randStake = (): number => RESTER_STAKES[Math.floor(Math.random() * RESTER_STAKES.length)];
 
-/** When set (e.g. TAKER_ONLY_GAMES=coinflip,blackjack,chess), ROSTER becomes a gated, on-duty
- *  crowd for just the listed games: one allowlist-gated TAKER per game (unchanged), plus a
- *  multi-stake resting pool — see `GATED_RESTER_STAKES` below (issue #361). Empty = the full
- *  26-bot general roster (default). */
-const takerOnlyGames = (process.env.TAKER_ONLY_GAMES ?? '').split(',').map((s) => s.trim()).filter(Boolean);
-
-/**
- * Stakes gated mode's resting bot-waiters post at — one identity per game per stake here (issue
- * #361, generalizing the old single-stake-1 gated rester the same way guest mode's
- * `ensureDemoBotResting` was generalized to `GUEST_BOT_STAKE_LANES` in #351). This is the REAL
- * ledger (unlike guest mode's isolated one), so — per the advisor spec's own reasoning ("bet 1¢,
- * so drift is tiny — free insurance") — keep these modest: small, distinct, and clear of
- * `HUMAN_RESERVED_STAKES` (`[2]` as of issue #384, which stays untouched by any bot either way).
+/** When set (e.g. TAKER_ONLY_GAMES=coinflip:3,blackjack,chess:2), ROSTER becomes a gated, on-duty
+ *  crowd for just the listed games: one allowlist-gated TAKER per game (unchanged — weight has no
+ *  effect on it), plus N resting bot-waiters per game where N is that game's weight (issue #393,
+ *  replacing the old fixed-3-lane `GATED_RESTER_STAKES` system with a variable, per-game count).
+ *  Empty = the full 26-bot general roster (default).
  *
- * These resters are NOT allowlist-gated (unlike the gated taker) — a resting bot-waiter is
- * already safe for any real player to see and JOIN, the existing, already-charter-safe point of
- * the general roster's own default rester behaviour (ADR-010: it risks its own real funded
- * balance, so the "never the house" honesty test holds regardless of who joins it). Gating only
- * matters for taking (issue #362) — don't gate these.
- *
- * Issue #375 widened this from a fixed `[1, 2, 5]` (2 wasn't even a real `BET_PRESETS` value, and
- * the set was "boring" — always the same 3 numbers) to 3 lanes, two of which pick their concrete
- * stake randomly ONCE at startup — the same one-time-at-boot randomization `randStake()` already
- * uses for the general roster below (not re-randomized on repost, so a lane's stake is stable for
- * the life of the process):
- *   - Lane A: 1 or 10
- *   - Lane B: 5 or 50
- *   - Lane C: 25 or 100 (issue #384: was fixed at 25 — Owner's explicit call at the time, made
- *     while 100 was still a `HUMAN_RESERVED_STAKES` tier. Now that #384 has dropped 100 from that
- *     set, there is no longer a reason for Lane C alone to stay non-randomized, so it now follows
- *     the same one-time-at-boot bimodal pattern as Lanes A and B.)
- * All three are real `BET_PRESETS` entries. The three lanes' possible value SETS are disjoint
- * ({1,10} / {5,50} / {25,100}), so whichever branch each lane picks, the resulting 3 stakes are
- * always mutually distinct — the "GATED_RESTER_STAKES are distinct" property below still holds,
- * it just can no longer be read off this file as a static literal (see `takerExcludeStake`'s doc
- * comment for the operational consequence of that).
- */
-const GATED_RESTER_LANE_A = Math.random() < 0.5 ? 1 : 10;
-const GATED_RESTER_LANE_B = Math.random() < 0.5 ? 5 : 50;
-const GATED_RESTER_LANE_C = Math.random() < 0.5 ? 25 : 100;
-export const GATED_RESTER_STAKES = [GATED_RESTER_LANE_A, GATED_RESTER_LANE_B, GATED_RESTER_LANE_C] as const;
+ *  Format per entry: `gameId[:N]`. `N` is optional and defaults to `1` (today's old fixed
+ *  minimum) when omitted, malformed, non-numeric, or non-positive — the same tolerant-fallback
+ *  style as `num()` further down this file: never throw on a bad env var, just fall back. */
+const takerOnlyGames: { gameId: string; weight: number }[] = (process.env.TAKER_ONLY_GAMES ?? '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
+  .map((entry) => {
+    const [gameId, weightRaw] = entry.split(':');
+    const n = weightRaw === undefined ? NaN : Number(weightRaw);
+    const weight = Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
+    return { gameId: gameId.trim(), weight };
+  });
 
 /**
  * Pool 2 — gated VM roster handles (issue #375), reserved so the gated roster (below, the
@@ -99,14 +77,20 @@ export const GATED_RESTER_STAKES = [GATED_RESTER_LANE_A, GATED_RESTER_LANE_B, GA
  * separate live processes against the same server at once, so they must never fight over one
  * account/session.
  *
- * The gated branch is built dynamically from `TAKER_ONLY_GAMES`
- * (`takerOnlyGames.flatMap(...)` below), so names are assigned by POSITION, not by game id — index
- * `i` is a pure function of a game's slot in `takerOnlyGames` and its identity's slot within that
- * game (1 taker + `GATED_RESTER_STAKES.length` resters), so the same env config produces the same
- * names on every restart without a static per-game table (robust to `TAKER_ONLY_GAMES` changing).
- * Today's real deployment always uses exactly 3 games × 4 identities = 12 names — this pool's 34
- * gives ample headroom; `% length` below is just a safety net against running off the end, not an
- * expected path.
+ * The gated branch is built dynamically from `TAKER_ONLY_GAMES` (below), so names are assigned by
+ * POSITION, not by game id — each game's identities start right after the previous game's own
+ * block ended (a running cumulative offset, issue #393; games can now have different weights, so
+ * a flat `gi * identitiesPerGame` no longer works), so the same env config produces the same names
+ * on every restart without a static per-game table (robust to `TAKER_ONLY_GAMES` changing).
+ *
+ * This pool is a hard 34-name BUDGET, not just headroom (issue #393): each game's block costs
+ * `1 + weight` names, allocated atomically in `TAKER_ONLY_GAMES` list order — the moment a game's
+ * block doesn't fit what's left, that game and every game after it in the list are dropped
+ * entirely (see the overflow handling in `ROSTER`'s gated branch below). So earlier entries in
+ * `TAKER_ONLY_GAMES` are guaranteed their full block; later entries are only as safe as the
+ * remaining budget — a real operational property of this pool's fixed size, not an edge case.
+ * `% length` in `ROSTER` below is still a safety net against off-by-one arithmetic, not an
+ * expected path once the budget accounting above is correct.
  */
 const GATED_ROSTER_NAMES = [
   'knightfall', 'tileflip', 'rockdrop', 'moonshot', 'wheelman', 'snakeeyes', 'ninepoint',
@@ -135,12 +119,19 @@ const GATED_ROSTER_NAMES = [
  *
  * NOTE: the crash/roulette/ships-battle bots only resolve via real human JOINs (no bot-vs-bot), same as the rest.
  *
- * Gated mode (TAKER_ONLY_GAMES set, issue #361) is built the same "one BotConfig entry per
- * identity" way — each of `GATED_RESTER_STAKES`'s stakes mints its own rester `Bot` instance, so
- * they rest independently (Matchmaking pairs on the exact `(gameId, stake, timeControlId)` key,
- * same reason `GUEST_BOT_STAKE_LANES` needs one identity per lane rather than one bot cycling
- * stakes). The taker's `stake` field stays 1 — it's unused for a taker (BotConfig's own doc
- * comment: a taker matches whatever the human posted), kept only for a readable startup log line.
+ * Gated mode (TAKER_ONLY_GAMES set, issue #361; weighted resters, issue #393) is built the same
+ * "one BotConfig entry per identity" way — each game gets 1 taker + `weight` resters, each rester
+ * minting its own `Bot` instance at its own `randStake()` draw so they rest independently
+ * (Matchmaking pairs on the exact `(gameId, stake, timeControlId)` key, same reason
+ * `GUEST_BOT_STAKE_LANES` needs one identity per lane rather than one bot cycling stakes; two
+ * resters landing on the same stake is fine — just two independent open challenges). The taker's
+ * `stake` field stays 1 — it's unused for a taker (BotConfig's own doc comment: a taker matches
+ * whatever the human posted), kept only for a readable startup log line.
+ *
+ * Overflow (issue #393): games are allocated against `GATED_ROSTER_NAMES`'s 34-name budget
+ * atomically, in `TAKER_ONLY_GAMES` list order — see the loop below and `GATED_ROSTER_NAMES`'s own
+ * doc comment for the exact rule (drop-the-rest-on-first-overflow, logged once, never a partial
+ * block).
  *
  * Names (issue #375): every literal below is a human-sounding handle from Pool 1 (see the issue),
  * one per entry, `${BOT_PREFIX}@<handle>` shaped. The gated branch instead pulls from
@@ -148,29 +139,58 @@ const GATED_ROSTER_NAMES = [
  * the two rosters never collide on a username even run as separate live processes at once.
  */
 export const ROSTER: BotConfig[] = takerOnlyGames.length
-  ? takerOnlyGames.flatMap((g, gi) => {
-      const chessControl = g === 'chess' ? { timeControlId: 'rapid10' as const } : {};
-      const identitiesPerGame = 1 + GATED_RESTER_STAKES.length;
-      const base = gi * identitiesPerGame;
-      const gatedName = (offset: number) =>
-        `${BOT_PREFIX}@${GATED_ROSTER_NAMES[(base + offset) % GATED_ROSTER_NAMES.length]}`;
-      return [
-        {
-          name: gatedName(0),
-          gameId: g,
-          stake: 1,
-          policy: 'taker' as const,
-          ...chessControl,
-        },
-        ...GATED_RESTER_STAKES.map((stake, si) => ({
-          name: gatedName(1 + si),
-          gameId: g,
-          stake,
-          policy: 'rester' as const,
-          ...chessControl,
-        })),
-      ];
-    })
+  ? (() => {
+      // Atomic, budget-aware allocation in list order (issue #393): the instant a game's block
+      // (1 taker + its weight resters) would overflow the remaining GATED_ROSTER_NAMES budget,
+      // that game AND every game after it in TAKER_ONLY_GAMES are dropped entirely — never a
+      // partial block (no taker-less rester, no rester-less taker). Kept games are computed with
+      // a running cumulative `base` offset BEFORE any drop decision, so a later game overflowing
+      // never changes an earlier (kept) game's identities/names.
+      const kept: { gameId: string; weight: number; base: number }[] = [];
+      const dropped: string[] = [];
+      let used = 0;
+      let overflowed = false;
+      for (const { gameId, weight } of takerOnlyGames) {
+        if (!overflowed) {
+          const blockSize = 1 + weight;
+          if (used + blockSize <= GATED_ROSTER_NAMES.length) {
+            kept.push({ gameId, weight, base: used });
+            used += blockSize;
+            continue;
+          }
+          overflowed = true;
+        }
+        dropped.push(gameId);
+      }
+      if (dropped.length > 0) {
+        console.log(
+          `[bot-crowd] gated roster: dropped ${dropped.join(', ')} — TAKER_ONLY_GAMES exceeded the ` +
+            `${GATED_ROSTER_NAMES.length}-name gated roster budget (a budget limit, not a bug; see ` +
+            `GATED_ROSTER_NAMES's doc comment in config.ts).`,
+        );
+      }
+      return kept.flatMap(({ gameId: g, weight, base }) => {
+        const chessControl = g === 'chess' ? { timeControlId: 'rapid10' as const } : {};
+        const gatedName = (offset: number) =>
+          `${BOT_PREFIX}@${GATED_ROSTER_NAMES[(base + offset) % GATED_ROSTER_NAMES.length]}`;
+        return [
+          {
+            name: gatedName(0),
+            gameId: g,
+            stake: 1,
+            policy: 'taker' as const,
+            ...chessControl,
+          },
+          ...Array.from({ length: weight }, (_, ri) => ({
+            name: gatedName(1 + ri),
+            gameId: g,
+            stake: randStake(),
+            policy: 'rester' as const,
+            ...chessControl,
+          })),
+        ];
+      });
+    })()
   : [
   // 1 rester per game at a random stake (STAKE_SET, chosen at startup) —
   { name: `${BOT_PREFIX}@flipmaster`, gameId: 'coinflip', stake: randStake(), policy: 'rester' },
@@ -275,20 +295,21 @@ export const config = {
    * "0 = disabled" sentinel, so this has zero effect regardless of `TAKER_ALLOW_PREFIX`. The
    * always-on gated-taker VM sets this explicitly, e.g. `TAKER_EXCLUDE_STAKE=10`. Pick a value
    * that is (a) one of the app's own bet presets (`BET_PRESETS`, apps/web/src/screens/GameHub.tsx) —
-   * a real account can only ever POST a stake the UI actually offers — and (b) ideally not one
-   * `GATED_RESTER_STAKES` lands on: a resting bot-waiter sitting at the same stake would
+   * a real account can only ever POST a stake the UI actually offers — and (b) ideally not one a
+   * gated rester is likely to land on: a resting bot-waiter sitting at the same stake would
    * auto-pair with whichever reserved account posts first, defeating the whole point.
    *
-   * NOTE (issue #375, updated #384): `GATED_RESTER_STAKES` is no longer a static literal you can
-   * just read off this file and avoid — all three of its lanes are now randomized once at startup
-   * (Lane A: 1 or 10; Lane B: 5 or 50; Lane C: 25 or 100 as of #384), and together the three lanes'
-   * possible values span every non-reserved `BET_PRESETS` entry. So no single fixed
-   * `TAKER_EXCLUDE_STAKE` can be *guaranteed* distinct from the actual startup draw anymore — this
-   * is now a best-effort operator choice (e.g. `10`, still a reasonable pick), not a hard
-   * invariant enforceable at config-authoring time. If a collision does land, the exclude-stake
-   * carve-out simply degrades to "the reserved
-   * pair might get auto-taken by the resting bot instead of each other" for that one process
-   * lifetime — it does not violate ADR-010 (the rester still risks its own real funded balance).
+   * NOTE (issue #375, updated #384, #393): a gated rester's stake is no longer a small static
+   * literal set you can read off this file and avoid at all — issue #393 replaced the old
+   * fixed-3-lane `GATED_RESTER_STAKES` with a per-game, per-rester `randStake()` draw (the SAME
+   * pool the general roster's own resters draw from: `STAKE_SET` minus `HUMAN_RESERVED_STAKES`),
+   * so the possible values span every non-reserved `BET_PRESETS` entry regardless of how many
+   * resters a game has. So no single fixed `TAKER_EXCLUDE_STAKE` can be *guaranteed* distinct from
+   * every gated rester's actual startup draw — this is now a best-effort operator choice (e.g.
+   * `10`, still a reasonable pick), not a hard invariant enforceable at config-authoring time. If a
+   * collision does land, the exclude-stake carve-out simply degrades to "the reserved pair might
+   * get auto-taken by the resting bot instead of each other" for that one process lifetime — it
+   * does not violate ADR-010 (the rester still risks its own real funded balance).
    */
   takerExcludeStake: num('TAKER_EXCLUDE_STAKE', 0),
   /** Re-exposes the hoisted module const so callers can read it off `config` too. */
