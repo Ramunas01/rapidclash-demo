@@ -35,12 +35,14 @@ export interface BotConfig {
  *  people-against-people matches without a bot swooping in: takers never claim a challenge at any
  *  of these stakes (a human's bet waits for another human — see `isTakeable` in bot.ts), and
  *  resters never post at one (so every challenge at a reserved stake in the lobby is
- *  human-owned). `100` is the original, long-standing reserved tier (a real `BET_PRESETS` entry).
- *  `2` was added by issue #381: `apps/web`'s `GameHub.tsx` reaches it only via an undocumented
- *  tap-again gesture on the `1¢` preset — it is deliberately never its own `BET_PRESETS` entry, so
- *  a general-roster rester never draws it from `STAKE_SET` anyway (kept in this set purely to
- *  close the taker-claiming gap in `isTakeable`). Extend this array to reserve more tiers. */
-export const HUMAN_RESERVED_STAKES: readonly number[] = [2, 100];
+ *  human-owned). `100` was the original, long-standing reserved tier (a real `BET_PRESETS` entry),
+ *  but issue #384 released it back to bots now that `2` (issue #381) covers the "reserved for
+ *  human-only testing" role on its own — `2` is the sole remaining entry. `2` reaches
+ *  `apps/web`'s `GameHub.tsx` only via an undocumented tap-again gesture on the `1¢` preset — it is
+ *  deliberately never its own `BET_PRESETS` entry, so a general-roster rester never draws it from
+ *  `STAKE_SET` anyway (kept in this set purely to close the taker-claiming gap in `isTakeable`).
+ *  Extend this array to reserve more tiers. */
+export const HUMAN_RESERVED_STAKES: readonly number[] = [2];
 
 /** Stakes a rester picks from (the UI bet presets, minus the human-reserved tiers). Each rester is
  *  assigned ONE random stake at startup — varied bets across games, without needing two bots per game. */
@@ -59,8 +61,8 @@ const takerOnlyGames = (process.env.TAKER_ONLY_GAMES ?? '').split(',').map((s) =
  * #361, generalizing the old single-stake-1 gated rester the same way guest mode's
  * `ensureDemoBotResting` was generalized to `GUEST_BOT_STAKE_LANES` in #351). This is the REAL
  * ledger (unlike guest mode's isolated one), so — per the advisor spec's own reasoning ("bet 1¢,
- * so drift is tiny — free insurance") — keep these modest: small, distinct, well under
- * `HUMAN_RESERVED_STAKES` (`[2, 100]`, which stay untouched by any bot either way).
+ * so drift is tiny — free insurance") — keep these modest: small, distinct, and clear of
+ * `HUMAN_RESERVED_STAKES` (`[2]` as of issue #384, which stays untouched by any bot either way).
  *
  * These resters are NOT allowlist-gated (unlike the gated taker) — a resting bot-waiter is
  * already safe for any real player to see and JOIN, the existing, already-charter-safe point of
@@ -75,16 +77,19 @@ const takerOnlyGames = (process.env.TAKER_ONLY_GAMES ?? '').split(',').map((s) =
  * the life of the process):
  *   - Lane A: 1 or 10
  *   - Lane B: 5 or 50
- *   - Lane C: 25, fixed (Owner's explicit call — not randomized)
+ *   - Lane C: 25 or 100 (issue #384: was fixed at 25 — Owner's explicit call at the time, made
+ *     while 100 was still a `HUMAN_RESERVED_STAKES` tier. Now that #384 has dropped 100 from that
+ *     set, there is no longer a reason for Lane C alone to stay non-randomized, so it now follows
+ *     the same one-time-at-boot bimodal pattern as Lanes A and B.)
  * All three are real `BET_PRESETS` entries. The three lanes' possible value SETS are disjoint
- * ({1,10} / {5,50} / {25}), so whichever branch each of Lane A/B picks, the resulting 3 stakes are
+ * ({1,10} / {5,50} / {25,100}), so whichever branch each lane picks, the resulting 3 stakes are
  * always mutually distinct — the "GATED_RESTER_STAKES are distinct" property below still holds,
  * it just can no longer be read off this file as a static literal (see `takerExcludeStake`'s doc
  * comment for the operational consequence of that).
  */
 const GATED_RESTER_LANE_A = Math.random() < 0.5 ? 1 : 10;
 const GATED_RESTER_LANE_B = Math.random() < 0.5 ? 5 : 50;
-const GATED_RESTER_LANE_C = 25;
+const GATED_RESTER_LANE_C = Math.random() < 0.5 ? 25 : 100;
 export const GATED_RESTER_STAKES = [GATED_RESTER_LANE_A, GATED_RESTER_LANE_B, GATED_RESTER_LANE_C] as const;
 
 /**
@@ -274,13 +279,14 @@ export const config = {
    * `GATED_RESTER_STAKES` lands on: a resting bot-waiter sitting at the same stake would
    * auto-pair with whichever reserved account posts first, defeating the whole point.
    *
-   * NOTE (issue #375): `GATED_RESTER_STAKES` is no longer a static literal you can just read off
-   * this file and avoid — two of its three lanes are randomized once at startup (Lane A: 1 or 10;
-   * Lane B: 5 or 50; Lane C: fixed 25), and together the three lanes' possible values span every
-   * non-reserved `BET_PRESETS` entry. So no single fixed `TAKER_EXCLUDE_STAKE` can be *guaranteed*
-   * distinct from the actual startup draw anymore — this is now a best-effort operator choice
-   * (e.g. `10`, still a reasonable pick), not a hard invariant enforceable at config-authoring
-   * time. If a collision does land, the exclude-stake carve-out simply degrades to "the reserved
+   * NOTE (issue #375, updated #384): `GATED_RESTER_STAKES` is no longer a static literal you can
+   * just read off this file and avoid — all three of its lanes are now randomized once at startup
+   * (Lane A: 1 or 10; Lane B: 5 or 50; Lane C: 25 or 100 as of #384), and together the three lanes'
+   * possible values span every non-reserved `BET_PRESETS` entry. So no single fixed
+   * `TAKER_EXCLUDE_STAKE` can be *guaranteed* distinct from the actual startup draw anymore — this
+   * is now a best-effort operator choice (e.g. `10`, still a reasonable pick), not a hard
+   * invariant enforceable at config-authoring time. If a collision does land, the exclude-stake
+   * carve-out simply degrades to "the reserved
    * pair might get auto-taken by the resting bot instead of each other" for that one process
    * lifetime — it does not violate ADR-010 (the rester still risks its own real funded balance).
    */

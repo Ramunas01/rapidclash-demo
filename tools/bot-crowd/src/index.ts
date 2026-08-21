@@ -13,6 +13,17 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** In-place Fisher-Yates shuffle. Cosmetic only (issue #384) — no crypto-strength requirement,
+ *  just enough to break up `ROSTER`'s game-by-game build order so bots don't come online in an
+ *  obviously scripted "all coinflip, then all blackjack, then all chess" batch pattern. */
+function shuffle<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
 async function main(): Promise<void> {
   const api = makeApi(config.serverUrl);
 
@@ -31,10 +42,11 @@ async function main(): Promise<void> {
   }
   const getAdminToken: AdminTokenProvider = () => adminToken;
 
-  const bots = ROSTER.map((cfg) => new Bot(cfg, api, getAdminToken));
+  const bots = shuffle(ROSTER.map((cfg) => new Bot(cfg, api, getAdminToken)));
 
-  // Bring bots online staggered so a single max-instances=1 server is never hit by a
-  // thundering herd of registrations/connections.
+  // Bring bots online staggered — in shuffled order (issue #384), so the open-challenges feed
+  // doesn't read as an obviously scripted batch-by-game sequence — so a single max-instances=1
+  // server is never hit by a thundering herd of registrations/connections.
   for (const bot of bots) {
     try {
       await bot.start();
