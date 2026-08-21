@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-21#2 — Real gap found in ADR-011: snapshot only triggers on settlement, not registration (#378, filed not yet fixed)            [OPEN]
+From: PM   Re: bot-crowd going dark again after last night's deploy
+
+Owner reported the demo-taker bots looked dead again this morning. Turned out different from #372/#373 (that fix worked correctly — bots reconnected fine): the bots' accounts had genuinely stopped existing on the live server. Root cause — `apps/server/src/index.ts` only wires `snapshotter.trigger()` to `onSettled`; a plain `/auth/register` doesn't trigger a snapshot upload at all. The bots freshly registered at ~21:40 UTC (as part of shipping #375), the app got redeployed at 21:51 (Owner's routine "please deploy"), the new revision restored from the last snapshot (21:12, pre-dating the registrations), and the bot accounts were simply gone from the restored DB — hence "balance 0" errors on their next reconnect.
+
+Confirmed via logs this did **not** touch any real user: no snapshot upload is logged between 21:12:41 and the deploy's restore, meaning nothing settled in that window — an existing user's WS session was open at the time but their account predates 21:12 (intact) and they didn't complete a match in the gap. Fixed immediately by restarting the VM's bot-crowd (bots just re-register, zero real-ledger cost).
+
+The general shape of the gap is real though: any registration (or admin-credit/reward-claim) that happens between the last settlement-triggered snapshot and the next deploy is silently lost — next time it could be a real investor's fresh signup, not disposable bots. Filed #378 with a suggested fix (trigger the same debounced snapshot on `/auth/register` success too, not just settlement) — not yet actioned, wanted this on record before touching persistence-layer code.
+
+Ask: none — FYI, immediate symptom resolved; #378 is a real-but-not-urgent follow-up whenever there's room for it.
+
 ### 2026-08-21#1 — Bot names humanized + gated resting stakes widened (#375/PR #376, shipped and deployed)            [ANSWERED]
 From: PM   Re: Designer feedback relayed by Owner, both rosters
 
