@@ -31,16 +31,21 @@ export interface BotConfig {
   timeControlId?: string;
 }
 
-/** The 100-credit tier is RESERVED for human-vs-human. Testers use it to line up people-against-
- *  people matches without a bot swooping in: takers never claim a 100-stake challenge (a human's
- *  100 bet waits for another human — see `tryTake` in bot.ts), and resters never post at 100 (so
- *  every 100 challenge in the lobby is human-owned). Change this one value to move the reserved tier. */
-export const HUMAN_RESERVED_STAKE = 100;
+/** These stake tiers are RESERVED for human-vs-human. Testers use them to line up
+ *  people-against-people matches without a bot swooping in: takers never claim a challenge at any
+ *  of these stakes (a human's bet waits for another human — see `isTakeable` in bot.ts), and
+ *  resters never post at one (so every challenge at a reserved stake in the lobby is
+ *  human-owned). `100` is the original, long-standing reserved tier (a real `BET_PRESETS` entry).
+ *  `2` was added by issue #381: `apps/web`'s `GameHub.tsx` reaches it only via an undocumented
+ *  tap-again gesture on the `1¢` preset — it is deliberately never its own `BET_PRESETS` entry, so
+ *  a general-roster rester never draws it from `STAKE_SET` anyway (kept in this set purely to
+ *  close the taker-claiming gap in `isTakeable`). Extend this array to reserve more tiers. */
+export const HUMAN_RESERVED_STAKES: readonly number[] = [2, 100];
 
-/** Stakes a rester picks from (the UI bet presets, minus the human-reserved tier). Each rester is
+/** Stakes a rester picks from (the UI bet presets, minus the human-reserved tiers). Each rester is
  *  assigned ONE random stake at startup — varied bets across games, without needing two bots per game. */
 export const STAKE_SET = [1, 5, 10, 25, 50, 100] as const;
-const RESTER_STAKES = STAKE_SET.filter((s) => s !== HUMAN_RESERVED_STAKE);
+const RESTER_STAKES = STAKE_SET.filter((s) => !HUMAN_RESERVED_STAKES.includes(s));
 const randStake = (): number => RESTER_STAKES[Math.floor(Math.random() * RESTER_STAKES.length)];
 
 /** When set (e.g. TAKER_ONLY_GAMES=coinflip,blackjack,chess), ROSTER becomes a gated, on-duty
@@ -55,7 +60,7 @@ const takerOnlyGames = (process.env.TAKER_ONLY_GAMES ?? '').split(',').map((s) =
  * `ensureDemoBotResting` was generalized to `GUEST_BOT_STAKE_LANES` in #351). This is the REAL
  * ledger (unlike guest mode's isolated one), so — per the advisor spec's own reasoning ("bet 1¢,
  * so drift is tiny — free insurance") — keep these modest: small, distinct, well under
- * `HUMAN_RESERVED_STAKE` (100, which stays untouched by any bot either way).
+ * `HUMAN_RESERVED_STAKES` (`[2, 100]`, which stay untouched by any bot either way).
  *
  * These resters are NOT allowlist-gated (unlike the gated taker) — a resting bot-waiter is
  * already safe for any real player to see and JOIN, the existing, already-charter-safe point of

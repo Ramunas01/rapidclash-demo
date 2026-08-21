@@ -56,9 +56,12 @@ describe('isTakeable — general (fully ungated) behaviour is unaffected', () =>
     expect(isTakeable(challenge({ ownerName: `${BOT_PREFIX}SomeBot`, stake: 5 }))).toBe(false);
   });
 
-  it('never claims a HUMAN_RESERVED_STAKE (100) challenge, gated or not', async () => {
+  it('never claims a HUMAN_RESERVED_STAKES (2 or 100) challenge, gated or not', async () => {
     const { isTakeable } = await loadBot({ TAKER_ALLOW_PREFIX: '' });
     expect(isTakeable(challenge({ ownerName: 'AnyHuman', stake: 100 }))).toBe(false);
+    // Issue #381: 2 is reserved the exact same way 100 already was — a human's tap-again gesture
+    // on the 1¢ preset (apps/web/src/screens/GameHub.tsx) must never get sniped by a taker bot.
+    expect(isTakeable(challenge({ ownerName: 'AnyHuman', stake: 2 }))).toBe(false);
   });
 
   it('TAKER_EXCLUDE_STAKE defaults to 0 (no-op) — every non-reserved stake stays claimable', async () => {
@@ -112,7 +115,7 @@ describe('isTakeable — gated mode (TAKER_ALLOW_PREFIX set, issue #368)', () =>
     }
   });
 
-  it('claims ANY stake a Demo*-prefixed account posts (not just a fixed 1) except the excluded one and HUMAN_RESERVED_STAKE', async () => {
+  it('claims ANY stake a Demo*-prefixed account posts (not just a fixed 1) except the excluded one and HUMAN_RESERVED_STAKES', async () => {
     const { isTakeable } = await loadBot({
       TAKER_ALLOW_PREFIX: 'Demo',
       TAKER_EXCLUDE_STAKE: '10',
@@ -122,6 +125,7 @@ describe('isTakeable — gated mode (TAKER_ALLOW_PREFIX set, issue #368)', () =>
     }
     expect(isTakeable(challenge({ ownerName: 'DemoInvestor1', stake: 10 }))).toBe(false); // excluded
     expect(isTakeable(challenge({ ownerName: 'DemoInvestor1', stake: 100 }))).toBe(false); // human-reserved
+    expect(isTakeable(challenge({ ownerName: 'DemoInvestor1', stake: 2 }))).toBe(false); // human-reserved (issue #381)
   });
 
   it('TAKER_STAKE, when also set, still narrows a gated taker to one exact stake', async () => {

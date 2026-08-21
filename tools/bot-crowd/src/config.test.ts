@@ -114,14 +114,29 @@ describe('bot name pools stay disjoint across rosters (issue #375)', () => {
   });
 });
 
+describe('HUMAN_RESERVED_STAKES (issue #381: generalized from the single HUMAN_RESERVED_STAKE=100)', () => {
+  it('is exactly [2, 100] — 2 (issue #381, apps/web tap-again gesture) alongside the original 100', async () => {
+    const { HUMAN_RESERVED_STAKES } = await loadConfig({});
+    expect([...HUMAN_RESERVED_STAKES]).toEqual([2, 100]);
+  });
+
+  it("the general (non-gated) roster's rester stake pool never includes a HUMAN_RESERVED_STAKES value — 2 is excluded exactly like 100 already was", async () => {
+    const { ROSTER, HUMAN_RESERVED_STAKES } = await loadConfig({ TAKER_ONLY_GAMES: undefined });
+    const resterStakes = ROSTER.filter((b) => b.policy === 'rester').map((b) => b.stake);
+    expect(resterStakes.length).toBeGreaterThan(0);
+    for (const stake of resterStakes) expect(HUMAN_RESERVED_STAKES.includes(stake)).toBe(false);
+  });
+});
+
 describe('GATED_RESTER_STAKES (issue #375: 3 lanes, 2 randomized once at startup)', () => {
-  it('is a small, distinct, modest stake set below HUMAN_RESERVED_STAKE (real ledger — kept low)', async () => {
-    const { GATED_RESTER_STAKES, HUMAN_RESERVED_STAKE } = await loadConfig({});
+  it('is a small, distinct, modest stake set below the top HUMAN_RESERVED_STAKES tier (100) — and never lands on the OTHER reserved tier (2) either (issue #381)', async () => {
+    const { GATED_RESTER_STAKES, HUMAN_RESERVED_STAKES } = await loadConfig({});
     expect(GATED_RESTER_STAKES.length).toBe(3);
     expect(new Set(GATED_RESTER_STAKES).size).toBe(GATED_RESTER_STAKES.length); // all distinct
     for (const stake of GATED_RESTER_STAKES) {
       expect(stake).toBeGreaterThan(0);
-      expect(stake).toBeLessThan(HUMAN_RESERVED_STAKE);
+      expect(stake).toBeLessThan(100);
+      expect(HUMAN_RESERVED_STAKES.includes(stake)).toBe(false);
     }
   });
 

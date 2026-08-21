@@ -914,13 +914,20 @@ function PlayPanel({
               type="button"
               disabled={frozen}
               data-testid={`hub-bet-${v}`}
-              onClick={() => onArm(v)}
+              // #381: the 1¢ preset is special-cased to reach the undocumented, bot-excluded
+              // stake of 2 (tools/bot-crowd's HUMAN_RESERVED_STAKES) via a tap-again gesture —
+              // tapping again while 1 is armed arms 2; tapping again while 2 is armed toggles
+              // back to 1. Every other preset keeps its plain onArm(v). 2 is never its own
+              // BET_PRESETS entry / grid button — only reachable through this one button's state.
+              onClick={v === 1 ? () => onArm(armedStake === 1 ? 2 : 1) : () => onArm(v)}
               className={cn(
                 'rounded-lg py-2.5 text-center text-[13px] font-bold tabular-nums transition-colors',
-                armedStake === v ? 'bg-brand text-white' : 'bg-background text-muted-foreground hover:text-foreground',
+                armedStake === v || (v === 1 && armedStake === 2)
+                  ? 'bg-brand text-white'
+                  : 'bg-background text-muted-foreground hover:text-foreground',
               )}
             >
-              <Credits amount={v} />
+              <Credits amount={v === 1 && armedStake === 2 ? 2 : v} />
             </button>
           ))}
         </div>

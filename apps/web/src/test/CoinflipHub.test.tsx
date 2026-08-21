@@ -116,6 +116,61 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     expect(onPlay).toHaveBeenCalledWith(10);
   });
 
+  // Issue #381: tap-again on the 1¢ preset reaches the undocumented, bot-excluded stake of 2
+  // (tools/bot-crowd's HUMAN_RESERVED_STAKES) — reserved for human-only testing. `2` is never its
+  // own preset button; it's only reachable through hub-bet-1's own toggling state.
+  describe('#381: tap-again on the 1¢ preset arms the reserved stake 2', () => {
+    it('a single tap arms 1 (regression guard)', () => {
+      render(<CoinflipHubScreen {...baseProps()} />);
+      fireEvent.click(screen.getByTestId('hub-bet-1'));
+      const preset = screen.getByTestId('hub-bet-1');
+      expect(preset.textContent).toBe('RC1');
+      expect(preset.className).toContain('bg-brand');
+    });
+
+    it('a second consecutive tap arms 2 (button now shows 2, highlighted)', () => {
+      render(<CoinflipHubScreen {...baseProps()} />);
+      fireEvent.click(screen.getByTestId('hub-bet-1'));
+      fireEvent.click(screen.getByTestId('hub-bet-1'));
+      const preset = screen.getByTestId('hub-bet-1');
+      expect(preset.textContent).toBe('RC2');
+      expect(preset.className).toContain('bg-brand');
+    });
+
+    it('a third tap (while at 2) toggles back to 1', () => {
+      render(<CoinflipHubScreen {...baseProps()} />);
+      fireEvent.click(screen.getByTestId('hub-bet-1'));
+      fireEvent.click(screen.getByTestId('hub-bet-1'));
+      fireEvent.click(screen.getByTestId('hub-bet-1'));
+      const preset = screen.getByTestId('hub-bet-1');
+      expect(preset.textContent).toBe('RC1');
+      expect(preset.className).toContain('bg-brand');
+    });
+
+    it('tapping a different preset then tapping hub-bet-1 again arms 1 fresh (does not jump to 2)', () => {
+      render(<CoinflipHubScreen {...baseProps()} />);
+      fireEvent.click(screen.getByTestId('hub-bet-1'));
+      fireEvent.click(screen.getByTestId('hub-bet-1')); // now armed at 2
+      fireEvent.click(screen.getByTestId('hub-bet-10')); // a different preset resets the gesture
+      fireEvent.click(screen.getByTestId('hub-bet-1')); // fresh tap on 1
+      const preset = screen.getByTestId('hub-bet-1');
+      expect(preset.textContent).toBe('RC1');
+      expect(preset.className).toContain('bg-brand');
+      expect(screen.getByTestId('hub-bet-10').className).not.toContain('bg-brand');
+    });
+
+    it('2 never appears as its own preset button in the grid', () => {
+      render(<CoinflipHubScreen {...baseProps()} />);
+      expect(screen.queryByTestId('hub-bet-2')).toBeNull();
+      fireEvent.click(screen.getByTestId('hub-bet-1'));
+      fireEvent.click(screen.getByTestId('hub-bet-1')); // armed at 2
+      expect(screen.queryByTestId('hub-bet-2')).toBeNull(); // still no separate grid entry
+      // The "Bet amount" readout reflects the armed 2, and it's the hub-bet-1 slot doing the display.
+      const betSection = screen.getByTestId('hub-section-bet');
+      expect(within(betSection).getAllByText('2', { exact: true }).length).toBeGreaterThan(0);
+    });
+  });
+
   it('#143: PLAY with no bet armed guides to the bet panel (no match starts); arming clears the cue, no auto-play', () => {
     const scrollSpy = vi.fn();
     Element.prototype.scrollIntoView = scrollSpy;
