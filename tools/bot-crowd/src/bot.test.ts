@@ -56,17 +56,21 @@ describe('isTakeable — general (fully ungated) behaviour is unaffected', () =>
     expect(isTakeable(challenge({ ownerName: `${BOT_PREFIX}SomeBot`, stake: 5 }))).toBe(false);
   });
 
-  it('never claims a HUMAN_RESERVED_STAKES (2 or 100) challenge, gated or not', async () => {
+  it('never claims a HUMAN_RESERVED_STAKES (2) challenge, gated or not', async () => {
     const { isTakeable } = await loadBot({ TAKER_ALLOW_PREFIX: '' });
-    expect(isTakeable(challenge({ ownerName: 'AnyHuman', stake: 100 }))).toBe(false);
-    // Issue #381: 2 is reserved the exact same way 100 already was — a human's tap-again gesture
-    // on the 1¢ preset (apps/web/src/screens/GameHub.tsx) must never get sniped by a taker bot.
+    // Issue #381: 2 is reserved — a human's tap-again gesture on the 1¢ preset
+    // (apps/web/src/screens/GameHub.tsx) must never get sniped by a taker bot.
     expect(isTakeable(challenge({ ownerName: 'AnyHuman', stake: 2 }))).toBe(false);
+  });
+
+  it('claims a stake-100 challenge — issue #384 un-reserved it now that 2 alone covers human-only testing', async () => {
+    const { isTakeable } = await loadBot({ TAKER_ALLOW_PREFIX: '' });
+    expect(isTakeable(challenge({ ownerName: 'AnyHuman', stake: 100 }))).toBe(true);
   });
 
   it('TAKER_EXCLUDE_STAKE defaults to 0 (no-op) — every non-reserved stake stays claimable', async () => {
     const { isTakeable } = await loadBot({ TAKER_EXCLUDE_STAKE: undefined, TAKER_ALLOW_PREFIX: '' });
-    for (const stake of [1, 5, 10, 25, 50]) {
+    for (const stake of [1, 5, 10, 25, 50, 100]) {
       expect(isTakeable(challenge({ ownerName: 'AnyHuman', stake }))).toBe(true);
     }
   });
@@ -120,11 +124,10 @@ describe('isTakeable — gated mode (TAKER_ALLOW_PREFIX set, issue #368)', () =>
       TAKER_ALLOW_PREFIX: 'Demo',
       TAKER_EXCLUDE_STAKE: '10',
     });
-    for (const stake of [1, 5, 25, 50]) {
+    for (const stake of [1, 5, 25, 50, 100]) {
       expect(isTakeable(challenge({ ownerName: 'DemoInvestor1', stake }))).toBe(true);
     }
     expect(isTakeable(challenge({ ownerName: 'DemoInvestor1', stake: 10 }))).toBe(false); // excluded
-    expect(isTakeable(challenge({ ownerName: 'DemoInvestor1', stake: 100 }))).toBe(false); // human-reserved
     expect(isTakeable(challenge({ ownerName: 'DemoInvestor1', stake: 2 }))).toBe(false); // human-reserved (issue #381)
   });
 
@@ -154,9 +157,9 @@ describe('hasSufficientFunds — top-up threshold scales with the actual claimed
     expect(hasSufficientFunds(5, 1)).toBe(true); // 5 >= 5 (boundary, inclusive)
   });
 
-  it('scales correctly across the new wider stake range up to just under HUMAN_RESERVED_STAKE', async () => {
+  it('scales correctly across the full non-reserved stake range', async () => {
     const { hasSufficientFunds } = await loadBot({});
-    for (const stake of [1, 5, 10, 25, 50]) {
+    for (const stake of [1, 5, 10, 25, 50, 100]) {
       expect(hasSufficientFunds(stake * 5, stake)).toBe(true); // exactly at threshold
       expect(hasSufficientFunds(stake * 5 - 1, stake)).toBe(false); // just under
     }

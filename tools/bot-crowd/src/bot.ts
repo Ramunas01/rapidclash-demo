@@ -83,7 +83,7 @@ function shipsBattleMove(moves: Move[]): Move | null {
 
 /**
  * Would a taker claim this open challenge? Never another bot's own posting (BOT_PREFIX), never a
- * `HUMAN_RESERVED_STAKES` (`[2, 100]`) challenge — those tiers are reserved for human-vs-human —
+ * `HUMAN_RESERVED_STAKES` (`[2]` as of issue #384) challenge — that tier is reserved for human-vs-human —
  * and never `config.takerExcludeStake` (issue #362: the one stake two `Demo*`-prefixed reserved
  * accounts can deliberately pair with each other on, undisturbed; `0` = no stake excluded, a
  * no-op). Combined with the existing `TAKER_STAKE` (`0` = any stake) and `TAKER_ALLOW_PREFIX`

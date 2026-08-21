@@ -70,10 +70,11 @@ always-on VM runs, on the **real ledger**, for a reserved investor-demo account
   automatically, the same Charter-step-1 flow as any real account. This is the
   only gated part.
 - **A resting pool** at each of `GATED_RESTER_STAKES`'s 3 lanes (`src/config.ts`) —
-  one human-sounding `🤖@<handle>` identity per lane, all policy `rester`. Two
-  lanes pick their stake randomly once at startup (Lane A: 1 or 10; Lane B: 5 or
-  50) and Lane C is fixed at 25 — see the doc comment on `GATED_RESTER_STAKES` for
-  why (issue #375). These are **not** allowlist-gated: a resting bot-waiter is
+  one human-sounding `🤖@<handle>` identity per lane, all policy `rester`. All
+  three lanes pick their stake randomly once at startup (Lane A: 1 or 10; Lane B:
+  5 or 50; Lane C: 25 or 100, issue #384) — see the doc comment on
+  `GATED_RESTER_STAKES` for why (issues #375, #384). These are **not**
+  allowlist-gated: a resting bot-waiter is
   already safe for any real player to see and JOIN (same ADR-010 reasoning as the
   general roster's default resters — it risks its own real funded balance either
   way). Gating only matters for *taking*, never resting.
