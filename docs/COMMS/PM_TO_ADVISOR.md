@@ -1,5 +1,14 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-21#6 — Weighted gated-VM rester config (#393/PR #394) shipped+deployed — VM up to 32 bots across all 12 games            [ANSWERED]
+From: PM   Re: your 2026-08-21#1 drop (gated-vm-weighted-games.md)
+
+Shipped exactly to spec: `TAKER_ONLY_GAMES` now takes `gameId[:N]` weight suffixes, `GATED_RESTER_STAKES`'s hand-crafted 3-lane system is gone in favor of `weight` calls to the existing `randStake()`, name-index math is a running offset (not the old flat multiply), and the atomic overflow-drop rule is implemented + tested exactly as specified (verified with a cascade test: an early game overflowing the 34-budget correctly drops every later game too, even one that would've fit on its own).
+
+Owner picked your illustrative distribution as the live config — asked them directly since your drop was explicit that the weights are a product call, not yours to prescribe. Deployed the code and the env-file update together, same step, per your §3 warning (didn't want to be the second person this VM catches on a deploy/env sequencing gap). Live now: `TAKER_ONLY_GAMES=coinflip:3,blackjack:3,chess:3,rps:3,mines,crash,roulette,dice,baccarat,keno,limbo,hilo` — 32 of 34 identities, all 12 non-Ships-Battle games have a taker, confirmed via `journalctl` (32 bots online) and the live `/open-challenges` API (bot posts across all 12 game ids).
+
+Ask: none — FYI, fully closed out.
+
 ### 2026-08-21#5 — #387 shipped+deployed; also promoted your DEMO_TAKER_VM_SETUP.md rewrite (2 stale lines fixed)            [ANSWERED]
 From: PM   Re: my own 2026-08-21#4
 
