@@ -213,3 +213,37 @@ describe('GameHub (logged out — via RpsHub)', () => {
     expect(screen.getByTestId('hub-play')).toBeEnabled(); // pre-armed → PLAY ready immediately
   });
 });
+
+// Issue #387: RPS's entire round IS the server's fixed 10s pick window (PICK_WINDOW_MS, resolves
+// ONLY at expiry — never early). GameHub's ~2.4s "Searching…" dwell floor, applied by default to
+// every hub game, was burning a chunk of that window before the throw buttons even rendered — in
+// the worst case the window could elapse with the player never seeing them. RPS now passes
+// `searchFloorMs={0}` so `phase` reaches 'in-match' (and the throw buttons render) the instant
+// `currentMatchId` is set, with no artificial hold at all.
+describe('RpsHubScreen — search dwell floor bypassed (#387)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/games') || u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
+      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+    }));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('phase reaches in-match (throw buttons visible) the INSTANT currentMatchId is set — no 2.4s dwell', () => {
+    const onPlay = vi.fn();
+    const { rerender } = render(<RpsHubScreen {...baseProps({ initialStake: 10, onPlay })} />);
+    fireEvent.click(screen.getByTestId('hub-play')); // arms the search dwell start (searchStartRef)
+    expect(onPlay).toHaveBeenCalledWith(10);
+
+    // The server pairs the match immediately (as can genuinely happen) — rerender with a live match
+    // and NO fake-timer advance at all. Under the default 2400ms floor this would still read
+    // 'waiting' (no throw buttons); with searchFloorMs=0 the hold never arms.
+    const gameState: RpsView = { players: ['pid', 'bob'], choices: {} };
+    rerender(<RpsHubScreen {...baseProps({ initialStake: 10, onPlay, currentMatchId: 'm1', gameState })} />);
+
+    expect(screen.getByTestId('hub-move-rock')).toBeInTheDocument();
+    expect(screen.getByTestId('hub-move-paper')).toBeInTheDocument();
+    expect(screen.getByTestId('hub-move-scissors')).toBeInTheDocument();
+  });
+});

@@ -153,6 +153,11 @@ export function RpsHubScreen(props: GameHubScreenProps) {
       gameName="Rock Paper Scissors"
       renderGameArea={RpsPanel}
       renderResultReveal={RpsReveal}
+      // #387: RPS's entire round IS the server's fixed 10s pick window (PICK_WINDOW_MS, resolves
+      // ONLY at expiry) — the default ~2.4s "Searching…" dwell floor could burn enough of it that
+      // the throw buttons never render before the window elapses. Zero hold here maximizes the
+      // player's real share of that window; every other hub game keeps the default.
+      searchFloorMs={0}
       {...props}
     />
   );

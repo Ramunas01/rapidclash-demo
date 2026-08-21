@@ -742,6 +742,33 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       }
     });
   });
+
+  // Regression guard for issue #387: GameHub's `searchFloorMs` prop now defaults to 2400 when a
+  // hub omits it (byte-identical to the old hardcoded SEARCH_FLOOR_MS constant). Blackjack has a
+  // generous timer budget so it deliberately does NOT opt into `searchFloorMs={0}` — this proves
+  // the default dwell floor still holds for a game that doesn't pass the new prop.
+  it('#387 regression: default 2.4s "Searching…" dwell floor still holds — phase stays waiting until it elapses', async () => {
+    vi.useFakeTimers();
+    try {
+      const gameState = inPlayView();
+      const { rerender } = render(<BlackjackHubScreen {...baseProps({ initialStake: 10 })} />);
+      fireEvent.click(screen.getByTestId('hub-play')); // arms the search dwell start (searchStartRef)
+
+      // The server pairs the match immediately — rerender with a live match right away.
+      rerender(<BlackjackHubScreen {...baseProps({ initialStake: 10, currentMatchId: 'm1', gameState, legalMoves: [] })} />);
+
+      // Still within the floor: the board must NOT show the in-match hands yet (own-hand/opp-hand
+      // only render once phase reaches 'in-match'), unchanged from before this fix.
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      expect(screen.queryByTestId('own-hand')).toBeNull();
+
+      // Just past the 2400ms floor, phase flips to in-match and the hands render.
+      await act(async () => { await vi.advanceTimersByTimeAsync(1450); });
+      expect(screen.getByTestId('own-hand')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 // Issue #297: the guest chrome gates (hidden wallet/Open Games/related/footer/nav, locked bet
