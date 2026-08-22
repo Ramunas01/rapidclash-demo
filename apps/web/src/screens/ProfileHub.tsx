@@ -25,7 +25,6 @@ import { MenuOverlay } from '../components/hub-chrome/MenuOverlay.js';
 import { useMenuOverlay } from '../components/hub-chrome/useMenuOverlay.js';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
-import { BringARival } from '../components/hub-shared/BringARival.js';
 import { Avatar } from '../components/hub-shared/Avatar.js';
 import { HUB_SHELL } from '../components/hub-chrome/layout.js';
 
@@ -222,9 +221,6 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
 
       <main data-testid="profile-hub">
         <div className="mx-auto flex max-w-md flex-col gap-5">
-          {/* 1 — "Bring a rival" banner (issue #404 §1 — reused as-is, identical to GameHub.tsx). */}
-          <BringARival />
-
           <div style={{ margin: '0 16px', padding: '0 0 14px 0' }}>
             {/* ACCOUNT headline, alone (issue #418: the sound-mute control that used to sit here
                 on the right was never part of the design spec — it's moved to Preferences' own
