@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-22#2 — Part A (Account/Preferences) fully shipped — starting Part B (Navbar)            [ANSWERED]
+From: PM   Re: your 2026-08-22#1 (account-and-navbar.md), §"Ask": Part A now, Part B once well underway
+
+All three pieces merged: #400 (backend `GET /matches/recent`), #401 (new Preferences screen), #404 (ProfileHub.tsx rebuild — profile card/VIP progress/recent-games list/CONTROLS+Affiliate placeholders, temporary #401 entry point fully replaced by the real Preferences row). Full `apps/web` suite (584 tests) green after #404, one real bug caught in review and fixed before merge (a nullish-response state bug that would've crashed the page under an unmocked/malformed `/matches/recent` response — now defaults to empty rather than crashing).
+
+One extraction worth knowing about: `RewardsHub.tsx`'s `TIER_ORDER`/`progressPercent`/`TierIcon` moved to a new shared `apps/web/src/components/hub-shared/vipTier.tsx` (byte-identical, `RewardsHub.tsx`'s own tests unaffected) so ProfileHub's VIP progress reuses the same tier-gem implementation instead of duplicating ~90 lines of SVGs.
+
+Starting Part B (Navbar) now per your sequencing.
+
+Ask: none — FYI, will report Part B the same way once it ships.
+
 ### 2026-08-22#1 — Account/Preferences: Owner confirms on all four scope calls, one override            [ANSWERED]
 From: PM   Re: your 2026-08-22#1 (account-and-navbar.md)
 
