@@ -138,6 +138,22 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
 
   useEffect(() => { setLiveBalance(balance); }, [balance]);
 
+  // Issue found live 2026-08-22: the App-level `balance` prop is only ever set from a fresh
+  // login/register response or a match.end settlement — App.tsx has no independent /wallet
+  // refetch anywhere. On a resumed session (reload with an already-stored token, no fresh
+  // login/register round-trip) `balance` can sit at its initial 0 until a match settles. The OLD
+  // ProfileHub.tsx masked this by always fetching `api.wallet(token)` on mount (originally to
+  // populate the ledger-entries list, dropped with #404's redesign) — that fetch's SIDE EFFECT of
+  // keeping this page's balance fresh was lost along with it. Re-fetch just the balance here
+  // (not the ledger entries, which stay gone on purpose) so visiting Account is never the one
+  // screen that can show a stale/zero balance regardless of what the App-level state happens to
+  // be at that moment.
+  useEffect(() => {
+    let alive = true;
+    api.wallet(token).then((w) => { if (alive) setLiveBalance(w.balance); }).catch(() => {});
+    return () => { alive = false; };
+  }, [token]);
+
   useEffect(() => {
     let alive = true;
     api.rewards(token).then((r) => { if (alive) setSnapshot(r); }).catch(() => {});

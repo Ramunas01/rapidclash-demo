@@ -41,11 +41,12 @@ function matchesFetchResponse(url: string) {
   return { matches: ALL_MATCHES.slice(offset, offset + limit), limit, offset, total: ALL_MATCHES.length };
 }
 
-function stubDefaultFetch() {
+function stubDefaultFetch(walletBalance = 1009) {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     const u = String(url);
     if (u.includes('/rewards')) return { ok: true, json: async () => REWARDS } as Response;
     if (u.includes('/matches/recent')) return { ok: true, json: async () => matchesFetchResponse(u) } as Response;
+    if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: walletBalance, entries: [] }) } as Response;
     return { ok: true, json: async () => ({}) } as Response;
   }));
 }
@@ -74,6 +75,19 @@ describe('ProfileHubScreen', () => {
     expect(screen.getByTestId('profile-username').textContent).toBe('alice');
     expect(screen.getByTestId('home-rival')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId('profile-xp').textContent).toBe('17,800'));
+  });
+
+  // Regression test for a real bug found live 2026-08-22: on a resumed session, App.tsx's
+  // `balance` state can be stale/0 (it's only ever set from a fresh login/register response or a
+  // match.end settlement — there's no independent /wallet refetch at the App level). The OLD
+  // ProfileHub.tsx masked this by always fetching /wallet on mount; #404's redesign dropped that
+  // fetch along with the ledger-entries list it also powered, losing the balance-freshness side
+  // effect. This asserts the Account page's balance always reflects a fresh /wallet fetch, not
+  // whatever (possibly stale) value the `balance` prop happened to carry in.
+  it('always shows the FRESH balance from /wallet, even when the balance prop is stale/zero (#404 regression)', async () => {
+    stubDefaultFetch(940); // /wallet reports the real, current balance
+    render(<ProfileHubScreen {...baseProps({ balance: 0 })} />); // prop simulates a stale resumed session
+    await waitFor(() => expect(screen.getByTestId('hub-balance').textContent).toContain('940'));
   });
 
   it('LOG OUT is a standalone bottom pill (not nested in the profile card) and calls onLogout', () => {
@@ -149,6 +163,7 @@ describe('ProfileHubScreen', () => {
         }
         if (u.includes('/rewards')) return { ok: true, json: async () => REWARDS } as Response;
         if (u.includes('/matches/recent')) return { ok: true, json: async () => matchesFetchResponse(u) } as Response;
+        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: 1009, entries: [] }) } as Response;
         return { ok: true, json: async () => ({}) } as Response;
       }));
       const onAvatarChange = vi.fn();
@@ -223,6 +238,7 @@ describe('ProfileHubScreen', () => {
         const u = String(url);
         if (u.includes('/rewards')) return { ok: true, json: async () => REWARDS } as Response;
         if (u.includes('/matches/recent')) return { ok: true, json: async () => matchesFetchResponse(u) } as Response;
+        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: 1009, entries: [] }) } as Response;
         return { ok: true, json: async () => ({}) } as Response;
       });
       vi.stubGlobal('fetch', fetchMock);
@@ -242,6 +258,7 @@ describe('ProfileHubScreen', () => {
         const u = String(url);
         if (u.includes('/rewards')) return { ok: true, json: async () => REWARDS } as Response;
         if (u.includes('/matches/recent')) return { ok: true, json: async () => ({ matches: [], limit: 5, offset: 0, total: 0 }) } as Response;
+        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: 1009, entries: [] }) } as Response;
         return { ok: true, json: async () => ({}) } as Response;
       }));
       render(<ProfileHubScreen {...baseProps()} />);
