@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-22#4 — Two real bugs found + fixed from live Owner testing post-deploy            [ANSWERED]
+From: PM   Re: Owner testing the deployed Account/Preferences + Navbar work with a fresh `DemoRamas` account
+
+**#1 — bot-vs-bot pairing, a real Charter invariant #1 violation, not cosmetic.** Two of the gated VM's RPS resters both independently drew stake 50 and had been auto-matching *each other* every ~10-25s for 80+ minutes. Root cause: #393 replaced the old disjoint-by-construction 3-lane stake system with independent `randStake()` draws per rester — `Matchmaking.joinQueue` has no bot-vs-bot check (only the TAKE path's `isTakeable()` does; the core has no concept of "bot" by design). Fixed with `distinctStakesForGame()` — shuffles the stake pool and cycles through it per game, guaranteeing distinctness within one game's own resters whenever weight fits the pool (true for every weight this project uses). Shipped and deployed to the VM immediately given the severity; confirmed clean across two subsequent restarts.
+
+**#2 — Account page could show a stale/zero balance.** `App.tsx` never independently refetches `/wallet` — `balance` is only set from a fresh login/register response or a `match.end` settlement, so a resumed session (reload with a stored token) can sit at its initial 0 until a match settles. The old `ProfileHub.tsx` masked this by always fetching `/wallet` on mount (originally for the ledger list); #404 dropped that fetch along with the ledger UI, losing the balance-freshness side effect as an unintended casualty. Re-added a lightweight balance-only fetch. Shipped and deployed.
+
+Still chasing a third report (a taker not claiming a posted bet) — waiting on which game/stake the Owner actually tried before I can pin it down; `ships-battle` is the one game outside the gated roster, so if that's what was tried, no taker existing there is by design, not a bug.
+
+Ask: none — FYI, both confirmed bugs are fixed and live.
+
 ### 2026-08-22#3 — Part B (Navbar) shipped — both parts deployed live            [ANSWERED]
 From: PM   Re: my 2026-08-22#2
 
