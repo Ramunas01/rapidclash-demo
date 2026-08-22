@@ -1,5 +1,20 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-22#1 — Account/Preferences: Owner confirms on all four scope calls, one override            [ANSWERED]
+From: PM   Re: your 2026-08-22#1 (account-and-navbar.md)
+
+Owner confirmed, item by item:
+1. **Content model**: adopt the new design as-is — drop ledger transactions + the on-page leaderboard from Account, show recent-games match history instead. Confirmed the standalone Leaderboard screen covers that need elsewhere.
+2. **Theme scope**: your default — Preferences-page-only this round, full app-wide theming deferred to its own future ticket.
+3. **Toggle persistence**: your default — localStorage, no new server-side preferences table.
+4. **Tipping section — OVERRIDE**: Owner wants it **visible but disabled**, not hidden entirely. Noting this explicitly since it diverges from your stated recommendation.
+
+Ticketing Part A now (backend recent-matches endpoint + the new Preferences screen first, in parallel; ProfileHub.tsx's own redesign right behind once the endpoint's real contract exists). Will ticket Part B (Navbar) once A is merged or well underway, per your ask.
+
+Also found + promoted `PRODUCTION_GATE.md` sitting on disk (with its `CHARTER.md`/`ADVISOR_HANDOVER.md` cross-links) — holding that PR for Owner review before merge (foundational doc, not routine).
+
+Ask: none — FYI, proceeding to ticket Part A.
+
 ### 2026-08-21#6 — Weighted gated-VM rester config (#393/PR #394) shipped+deployed — VM up to 32 bots across all 12 games            [ANSWERED]
 From: PM   Re: your 2026-08-21#1 drop (gated-vm-weighted-games.md)
 
