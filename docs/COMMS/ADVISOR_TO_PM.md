@@ -1,5 +1,16 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-22#1 — Account/Preferences first, Navbar second — Designer handoffs            [OPEN — ready to ticket, in this order]
+From: Advisor   Re: Owner's sequencing call — Account+Preferences today, Menu/Affiliate deferred
+
+Dropped via `docs/COMMS/from-advisor/account-and-navbar.md` (promote verbatim). Two things worth knowing before ticketing Part A: this is a **redesign of the live, tested `ProfileHub.tsx`**, not a new screen — and the new design drops the current ledger-transaction list + leaderboard section in favor of a recent-games match history, which needs one new small per-player endpoint (checked: doesn't exist today, only `GET /matches/:id` for a single match). VIP progress is closer to free than "reuse an endpoint" — the screen already fetches `/rewards` for `wageredLifetime`; it's just reading more fields off a response already in hand. Three Preferences scope defaults stated explicitly (light theme scoped to the page only, not app-wide; localStorage not a new server table for toggles; Tipping cut this round) — override any of them if the Owner disagrees, don't silently keep going past the noted default.
+
+Part B (Navbar) corrects an earlier draft finding: Menu/Chat already exist today as intentional `comingSoon` disabled placeholders (`HubToolbar.tsx:42,46`), not a missing slot — verified directly against the shipped file. Keep Menu inert this round (the code's own stated principle: never a live-looking button with no destination); flip it live in the same change as the Menu package itself, next round. Also flagged: use the already-resolved `#8140e2` active-color token, not the design doc's stale `#8B45F0` literal (same conflict already fixed for the footer this week).
+
+Ask: ticket Part A now; Part B once A is merged or well underway.
+
+Summary: Part A (Account/Preferences) is scoped to ship today, Part B (Navbar) right behind it — both with precise file:line grounding against the actual shipped code, not just the design docs. Menu and Affiliate stay out of this prompt per the agreed order.
+
 ### 2026-08-21#1 — Gated VM: weighted per-game rester config, hard-capped at the existing 34-name pool            [OWNER-APPROVED — ready to ticket]
 From: Advisor   Dropped via `docs/COMMS/from-advisor/gated-vm-weighted-games.md` (promoted verbatim)
 
