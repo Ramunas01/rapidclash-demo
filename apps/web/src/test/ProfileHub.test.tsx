@@ -69,11 +69,19 @@ describe('ProfileHubScreen', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it('shows the profile card (alias + avatar) and the Bring a Rival banner', async () => {
+  it('shows the profile card (alias + avatar)', async () => {
     render(<ProfileHubScreen {...baseProps()} />);
     expect(screen.getByTestId('profile-username').textContent).toBe('alice');
-    expect(screen.getByTestId('home-rival')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId('profile-xp').textContent).toBe('17,800'));
+  });
+
+  // Regression for a docs/code correction confirmed 2026-08-23: the design README previously
+  // (incorrectly) listed a "Bring a rival" banner as the Account screen's block 1. The approved
+  // prototype (`Account Page.dc.html`) never renders it inside `isAccount` — only inside
+  // `isGames`/`isRewards` — and the company manager confirmed no banner belongs here.
+  it('does not render the Bring a Rival banner (docs/code correction, 2026-08-23)', () => {
+    render(<ProfileHubScreen {...baseProps()} />);
+    expect(screen.queryByTestId('home-rival')).toBeNull();
   });
 
   // Regression test for a real bug found live 2026-08-22: on a resumed session, App.tsx's
