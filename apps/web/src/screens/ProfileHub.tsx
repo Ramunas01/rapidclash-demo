@@ -8,6 +8,7 @@ import {
   LogOut,
   Receipt,
   RotateCcw,
+  Settings,
   Sparkles,
   Trophy,
   Wallet as WalletIcon,
@@ -43,6 +44,11 @@ interface Props {
   onOpenProfile(): void;
   /** Rewards tab → the VIP/Rewards hub (issue #307). */
   onOpenRewards(): void;
+  /** Issue #401: navigates to the new Preferences screen. Temporary entry point — this header
+   *  icon button stands in for the real "Preferences" row in a future CONTROLS group (a
+   *  separate, later ticket for this file); the Screen/navigation plumbing it calls into is
+   *  already the permanent wiring. Optional so existing callers/tests without it still compile. */
+  onOpenPreferences?(): void;
 }
 
 /** The selectable avatars in the picker: default + the six presets (presets-only, no upload). */
@@ -80,7 +86,7 @@ function formatDate(iso: string): string {
  * leaderboard with a live-games picker. Read-only / play-money — no hidden info. Stays
  * simplified per HUB_TRANSITION_ANALYSIS §8 (wallet + ledger + leaderboard, no stats endpoint).
  */
-export function ProfileHubScreen({ token, username, avatarId = 'default', onAvatarChange, balance, onLogout, onHome, onOpenProfile, onOpenRewards }: Props) {
+export function ProfileHubScreen({ token, username, avatarId = 'default', onAvatarChange, balance, onLogout, onHome, onOpenProfile, onOpenRewards, onOpenPreferences }: Props) {
   const [liveBalance, setLiveBalance] = useState(balance);
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loadingLedger, setLoadingLedger] = useState(true);
@@ -131,6 +137,19 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
             </div>
             {/* Sound mute toggle — relocated from the header; global + persisted, self-contained. */}
             <MuteToggle />
+            {/* Issue #401 temporary nav entry point — the real "Preferences" row lands in a
+                later ticket; this icon button just makes the new screen reachable/testable. */}
+            {onOpenPreferences && (
+              <button
+                type="button"
+                onClick={onOpenPreferences}
+                data-testid="profile-open-preferences"
+                aria-label="Preferences"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface text-muted-foreground transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+              >
+                <Settings className="h-4 w-4" />
+              </button>
+            )}
             <button
               type="button"
               onClick={onLogout}
