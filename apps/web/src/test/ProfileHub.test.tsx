@@ -2,7 +2,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { ProfileHubScreen } from '../screens/ProfileHub.js';
-import { setMuted, isMuted } from '../lib/sound.js';
 import type { RecentMatchEntry, RewardsSnapshot } from '@rapidclash/shared';
 
 type Props = Parameters<typeof ProfileHubScreen>[0];
@@ -99,20 +98,12 @@ describe('ProfileHubScreen', () => {
     expect(onLogout).toHaveBeenCalled();
   });
 
-  it('has the sound mute toggle outside the ribbon header, and toggling flips + persists global mute', () => {
-    setMuted(false); // known baseline: sound ON
-    const { container } = render(<ProfileHubScreen {...baseProps()} />);
-
-    const toggle = screen.getByTestId('hub-mute-toggle');
-    const ribbon = container.querySelector('header')!;
-    expect(within(ribbon).queryByTestId('hub-mute-toggle')).toBeNull(); // never in the sticky ribbon
-
-    expect(toggle.getAttribute('aria-pressed')).toBe('false'); // sound ON
-    fireEvent.click(toggle);
-    expect(toggle.getAttribute('aria-pressed')).toBe('true'); // muted
-    expect(window.localStorage.getItem('rc:sound:muted')).toBe('1'); // persisted
-    expect(isMuted()).toBe(true); // global module state
-    setMuted(false); // cleanup for other tests / files
+  // Issue #418: the sound-mute control isn't spec'd anywhere on the Account page — it's moved to
+  // Preferences' own "Game sounds" toggle (see PreferencesHub.test.tsx), which now drives the
+  // real lib/sound.ts module. This just asserts the Account page no longer renders one.
+  it('renders no sound/mute control (moved to Preferences, issue #418)', () => {
+    render(<ProfileHubScreen {...baseProps()} />);
+    expect(screen.queryByTestId('hub-mute-toggle')).toBeNull();
   });
 
   it('renders the shared Avatar (not initials) in the profile card', () => {

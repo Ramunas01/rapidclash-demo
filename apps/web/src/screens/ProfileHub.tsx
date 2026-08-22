@@ -26,7 +26,6 @@ import { useMenuOverlay } from '../components/hub-chrome/useMenuOverlay.js';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
-import { MuteToggle } from '../components/hub-chrome/MuteToggle.js';
 import { Avatar } from '../components/hub-shared/Avatar.js';
 import { HUB_SHELL } from '../components/hub-chrome/layout.js';
 
@@ -227,13 +226,10 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
           <BringARival />
 
           <div style={{ margin: '0 16px', padding: '0 0 14px 0' }}>
-            {/* Utility strip: the ACCOUNT headline + the mute toggle (not part of the design —
-                relocated here rather than dropped, since it has no other home once LOG OUT and
-                the temporary Preferences button both leave the old header row). */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontFamily: ARIAL, fontSize: 19, fontWeight: 'bold', letterSpacing: '0.6px', color: RC.text }}>ACCOUNT</span>
-              <MuteToggle />
-            </div>
+            {/* ACCOUNT headline, alone (issue #418: the sound-mute control that used to sit here
+                on the right was never part of the design spec — it's moved to Preferences' own
+                "Game sounds" toggle, which now drives the same real lib/sound.ts module). */}
+            <span style={{ fontFamily: ARIAL, fontSize: 19, fontWeight: 'bold', letterSpacing: '0.6px', color: RC.text }}>ACCOUNT</span>
 
             {/* 2 — Profile card: avatar (tap → existing picker) + username + XP + VIP progress. */}
             <section data-testid="profile-card" style={{ marginTop: 14, background: RC.surface, borderRadius: 22, padding: '18px 16px 20px 16px' }}>
