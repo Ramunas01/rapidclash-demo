@@ -5,6 +5,8 @@ import type {
   LeaderboardEntry,
   NetWinningsLeaderboardEntry,
   RankingType,
+  RecentMatchEntry,
+  RecentMatchesResponse,
   WinRateLeaderboardEntry,
 } from '@rapidclash/shared';
 import { PLATFORM_ACCOUNT } from './ledger.js';
@@ -27,6 +29,11 @@ export interface MatchHistory {
     stake: number,
   ): void;
   getLeaderboard(gameId: string): LeaderboardEntry[];
+  /** The CALLING PLAYER's own recent match history, newest-settled-first (issue #400), backing
+   *  `GET /matches/recent`. `limit`/`offset` are clamped server-side (see `getRecentMatches`'s
+   *  implementation for the exact defaults/cap) — a caller passing an absurd `limit` cannot
+   *  force a wasteful scan. */
+  getRecentMatches(playerId: string, limit?: number, offset?: number): RecentMatchesResponse;
 }
 
 interface ResultRow {
@@ -40,6 +47,22 @@ interface NetRow {
   account_id: string;
   net: number;
 }
+
+interface RecentRow {
+  match_id: string;
+  game_id: string;
+  player1_id: string;
+  player2_id: string;
+  outcome: string;
+  winner_id: string | null;
+  settled_at: string;
+}
+
+/** getRecentMatches defaults/cap (issue #400): a reasonable page size for the Account screen's
+ *  list, and a hard ceiling so a caller can't pass e.g. `?limit=1000000` and force a wasteful
+ *  scan + N ledger-sum lookups per page. */
+const RECENT_MATCHES_DEFAULT_LIMIT = 10;
+const RECENT_MATCHES_MAX_LIMIT = 50;
 
 /**
  * @param rankingByGame  gameId → declared RankingType, seeded from the game
@@ -71,6 +94,8 @@ export function createMatchHistory(
       settled_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_mr_game ON match_results (game_id);
+    CREATE INDEX IF NOT EXISTS idx_mr_p1 ON match_results (player1_id);
+    CREATE INDEX IF NOT EXISTS idx_mr_p2 ON match_results (player2_id);
   `);
 
   const stmtInsert = db.prepare<
@@ -120,6 +145,39 @@ export function createMatchHistory(
        GROUP BY account_id`,
     );
     return stmtNet;
+  }
+
+  // getRecentMatches (issue #400): rows where the player is EITHER side, newest-settled-first.
+  // `void` matches are excluded at the SQL level — see RecentMatchEntry's doc comment
+  // (packages/shared/src/protocol.ts) for why: a refund was never really "played" to a result,
+  // so it has no meaningful win/loss/draw and its net delta is always 0 (escrow out, refund
+  // back in) — showing it would just be a confusing zero-value row on the Account list.
+  // `rowid` breaks ties deterministically for results sharing a settled_at timestamp, same
+  // convention as stmtRowsChrono above.
+  const stmtRecent = db.prepare<[string, string, number, number], RecentRow>(
+    `SELECT match_id, game_id, player1_id, player2_id, outcome, winner_id, settled_at
+     FROM match_results
+     WHERE (player1_id = ? OR player2_id = ?) AND outcome != 'void'
+     ORDER BY settled_at DESC, rowid DESC
+     LIMIT ? OFFSET ?`,
+  );
+
+  const stmtRecentCount = db.prepare<[string, string], { cnt: number }>(
+    `SELECT COUNT(*) AS cnt
+     FROM match_results
+     WHERE (player1_id = ? OR player2_id = ?) AND outcome != 'void'`,
+  );
+
+  // Per-match, per-player net delta — same signed-ledger-sum idea as netStmt() above, just
+  // scoped to one match_id + one account_id instead of one game across all matches/players.
+  // Prepared lazily for the same reason as netStmt: `ledger_entry` belongs to the ledger,
+  // which a match-history-only consumer (e.g. some core unit tests) never instantiates.
+  let stmtMatchNet: Database.Statement<[string, string], { net: number | null }> | undefined;
+  function matchNetStmt(): Database.Statement<[string, string], { net: number | null }> {
+    stmtMatchNet ??= db.prepare<[string, string], { net: number | null }>(
+      `SELECT SUM(amount) AS net FROM ledger_entry WHERE match_id = ? AND account_id = ?`,
+    );
+    return stmtMatchNet;
   }
 
   function recordResult(
@@ -289,5 +347,45 @@ export function createMatchHistory(
     }
   }
 
-  return { recordResult, getLeaderboard };
+  function getRecentMatches(
+    playerId: string,
+    limit: number = RECENT_MATCHES_DEFAULT_LIMIT,
+    offset = 0,
+  ): RecentMatchesResponse {
+    // Clamp server-side — never trust the caller's raw limit/offset (issue #400: a huge limit
+    // must not be able to force a wasteful scan + N ledger-sum lookups). NaN/non-finite input
+    // (e.g. a malformed query param) falls back to the default/0 rather than producing NaN SQL
+    // bind params.
+    const safeLimit = Number.isFinite(limit) ? Math.floor(limit) : RECENT_MATCHES_DEFAULT_LIMIT;
+    const safeOffset = Number.isFinite(offset) ? Math.floor(offset) : 0;
+    const cappedLimit = Math.min(Math.max(safeLimit, 1), RECENT_MATCHES_MAX_LIMIT);
+    const cappedOffset = Math.max(safeOffset, 0);
+
+    const rows = stmtRecent.all(playerId, playerId, cappedLimit, cappedOffset);
+    const total = stmtRecentCount.get(playerId, playerId)?.cnt ?? 0;
+
+    const matches: RecentMatchEntry[] = rows.map((row) => {
+      const opponentId = row.player1_id === playerId ? row.player2_id : row.player1_id;
+      // Reframe the row's symmetric winner_id/outcome into the VIEWER's own perspective.
+      // outcome here is never 'void' — excluded at the SQL level (see stmtRecent's comment).
+      const outcome: 'win' | 'loss' | 'draw' =
+        row.outcome === 'draw' ? 'draw' : row.winner_id === playerId ? 'win' : 'loss';
+      const delta = matchNetStmt().get(row.match_id, playerId)?.net ?? 0;
+
+      return {
+        matchId: row.match_id,
+        gameId: row.game_id,
+        opponentId,
+        opponentDisplayName: displayNameFor(opponentId),
+        opponentAvatarId: avatarFor(opponentId),
+        outcome,
+        delta,
+        settledAt: row.settled_at,
+      };
+    });
+
+    return { matches, limit: cappedLimit, offset: cappedOffset, total };
+  }
+
+  return { recordResult, getLeaderboard, getRecentMatches };
 }

@@ -1,4 +1,4 @@
-import type { AuthRegisterBody, AuthLoginBody, AuthResponse, WalletResponse, GameMeta, LeaderboardEntry, PublicOpenChallenge, AvatarId, SetAvatarResponse, RewardsSnapshot, RewardsClaimResponse } from '@rapidclash/shared';
+import type { AuthRegisterBody, AuthLoginBody, AuthResponse, WalletResponse, GameMeta, LeaderboardEntry, PublicOpenChallenge, AvatarId, SetAvatarResponse, RewardsSnapshot, RewardsClaimResponse, RecentMatchesResponse } from '@rapidclash/shared';
 
 const BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -60,4 +60,15 @@ export const api = {
    *  balance is already zero returns `{ credited: 0, newClaimableBalance: 0 }`, not an error. */
   claimRewards: (token: string) =>
     req<RewardsClaimResponse>('POST', '/rewards/claim', {}, token),
+  /** The signed-in player's OWN recent match history (issue #400) — opponent, outcome, net
+   *  delta, timestamp, newest-settled-first. Backs the redesigned Account page's "recent
+   *  games" list (a later, separate ticket wires up the actual UI consumer). `limit`/`offset`
+   *  mirror the server's query params; both optional (server applies its own default/cap). */
+  recentMatches: (token: string, limit?: number, offset?: number) => {
+    const params = new URLSearchParams();
+    if (limit !== undefined) params.set('limit', String(limit));
+    if (offset !== undefined) params.set('offset', String(offset));
+    const qs = params.toString();
+    return req<RecentMatchesResponse>('GET', `/matches/recent${qs ? `?${qs}` : ''}`, undefined, token);
+  },
 };

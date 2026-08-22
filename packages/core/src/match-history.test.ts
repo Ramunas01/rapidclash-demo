@@ -366,3 +366,166 @@ describe('createMatchHistory — elo leaderboard', () => {
     expect(() => mh.getLeaderboard('x')).toThrow(/Unsupported ranking kind/);
   });
 });
+
+// ─── getRecentMatches (issue #400) ─────────────────────────────────────────
+// Backs GET /matches/recent — the calling player's own recent history, opponent +
+// viewer-perspective outcome + net ledger delta, newest-settled-first, paginated.
+
+describe('createMatchHistory — getRecentMatches', () => {
+  function setup() {
+    const db = freshDb();
+    const ledger = createLedger(db);
+    const mh = createMatchHistory(db, new Map([['rps', RPS_WIN_RATE]]));
+    ledger.grant('alice');
+    ledger.grant('bob');
+    ledger.grant('carol');
+    return { db, ledger, mh };
+  }
+
+  it('returns an empty page with total 0 when the player has no matches', () => {
+    const { mh } = setup();
+    const res = mh.getRecentMatches('alice');
+    expect(res).toEqual({ matches: [], limit: 10, offset: 0, total: 0 });
+  });
+
+  it('only ever returns matches the player was actually in, never another player\'s', () => {
+    const { ledger, mh } = setup();
+    playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100);
+    playMatch(ledger, mh, 'm2', 'rps', ['bob', 'carol'], 'carol', 100); // alice not involved
+
+    const res = mh.getRecentMatches('alice');
+    expect(res.matches).toHaveLength(1);
+    expect(res.matches[0].matchId).toBe('m1');
+    expect(res.total).toBe(1);
+  });
+
+  it('reports the opponent (not the viewer) regardless of which side the viewer was on', () => {
+    const { ledger, mh } = setup();
+    playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100); // alice is player1
+    playMatch(ledger, mh, 'm2', 'rps', ['carol', 'alice'], 'carol', 100); // alice is player2
+
+    const res = mh.getRecentMatches('alice');
+    const byId = Object.fromEntries(res.matches.map((m) => [m.matchId, m.opponentId]));
+    expect(byId['m1']).toBe('bob');
+    expect(byId['m2']).toBe('carol');
+  });
+
+  it('resolves opponent displayName/avatarId via the shared lookups (same seam as the leaderboard)', () => {
+    const db = freshDb();
+    const ledger = createLedger(db);
+    const lookupName = (id: string) => (id === 'bob' ? 'Bobby' : undefined);
+    const lookupAvatar = (id: string) => (id === 'bob' ? ('boy-light' as const) : ('default' as const));
+    const mh = createMatchHistory(db, new Map([['rps', RPS_WIN_RATE]]), lookupName, lookupAvatar);
+    ledger.grant('alice');
+    ledger.grant('bob');
+    playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100);
+
+    const [row] = mh.getRecentMatches('alice').matches;
+    expect(row.opponentDisplayName).toBe('Bobby');
+    expect(row.opponentAvatarId).toBe('boy-light');
+  });
+
+  it('reframes outcome from the viewer\'s own perspective: win, loss, and draw', () => {
+    const { ledger, mh } = setup();
+    playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100); // alice won
+    playMatch(ledger, mh, 'm2', 'rps', ['carol', 'alice'], 'carol', 100); // alice lost
+    for (const p of ['alice', 'bob'] as const) ledger.escrow(p, 'm3', 100);
+    ledger.settle('m3', 'draw', undefined, 200, 0.05);
+    mh.recordResult('m3', 'rps', ['alice', 'bob'], 'draw', undefined, 100);
+
+    const res = mh.getRecentMatches('alice');
+    const byId = Object.fromEntries(res.matches.map((m) => [m.matchId, m.outcome]));
+    expect(byId['m1']).toBe('win');
+    expect(byId['m2']).toBe('loss');
+    expect(byId['m3']).toBe('draw');
+  });
+
+  it('the net delta matches exactly what the ledger recorded for that specific match', () => {
+    const { ledger, mh } = setup();
+    // alice wins a 100-stake match. pot=200, rake=round(200*0.05)=10.
+    // alice: −100 escrow + 190 win = +90. bob: −100 escrow = −100.
+    playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100);
+
+    const aliceRow = mh.getRecentMatches('alice').matches[0];
+    const bobRow = mh.getRecentMatches('bob').matches[0];
+    expect(aliceRow.delta).toBe(90);
+    expect(bobRow.delta).toBe(-100);
+  });
+
+  it('a second unrelated match does not pollute the first match\'s delta (per-match, not per-player-lifetime)', () => {
+    const { ledger, mh } = setup();
+    playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100); // alice +90
+    playMatch(ledger, mh, 'm2', 'rps', ['alice', 'carol'], 'carol', 50); // alice −50
+
+    const res = mh.getRecentMatches('alice');
+    const byId = Object.fromEntries(res.matches.map((m) => [m.matchId, m.delta]));
+    expect(byId['m1']).toBe(90);
+    expect(byId['m2']).toBe(-50);
+  });
+
+  it('excludes void (refunded) matches entirely — documented choice, issue #400', () => {
+    const { ledger, mh } = setup();
+    ledger.escrow('alice', 'v1', 100);
+    ledger.escrow('bob', 'v1', 100);
+    ledger.settle('v1', 'void', undefined, 200, 0.05);
+    mh.recordResult('v1', 'rps', ['alice', 'bob'], 'void', undefined, 100);
+    playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100); // a real result too
+
+    const res = mh.getRecentMatches('alice');
+    expect(res.matches.map((m) => m.matchId)).toEqual(['m1']);
+    expect(res.matches.map((m) => m.matchId)).not.toContain('v1');
+    expect(res.total).toBe(1); // the void match doesn't count toward total either
+  });
+
+  it('orders newest-settled-first', async () => {
+    const { ledger, mh } = setup();
+    playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100);
+    await new Promise((r) => setTimeout(r, 5));
+    playMatch(ledger, mh, 'm2', 'rps', ['alice', 'bob'], 'bob', 100);
+
+    const res = mh.getRecentMatches('alice');
+    expect(res.matches.map((m) => m.matchId)).toEqual(['m2', 'm1']);
+  });
+
+  it('paginates correctly via limit/offset, and total reflects the full eligible count', () => {
+    const { ledger, mh } = setup();
+    for (let i = 0; i < 5; i++) {
+      playMatch(ledger, mh, `m${i}`, 'rps', ['alice', 'bob'], 'alice', 10);
+    }
+
+    const page1 = mh.getRecentMatches('alice', 2, 0);
+    expect(page1.matches).toHaveLength(2);
+    expect(page1.total).toBe(5);
+    expect(page1.limit).toBe(2);
+    expect(page1.offset).toBe(0);
+
+    const page2 = mh.getRecentMatches('alice', 2, 2);
+    expect(page2.matches).toHaveLength(2);
+
+    const page3 = mh.getRecentMatches('alice', 2, 4);
+    expect(page3.matches).toHaveLength(1);
+
+    // No overlap across pages.
+    const allIds = [...page1.matches, ...page2.matches, ...page3.matches].map((m) => m.matchId);
+    expect(new Set(allIds).size).toBe(5);
+  });
+
+  it('defaults to limit 10 when omitted, and clamps an oversized limit to the cap (50)', () => {
+    const { ledger, mh } = setup();
+    for (let i = 0; i < 3; i++) {
+      playMatch(ledger, mh, `m${i}`, 'rps', ['alice', 'bob'], 'alice', 10);
+    }
+
+    expect(mh.getRecentMatches('alice').limit).toBe(10);
+    expect(mh.getRecentMatches('alice', 100_000).limit).toBe(50);
+  });
+
+  it('clamps a negative offset up to 0 rather than erroring', () => {
+    const { ledger, mh } = setup();
+    playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 10);
+
+    const res = mh.getRecentMatches('alice', 10, -5);
+    expect(res.offset).toBe(0);
+    expect(res.matches).toHaveLength(1);
+  });
+});
