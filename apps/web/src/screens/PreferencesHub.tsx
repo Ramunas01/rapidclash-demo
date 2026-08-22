@@ -1,4 +1,4 @@
-import { useCallback, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   Bell,
   ChevronLeft,
@@ -13,6 +13,7 @@ import {
   Volume2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { isMuted, subscribe, toggleMute } from '../lib/sound.js';
 
 interface Props {
   /** Back button → returns to the Account (ProfileHub) screen. */
@@ -64,9 +65,11 @@ const CURRENCIES: Array<{ code: string; symbol: string }> = [
 ];
 
 // All preferences persist to localStorage only (issue #401 point 2) — no server table/endpoint.
+// Exception: sound (below) — that toggle controls the real `lib/sound.ts` mute module (issue
+// #418), which already persists itself under its own `rc:sound:muted` key, so there's no
+// `gameSound` entry here anymore (would've been a second, redundant source of truth).
 const KEYS = {
   theme: 'rc_pref_theme',
-  gameSound: 'rc_pref_gameSound',
   tips: 'rc_pref_tips',
   tipNotifsDisabled: 'rc_pref_tipNotifsDisabled',
   cashDisplay: 'rc_pref_cashDisplay',
@@ -108,15 +111,22 @@ function readCurrency(): string {
 
 /**
  * Preferences — a sub-page reached from the Account screen (issue #401, Account redesign Part A).
- * Every toggle here is a persisted-only preference: no live audio system, tipping ledger, currency
- * conversion, or marketing pipeline actually exists behind these yet (see the issue's explicit
- * scope calls). The Appearance radio pair is the one exception with real (if narrowly scoped)
- * behavior — it re-themes this screen's own subtree only, via the --pref-* custom properties set
- * on the root wrapper below.
+ * Most toggles here are persisted-only preferences: no tipping ledger, currency conversion, or
+ * marketing pipeline actually exists behind these yet (see the issue's explicit scope calls). Two
+ * exceptions have real, live behavior: the Appearance radio pair (re-themes this screen's own
+ * subtree only, via the --pref-* custom properties set on the root wrapper below), and the Sound
+ * effects toggle (issue #418 — wired directly to `lib/sound.ts`'s real mute module, the same one
+ * `ChessHub.tsx` gates its `play()` calls on; this used to be decorative-only, with its own
+ * `MuteToggle` living on the Account page instead — that control has moved here, its home per the
+ * design spec, and now actually drives global mute state).
  */
 export function PreferencesHubScreen({ onBack }: Props) {
   const [theme, setTheme] = useState<ThemeChoice>(readTheme);
-  const [gameSound, setGameSound] = useState(() => readBool(KEYS.gameSound, true));
+  // Sound ON is this toggle's own polarity — the inverse of the module's `isMuted()` (issue
+  // #418). `subscribe()` keeps this row in sync if mute is ever flipped elsewhere (defense in
+  // depth — nothing else should mute after this fix, but the module's contract is there to use).
+  const [gameSound, setGameSound] = useState(() => !isMuted());
+  useEffect(() => subscribe(() => setGameSound(!isMuted())), []);
   // Tipping toggles are disabled/non-interactive (issue #401 point 3 — Owner-overridden, visible
   // but inert). Their initial values still rehydrate from storage so a re-enabled future ticket
   // picks up whatever was last persisted, but nothing in THIS screen can change them.
@@ -150,11 +160,7 @@ export function PreferencesHubScreen({ onBack }: Props) {
   }, []);
 
   const handleGameSound = useCallback(() => {
-    setGameSound((prev) => {
-      const next = !prev;
-      writeBool(KEYS.gameSound, next);
-      return next;
-    });
+    toggleMute(); // flips lib/sound.ts's real mute state; the subscribe() above syncs `gameSound`
   }, []);
 
   const handleCashDisplay = useCallback(() => {
@@ -239,7 +245,8 @@ export function PreferencesHubScreen({ onBack }: Props) {
           </Group>
         </Section>
 
-        {/* SOUND EFFECTS — persisted preference only; no live audio system wired to it. */}
+        {/* SOUND EFFECTS — wired to the real lib/sound.ts mute module (issue #418); this is the
+            live control ChessHub.tsx's playback actually respects. */}
         <Section title="Sound effects">
           <Group>
             <ToggleRow
