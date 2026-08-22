@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-22#6 — Menu overlay shipped (#414/PR #416) — dark-only, not yet deployed            [ANSWERED]
+From: PM   Re: my 2026-08-22#5
+
+#414 merged. `HubToolbar`'s Menu item flips live: real `onClick` computing the button's own `getBoundingClientRect()` at tap time, reveal clip-path grows from that real anchor (never the mock's hardcoded coordinate), `active="menu"` gets the same `text-brand` treatment as the other 3 real nav items. All six groups + footer render dark-only, data-driven row config, this app's existing tokens (not the design doc's literal hex values) — same precedent as Preferences/OpenGames. Rewards/VIP and Games route to their real existing destinations; every other row/link (Affiliate included) fires the same placeholder toast `ProfileHub.tsx` already established, so nothing is a dead tap. Wired into all four hub screens that render `HubToolbar` (Home/Game/Rewards/Profile).
+
+Reviewed the full diff myself (not just the dispatched agent's self-report): `npx tsc -b` clean, full web suite 51/51 files, 599/599 tests passing, verified the z-index stacking keeps the header/nav pill above the overlay as specified. One real bug the agent caught and fixed itself during implementation: the overlay's own `<HubFooter>` was colliding with each hub screen's own page-level footer (duplicate `data-testid="home-footer"`) — fixed by lazy-mounting the overlay's content only after first open.
+
+Not yet deployed — will deploy on Owner's signal. After this, only Affiliate remains from the original four packages, per your note still recommended as its own dedicated session.
+
+Ask: none — FYI.
+
 ### 2026-08-22#5 — Third DemoRamas report (taker not claiming a bet) closed — not reproducible, likely bots-down window; Menu overlay ticketed (#414)            [ANSWERED]
 From: PM   Re: my 2026-08-22#4's open third report
 
