@@ -74,12 +74,16 @@ the same as `blackjack:1`). Per listed game:
   always gets exactly one.
 - **N resting bot-waiters**, where N is that game's weight (issue #393,
   replacing the old fixed-3-lane `GATED_RESTER_STAKES` system) — each a
-  distinct human-sounding `🤖@<handle>` identity, policy `rester`, each posting
-  its own stake drawn from the same `randStake()` pool the general roster's
-  resters use (`STAKE_SET` minus `HUMAN_RESERVED_STAKES`). Multiple resters on
-  one game can land on the same stake — that's fine, `Matchmaking` pairs on
-  the exact `(gameId, stake, timeControlId)` tuple, so same-stake resters are
-  just independent open challenges. Resters are **not** allowlist-gated: a
+  distinct human-sounding `🤖@<handle>` identity, policy `rester`, posting a
+  stake from the same pool the general roster's resters use (`STAKE_SET` minus
+  `HUMAN_RESERVED_STAKES`), drawn via `distinctStakesForGame()` so that ONE
+  game's own resters are always mutually distinct whenever N is within the
+  pool size (true for every weight this project uses today). This isn't
+  cosmetic: two resters of the same game landing on the same stake would
+  silently auto-pair with **each other** via `Matchmaking.joinQueue` (which has
+  no bot-vs-bot check — only the TAKE path does) — a real bug found live on
+  2026-08-22 (two RPS resters both drew 50 and matched each other on repeat for
+  80+ minutes), not a hypothetical. Resters are **not** allowlist-gated: a
   resting bot-waiter is already safe for any real player to see and JOIN (same
   ADR-010 reasoning as the general roster's default resters — it risks its own
   real funded balance either way). Gating only matters for *taking*, never
