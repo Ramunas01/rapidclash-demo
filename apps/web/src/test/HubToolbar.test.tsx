@@ -84,6 +84,66 @@ describe('HubToolbar — solid #0B0B0B base fill behind the bottom nav', () => {
   });
 });
 
+describe('HubToolbar — scroll-fade layer + label size (issue #407, navbar polish Part B)', () => {
+  it('renders a gradient scroll-fade above the solid fill, using the bg token (no hardcoded hex)', () => {
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} />);
+    const fade = screen.getByTestId('hub-nav-fade');
+    const cls = fade.className;
+
+    expect(cls).toContain('fixed');
+    expect(cls).toMatch(/\bleft-0\b/);
+    expect(cls).toMatch(/\bright-0\b/);
+    expect(cls).not.toMatch(/max-w-md/);
+    // Gradient dissolve built from the canonical bg token, not a parallel --rc-bg literal.
+    expect(cls).toContain('linear-gradient(to_top');
+    expect(cls).toContain('hsl(var(--background))');
+    expect(cls).not.toMatch(/#[0-9a-fA-F]{3,6}/); // no inline hex
+    expect(cls).toContain('h-[62px]');
+    // Purely visual, below the nav, pointer-events pass through to the pill.
+    expect(cls).toContain('pointer-events-none');
+    expect(cls).toContain('z-[15]');
+    const nav = fade.parentElement?.querySelector('nav');
+    expect(nav?.className).toContain('z-20'); // pill/nav still above the fade
+
+    // Sits directly above the existing solid fill (same bottom offset as the fill's height),
+    // not replacing it — both layers must be present.
+    const fill = screen.getByTestId('hub-nav-fill');
+    expect(cls).toContain('bottom-[calc(2.75rem_+_env(safe-area-inset-bottom))]');
+    expect(fill.className).toContain('h-[calc(2.75rem_+_env(safe-area-inset-bottom))]');
+  });
+
+  it('the fade does not block taps on the pill buttons', () => {
+    const onGames = vi.fn();
+    render(<HubToolbar onGames={onGames} onAccount={vi.fn()} onRewards={vi.fn()} />);
+    expect(screen.getByTestId('hub-nav-fade').className).toContain('pointer-events-none');
+    fireEvent.click(screen.getByTestId('hub-nav-games'));
+    expect(onGames).toHaveBeenCalled();
+  });
+
+  it('item labels render at 12px (bumped from the old 10.5px)', () => {
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} />);
+    for (const label of ['menu', 'games', 'account', 'rewards', 'chat']) {
+      const span = screen.getByTestId(`hub-nav-${label}`).querySelector('span');
+      expect(span?.className).toContain('text-[12px]');
+      expect(span?.className).not.toContain('10.5px');
+    }
+  });
+
+  it('regression guard: Menu & Chat stay inert/aria-disabled and active styling is unchanged', () => {
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} active="games" />);
+    for (const label of ['menu', 'chat']) {
+      const item = screen.getByTestId(`hub-nav-${label}`);
+      expect(item.tagName).toBe('DIV');
+      expect(item.getAttribute('aria-disabled')).toBe('true');
+      expect(item.className).toContain('opacity-40');
+    }
+    const games = screen.getByTestId('hub-nav-games');
+    expect(games.getAttribute('aria-current')).toBe('page');
+    expect(games.className).toContain('text-brand');
+    expect(games.className).toContain('drop-shadow-[0_0_5px_#8140e288]');
+  });
+});
+
 describe('HubToolbar — icon geometry & sizing (issue #328, matching design-ref/navbar/RapidClash Navbar.html)', () => {
   it('all 5 icons render at 24x24 (h-6 w-6, up from the old 23px)', () => {
     render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} />);

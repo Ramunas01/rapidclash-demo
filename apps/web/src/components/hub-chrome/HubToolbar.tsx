@@ -23,6 +23,18 @@ interface Props {
 export function HubToolbar({ onGames, onAccount, onRewards, active = 'games' }: Props) {
   return (
     <>
+      {/* Scroll fade (#407): a 62px gradient dissolve sitting just above the solid mask below, so
+          content scrolling under the bar fades into the background instead of cutting off hard.
+          `--rc-bg` from the design handoff is this app's own `bg-background` token (#0B0B0B in both
+          — confirmed via apps/web/src/index.css), so we build the gradient from it rather than a
+          parallel custom property. Purely visual (`pointer-events-none`) and BELOW the nav
+          (z-[15] < the nav's z-20) so the pill still floats over it and its buttons still tap
+          through. Full width, not max-w-md, so nothing peeks past its sides on wider screens. */}
+      <div
+        aria-hidden="true"
+        data-testid="hub-nav-fade"
+        className="pointer-events-none fixed bottom-[calc(2.75rem_+_env(safe-area-inset-bottom))] left-0 right-0 z-[15] h-[62px] bg-[linear-gradient(to_top,hsl(var(--background))_0%,transparent_100%)]"
+      />
       {/* Solid base behind & below the nav: a FULL-viewport-width #0B0B0B block (the canonical
           `bg-background` token — never a fresh literal, or we recreate the drift the unification
           removed) so scrolled content can't peek through the pill's rounded-corner notches or the
@@ -31,7 +43,8 @@ export function HubToolbar({ onGames, onAccount, onRewards, active = 'games' }: 
           still floats over it and its buttons still tap through. It rises to ~half the pill's height
           (so the pill's lower rounded corners have solid behind them — tuned blind, adjust vs the
           running UI) and reaches bottom:0 including the home-indicator safe-area (matching the nav's
-          own pb). Full width, not max-w-md, so nothing peeks past its sides on wider screens. */}
+          own pb). Full width, not max-w-md, so nothing peeks past its sides on wider screens. This is
+          the design handoff's "solid mask" layer (#407) — the fade layer above sits on top of it. */}
       <div
         aria-hidden="true"
         data-testid="hub-nav-fill"
@@ -61,7 +74,7 @@ function ToolbarItem({
 }) {
   const testid = `hub-nav-${label.toLowerCase()}`;
   const labelText = (
-    <span className="text-[10.5px] font-bold tracking-[0.02em]">{label}</span>
+    <span className="text-[12px] font-bold tracking-[0.02em]">{label}</span>
   );
 
   if (comingSoon) {
