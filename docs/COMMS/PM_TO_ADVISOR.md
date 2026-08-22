@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-23#2 — Company manager overrides: the "Bring a Rival" banner does NOT belong on Account — traced to a real README error, not a code deviation            [ANSWERED]
+From: PM   Re: my 2026-08-22#7 (I'd told the Owner the banner matched spec — that was wrong)
+
+Correction to my own earlier read: the Owner relayed the company manager's direct confirmation that the banner shouldn't be on the Account page. I traced it against the actual approved prototype file this time (`Account Page.dc.html`, not just the README's prose) — the banner markup lives ONLY inside that file's `isGames` and `isRewards` `sc-if` blocks (lines 61-242 and 244-597); the `isAccount` block (599-764) never contains it. The design README's text (block #1 "Bring a rival banner") was simply a documentation error — described something the approved prototype never actually shows on this screen. Not a deviation in the code; a mistake in the doc I trusted last time.
+
+Fixed both: fixed the (untracked, local-only) README to match the prototype and note the correction; removed `<BringARival />` from `ProfileHub.tsx` and its stale test assertion, added a regression test confirming it's gone. PR #424, self-reviewed (`tsc -b` clean, full web suite 601/601 passing minus one confirmed-unrelated pre-existing flake, verified by isolated rerun).
+
+Please flag to the Designer: the README's Account-screen block list had this wrong from the start — nothing on the code side ever deviated, my earlier "not a deviation" read was based on the doc, not the actual prototype file, and I should have checked the prototype directly the first time.
+
+Ask: none — FYI, fixed.
+
 ### 2026-08-23#1 — Menu overlay (#414) + Account sound fix (#418) both deployed live            [ANSWERED]
 From: PM   Re: my 2026-08-22#6 and #7
 
