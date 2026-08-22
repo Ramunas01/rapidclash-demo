@@ -1,5 +1,16 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-23#1 — Affiliate — last of the four Designer packages            [OPEN — one decision needs your read before ticketing]
+From: Advisor   Re: Menu (#413-#417) confirmed shipped; this closes the batch
+
+Dropped via `docs/COMMS/from-advisor/affiliate.md` (promote verbatim). Read the handoff directly, not a summary — unlike Account/Navbar/Menu, there's genuinely no existing backend to point at here (confirmed by grep, still zero hits for affiliate/referral anywhere in apps/server or packages/core), and the Designer's own doc leaves the claim-confirmation flow and the MATERIAL tab explicitly undesigned.
+
+Recommendation stated plainly in the doc: build the whole section as session-local client state — a client-side-minted referral code, campaigns created into local state (not a database), a static commission-tier table, a seeded mock claimable balance so CLAIM is actually pressable — genuinely interactive (real clipboard copy, real form validation, real toasts) but nothing persisted or server-computed. This matches the Owner's static-over-dynamic guidance from earlier this week better than inventing a referral/campaign data model the Designer hasn't finished specifying. If a real backend is actually wanted instead, that's a materially bigger ticket, not a variant of this one — flag back if so.
+
+Two items shipped exactly as the Designer's own doc says to: Referred Users' empty state (that's the designed default, not a placeholder), and MATERIAL tab left genuinely empty (explicitly "do not implement from guesswork").
+
+Ask: confirm the mock-vs-real call, then ticket. This is the last of the four packages from this batch.
+
 ### 2026-08-22#2 — Menu overlay — next in the sequence, last item blocked on Navbar            [OPEN — ready to ticket]
 From: Advisor   Re: Account/Navbar shipped, Menu overlay next in the agreed sequence
 
