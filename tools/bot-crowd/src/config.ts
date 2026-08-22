@@ -50,6 +50,34 @@ export const STAKE_SET = [1, 5, 10, 25, 50, 100] as const;
 const RESTER_STAKES = STAKE_SET.filter((s) => !HUMAN_RESERVED_STAKES.includes(s));
 const randStake = (): number => RESTER_STAKES[Math.floor(Math.random() * RESTER_STAKES.length)];
 
+/**
+ * `n` stakes for ONE game's own resters, distinct from each other whenever that's possible
+ * (`n <= RESTER_STAKES.length`) — fixes a real bug (found 2026-08-22, live on the always-on gated
+ * VM): issue #393 replaced the old disjoint-by-construction 3-lane system with independent
+ * `randStake()` draws per rester, which CAN collide. Two resters of the SAME game landing on the
+ * SAME stake isn't just cosmetic — `Matchmaking.joinQueue` pairs the oldest waiter at a
+ * `(gameId, stake, timeControlId)` key with NO bot-vs-bot check (that check only exists on the
+ * TAKE path, `isTakeable`'s `BOT_PREFIX` filter — the core matchmaking has no concept of "bot" by
+ * design, ADR-010). So a same-stake collision between two of one game's own resters makes them
+ * silently auto-pair with EACH OTHER, forever (they immediately re-post on `challenge.expired`),
+ * violating Charter invariant #1 ("humans vs humans, never bot-vs-bot") for real. Confirmed live:
+ * two RPS gated resters both drew 50 and had been matching each other every ~15s for 80+ minutes.
+ *
+ * Fisher-Yates shuffle `RESTER_STAKES`, then take `n` values cycling by index — for `n` within the
+ * pool size (true for every weight this project actually uses, 1-3 today) every value is distinct;
+ * only once `n` exceeds the pool size (6) does it start repeating, which is the best achievable
+ * outcome without inventing a stake outside the real preset set — the general (non-gated) roster's
+ * own resters are unaffected (each game there has exactly one rester, no collision is possible).
+ */
+function distinctStakesForGame(n: number): number[] {
+  const shuffled = [...RESTER_STAKES];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return Array.from({ length: n }, (_, i) => shuffled[i % shuffled.length]);
+}
+
 /** When set (e.g. TAKER_ONLY_GAMES=coinflip:3,blackjack,chess:2), ROSTER becomes a gated, on-duty
  *  crowd for just the listed games: one allowlist-gated TAKER per game (unchanged — weight has no
  *  effect on it), plus N resting bot-waiters per game where N is that game's weight (issue #393,
@@ -173,6 +201,9 @@ export const ROSTER: BotConfig[] = takerOnlyGames.length
         const chessControl = g === 'chess' ? { timeControlId: 'rapid10' as const } : {};
         const gatedName = (offset: number) =>
           `${BOT_PREFIX}@${GATED_ROSTER_NAMES[(base + offset) % GATED_ROSTER_NAMES.length]}`;
+        // Distinct-within-this-game stakes (see distinctStakesForGame's doc comment) — NOT
+        // independent randStake() calls, which can collide and cause silent bot-vs-bot pairing.
+        const stakes = distinctStakesForGame(weight);
         return [
           {
             name: gatedName(0),
@@ -181,10 +212,10 @@ export const ROSTER: BotConfig[] = takerOnlyGames.length
             policy: 'taker' as const,
             ...chessControl,
           },
-          ...Array.from({ length: weight }, (_, ri) => ({
+          ...stakes.map((stake, ri) => ({
             name: gatedName(1 + ri),
             gameId: g,
-            stake: randStake(),
+            stake,
             policy: 'rester' as const,
             ...chessControl,
           })),
@@ -301,11 +332,13 @@ export const config = {
    *
    * NOTE (issue #375, updated #384, #393): a gated rester's stake is no longer a small static
    * literal set you can read off this file and avoid at all — issue #393 replaced the old
-   * fixed-3-lane `GATED_RESTER_STAKES` with a per-game, per-rester `randStake()` draw (the SAME
-   * pool the general roster's own resters draw from: `STAKE_SET` minus `HUMAN_RESERVED_STAKES`),
-   * so the possible values span every non-reserved `BET_PRESETS` entry regardless of how many
-   * resters a game has. So no single fixed `TAKER_EXCLUDE_STAKE` can be *guaranteed* distinct from
-   * every gated rester's actual startup draw — this is now a best-effort operator choice (e.g.
+   * fixed-3-lane `GATED_RESTER_STAKES` with a per-game `distinctStakesForGame()` draw (guaranteed
+   * distinct WITHIN one game's own resters — see that function's doc comment for why that part
+   * matters — but drawn from the SAME pool the general roster's own resters use: `STAKE_SET` minus
+   * `HUMAN_RESERVED_STAKES`), so the possible values span every non-reserved `BET_PRESETS` entry
+   * regardless of how many resters a game has. So no single fixed `TAKER_EXCLUDE_STAKE` can be
+   * *guaranteed* distinct from every gated rester's actual startup draw — this is now a
+   * best-effort operator choice (e.g.
    * `10`, still a reasonable pick), not a hard invariant enforceable at config-authoring time. If a
    * collision does land, the exclude-stake carve-out simply degrades to "the reserved pair might
    * get auto-taken by the resting bot instead of each other" for that one process lifetime — it

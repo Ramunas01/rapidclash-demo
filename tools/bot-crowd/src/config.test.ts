@@ -80,14 +80,39 @@ describe('ROSTER — gated mode (TAKER_ONLY_GAMES set, issue #361; weighted rest
     expect(ROSTER).toHaveLength((1 + 3) + (1 + 1));
   });
 
-  it('multiple resters for the same game CAN land on the same stake (no disjointness requirement anymore)', async () => {
-    // With enough resters on one game, at least one repeat stake is overwhelmingly likely from the
-    // 5-value RESTER_STAKES pool (STAKE_SET minus HUMAN_RESERVED_STAKES) — assert the mechanism
-    // allows it (no crash, no de-duplication) rather than asserting a specific draw.
-    const { ROSTER } = await loadConfig({ TAKER_ONLY_GAMES: 'coinflip:8' });
+  it('a single game\'s own resters are ALWAYS mutually distinct when weight is within the stake pool size (real bug fix, found 2026-08-22)', async () => {
+    // Regression test for a real production bug: independent randStake() draws per rester could
+    // (and did — confirmed live on the gated VM: two RPS resters both drew 50 and matched EACH
+    // OTHER on repeat for 80+ minutes) collide, silently causing bot-vs-bot play — a Charter
+    // invariant #1 violation — because Matchmaking.joinQueue has no bot-vs-bot check (only the
+    // TAKE path's isTakeable() does; the core has no concept of "bot" by design, ADR-010). Sample
+    // repeatedly since it's randomized; every single draw must be fully distinct, not just usually.
+    for (let i = 0; i < 20; i++) {
+      const { ROSTER } = await loadConfig({ TAKER_ONLY_GAMES: 'coinflip:3' });
+      const stakes = ROSTER.filter((b) => b.policy === 'rester').map((b) => b.stake);
+      expect(stakes).toHaveLength(3);
+      expect(new Set(stakes).size).toBe(3);
+    }
+  });
+
+  it('multiple games each get their own independent distinct-stake draw (no cross-game interference)', async () => {
+    const { ROSTER } = await loadConfig({ TAKER_ONLY_GAMES: 'coinflip:3,blackjack:3' });
+    for (const g of ['coinflip', 'blackjack']) {
+      const stakes = ROSTER.filter((b) => b.gameId === g && b.policy === 'rester').map((b) => b.stake);
+      expect(new Set(stakes).size).toBe(stakes.length);
+    }
+  });
+
+  it('once weight exceeds the stake pool size, repeats are unavoidable but never crash — no invented out-of-preset values', async () => {
+    // RESTER_STAKES is 6 values (STAKE_SET minus HUMAN_RESERVED_STAKES — [2] isn't even in
+    // STAKE_SET, so nothing is actually filtered out today: [1,5,10,25,50,100]). weight:8 exceeds
+    // that, so a repeat is GUARANTEED (not just likely) once the pool cycles.
+    const { ROSTER, STAKE_SET } = await loadConfig({ TAKER_ONLY_GAMES: 'coinflip:8' });
     const resters = ROSTER.filter((b) => b.policy === 'rester');
     expect(resters).toHaveLength(8);
-    for (const b of resters) expect(b.stake).toBeGreaterThan(0);
+    for (const b of resters) expect(STAKE_SET).toContain(b.stake); // always a real preset value
+    const stakes = resters.map((b) => b.stake);
+    expect(new Set(stakes).size).toBeLessThan(stakes.length); // a repeat is guaranteed past the pool size
   });
 
   it('keeps chess entries (taker + every rester) on the rapid10 control; leaves other games untimed', async () => {
@@ -247,23 +272,14 @@ describe('gated mode: weighted resters + the 34-name budget / overflow policy (i
     logSpy.mockRestore();
   });
 
-  it('resters draw from randStake() (STAKE_SET minus HUMAN_RESERVED_STAKES) — multiple resters on one game CAN share a stake', async () => {
-    const { ROSTER, HUMAN_RESERVED_STAKES } = await loadConfig({ TAKER_ONLY_GAMES: 'coinflip:8' });
+  it('gated resters never draw a HUMAN_RESERVED_STAKES value', async () => {
+    const { ROSTER, HUMAN_RESERVED_STAKES } = await loadConfig({ TAKER_ONLY_GAMES: 'coinflip:3' });
     const resters = ROSTER.filter((b) => b.policy === 'rester');
-    expect(resters).toHaveLength(8);
+    expect(resters.length).toBeGreaterThan(0);
     for (const b of resters) {
       expect(b.stake).toBeGreaterThan(0);
       expect(HUMAN_RESERVED_STAKES.includes(b.stake)).toBe(false);
     }
-    // Not a hard assertion (stakes are random), but with 8 draws from a 5-value pool a collision is
-    // overwhelmingly likely — sample repeatedly so the "shared stakes are fine" property is exercised.
-    let sawCollision = false;
-    for (let i = 0; i < 20 && !sawCollision; i++) {
-      const { ROSTER: r } = await loadConfig({ TAKER_ONLY_GAMES: 'coinflip:8' });
-      const stakes = r.filter((b) => b.policy === 'rester').map((b) => b.stake);
-      sawCollision = new Set(stakes).size < stakes.length;
-    }
-    expect(sawCollision).toBe(true);
   });
 });
 
