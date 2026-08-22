@@ -337,6 +337,38 @@ export type LeaderboardEntry =
   | NetWinningsLeaderboardEntry
   | EloLeaderboardEntry;
 
+/** One row in the CALLING PLAYER's own recent-match history (issue #400) — powers the new
+ *  "recent games" list on the redesigned Account page, replacing the old ledger-transaction
+ *  list. `void` (refunded) matches are excluded entirely, not just from `getLeaderboard` but
+ *  here too — see `getRecentMatches` in `match-history.ts` for the rationale. */
+export interface RecentMatchEntry {
+  matchId: string;
+  gameId: string;
+  opponentId: PlayerId;
+  opponentDisplayName: string;
+  opponentAvatarId: AvatarId;
+  /** Outcome from the CALLING PLAYER's own perspective — derived from the row's symmetric
+   *  winner_id/outcome, never sent as-is (there is no raw "loss" on a match_results row). */
+  outcome: 'win' | 'loss' | 'draw';
+  /** Signed net settlement delta for the calling player on THIS ONE match, summed straight
+   *  from the ledger — same derivation `netWinningsLeaderboard` uses (ADR-007-style: the
+   *  ledger is the single source of money truth, not `match_results.stake`), just scoped to
+   *  one match + one player instead of one game across all matches/players. */
+  delta: number;
+  settledAt: string;
+}
+
+/** Response of `GET /matches/recent` (issue #400) — newest-settled-first, paginated via
+ *  `?limit=&?offset=`. `total` is the player's full eligible (non-void) match count, so the
+ *  client can render numbered page pills (the redesign's pagination) without a second request
+ *  just to learn how many pages exist. */
+export interface RecentMatchesResponse {
+  matches: RecentMatchEntry[];
+  limit: number;
+  offset: number;
+  total: number;
+}
+
 export interface MatchRecord {
   matchId: string;
   gameId: string;

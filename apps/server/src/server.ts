@@ -163,7 +163,7 @@ export function buildApp(
   registerGuestOpenChallengesRoutes(app, guest.matchmaking);
   registerLeaderboardRoutes(app, matchHistory);
   registerWalletRoutes(app, auth, ledger);
-  registerMatchesRoutes(app, auth, matchmaking, gameModules);
+  registerMatchesRoutes(app, auth, matchmaking, gameModules, matchHistory);
   // POST /rewards/claim opts into config.rateLimit too — same boot-order reason as
   // /auth/guest above: nest it so it registers after FastifyRateLimit's onRoute hook exists.
   app.register(async (instance) => {
