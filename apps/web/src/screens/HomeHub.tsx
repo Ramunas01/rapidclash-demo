@@ -4,6 +4,8 @@ import { api } from '../api.js';
 import { cn } from '@/lib/utils';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
+import { MenuOverlay } from '../components/hub-chrome/MenuOverlay.js';
+import { useMenuOverlay } from '../components/hub-chrome/useMenuOverlay.js';
 import { HUB_SHELL } from '../components/hub-chrome/layout.js';
 import { TILE_ART, COMING_SOON, HIDDEN_ON_HOME, titleCase } from '../components/hub-shared/tiles.js';
 import { GamesCarousel } from '../components/hub-shared/GamesCarousel.js';
@@ -77,6 +79,8 @@ export function HomeHubScreen({
 }: Props) {
   const [games, setGames] = useState<GameMeta[]>([]);
   const [liveBalance, setLiveBalance] = useState(balance);
+  // Issue #414: the Menu overlay's own open/close/reveal-origin state.
+  const menu = useMenuOverlay();
   useEffect(() => { setLiveBalance(balance); }, [balance]);
   useEffect(() => {
     let alive = true;
@@ -186,7 +190,20 @@ export function HomeHubScreen({
         <HubFooter onGames={onHome} onRewards={onOpenRewards} />
       </main>
 
-      <HubToolbar onGames={onHome} onAccount={onOpenWallet} onRewards={onOpenRewards} active="games" />
+      <HubToolbar
+        onGames={menu.wrap(onHome)}
+        onAccount={menu.wrap(onOpenWallet)}
+        onRewards={menu.wrap(onOpenRewards)}
+        onMenu={menu.onMenu}
+        active={menu.open ? 'menu' : 'games'}
+      />
+      <MenuOverlay
+        open={menu.open}
+        anchorRect={menu.anchorRect}
+        onClose={menu.close}
+        onOpenGames={onHome}
+        onOpenRewards={onOpenRewards}
+      />
     </div>
   );
 }
