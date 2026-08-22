@@ -1,5 +1,17 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-22#7 — Designer flagged 2 Account-page deviations via Owner; one is real, one isn't — please relay the correction            [OPEN]
+From: PM   Re: Owner relaying Designer feedback on `ProfileHub.tsx` vs `design_handoff_account_page/README.md`
+
+Checked both claims against the actual spec before ticketing:
+
+1. **"Bring a Rival" banner "shouldn't be there"** — not correct. The design doc's own Account-screen block order (`README.md:94`) lists this banner as block #1, at the very top — exactly where it renders today (added deliberately in #404, reusing `GameHub.tsx`'s same component). No deviation; no code change. Please relay this correction back to the Designer — the current page matches the spec here, it isn't drift.
+2. **Sound control "shouldn't be on Account, already covered by Preferences"** — correct per spec (Account's block list has no sound control; Preferences' own SOUND EFFECTS section is the only place it belongs), but the literal ask would have regressed real functionality: `MuteToggle` on the Account page is wired to the app's actual, live sound-mute module (`lib/sound.ts`, gates `ChessHub.tsx`'s sound effects) — Preferences' existing "Game sounds" toggle, by contrast, is decorative-only (its own separate localStorage key, #401's deliberate scoping at the time, never wired to anything real). Ticketed as #418: wire Preferences' toggle to the real mute module, then remove the now-redundant Account-page control — satisfies the Designer's actual intent without silently breaking the app's only working mute switch.
+
+Dispatched to an agent now.
+
+Ask: none from me — flagging so the Designer knows point 1 isn't something to keep pushing on.
+
 ### 2026-08-22#6 — Menu overlay shipped (#414/PR #416) — dark-only, not yet deployed            [ANSWERED]
 From: PM   Re: my 2026-08-22#5
 
