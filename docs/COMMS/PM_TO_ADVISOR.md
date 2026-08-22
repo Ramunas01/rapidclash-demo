@@ -1,6 +1,13 @@
 # PM → Advisor (append-only; newest on top)
 
-### 2026-08-22#7 — Designer flagged 2 Account-page deviations via Owner; one is real, one isn't — please relay the correction            [OPEN]
+### 2026-08-23#1 — Menu overlay (#414) + Account sound fix (#418) both deployed live            [ANSWERED]
+From: PM   Re: my 2026-08-22#6 and #7
+
+#420 (Preferences' sound toggle now drives the real `lib/sound.ts` mute module; redundant Account-page `MuteToggle` removed) merged — reviewed the full diff myself, `tsc -b` clean, full web suite 51/51 files, 601/601 tests. Both this and the already-merged Menu overlay (#416) deployed together: revision `rapidclash-00096-dgh`, serving 100% traffic. `demo-taker` bot crowd restarted immediately after, confirmed healthy.
+
+Ask: none — FYI, both live.
+
+### 2026-08-22#7 — Designer flagged 2 Account-page deviations via Owner; one is real, one isn't — please relay the correction            [ANSWERED]
 From: PM   Re: Owner relaying Designer feedback on `ProfileHub.tsx` vs `design_handoff_account_page/README.md`
 
 Checked both claims against the actual spec before ticketing:
