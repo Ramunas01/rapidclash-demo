@@ -13,6 +13,9 @@ interface Props {
   onOpenGames(): void;
   /** Rewards/VIP (EARN group row + footer link) → the existing Rewards callback. */
   onOpenRewards(): void;
+  /** Affiliate program (EARN group row) → issue #423's real destination, replacing what used to
+   *  be this row's own placeholder toast. */
+  onOpenAffiliate(): void;
 }
 
 /** How long a placeholder toast stays up before auto-dismissing — same hold ProfileHub.tsx uses
@@ -20,7 +23,7 @@ interface Props {
  *  invented fresh so both placeholder surfaces feel like one consistent mechanism. */
 const PLACEHOLDER_TOAST_MS = 2200;
 
-type RowAction = 'games' | 'rewards' | 'placeholder';
+type RowAction = 'games' | 'rewards' | 'affiliate' | 'placeholder';
 
 interface MenuRow {
   key: string;
@@ -198,7 +201,7 @@ const GROUPS: MenuGroup[] = [
   {
     label: 'EARN',
     rows: [
-      { key: 'affiliate', label: 'Affiliate program', icon: ICON_AFFILIATE, action: 'placeholder' },
+      { key: 'affiliate', label: 'Affiliate program', icon: ICON_AFFILIATE, action: 'affiliate' },
       { key: 'rewards-vip', label: 'Rewards/VIP', icon: ICON_REWARDS_ROW, action: 'rewards' },
     ],
   },
@@ -242,7 +245,7 @@ const GROUPS: MenuGroup[] = [
  * (`bg-background`, `bg-surface`, `text-brand`, `text-muted-foreground`) rather than the design
  * doc's literal hex values.
  */
-export function MenuOverlay({ open, anchorRect, onClose, onOpenGames, onOpenRewards }: Props) {
+export function MenuOverlay({ open, anchorRect, onClose, onOpenGames, onOpenRewards, onOpenAffiliate }: Props) {
   // Lazy-mount the overlay's own content (including its `<HubFooter>`) only once Menu has
   // actually been tapped at least once. Every hub screen already renders its own page-level
   // `<HubFooter>` with the same hardcoded `data-testid="home-footer"` — mounting a SECOND one
@@ -271,6 +274,7 @@ export function MenuOverlay({ open, anchorRect, onClose, onOpenGames, onOpenRewa
   function navigate(row: MenuRow) {
     if (row.action === 'games') onOpenGames();
     else if (row.action === 'rewards') onOpenRewards();
+    else if (row.action === 'affiliate') onOpenAffiliate();
     else showPlaceholder(row.label);
     onClose();
   }

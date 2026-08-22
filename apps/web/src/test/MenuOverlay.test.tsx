@@ -9,7 +9,9 @@ import { useMenuOverlay } from '../components/hub-chrome/useMenuOverlay.js';
  *  `MenuOverlay` together (see HomeHub.tsx/GameHub.tsx/RewardsHub.tsx/ProfileHub.tsx) — issue
  *  #414's own three-piece pattern, without any of a real screen's API/balance/match-history
  *  plumbing that isn't relevant to the overlay's own behavior. */
-function Harness({ onGames = vi.fn(), onRewards = vi.fn() }: { onGames?(): void; onRewards?(): void }) {
+function Harness({
+  onGames = vi.fn(), onRewards = vi.fn(), onAffiliate = vi.fn(),
+}: { onGames?(): void; onRewards?(): void; onAffiliate?(): void }) {
   const menu = useMenuOverlay();
   return (
     <>
@@ -20,7 +22,7 @@ function Harness({ onGames = vi.fn(), onRewards = vi.fn() }: { onGames?(): void;
         onMenu={menu.onMenu}
         active={menu.open ? 'menu' : 'games'}
       />
-      <MenuOverlay open={menu.open} anchorRect={menu.anchorRect} onClose={menu.close} onOpenGames={onGames} onOpenRewards={onRewards} />
+      <MenuOverlay open={menu.open} anchorRect={menu.anchorRect} onClose={menu.close} onOpenGames={onGames} onOpenRewards={onRewards} onOpenAffiliate={onAffiliate} />
     </>
   );
 }
@@ -91,16 +93,15 @@ describe('Menu overlay (issue #414) — row navigation', () => {
     expect(screen.getByTestId('menu-overlay').getAttribute('aria-hidden')).toBe('true');
   });
 
-  it('an unwired row (Affiliate program) shows the placeholder toast, calls no navigation, and closes the overlay', () => {
-    const onGames = vi.fn();
-    const onRewards = vi.fn();
-    render(<Harness onGames={onGames} onRewards={onRewards} />);
+  // Issue #423: the EARN group's Affiliate program row now routes to the real Affiliate screen
+  // via onOpenAffiliate — no longer the shared placeholder toast.
+  it('the Affiliate program row calls the real onOpenAffiliate and closes the overlay', () => {
+    const onAffiliate = vi.fn();
+    render(<Harness onAffiliate={onAffiliate} />);
     fireEvent.click(screen.getByTestId('hub-nav-menu'));
     fireEvent.click(screen.getByTestId('menu-row-affiliate'));
-    expect(onGames).not.toHaveBeenCalled();
-    expect(onRewards).not.toHaveBeenCalled();
-    const toast = screen.getByTestId('menu-placeholder-toast');
-    expect(toast).toHaveTextContent('Affiliate program — coming soon');
+    expect(onAffiliate).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('menu-placeholder-toast')).toBeNull();
     expect(screen.getByTestId('menu-overlay').getAttribute('aria-hidden')).toBe('true');
   });
 

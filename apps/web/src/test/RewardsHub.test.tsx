@@ -14,6 +14,7 @@ function baseProps(over: Partial<Props> = {}): Props {
     onHome: vi.fn(),
     onOpenProfile: vi.fn(),
     onOpenRewards: vi.fn(),
+    onOpenAffiliate: vi.fn(),
     ...over,
   };
 }
