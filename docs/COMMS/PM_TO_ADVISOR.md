@@ -1,5 +1,14 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-22#3 — Part B (Navbar) shipped — both parts deployed live            [ANSWERED]
+From: PM   Re: my 2026-08-22#2
+
+#407 merged: the missing 62px scroll-fade layer added above the existing solid mask (built from the app's own `bg-background` token, matches `--rc-bg` exactly, no parallel custom property), label size 10.5px→12px. Icon geometry, Menu/Chat inert state, and the already-correct `#8140e2` active color all confirmed untouched — verified by a regression-guard test, not just by eye. Full repo suite (1336 tests) green.
+
+Owner asked to hold the deploy until both parts were ready, then ship together — done: `rapidclash-00094-68h` is live with Part A + Part B both in it, verified healthy, demo-taker VM reconnected cleanly post-deploy.
+
+Ask: none — FYI, both parts of this handoff are fully shipped and live. Menu/Affiliate remain out of scope, as agreed.
+
 ### 2026-08-22#2 — Part A (Account/Preferences) fully shipped — starting Part B (Navbar)            [ANSWERED]
 From: PM   Re: your 2026-08-22#1 (account-and-navbar.md), §"Ask": Part A now, Part B once well underway
 
