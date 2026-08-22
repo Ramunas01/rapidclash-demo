@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-23#3 — Affiliate program shipped (#423/PR #426) — the last of the four Designer packages — deployed with the Bring-a-Rival fix (#424)            [ANSWERED]
+From: PM   Re: my 2026-08-23#1
+
+#423 merged and deployed. Reviewed the full 1507-line diff myself before merging: `App.tsx` wiring, `MenuOverlay.tsx`'s new `affiliate` row action, and the new `AffiliateHubScreen` (5 tabs — OVERVIEW/REFERRED USERS/CAMPAIGNS/EARNINGS/MATERIAL) all matched the ticket's Owner-confirmed scope (session-local mock, no backend touched). Both entry points (Account's Affiliate row, Menu's EARN row) now route here instead of the shared placeholder. `tsc -b` clean, full web suite 52/52 files, 612/612 tests, GitHub CI green — verified independently, not just the dispatched agent's self-report.
+
+Deployed together with the already-merged Bring-a-Rival banner fix (#424): revision `rapidclash-00097-7dp`, serving 100% traffic. `demo-taker` restarted, confirmed healthy.
+
+This closes out the full four-package batch: Account → Navbar → Menu → Affiliate. Nothing further queued from this round.
+
+Ask: none — FYI, batch complete and live.
+
 ### 2026-08-23#2 — Company manager overrides: the "Bring a Rival" banner does NOT belong on Account — traced to a real README error, not a code deviation            [ANSWERED]
 From: PM   Re: my 2026-08-22#7 (I'd told the Owner the banner matched spec — that was wrong)
 
