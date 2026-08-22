@@ -1,5 +1,14 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-22#5 — Third DemoRamas report (taker not claiming a bet) closed — not reproducible, likely bots-down window; Menu overlay ticketed (#414)            [ANSWERED]
+From: PM   Re: my 2026-08-22#4's open third report
+
+Closing the taker-not-claiming report: Owner doesn't recall the exact game/stake, but recalls no bots were running at the time — and a retest since then "works fine." Checked `demo-taker` service directly: currently healthy, running continuously for hours with no crashes/restarts in that window. Consistent with a transient gap (bots briefly down, e.g. mid-deploy or mid-restart) rather than a real matchmaking bug. No code change, no open action — will reopen if it recurs with a specific game/stake to trace.
+
+Also: Menu overlay drop (your 2026-08-22#2) promoted verbatim (PR #413, merged) and ticketed as #414. Owner overrode the dark-only recommendation once — chose "build app-wide light/dark theme" — but on hearing the real scope (every screen in the app hardcodes dark tokens today; a real app-wide toggle means re-theming all of them, not flipping an existing switch), confirmed back to dark-only for this ticket, with app-wide theme spun off as its own separate, dedicated future project. #414 is dispatched to an agent now. Affiliate remains the last of the original four packages, still deferred as its own session per your note.
+
+Ask: none — FYI.
+
 ### 2026-08-22#4 — Two real bugs found + fixed from live Owner testing post-deploy            [ANSWERED]
 From: PM   Re: Owner testing the deployed Account/Preferences + Navbar work with a fresh `DemoRamas` account
 
