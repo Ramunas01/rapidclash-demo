@@ -1,5 +1,26 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-22#2 — Menu overlay — next in the sequence, last item blocked on Navbar            [OPEN — ready to ticket]
+From: Advisor   Re: Account/Navbar shipped, Menu overlay next in the agreed sequence
+
+Dropped via `docs/COMMS/from-advisor/menu-overlay.md` (promote verbatim). Source: `docs/design-refs/design_handoff_menu/` (`README.md` + `screenshots/`). Recreate in the codebase's existing React/Tailwind primitives, not the `.dc.html` prototype's markup — same instruction as the last two handoffs.
+
+This closes the loop the Navbar ticket deliberately left open: `HubToolbar.tsx`'s Menu item is still `comingSoon` (correctly — the overlay didn't exist yet). This ticket includes flipping it live: real `onClick` opening the overlay, and the active-highlight treatment the design specifies ("the Menu nav icon turns `#8B45F0`" while open) — the same `active`-prop pattern the other three real nav items already use.
+
+Scope is smaller than the row count suggests, matching the prototype's own behavior, not a cut corner. The README says so explicitly: "In the prototype only Affiliate program, Rewards/VIP, Games and Rewards/VIP (footer) navigate; the rest are placeholders for real routes." Recommend matching that exactly this round:
+- Rewards/VIP (EARN group + footer link) → wire to the existing `onOpenRewards` callback, same one every other hub screen already uses.
+- Games (footer link) → wire to the existing `onOpenGameList` callback, same pattern.
+- Affiliate program (EARN group) → route to the same lightweight placeholder screen the Account-page ticket already introduced for its own Affiliate row — one shared placeholder destination, not a new one per package.
+- Every other row (GAMES group's 4, COMPETE's 4, PLATFORM's 4, SUPPORT's 3, and the footer link-grid entries beyond Games/Rewards) — placeholder, matching the reference prototype. Real routes are their own future tickets as those screens get built.
+
+Implementation notes: data-driven row config per the handoff's own recommendation (one source of truth per group's `{icon, label, route}` list, not hand-coded JSX per row). Overlay reveal origin: the design's `clip-path: circle(0px at 55px 797px) → circle(1000px at 55px 797px)` is the mock's fixed viewport coordinate for the Menu button's position — compute the real origin from the actual button's runtime position (`getBoundingClientRect()` on the Menu nav item), don't hardcode that literal coordinate. Row icons are inline SVG in the source markup, copy as-is; the Menu nav icon itself is already shipped (`HubToolbar.tsx`'s `ICON_MENU`), unrelated to these new row icons.
+
+One open flag, don't decide silently: Menu's own doc says "Theme is switchable (set in Account → Preferences)," same assumption Account's Preferences screen made — and that ticket deliberately scoped the Light theme to the Preferences page only, not app-wide (no live app-wide theme-swap exists in the codebase yet). Two packages now assume this exists. Recommend: build Menu dark-only for now too, consistent with that same scoping call, and treat a real app-wide light theme as its own future ticket if actually wanted — flagging rather than deciding, since this now affects more than one screen.
+
+Small, unblocking nudge, not a blocker: PLATFORM's "Provably fair" row is the same messaging point raised when this handoff was first reviewed — a positioning suggestion for the Designer, not a compliance issue.
+
+Ask: this is the last item blocked on Navbar — nothing else depends on it shipping. After this, only Affiliate remains from the original four packages, still recommended as its own dedicated session per the open data-model decisions noted earlier.
+
 ### 2026-08-22#1 — Account/Preferences first, Navbar second — Designer handoffs            [OPEN — ready to ticket, in this order]
 From: Advisor   Re: Owner's sequencing call — Account+Preferences today, Menu/Affiliate deferred
 
