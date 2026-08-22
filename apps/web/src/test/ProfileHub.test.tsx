@@ -3,30 +3,52 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { ProfileHubScreen } from '../screens/ProfileHub.js';
 import { setMuted, isMuted } from '../lib/sound.js';
-import type { GameMeta, LedgerEntry, LeaderboardEntry } from '@rapidclash/shared';
+import type { RecentMatchEntry, RewardsSnapshot } from '@rapidclash/shared';
 
 type Props = Parameters<typeof ProfileHubScreen>[0];
 
-const META = (id: string, displayName: string): GameMeta => ({
-  id, displayName, minPlayers: 2, maxPlayers: 2,
-  ranking: { kind: 'net_winnings' }, bet: { minStake: 1, maxStake: 100, symmetricStake: true },
-  averageDurationSec: 10, rakeRate: 0.025,
+const REWARDS: RewardsSnapshot = {
+  xpLifetime: 17_800,
+  xpMonthly: 1_000,
+  wageredLifetime: 5_000,
+  claimableBalance: 20,
+  tier: 'Bronze',
+  rakebackRate: 0.04,
+  nextTier: { tier: 'Silver', xpRequired: 25_000, rakebackRate: 0.07 },
+};
+
+/** 12 rows — enough for 3 pages at the component's 5-per-page collapsed/expanded size
+ *  (ceil(12/5) = 3), and enough (>5) to exercise the VIEW MORE/pagination path at all. */
+const ALL_MATCHES: RecentMatchEntry[] = Array.from({ length: 12 }, (_, i) => {
+  const n = i + 1;
+  const outcome: RecentMatchEntry['outcome'] = n % 3 === 0 ? 'draw' : n % 2 === 0 ? 'loss' : 'win';
+  return {
+    matchId: `m${n}`,
+    gameId: n % 2 === 0 ? 'chess' : 'coinflip',
+    opponentId: `p${n}`,
+    opponentDisplayName: `rival${n}`,
+    opponentAvatarId: 'default',
+    outcome,
+    delta: outcome === 'win' ? 100 + n : outcome === 'loss' ? -(50 + n) : 0,
+    settledAt: `2026-08-${String((n % 28) + 1).padStart(2, '0')}T09:42:00Z`,
+  };
 });
-const GAMES: GameMeta[] = [META('coinflip', 'Coinflip'), META('chess', 'Chess')];
 
-const LEDGER: LedgerEntry[] = [
-  { id: 'e1', type: 'GRANT', amount: 1000, idempotencyKey: 'k1', createdAt: '2026-06-20T10:00:00Z' },
-  { id: 'e2', type: 'BET_ESCROW', amount: -10, idempotencyKey: 'k2', createdAt: '2026-06-20T11:00:00Z' },
-  { id: 'e3', type: 'SETTLE_WIN', amount: 19, matchId: 'm1', idempotencyKey: 'k3', createdAt: '2026-06-20T11:01:00Z' },
-];
+function matchesFetchResponse(url: string) {
+  const u = new URL(url, 'http://x');
+  const limit = Number(u.searchParams.get('limit') ?? '20');
+  const offset = Number(u.searchParams.get('offset') ?? '0');
+  return { matches: ALL_MATCHES.slice(offset, offset + limit), limit, offset, total: ALL_MATCHES.length };
+}
 
-const CF_BOARD: LeaderboardEntry[] = [
-  { rank: 1, playerId: 'p1', displayName: 'alice', avatarId: 'boy-light', score: 90, kind: 'net_winnings', netWinnings: 90 },
-  { rank: 2, playerId: 'p2', displayName: 'bob', avatarId: 'default', score: -10, kind: 'net_winnings', netWinnings: -10 },
-];
-const CHESS_BOARD: LeaderboardEntry[] = [
-  { rank: 1, playerId: 'p3', displayName: 'carol', avatarId: 'default', score: 1516, kind: 'elo', rating: 1516 },
-];
+function stubDefaultFetch() {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    const u = String(url);
+    if (u.includes('/rewards')) return { ok: true, json: async () => REWARDS } as Response;
+    if (u.includes('/matches/recent')) return { ok: true, json: async () => matchesFetchResponse(u) } as Response;
+    return { ok: true, json: async () => ({}) } as Response;
+  }));
+}
 
 function baseProps(over: Partial<Props> = {}): Props {
   return {
@@ -43,37 +65,34 @@ function baseProps(over: Partial<Props> = {}): Props {
 
 describe('ProfileHubScreen', () => {
   beforeEach(() => {
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      const u = String(url);
-      if (u.includes('/games')) return { ok: true, json: async () => GAMES } as Response;
-      if (u.includes('/leaderboard/chess')) return { ok: true, json: async () => CHESS_BOARD } as Response;
-      if (u.includes('/leaderboard/coinflip')) return { ok: true, json: async () => CF_BOARD } as Response;
-      if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: 1009, entries: LEDGER }) } as Response;
-      return { ok: true, json: async () => ({}) } as Response;
-    }));
+    stubDefaultFetch();
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it('shows the profile header (alias + log out)', () => {
+  it('shows the profile card (alias + avatar) and the Bring a Rival banner', async () => {
+    render(<ProfileHubScreen {...baseProps()} />);
+    expect(screen.getByTestId('profile-username').textContent).toBe('alice');
+    expect(screen.getByTestId('home-rival')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('profile-xp').textContent).toBe('17,800'));
+  });
+
+  it('LOG OUT is a standalone bottom pill (not nested in the profile card) and calls onLogout', () => {
     const onLogout = vi.fn();
     render(<ProfileHubScreen {...baseProps({ onLogout })} />);
-    expect(screen.getByTestId('profile-username').textContent).toBe('alice');
-    fireEvent.click(screen.getByTestId('profile-logout'));
+    const logout = screen.getByTestId('profile-logout');
+    expect(within(screen.getByTestId('profile-card')).queryByTestId('profile-logout')).toBeNull();
+    fireEvent.click(logout);
     expect(onLogout).toHaveBeenCalled();
   });
 
-  it('has the sound mute toggle in the header section beside Log out (moved off the ribbon), and toggling flips + persists global mute', () => {
+  it('has the sound mute toggle outside the ribbon header, and toggling flips + persists global mute', () => {
     setMuted(false); // known baseline: sound ON
     const { container } = render(<ProfileHubScreen {...baseProps()} />);
 
-    // It lives in the profile-header section, next to Log out — NOT in the ribbon header.
-    const section = within(screen.getByTestId('profile-header'));
-    const toggle = section.getByTestId('hub-mute-toggle');
-    expect(section.getByTestId('profile-logout')).toBeInTheDocument();
+    const toggle = screen.getByTestId('hub-mute-toggle');
     const ribbon = container.querySelector('header')!;
-    expect(within(ribbon).queryByTestId('hub-mute-toggle')).toBeNull(); // gone from the header
+    expect(within(ribbon).queryByTestId('hub-mute-toggle')).toBeNull(); // never in the sticky ribbon
 
-    // Toggling flips the global, persisted mute (no behaviour change — same module/localStorage).
     expect(toggle.getAttribute('aria-pressed')).toBe('false'); // sound ON
     fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-pressed')).toBe('true'); // muted
@@ -82,75 +101,29 @@ describe('ProfileHubScreen', () => {
     setMuted(false); // cleanup for other tests / files
   });
 
-  it('shows the wallet balance and the recent ledger entries (signed amounts)', async () => {
+  it('renders the shared Avatar (not initials) in the profile card', () => {
     render(<ProfileHubScreen {...baseProps()} />);
-    // Balance refreshed from /wallet, rendered with the RC-icon credits display.
-    await waitFor(() => expect(screen.getByTestId('profile-balance').textContent).toContain('1,009'));
-    const ledger = within(screen.getByTestId('profile-ledger'));
-    expect(ledger.getByTestId('profile-entry-e1').textContent).toMatch(/GRANT/);
-    expect(ledger.getByTestId('profile-entry-e1').textContent).toContain('+1,000');
-    expect(ledger.getByTestId('profile-entry-e2').textContent).toContain('-10'); // BET_ESCROW debit
-    expect(ledger.getByTestId('profile-entry-e3').textContent).toContain('+19'); // SETTLE_WIN credit
+    const card = within(screen.getByTestId('profile-card'));
+    expect(card.getByTestId('avatar')).toBeInTheDocument();
+    expect(card.queryByTestId('avatar-glyph')).toBeInTheDocument(); // darkened silhouette, not initials
+    expect(card.getByTestId('profile-username').textContent).toBe('alice');
   });
 
-  it('renders the leaderboard and switches game via the picker (kind-aware)', async () => {
-    render(<ProfileHubScreen {...baseProps()} />);
-    // Default coinflip (net_winnings, can be negative).
-    await waitFor(() => expect(screen.getByTestId('profile-rank-p1')).toBeInTheDocument());
-    const board = within(screen.getByTestId('profile-leaderboard'));
-    expect(board.getByTestId('profile-rank-p1').textContent).toContain('+90');
-    expect(board.getByTestId('profile-rank-p2').textContent).toContain('-10');
-
-    // Pick chess → elo rendering.
-    fireEvent.click(board.getByTestId('profile-lb-pick-chess'));
-    await waitFor(() => expect(screen.getByTestId('profile-rank-p3')).toBeInTheDocument());
-    expect(screen.getByTestId('profile-rank-p3').textContent).toContain('1516 ELO');
-  });
-
-  it('renders the shared Avatar (not initials) in the header and on each leaderboard row', async () => {
-    render(<ProfileHubScreen {...baseProps()} />);
-    // Header shows the shared Avatar (a default person glyph), never the old initials text.
-    const header = within(screen.getByTestId('profile-header'));
-    expect(header.getByTestId('avatar')).toBeInTheDocument();
-    expect(header.queryByTestId('avatar-glyph')).toBeInTheDocument(); // darkened silhouette, not initials
-    expect(header.getByTestId('profile-username').textContent).toBe('alice');
-
-    // Each ProfileLeaderboard row (public alias) gets the shared Avatar too.
-    await waitFor(() => expect(screen.getByTestId('profile-rank-p1')).toBeInTheDocument());
-    expect(within(screen.getByTestId('profile-rank-p1')).getByTestId('avatar')).toBeInTheDocument();
-    expect(within(screen.getByTestId('profile-rank-p2')).getByTestId('avatar')).toBeInTheDocument();
-  });
-
-  it('header renders the player\'s OWN avatar preset (avatarId prop → header disc)', () => {
+  it('profile card renders the player\'s OWN avatar preset (avatarId prop)', () => {
     render(<ProfileHubScreen {...baseProps({ avatarId: 'boy-brown' })} />);
-    const header = within(screen.getByTestId('profile-header'));
-    expect(header.getByTestId('avatar').getAttribute('data-avatar-id')).toBe('boy-brown');
-    expect(header.getByTestId('avatar-img')).toBeInTheDocument(); // a preset image, not the glyph
-  });
-
-  it('each leaderboard row honours entry.avatarId (public board carries the stored avatar)', async () => {
-    render(<ProfileHubScreen {...baseProps()} />);
-    // p1 (alice) has a 'boy-light' preset in the fixture → its row shows the preset image…
-    await waitFor(() => expect(screen.getByTestId('profile-rank-p1')).toBeInTheDocument());
-    const p1 = within(screen.getByTestId('profile-rank-p1'));
-    expect(p1.getByTestId('avatar').getAttribute('data-avatar-id')).toBe('boy-light');
-    expect(p1.getByTestId('avatar-img')).toBeInTheDocument();
-    // …while p2 (bob, 'default') falls back to the derived glyph, no preset image.
-    const p2 = within(screen.getByTestId('profile-rank-p2'));
-    expect(p2.getByTestId('avatar').getAttribute('data-avatar-id')).toBe('default');
-    expect(p2.queryByTestId('avatar-img')).toBeNull();
+    const card = within(screen.getByTestId('profile-card'));
+    expect(card.getByTestId('avatar').getAttribute('data-avatar-id')).toBe('boy-brown');
+    expect(card.getByTestId('avatar-img')).toBeInTheDocument(); // a preset image, not the glyph
   });
 
   describe('avatar picker (Advisor #12 ii)', () => {
-    it('tapping the header avatar opens the bg-surface overlay with the default + 6 presets', () => {
+    it('tapping the avatar opens the bg-surface overlay with the default + 6 presets', () => {
       render(<ProfileHubScreen {...baseProps()} />);
       expect(screen.queryByTestId('avatar-picker')).toBeNull();
       fireEvent.click(screen.getByTestId('profile-avatar-button'));
       const picker = screen.getByTestId('avatar-picker');
       expect(picker).toBeInTheDocument();
-      // the auth-popup treatment: an inner bg-surface panel (no rim).
       expect(picker.querySelector('.bg-surface')).not.toBeNull();
-      // default + 6 presets are offered (incl. the #312 meme-style pair).
       for (const id of ['default', 'boy-light', 'girl-light', 'boy-brown', 'boy-dark', 'hooded-mono', 'hooded-degen']) {
         expect(screen.getByTestId(`avatar-option-${id}`)).toBeInTheDocument();
       }
@@ -174,9 +147,8 @@ describe('ProfileHubScreen', () => {
           setAvatarCalls.push(sent);
           return { ok: true, json: async () => ({ avatarId: sent }) } as Response;
         }
-        if (u.includes('/games')) return { ok: true, json: async () => GAMES } as Response;
-        if (u.includes('/leaderboard/coinflip')) return { ok: true, json: async () => CF_BOARD } as Response;
-        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: 1009, entries: LEDGER }) } as Response;
+        if (u.includes('/rewards')) return { ok: true, json: async () => REWARDS } as Response;
+        if (u.includes('/matches/recent')) return { ok: true, json: async () => matchesFetchResponse(u) } as Response;
         return { ok: true, json: async () => ({}) } as Response;
       }));
       const onAvatarChange = vi.fn();
@@ -190,38 +162,133 @@ describe('ProfileHubScreen', () => {
       expect(onAvatarChange).toHaveBeenCalledWith('girl-light');
       await waitFor(() => expect(screen.queryByTestId('avatar-picker')).toBeNull());
     });
+  });
 
-    it('selecting and saving a #312 meme-style preset (hooded-degen) calls api.setAvatar with that id', async () => {
-      const setAvatarCalls: string[] = [];
-      vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+  describe('VIP progress card', () => {
+    it('renders XP, progress %, and current/next tier from the /rewards snapshot', async () => {
+      render(<ProfileHubScreen {...baseProps()} />);
+      await waitFor(() => expect(screen.getByTestId('profile-xp').textContent).toBe('17,800'));
+      // Bronze (5,000) → Silver (25,000) at 17,800 XP = 64%, same math as RewardsHub.tsx.
+      expect(screen.getByTestId('profile-vip-pct').textContent).toBe('64%');
+      expect(screen.getByTestId('profile-vip-bar').getAttribute('style')).toContain('width: 64%');
+      expect(screen.getByTestId('profile-vip-tier-current').textContent).toContain('BRONZE');
+      expect(screen.getByTestId('profile-vip-tier-next').textContent).toContain('SILVER');
+    });
+
+    it('reads 0/Unranked sensibly before the snapshot resolves (no undefined/NaN) — same "no nextTier yet" contract as RewardsHub.tsx\'s top-of-ladder case', () => {
+      vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {}))); // never resolves
+      render(<ProfileHubScreen {...baseProps()} />);
+      expect(screen.getByTestId('profile-xp').textContent).toBe('0');
+      expect(screen.getByTestId('profile-vip-pct').textContent).toBe('100%');
+      expect(screen.getByTestId('profile-vip-tier-current').textContent).toContain('UNRANKED');
+      expect(screen.getByTestId('profile-vip-tier-next').textContent).toContain('MAX');
+    });
+  });
+
+  describe('recent games', () => {
+    it('renders rows from /matches/recent with win (green) vs loss (muted) coloring', async () => {
+      render(<ProfileHubScreen {...baseProps()} />);
+      await waitFor(() => expect(screen.getByTestId('profile-match-m1')).toBeInTheDocument());
+      // m1: win, delta 101 → green, signed '+'.
+      const win = screen.getByTestId('profile-match-m1-amount');
+      expect(win.textContent).toContain('+101');
+      expect(win.getAttribute('style')).toContain('color: rgb(52, 211, 153)'); // #34D399
+      // m2: loss, delta -52 → muted, no leading '+'.
+      const loss = screen.getByTestId('profile-match-m2-amount');
+      expect(loss.textContent).toContain('-52');
+      expect(loss.getAttribute('style')).toContain('color: rgb(131, 131, 143)'); // #83838F
+    });
+
+    it('collapsed view shows a VIEW MORE pill; expanding reveals numbered page pills + VIEW LESS', async () => {
+      render(<ProfileHubScreen {...baseProps()} />);
+      await waitFor(() => expect(screen.getByTestId('profile-match-m1')).toBeInTheDocument());
+      expect(screen.getByTestId('profile-matches-view-more')).toBeInTheDocument();
+      expect(screen.queryByTestId('profile-matches-page-1')).toBeNull();
+
+      fireEvent.click(screen.getByTestId('profile-matches-view-more'));
+      // 12 total / 5 per page = 3 pages.
+      expect(screen.getByTestId('profile-matches-page-1')).toBeInTheDocument();
+      expect(screen.getByTestId('profile-matches-page-2')).toBeInTheDocument();
+      expect(screen.getByTestId('profile-matches-page-3')).toBeInTheDocument();
+      expect(screen.getByTestId('profile-matches-view-less')).toBeInTheDocument();
+      expect(screen.queryByTestId('profile-matches-view-more')).toBeNull();
+
+      fireEvent.click(screen.getByTestId('profile-matches-view-less'));
+      expect(screen.getByTestId('profile-matches-view-more')).toBeInTheDocument();
+      expect(screen.queryByTestId('profile-matches-page-1')).toBeNull();
+    });
+
+    it('clicking a page pill re-fetches that offset', async () => {
+      const fetchMock = vi.fn(async (url: string) => {
         const u = String(url);
-        if (u.includes('/auth/avatar')) {
-          const sent = JSON.parse(String(init?.body)).avatarId as string;
-          setAvatarCalls.push(sent);
-          return { ok: true, json: async () => ({ avatarId: sent }) } as Response;
-        }
-        if (u.includes('/games')) return { ok: true, json: async () => GAMES } as Response;
-        if (u.includes('/leaderboard/coinflip')) return { ok: true, json: async () => CF_BOARD } as Response;
-        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: 1009, entries: LEDGER }) } as Response;
+        if (u.includes('/rewards')) return { ok: true, json: async () => REWARDS } as Response;
+        if (u.includes('/matches/recent')) return { ok: true, json: async () => matchesFetchResponse(u) } as Response;
+        return { ok: true, json: async () => ({}) } as Response;
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      render(<ProfileHubScreen {...baseProps()} />);
+      await waitFor(() => expect(screen.getByTestId('profile-match-m1')).toBeInTheDocument());
+
+      fireEvent.click(screen.getByTestId('profile-matches-view-more'));
+      fireEvent.click(screen.getByTestId('profile-matches-page-2'));
+
+      await waitFor(() => expect(screen.getByTestId('profile-match-m6')).toBeInTheDocument());
+      const calledOffset5 = fetchMock.mock.calls.some(([url]) => String(url).includes('/matches/recent') && String(url).includes('offset=5'));
+      expect(calledOffset5).toBe(true);
+    });
+
+    it('shows an empty state and no VIEW MORE when there are no matches yet', async () => {
+      vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes('/rewards')) return { ok: true, json: async () => REWARDS } as Response;
+        if (u.includes('/matches/recent')) return { ok: true, json: async () => ({ matches: [], limit: 5, offset: 0, total: 0 }) } as Response;
         return { ok: true, json: async () => ({}) } as Response;
       }));
-      const onAvatarChange = vi.fn();
-      render(<ProfileHubScreen {...baseProps({ avatarId: 'default', onAvatarChange })} />);
+      render(<ProfileHubScreen {...baseProps()} />);
+      await waitFor(() => expect(screen.getByText(/No matches yet/)).toBeInTheDocument());
+      expect(screen.queryByTestId('profile-matches-view-more')).toBeNull();
+    });
+  });
 
-      fireEvent.click(screen.getByTestId('profile-avatar-button'));
-      fireEvent.click(screen.getByTestId('avatar-option-hooded-degen'));
-      fireEvent.click(screen.getByTestId('avatar-picker-save'));
+  describe('CONTROLS / Affiliate', () => {
+    it('renders every CONTROLS row plus the Affiliate row', () => {
+      render(<ProfileHubScreen {...baseProps()} />);
+      for (const key of ['account-details', 'verification', 'security', 'preferences', 'responsible-gaming', 'blocked-players', 'help-support']) {
+        expect(screen.getByTestId(`profile-control-${key}`)).toBeInTheDocument();
+      }
+      expect(screen.getByTestId('profile-affiliate')).toBeInTheDocument();
+    });
 
-      await waitFor(() => expect(setAvatarCalls).toEqual(['hooded-degen']));
-      expect(onAvatarChange).toHaveBeenCalledWith('hooded-degen');
-      await waitFor(() => expect(screen.queryByTestId('avatar-picker')).toBeNull());
+    it('Preferences routes to the real screen via onOpenPreferences (not a placeholder)', () => {
+      const onOpenPreferences = vi.fn();
+      render(<ProfileHubScreen {...baseProps({ onOpenPreferences })} />);
+      fireEvent.click(screen.getByTestId('profile-control-preferences'));
+      expect(onOpenPreferences).toHaveBeenCalledTimes(1);
+      expect(screen.queryByTestId('profile-placeholder-toast')).toBeNull();
+    });
+
+    it('every non-Preferences CONTROLS row shows a "coming soon" placeholder instead of a real destination', () => {
+      render(<ProfileHubScreen {...baseProps()} />);
+      fireEvent.click(screen.getByTestId('profile-control-verification'));
+      expect(screen.getByTestId('profile-placeholder-toast').textContent).toMatch(/Verification.*coming soon/);
+    });
+
+    it('the Affiliate row shows the same "coming soon" placeholder (real screen is a later ticket)', () => {
+      render(<ProfileHubScreen {...baseProps()} />);
+      fireEvent.click(screen.getByTestId('profile-affiliate'));
+      expect(screen.getByTestId('profile-placeholder-toast').textContent).toMatch(/Affiliate program.*coming soon/);
+    });
+
+    it('the temporary #401 header icon-button entry point is fully gone (no leftover duplicate)', () => {
+      render(<ProfileHubScreen {...baseProps({ onOpenPreferences: vi.fn() })} />);
+      expect(screen.queryByTestId('profile-open-preferences')).toBeNull();
     });
   });
 
   it('is sanitized: no $ anywhere on the hub', async () => {
     const { container } = render(<ProfileHubScreen {...baseProps()} />);
-    await waitFor(() => expect(screen.getByTestId('profile-balance').textContent).toContain('1,009'));
-    await waitFor(() => expect(screen.getByTestId('profile-rank-p1')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId('profile-xp').textContent).toBe('17,800'));
+    await waitFor(() => expect(screen.getByTestId('profile-match-m1')).toBeInTheDocument());
     expect(container.textContent ?? '').not.toMatch(/\$/);
   });
 
@@ -237,10 +304,6 @@ describe('ProfileHubScreen', () => {
     fireEvent.click(within(footer).getByText('Rewards/VIP'));
     expect(onOpenRewards).toHaveBeenCalled();
 
-    // The old inline "Players vs Players — never the house · play-money demo." footer is gone,
-    // not left stacked alongside the new shared one — exactly one <footer> element in the DOM,
-    // and it's the shared component (the new copyright block legitimately also says "never the
-    // house", so distinguish by element count/identity rather than that substring).
     expect(container.querySelectorAll('footer')).toHaveLength(1);
     expect(container.textContent ?? '').not.toMatch(/play-money demo\./i);
   });
