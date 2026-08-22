@@ -281,10 +281,14 @@ describe('ProfileHubScreen', () => {
       expect(screen.getByTestId('profile-placeholder-toast').textContent).toMatch(/Verification.*coming soon/);
     });
 
-    it('the Affiliate row shows the same "coming soon" placeholder (real screen is a later ticket)', () => {
-      render(<ProfileHubScreen {...baseProps()} />);
+    // Issue #423: the Affiliate row now routes to the real Affiliate screen via onOpenAffiliate —
+    // no longer the shared placeholder toast.
+    it('Affiliate routes to the real screen via onOpenAffiliate (not a placeholder)', () => {
+      const onOpenAffiliate = vi.fn();
+      render(<ProfileHubScreen {...baseProps({ onOpenAffiliate })} />);
       fireEvent.click(screen.getByTestId('profile-affiliate'));
-      expect(screen.getByTestId('profile-placeholder-toast').textContent).toMatch(/Affiliate program.*coming soon/);
+      expect(onOpenAffiliate).toHaveBeenCalledTimes(1);
+      expect(screen.queryByTestId('profile-placeholder-toast')).toBeNull();
     });
 
     it('the temporary #401 header icon-button entry point is fully gone (no leftover duplicate)', () => {

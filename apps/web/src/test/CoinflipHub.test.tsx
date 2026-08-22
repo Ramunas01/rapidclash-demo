@@ -77,6 +77,7 @@ function baseProps(over: Partial<Props> = {}): Props {
     onSelectGame: vi.fn(),
     onOpenWallet: vi.fn(),
     onOpenRewards: vi.fn(),
+    onOpenAffiliate: vi.fn(),
     onOpenGameList: vi.fn(),
     onResultDismiss: vi.fn(),
     ...over,

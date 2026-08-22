@@ -32,11 +32,12 @@ import { HomeHubScreen } from './screens/HomeHub.js';
 import { ProfileHubScreen } from './screens/ProfileHub.js';
 import { RewardsHubScreen } from './screens/RewardsHub.js';
 import { PreferencesHubScreen } from './screens/PreferencesHub.js';
+import { AffiliateHubScreen } from './screens/AffiliateHub.js';
 import { AuthModal } from './components/AuthModal.js';
 import { api } from './api.js';
 import { GuestGamePicker } from './screens/GuestGamePicker.js';
 
-type Screen = 'auth' | 'home' | 'profile' | 'preferences' | 'rewards' | 'wallet' | 'game-list' | 'guest-loading' | 'guest-picker' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub' | 'crash-hub' | 'roulette-hub' | 'ships-battle-hub' | 'dice-hub' | 'baccarat-hub' | 'keno-hub' | 'limbo-hub' | 'hilo-hub';
+type Screen = 'auth' | 'home' | 'profile' | 'preferences' | 'affiliate' | 'rewards' | 'wallet' | 'game-list' | 'guest-loading' | 'guest-picker' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub' | 'crash-hub' | 'roulette-hub' | 'ships-battle-hub' | 'dice-hub' | 'baccarat-hub' | 'keno-hub' | 'limbo-hub' | 'hilo-hub';
 
 /** A commit-to-play action captured when a logged-out visitor hits the auth wall. After sign-in
  *  the user lands on the intent's hub with the stake armed and presses PLAY to commit — nothing
@@ -939,6 +940,9 @@ export function App() {
   // (Screen union member, case, back-nav) is the permanent, correct wiring the follow-up ticket
   // will reuse as-is.
   const goToPreferences = useCallback(() => setScreen('preferences'), []);
+  // Issue #423: Affiliate program — reachable from Account's own row and from the Menu overlay's
+  // EARN group row (both previously showed the shared placeholder toast for this row specifically).
+  const goToAffiliate = useCallback(() => setScreen('affiliate'), []);
 
   // ── Home hub cross-game ticker subscriptions (raw, NOT via the single-game handlers,
   //    so they never reset the active game's feed). ─────────────────────────────────────
@@ -1154,6 +1158,7 @@ export function App() {
           onSelectGame={handleSelectGame}
           onOpenWallet={onAccountTap}
           onOpenRewards={onRewardsTap}
+          onOpenAffiliate={goToAffiliate}
           onHome={goToHome}
           loggedIn={loggedIn}
         />;
@@ -1169,9 +1174,20 @@ export function App() {
           onOpenProfile={goToProfile}
           onOpenRewards={goToRewards}
           onOpenPreferences={goToPreferences}
+          onOpenAffiliate={goToAffiliate}
         />;
       case 'preferences':
         return <PreferencesHubScreen onBack={goToProfile} />;
+      case 'affiliate':
+        return <AffiliateHubScreen
+          username={username}
+          balance={balance}
+          onBack={goToProfile}
+          onHome={goToHome}
+          onOpenProfile={goToProfile}
+          onOpenRewards={goToRewards}
+          onOpenAffiliate={goToAffiliate}
+        />;
       case 'rewards':
         return <RewardsHubScreen
           token={token!}
@@ -1180,6 +1196,7 @@ export function App() {
           onHome={goToHome}
           onOpenProfile={goToProfile}
           onOpenRewards={goToRewards}
+          onOpenAffiliate={goToAffiliate}
         />;
       case 'wallet':
         return <WalletScreen token={token!} username={username} balance={balance} onPlay={goToHome} onLogout={handleLogout} />;
@@ -1263,6 +1280,7 @@ export function App() {
           onSelectGame={handleSelectGame}
           onOpenWallet={onAccountTap}
           onOpenRewards={onRewardsTap}
+          onOpenAffiliate={goToAffiliate}
           onOpenGameList={goToHome}
           onResultDismiss={handleHubResultDismiss}
           loggedIn={loggedIn}

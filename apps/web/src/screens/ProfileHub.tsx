@@ -52,6 +52,10 @@ interface Props {
    *  small `Settings` icon beside `MuteToggle`) now that the real settings row exists. Optional
    *  so existing callers/tests without it still compile — the row still renders, it's just inert. */
   onOpenPreferences?(): void;
+  /** Issue #423: the real "Affiliate program" row destination — routes to the new Affiliate
+   *  screen, replacing the shared placeholder toast this row used to show. Same optional-prop
+   *  pattern as `onOpenPreferences` above. */
+  onOpenAffiliate?(): void;
 }
 
 /** The selectable avatars in the picker: default + the six presets (presets-only, no upload). */
@@ -118,7 +122,7 @@ function formatMatchTime(iso: string): string {
  * rest are inert placeholders per the design handoff's own stated scope), a standalone Affiliate
  * row (same placeholder), and LOG OUT. Read-only / play-money — no hidden info.
  */
-export function ProfileHubScreen({ token, username, avatarId = 'default', onAvatarChange, balance, onLogout, onHome, onOpenProfile, onOpenRewards, onOpenPreferences }: Props) {
+export function ProfileHubScreen({ token, username, avatarId = 'default', onAvatarChange, balance, onLogout, onHome, onOpenProfile, onOpenRewards, onOpenPreferences, onOpenAffiliate }: Props) {
   const [liveBalance, setLiveBalance] = useState(balance);
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -359,11 +363,12 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
                 {controlRows.map(renderControlRow)}
               </div>
 
-              {/* 5 — Affiliate program: standalone row, same anatomy, same placeholder. */}
+              {/* 5 — Affiliate program: standalone row, now the real destination (issue #423) —
+                  no longer the shared placeholder. */}
               <button
                 type="button"
                 data-testid="profile-affiliate"
-                onClick={() => showPlaceholder('Affiliate program')}
+                onClick={() => onOpenAffiliate?.()}
                 style={{ height: 48, boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: 12, background: RC.surface, borderRadius: 20, padding: '0 18px', border: 'none', cursor: 'pointer', textAlign: 'left' }}
               >
                 <Handshake style={{ width: 19, height: 19, flex: '0 0 19px' }} color={RC.muted} />
@@ -406,6 +411,7 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
         onClose={menu.close}
         onOpenGames={onHome}
         onOpenRewards={onOpenRewards}
+        onOpenAffiliate={() => onOpenAffiliate?.()}
       />
 
       {placeholderLabel && (

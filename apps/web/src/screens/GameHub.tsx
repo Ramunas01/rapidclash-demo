@@ -152,6 +152,9 @@ export interface GameHubScreenProps {
   onOpenGameList(): void;
   /** Rewards tab → the VIP/Rewards hub (issue #307). */
   onOpenRewards(): void;
+  /** Menu overlay's own EARN → "Affiliate program" row (issue #423). Unused in guest mode — the
+   *  Menu overlay itself is never rendered there (`!isGuest` below). */
+  onOpenAffiliate(): void;
   /** Reset App's result state when the hub's result overlay dismisses (back to Idle). */
   onResultDismiss(): void;
   /** Logged out → no wallet/feed (auth-required); browsing the board + picking a bet stay open.
@@ -268,7 +271,7 @@ export function GameHub(props: GameHubProps) {
     token, playerId, username, avatarId = 'default', opponentId, opponentName, serverClockOffset = 0, balance, currentMatchId, gameState, legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
     onPlay, onCancel, onTakeChallenge, onTakePublicChallenge, onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, onTrackChallenges,
-    onUntrackChallenges, onSelectGame, onOpenWallet, onOpenGameList, onOpenRewards, onResultDismiss,
+    onUntrackChallenges, onSelectGame, onOpenWallet, onOpenGameList, onOpenRewards, onOpenAffiliate, onResultDismiss,
     loggedIn = true, initialStake, initialTimeControl, isGuest = false,
   } = props;
 
@@ -676,6 +679,7 @@ export function GameHub(props: GameHubProps) {
           onClose={menu.close}
           onOpenGames={onOpenGameList}
           onOpenRewards={onOpenRewards}
+          onOpenAffiliate={onOpenAffiliate}
         />
       )}
 

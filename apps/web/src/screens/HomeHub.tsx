@@ -60,6 +60,8 @@ interface Props {
   onOpenWallet(): void;
   /** Rewards tab → the VIP/Rewards hub (issue #307). */
   onOpenRewards(): void;
+  /** Menu overlay's own EARN → "Affiliate program" row (issue #423). */
+  onOpenAffiliate(): void;
   /** Logo / Games nav — Home is the landing, so these return here. */
   onHome(): void;
   /** Logged out → no wallet/feed (auth-required); browse stays open, control is "Sign in". */
@@ -75,7 +77,7 @@ interface Props {
  */
 export function HomeHubScreen({
   token, balance, challengesByGame, onTrackChallenges, onUntrackChallenges,
-  onTakeChallenge, onTakePublicChallenge, onSelectGame, onOpenWallet, onOpenRewards, onHome, loggedIn = true,
+  onTakeChallenge, onTakePublicChallenge, onSelectGame, onOpenWallet, onOpenRewards, onOpenAffiliate, onHome, loggedIn = true,
 }: Props) {
   const [games, setGames] = useState<GameMeta[]>([]);
   const [liveBalance, setLiveBalance] = useState(balance);
@@ -203,6 +205,7 @@ export function HomeHubScreen({
         onClose={menu.close}
         onOpenGames={onHome}
         onOpenRewards={onOpenRewards}
+        onOpenAffiliate={onOpenAffiliate}
       />
     </div>
   );

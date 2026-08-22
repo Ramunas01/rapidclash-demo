@@ -22,6 +22,8 @@ interface Props {
   onOpenProfile(): void;
   /** Rewards nav → stays here (self). */
   onOpenRewards(): void;
+  /** Menu overlay's own EARN → "Affiliate program" row (issue #423). */
+  onOpenAffiliate(): void;
 }
 
 /** The design's `VIP_ROWS` table — static reference data (the same six-tier thresholds/perks
@@ -83,7 +85,7 @@ const VOLUME_MILESTONES: Record<'Emerald' | 'Diamond', number[]> = {
  *     actually is. No duplicate "RC WAGERED" stat is added to the Rewards page itself; the real
  *     figure ships once, on ProfileHub, per that addition.
  */
-export function RewardsHubScreen({ token, username, balance, onHome, onOpenProfile, onOpenRewards }: Props) {
+export function RewardsHubScreen({ token, username, balance, onHome, onOpenProfile, onOpenRewards, onOpenAffiliate }: Props) {
   const [liveBalance, setLiveBalance] = useState(balance);
   // Issue #414: the Menu overlay's own open/close/reveal-origin state.
   const menu = useMenuOverlay();
@@ -251,6 +253,7 @@ export function RewardsHubScreen({ token, username, balance, onHome, onOpenProfi
         onClose={menu.close}
         onOpenGames={onHome}
         onOpenRewards={onOpenRewards}
+        onOpenAffiliate={onOpenAffiliate}
       />
     </div>
   );
