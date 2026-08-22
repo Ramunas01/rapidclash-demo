@@ -21,6 +21,8 @@ import { TierIcon, progressPercent } from '../components/hub-shared/vipTier.js';
 import { TILE_ART, titleCase } from '../components/hub-shared/tiles.js';
 import { cn } from '@/lib/utils';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
+import { MenuOverlay } from '../components/hub-chrome/MenuOverlay.js';
+import { useMenuOverlay } from '../components/hub-chrome/useMenuOverlay.js';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
@@ -135,6 +137,9 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
 
   const [placeholderLabel, setPlaceholderLabel] = useState<string | null>(null);
   const placeholderTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Issue #414: the Menu overlay's own open/close/reveal-origin state.
+  const menu = useMenuOverlay();
 
   useEffect(() => { setLiveBalance(balance); }, [balance]);
 
@@ -392,7 +397,20 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
         <HubFooter onGames={onHome} onRewards={onOpenRewards} />
       </main>
 
-      <HubToolbar onGames={onHome} onAccount={onOpenProfile} onRewards={onOpenRewards} active="account" />
+      <HubToolbar
+        onGames={menu.wrap(onHome)}
+        onAccount={menu.wrap(onOpenProfile)}
+        onRewards={menu.wrap(onOpenRewards)}
+        onMenu={menu.onMenu}
+        active={menu.open ? 'menu' : 'account'}
+      />
+      <MenuOverlay
+        open={menu.open}
+        anchorRect={menu.anchorRect}
+        onClose={menu.close}
+        onOpenGames={onHome}
+        onOpenRewards={onOpenRewards}
+      />
 
       {placeholderLabel && (
         <div

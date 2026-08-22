@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode, type Ref } from 'react';
 import { cn } from '@/lib/utils';
+import type { MenuAnchorRect } from './useMenuOverlay.js';
 
 interface Props {
   /** games → the home/games surface. */
@@ -8,19 +9,34 @@ interface Props {
   onAccount(): void;
   /** rewards → the VIP/Rewards surface (issue #307). */
   onRewards(): void;
-  /** Which item reads as active (default 'games' — the home/games surface). */
-  active?: 'games' | 'account' | 'rewards';
+  /** menu → toggles the full-screen Menu overlay (issue #414). Called with the Menu button's
+   *  own live `getBoundingClientRect()` (as plain numbers) so the caller's overlay can grow its
+   *  clip-path reveal from the real button position — HubToolbar owns the button/ref, the caller
+   *  owns the overlay, so the rect has to cross that boundary somehow. */
+  onMenu(anchorRect: MenuAnchorRect): void;
+  /** Which item reads as active (default 'games' — the home/games surface). 'menu' is set by the
+   *  caller while its Menu overlay is open — mutually exclusive with the other three, same as
+   *  they already are with each other. */
+  active?: 'games' | 'account' | 'rewards' | 'menu';
 }
 
 /**
  * Bottom navigation — the frame's transparent bar holding one rounded pill with 5 items
- * (Menu · Games · Account · Rewards · Chat). games/account/rewards are wired to live surfaces;
- * menu/chat are reserved and render visibly inactive (greyed, no action) — never a
- * live-looking button that silently no-ops. Shared across hubs; `position: fixed` at the
- * bottom (#142 keeps the footer fixed while the page body scrolls). The bottom pad clears the
- * home-indicator safe-area under viewport-fit=cover.
+ * (Menu · Games · Account · Rewards · Chat). games/account/rewards/menu are all wired to live
+ * surfaces (issue #414 flips Menu from reserved to live, opening the full-screen Menu overlay —
+ * see `useMenuOverlay.ts`/`MenuOverlay.tsx`); chat remains reserved and renders visibly inactive
+ * (greyed, no action) — never a live-looking button that silently no-ops. Shared across hubs;
+ * `position: fixed` at the bottom (#142 keeps the footer fixed while the page body scrolls). The
+ * bottom pad clears the home-indicator safe-area under viewport-fit=cover.
  */
-export function HubToolbar({ onGames, onAccount, onRewards, active = 'games' }: Props) {
+export function HubToolbar({ onGames, onAccount, onRewards, onMenu, active = 'games' }: Props) {
+  const menuBtnRef = useRef<HTMLButtonElement>(null);
+  function handleMenuClick() {
+    const el = menuBtnRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    onMenu({ left: r.left, top: r.top, width: r.width, height: r.height });
+  }
   return (
     <>
       {/* Scroll fade (#407): a 62px gradient dissolve sitting just above the solid mask below, so
@@ -52,7 +68,7 @@ export function HubToolbar({ onGames, onAccount, onRewards, active = 'games' }: 
       />
       <nav aria-label="Primary" className="fixed bottom-0 left-1/2 z-20 w-full max-w-md -translate-x-1/2 bg-transparent px-3 pb-[calc(0.5rem_+_env(safe-area-inset-bottom))] pt-1">
       <div className="flex items-center justify-between rounded-[26px] bg-surface px-1.5 py-3">
-        <ToolbarItem label="Menu" comingSoon icon={ICON_MENU} />
+        <ToolbarItem label="Menu" active={active === 'menu'} onClick={handleMenuClick} icon={ICON_MENU} btnRef={menuBtnRef} />
         <ToolbarItem label="Games" active={active === 'games'} onClick={onGames} icon={ICON_GAMES} />
         <ToolbarItem label="Account" active={active === 'account'} onClick={onAccount} icon={ICON_ACCOUNT} />
         <ToolbarItem label="Rewards" active={active === 'rewards'} onClick={onRewards} icon={ICON_REWARDS} />
@@ -64,13 +80,16 @@ export function HubToolbar({ onGames, onAccount, onRewards, active = 'games' }: 
 }
 
 function ToolbarItem({
-  label, icon, onClick, active = false, comingSoon = false,
+  label, icon, onClick, active = false, comingSoon = false, btnRef,
 }: {
   label: string;
   icon: ReactNode;
   onClick?: () => void;
   active?: boolean;
   comingSoon?: boolean;
+  /** Set on the rendered `<button>` DOM node (not on ToolbarItem itself, so no forwardRef
+   *  needed) — only the Menu item uses this, to read its own position at tap time. */
+  btnRef?: Ref<HTMLButtonElement>;
 }) {
   const testid = `hub-nav-${label.toLowerCase()}`;
   const labelText = (
@@ -93,6 +112,7 @@ function ToolbarItem({
   }
   return (
     <button
+      ref={btnRef}
       type="button"
       onClick={onClick}
       aria-label={label}

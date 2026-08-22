@@ -3,6 +3,8 @@ import type { RewardsSnapshot, VipTier } from '@rapidclash/shared';
 import { api } from '../api.js';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
+import { MenuOverlay } from '../components/hub-chrome/MenuOverlay.js';
+import { useMenuOverlay } from '../components/hub-chrome/useMenuOverlay.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
 import { RcIcon } from '../components/hub-shared/RcIcon.js';
@@ -83,6 +85,8 @@ const VOLUME_MILESTONES: Record<'Emerald' | 'Diamond', number[]> = {
  */
 export function RewardsHubScreen({ token, username, balance, onHome, onOpenProfile, onOpenRewards }: Props) {
   const [liveBalance, setLiveBalance] = useState(balance);
+  // Issue #414: the Menu overlay's own open/close/reveal-origin state.
+  const menu = useMenuOverlay();
   const [snapshot, setSnapshot] = useState<RewardsSnapshot | null>(null);
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState('');
@@ -234,7 +238,20 @@ export function RewardsHubScreen({ token, username, balance, onHome, onOpenProfi
         <HubFooter onGames={onHome} onRewards={onOpenRewards} />
       </main>
 
-      <HubToolbar onGames={onHome} onAccount={onOpenProfile} onRewards={onOpenRewards} active="rewards" />
+      <HubToolbar
+        onGames={menu.wrap(onHome)}
+        onAccount={menu.wrap(onOpenProfile)}
+        onRewards={menu.wrap(onOpenRewards)}
+        onMenu={menu.onMenu}
+        active={menu.open ? 'menu' : 'rewards'}
+      />
+      <MenuOverlay
+        open={menu.open}
+        anchorRect={menu.anchorRect}
+        onClose={menu.close}
+        onOpenGames={onHome}
+        onOpenRewards={onOpenRewards}
+      />
     </div>
   );
 }

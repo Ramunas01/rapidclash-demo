@@ -9,6 +9,8 @@ import { formatClock } from '../format.js';
 import { cn } from '@/lib/utils';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
+import { MenuOverlay } from '../components/hub-chrome/MenuOverlay.js';
+import { useMenuOverlay } from '../components/hub-chrome/useMenuOverlay.js';
 import { hubShellClass } from '../components/hub-chrome/layout.js';
 import { TILE_ART, COMING_SOON, titleCase } from '../components/hub-shared/tiles.js';
 import { GamesCarousel } from '../components/hub-shared/GamesCarousel.js';
@@ -274,6 +276,9 @@ export function GameHub(props: GameHubProps) {
   // The `balance`→`liveBalance` sync effect lives after `phase` is derived (it can HOLD on the
   // reveal-complete signal when gateResultOnReveal is set); the mount fetch stays here.
   const [liveBalance, setLiveBalance] = useState(balance);
+  // Issue #414: the Menu overlay's own open/close/reveal-origin state — never opened for a guest
+  // (its HubToolbar, the only way to reach it, is already hidden below via `!isGuest &&`).
+  const menu = useMenuOverlay();
   useEffect(() => {
     // Wallet is auth-only (logged out shows the "Sign in" chip); a guest's balance lives in the
     // server's ephemeral ledger, never the real `/wallet` — the `balance` prop (updated from the
@@ -655,7 +660,24 @@ export function GameHub(props: GameHubProps) {
 
       {/* Bottom nav (Games/Account) leads to the full game grid / profile — real-platform
           surfaces a guest session doesn't have. Omitted for guest mode. */}
-      {!isGuest && <HubToolbar onGames={onOpenGameList} onAccount={onOpenWallet} onRewards={onOpenRewards} active="games" />}
+      {!isGuest && (
+        <HubToolbar
+          onGames={menu.wrap(onOpenGameList)}
+          onAccount={menu.wrap(onOpenWallet)}
+          onRewards={menu.wrap(onOpenRewards)}
+          onMenu={menu.onMenu}
+          active={menu.open ? 'menu' : 'games'}
+        />
+      )}
+      {!isGuest && (
+        <MenuOverlay
+          open={menu.open}
+          anchorRect={menu.anchorRect}
+          onClose={menu.close}
+          onOpenGames={onOpenGameList}
+          onOpenRewards={onOpenRewards}
+        />
+      )}
 
       {/* Opt-out games (Blackjack) suppress the pop-up and present the result on the board instead;
           the overlay stays the default for every other hub (the regression guard). */}

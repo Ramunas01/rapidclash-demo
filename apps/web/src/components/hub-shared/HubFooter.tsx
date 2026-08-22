@@ -10,6 +10,11 @@ interface Props {
   onGames?(): void;
   /** Rewards/VIP link (PLATFORM col) → the VIP/Rewards surface. */
   onRewards?(): void;
+  /** Issue #414: when the Menu overlay renders this same footer, every OTHER link needs the
+   *  overlay's placeholder-toast treatment instead of staying a dead tap. Optional and unused by
+   *  every other call site (Home/Games/Account/Rewards hubs) — those keep the original,
+   *  byte-identical "no onClick at all" behavior for non-real links. */
+  onPlaceholder?(label: string): void;
 }
 
 /** The 4 social buttons — inline SVG glyphs (issue #323 adds Instagram; the old footer never
@@ -107,9 +112,12 @@ const LINK_COLUMNS: { heading: string; links: { label: string; real?: 'games' | 
  * see `docs/COMMS/from-advisor/footer-and-rc-icon.md` §1).
  *
  * Only `Games` and `Rewards/VIP` are real — every other link/icon here is visually identical but
- * has no `onClick` attached at all, matching the design source exactly.
+ * has no `onClick` attached at all, matching the design source exactly. Unless `onPlaceholder` is
+ * passed (issue #414's Menu overlay is the one caller that does), in which case the other links
+ * fire that instead of staying inert — everywhere else `onPlaceholder` is omitted, so nothing
+ * about the other 4 call sites' behavior changes.
  */
-export function HubFooter({ onGames, onRewards }: Props) {
+export function HubFooter({ onGames, onRewards, onPlaceholder }: Props) {
   return (
     <footer data-testid="home-footer" className="pt-6">
       {/* Full-bleed gradient band: transparent <footer> lets the page's own bg-background
@@ -167,7 +175,15 @@ export function HubFooter({ onGames, onRewards }: Props) {
                       key={l.label}
                       data-testid={`home-footer-link-${l.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
                       className="cursor-pointer text-[14px] text-foreground"
-                      onClick={l.real === 'games' ? onGames : l.real === 'rewards' ? onRewards : undefined}
+                      onClick={
+                        l.real === 'games'
+                          ? onGames
+                          : l.real === 'rewards'
+                            ? onRewards
+                            : onPlaceholder
+                              ? () => onPlaceholder(l.label)
+                              : undefined
+                      }
                     >
                       {l.label}
                     </span>
