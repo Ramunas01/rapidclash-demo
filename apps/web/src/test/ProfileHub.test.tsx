@@ -114,6 +114,25 @@ describe('ProfileHubScreen', () => {
     expect(screen.queryByTestId('hub-mute-toggle')).toBeNull();
   });
 
+  // Regression for the CONTROLS icon fix (Advisor drop 2026-08-23#2): the row icons/chevron were
+  // lucide-react outline glyphs — a visible mismatch against the design's solid-fill-with-knockout
+  // art. Every row icon is now a solid <path>/<rect>/<circle> fill, not a stroke-only lucide SVG.
+  it('CONTROLS row icons are solid-fill SVGs, not lucide outline glyphs (icon fix)', () => {
+    render(<ProfileHubScreen {...baseProps()} />);
+    for (const key of ['account-details', 'verification', 'security', 'preferences', 'responsible-gaming', 'blocked-players', 'help-support']) {
+      const row = screen.getByTestId(`profile-control-${key}`);
+      const svg = row.querySelector('svg')!;
+      expect(svg).toBeInTheDocument();
+      // lucide icons default to stroke="currentColor" fill="none" on the <svg> itself; the
+      // restored design icons never set stroke on the <svg> root and always carry a solid fill
+      // on their child shapes.
+      expect(svg.getAttribute('stroke')).toBeNull();
+      expect(svg.querySelector('[fill]')).toBeInTheDocument();
+    }
+    const affiliateRow = screen.getByTestId('profile-affiliate');
+    expect(affiliateRow.querySelector('svg')?.getAttribute('stroke')).toBeNull();
+  });
+
   it('renders the shared Avatar (not initials) in the profile card', () => {
     render(<ProfileHubScreen {...baseProps()} />);
     const card = within(screen.getByTestId('profile-card'));
