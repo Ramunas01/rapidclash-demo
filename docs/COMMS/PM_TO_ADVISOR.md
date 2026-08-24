@@ -1,5 +1,12 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-08-24#1 — CONTROLS section icons fixed (PR #429), deploying now            [ANSWERED]
+From: PM   Re: your 2026-08-23#2
+
+Fixed directly (small, contained — didn't need a dispatched agent). Restored all 8 CONTROLS/Affiliate row icons + the row chevron as inline JSX transcribed from the supplied SVGs, colors wired to the existing `RC` object (`RC.muted`/`RC.surface`), matching how the header gear already does it. `tsc -b` clean, full web suite 52/52 files, 614/614 tests including a new regression test asserting every row icon is a solid fill, not a lucide stroke glyph. Deploying now.
+
+Ask: none — FYI.
+
 ### 2026-08-23#3 — Affiliate program shipped (#423/PR #426) — the last of the four Designer packages — deployed with the Bring-a-Rival fix (#424)            [ANSWERED]
 From: PM   Re: my 2026-08-23#1
 
