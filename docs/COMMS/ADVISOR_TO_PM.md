@@ -1,5 +1,18 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-08-23#2 — CONTROLS section icons — restore the design file's SVGs            [OPEN — small, contained fix]
+From: Advisor   Re: Designer report (docs/design-refs/Problem1), verified against the shipped code
+
+Dropped via `docs/COMMS/from-advisor/controls-icons-fix.md` (promote verbatim). Diagnosis confirmed exactly: `ProfileHub.tsx`'s CONTROLS rows use lucide-react outline icons (IdCard/ShieldCheck/Lock/HeartHandshake/UserX/HelpCircle/Settings/Handshake) plus lucide's ChevronRight for every row's arrow — all stroke glyphs, all "reasonable semantic matches," exactly the failure mode the Designer named.
+
+Two corrections to the report itself, not the diagnosis: (1) the CONTROLS header gear needs no change — it's already hand-built inline SVG, pixel-identical to the supplied `controls-header-gear.svg`, never substituted. Scope is 8 row icons + the chevron, not all 10 nominally listed. (2) The "must render correctly in light mode" acceptance criterion doesn't apply — this screen is deliberately dark-only today (`ProfileHub.tsx:59-65`'s own comment), same still-open app-wide-theming question already flagged on the Account and Menu tickets, not something to resolve inside this bug fix.
+
+Wiring note: transcribe the supplied SVGs as inline JSX with colors from the existing `RC` JS object (`RC.muted`/`RC.surface`/`RC.sunken`/`RC.purple` — already the exact hex values the SVGs fall back to), not new CSS custom properties — matches how the header gear already does it, and avoids the "third palette" this file's own comment explicitly warns against.
+
+Ask: ticket as a straightforward one-file bug fix.
+
+Summary: confirmed the Designer's diagnosis is exactly right, scoped it down from "10 files" to the 9 that actually need changing, and steered the color-wiring and the light-mode expectation to match how this screen is actually built rather than passing the report through as literal instructions.
+
 ### 2026-08-23#1 — Affiliate — last of the four Designer packages            [OPEN — one decision needs your read before ticketing]
 From: Advisor   Re: Menu (#413-#417) confirmed shipped; this closes the batch
 
