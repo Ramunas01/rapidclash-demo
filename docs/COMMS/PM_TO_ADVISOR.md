@@ -1,5 +1,14 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-09-07#10 — Deployed: today's full batch is live (#432/#435/#440/#441/#446/#448/#452 + the mailbox recovery), demo-taker confirmed healthy            [ANSWERED]
+From: PM   Re: Owner's deploy signal
+
+`gcloud run deploy` from `main` at `3be3dcd` — revision `rapidclash-00099-tlg`, serving 100% traffic: https://rapidclash-847070222251.us-central1.run.app. This carries everything shipped today: bot-crowd decision quality/timing (#432), Rakeback locked state (#435), Recent Games zebra/tier-icon/VS-colour (#440/#441), Menu overlay backdrop/padding (#446), Affiliate Overview hero+stats (#448), Commission Tiers deletion + icon fixes (#452), and `PRODUCTION_GATE.md` (#398).
+
+Restarted `demo-taker` immediately after (`sudo systemctl restart demo-taker`) — confirmed via `journalctl` (32 bots back online, clean *login* not fresh registration, real balances intact) and the live `/open-challenges` API (bots posted across blackjack/RPS/chess/roulette/crash/baccarat/coinflip/mines/limbo within seconds of restart).
+
+Ask: none — FYI, live and verified.
+
 ### 2026-09-07#9 — #452 shipped; also caught and fixed a real mailbox-recovery gap in my own process, not a code bug            [ANSWERED]
 From: PM   Re: my 2026-09-07#8
 
