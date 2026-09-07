@@ -4,6 +4,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
 import { MenuOverlay } from '../components/hub-chrome/MenuOverlay.js';
 import { useMenuOverlay } from '../components/hub-chrome/useMenuOverlay.js';
+import { HUB_BODY, HUB_FIXED_TOP } from '../components/hub-chrome/layout.js';
 
 /** A minimal stand-in for how every real hub screen wires `useMenuOverlay` + `HubToolbar` +
  *  `MenuOverlay` together (see HomeHub.tsx/GameHub.tsx/RewardsHub.tsx/ProfileHub.tsx) — issue
@@ -71,6 +72,37 @@ describe('Menu overlay (issue #414) — open/close', () => {
     const overlay = screen.getByTestId('menu-overlay');
     expect(overlay.getAttribute('aria-hidden')).toBe('true');
     expect(overlay.style.pointerEvents).toBe('none');
+  });
+});
+
+describe('Menu overlay (issue #446) — backdrop z-index, bottom clearance, top clearance', () => {
+  it("z-[18] wrapper sits strictly between the backdrop's z-20 and the pill/header's z-20 no longer applies — the backdrop layers are bumped to z-20 too, matching the pill", () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByTestId('hub-nav-menu'));
+    expect(screen.getByTestId('hub-nav-fade').className).toContain('z-20');
+    expect(screen.getByTestId('hub-nav-fill').className).toContain('z-20');
+    expect(screen.getByTestId('hub-nav-fade').className).not.toContain('z-[15]');
+    expect(screen.getByTestId('hub-nav-fill').className).not.toContain('z-[15]');
+    // The overlay's own wrapper stays z-[18] — unchanged by this fix — but no longer sits above
+    // the backdrop layers now that they're both z-20 (same tier as the nav pill above it).
+    expect(screen.getByTestId('menu-overlay').className).toContain('z-[18]');
+  });
+
+  it('the bottom clearance under the MENU content uses the shared HUB_BODY token, not a flat pb-6', () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByTestId('hub-nav-menu'));
+    const wrapper = screen.getByText('MENU').parentElement;
+    expect(wrapper?.className).toContain(HUB_BODY);
+    expect(wrapper?.className).not.toContain('pb-6');
+  });
+
+  it('the top clearance above MENU uses the shared HUB_FIXED_TOP calc() token, not a flat pt-[130px]', () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByTestId('hub-nav-menu'));
+    const wrapper = screen.getByText('MENU').parentElement;
+    expect(wrapper?.className).toContain(HUB_FIXED_TOP);
+    expect(wrapper?.className).not.toContain('pt-[130px]');
+    expect(wrapper?.className).toContain('env(safe-area-inset-top)');
   });
 });
 

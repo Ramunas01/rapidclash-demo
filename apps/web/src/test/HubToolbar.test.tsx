@@ -17,9 +17,12 @@ describe('HubToolbar — solid #0B0B0B base fill behind the bottom nav', () => {
     // The canonical token, never a fresh literal (would re-create the unification drift).
     expect(cls).toContain('bg-background');
     expect(cls).not.toContain('#'); // no inline hex
-    // Purely visual, below the nav (z-[15] < the nav's z-20) so the pill floats over it.
+    // Purely visual, z-20 — same tier as the nav pill (issue #446: was z-[15], which the Menu
+    // overlay's own z-[18] wrapper painted over, hiding this layer whenever it was open). Document
+    // order still puts the pill on top since it renders after this layer.
     expect(cls).toContain('pointer-events-none');
-    expect(cls).toContain('z-[15]');
+    expect(cls).toContain('z-20');
+    expect(cls).not.toContain('z-[15]');
     const nav = fill.parentElement?.querySelector('nav');
     expect(nav?.className).toContain('z-20'); // pill/nav above the fill
   });
@@ -113,9 +116,10 @@ describe('HubToolbar — scroll-fade layer + label size (issue #407, navbar poli
     expect(cls).toContain('hsl(var(--background))');
     expect(cls).not.toMatch(/#[0-9a-fA-F]{3,6}/); // no inline hex
     expect(cls).toContain('h-[62px]');
-    // Purely visual, below the nav, pointer-events pass through to the pill.
+    // Purely visual, z-20 (issue #446 — same tier as the nav pill), pointer-events pass through.
     expect(cls).toContain('pointer-events-none');
-    expect(cls).toContain('z-[15]');
+    expect(cls).toContain('z-20');
+    expect(cls).not.toContain('z-[15]');
     const nav = fade.parentElement?.querySelector('nav');
     expect(nav?.className).toContain('z-20'); // pill/nav still above the fade
 
@@ -159,6 +163,50 @@ describe('HubToolbar — scroll-fade layer + label size (issue #407, navbar poli
     expect(games.getAttribute('aria-current')).toBe('page');
     expect(games.className).toContain('text-brand');
     expect(games.className).toContain('drop-shadow-[0_0_5px_#8140e288]');
+  });
+});
+
+describe('HubToolbar — backdrop z-index bump to z-20 (issue #446)', () => {
+  // Games/Account/Rewards (and every other hub screen that renders HubToolbar without also
+  // mounting MenuOverlay's z-[18] wrapper in the same stacking context) have nothing between the
+  // old z-[15] and the pill's z-20 today — so raising the backdrop layers to z-20 must not change
+  // anything observable about them: same elements, same order, same tap-through behavior. This
+  // reproduces exactly what those screens render (plain HubToolbar, standalone) to prove that.
+  it('both backdrop layers are z-20 (matching the pill), with no z-[15] left anywhere', () => {
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} />);
+    expect(screen.getByTestId('hub-nav-fade').className).toContain('z-20');
+    expect(screen.getByTestId('hub-nav-fill').className).toContain('z-20');
+    expect(screen.getByTestId('hub-nav-fade').className).not.toContain('z-[15]');
+    expect(screen.getByTestId('hub-nav-fill').className).not.toContain('z-[15]');
+  });
+
+  it('on a screen with no overlay in its stacking context, the pill still renders after (visually above) both backdrop layers in DOM order, and nav buttons still tap through unchanged', () => {
+    const onGames = vi.fn();
+    const onAccount = vi.fn();
+    const onRewards = vi.fn();
+    const { container } = render(
+      <HubToolbar onGames={onGames} onAccount={onAccount} onRewards={onRewards} onMenu={vi.fn()} />,
+    );
+    // Same tier (z-20) as the pill on all three siblings — order among equal-z-index siblings
+    // falls back to document order, so the pill (rendered last) still paints on top, same as
+    // before this fix when it was strictly higher (z-20 > z-[15]).
+    const children = Array.from(container.children);
+    const fadeIdx = children.indexOf(screen.getByTestId('hub-nav-fade'));
+    const fillIdx = children.indexOf(screen.getByTestId('hub-nav-fill'));
+    const navIdx = children.findIndex((el) => el.tagName === 'NAV');
+    expect(fadeIdx).toBeGreaterThanOrEqual(0);
+    expect(fillIdx).toBeGreaterThan(fadeIdx);
+    expect(navIdx).toBeGreaterThan(fillIdx);
+
+    // Unaffected rendering: pointer-events-none on both backdrop layers, buttons still fire.
+    expect(screen.getByTestId('hub-nav-fade').className).toContain('pointer-events-none');
+    expect(screen.getByTestId('hub-nav-fill').className).toContain('pointer-events-none');
+    fireEvent.click(screen.getByTestId('hub-nav-games'));
+    expect(onGames).toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('hub-nav-account'));
+    expect(onAccount).toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('hub-nav-rewards'));
+    expect(onRewards).toHaveBeenCalled();
   });
 });
 
