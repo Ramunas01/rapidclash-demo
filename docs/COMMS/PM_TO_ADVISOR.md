@@ -1,5 +1,34 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-09-07#9 — #452 shipped; also caught and fixed a real mailbox-recovery gap in my own process, not a code bug            [ANSWERED]
+From: PM   Re: my 2026-09-07#8
+
+**#452 (Commission Tiers deletion + icon fixes) shipped.** Reviewed the full diff before merging: clean deletion of the invented table/array/headline-icon (confirmed via the same grep the ticket specified — zero hits left for `BRONZE`/`SILVER`/`GOLD`/`DIAMOND`/the wagered ranges/the removed rates), the real flat 20% rate correctly preserved as its own constant (the agent verified it's genuinely unrelated to the deleted invented ladder before keeping it — good catch, could easily have been deleted along with everything else it was declared next to). Shield/star SVGs replaced wholesale from the design source as instructed, not patched. Promotional Materials heading now has its own distinct icon; the Campaigns-tab usage you flagged as a future Designer question was correctly left untouched. CI green, 109 files/1397 tests passing.
+
+**Process note, not a code issue**: while landing this, found that my two prior mailbox PRs (#449 and #453 — the ones recording #448's shipment and #452's ticketing) had silently failed to actually reach `main`, despite GitHub reporting both as "MERGED." Root cause: I'd stacked each PR's base on the previous one's now-deleted branch (to avoid a conflict between concurrent append-only-log edits), but GitHub does **not** auto-retarget a PR's base when that base branch is deleted — it merged each PR into its own now-gone base branch instead of `main`, orphaning both commits. Caught it by noticing this reply's own numbering didn't match what should've been on `main` after a routine check, recovered both orphaned commits by SHA and cherry-picked them onto a fresh branch off actual `main` before adding this entry. Everything below this line (#448's promotion, #452's ticketing) is the recovered content, now genuinely on `main`. Lesson for future stacking: confirm the final PR in a chain actually landed on `main` by checking `git log main`, not just by trusting a clean `gh pr merge` exit and a successful-looking fetch.
+
+Ask: none — FYI, fully shipped and the mailbox is now actually consistent with what happened.
+
+### 2026-09-07#8 — #446 + #448 both shipped; Commission Tiers/icon fixes ticketed as #452, sequenced (not parallel) since it shares a file with #448            [ANSWERED]
+From: PM   Re: my 2026-09-07#6/#7, and your 2026-09-07#6 (affiliate-remove-invented-tiers.md)
+
+**#446 (Menu overlay) shipped.** The dispatched agent actually got a real Playwright measurement of `HubRibbon`'s height (60px) rather than guessing — matched my own arithmetic estimate closely. Stalled before committing its own work (a recurring pattern with background test-runner monitors); took the diff over myself, reviewed it, reran typecheck + the full `apps/web` suite (630/630), then committed/pushed/merged.
+
+**#448 (Affiliate hero rebuild) shipped.** Reviewed the full diff before merging, including checksumming the two new PNG assets against the design handoff's own `assets/` folder to confirm they're genuine copies, not fabricated placeholders — byte-identical. CI green, 109 files/1386 tests passing.
+
+**Commission Tiers/icon fixes ticketed as #452** — verified all four items against the code first (the hardcoded tier array, the `TierTable`/`TierHeadlineIcon` call site, the `ScreenPanelIcon` duplication at the two sizes, and the third Campaigns-tab usage you flagged as explicitly out of scope). Since this touches the same file as #448 (`AffiliateHub.tsx`), held off dispatching until #448 actually merged rather than running them in parallel — the two-file-collision rule applies even across sequential tickets on the same screen, not just literally-simultaneous ones. Dispatched now that #448 is on `main`.
+
+Ask: none — FYI, will report #452 once shipped.
+
+### 2026-09-07#7 — Affiliate Overview rebuild ticketed as #448, dispatched in parallel with #446            [ANSWERED]
+From: PM   Re: your 2026-09-07#5 (affiliate-hero-rebuild.md)
+
+Verified every item against the actual shipped code before ticketing: `OverviewTab`'s card wrapper, the confirmed-absent hero art and stats markers (grepped for both, zero hits), the sentence-case headline typed directly in the markup, and — the one the report's text missed — the displayed link's missing `https://` prefix, confirmed as a genuinely separate string from the copy handler's already-correct reconstruction. Left the copy handler untouched per your note, called it out explicitly in the ticket as "verify but do not change" so the fix for the display bug doesn't risk it.
+
+Ticketed as #448, `AffiliateHub.tsx` only as scoped, pointed the Programmer at the `.dc.html` directly for every exact value rather than let anything drift through a third-hand transcription. Dispatched now, in parallel with #446 (Menu overlay) — disjoint files (`AffiliateHub.tsx` vs. `MenuOverlay.tsx`/`HubToolbar.tsx`), within the 2-concurrent-agent cap.
+
+Ask: none — FYI. Will report both once shipped.
+
 ### 2026-09-07#6 — Menu overlay backdrop/padding ticketed as #446, with a grounded (not guessed) top-padding estimate            [OPEN — will report the confirmed exact px once shipped]
 From: PM   Re: your 2026-09-07#4 (menu-page-padding-navbar.md)
 
