@@ -181,6 +181,57 @@ describe('AffiliateHubScreen — Overview hero (issue #448)', () => {
   });
 });
 
+describe('AffiliateHubScreen — invented Commission Tiers section deleted (issue #452)', () => {
+  it('renders no "Commission tiers" headline and no BRONZE/SILVER/GOLD/DIAMOND tier rows', () => {
+    render(<AffiliateHubScreen {...baseProps()} />);
+    expect(screen.queryByText('Commission tiers')).not.toBeInTheDocument();
+    expect(screen.queryByText('BRONZE')).not.toBeInTheDocument();
+    expect(screen.queryByText('SILVER')).not.toBeInTheDocument();
+    expect(screen.queryByText('GOLD')).not.toBeInTheDocument();
+    expect(screen.queryByText('DIAMOND')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('affiliate-tier-bronze')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('affiliate-tier-silver')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('affiliate-tier-gold')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('affiliate-tier-diamond')).not.toBeInTheDocument();
+    expect(screen.queryByText('0 – 10,000')).not.toBeInTheDocument();
+    expect(screen.queryByText('10,000 – 50,000')).not.toBeInTheDocument();
+    expect(screen.queryByText('50,000 – 150,000')).not.toBeInTheDocument();
+    expect(screen.queryByText('150,000+')).not.toBeInTheDocument();
+  });
+
+  it('still renders the real, single flat commission rate on the hero (not deleted along with the invented table)', () => {
+    render(<AffiliateHubScreen {...baseProps()} />);
+    expect(screen.getAllByText('20%').length).toBeGreaterThan(0);
+    expect(screen.getByText(/we pay 20%/)).toBeInTheDocument();
+  });
+});
+
+describe('AffiliateHubScreen — Promotional Materials heading icon (issue #452)', () => {
+  it('the heading icon is a genuinely different icon from the row icon, not the same asset rescaled', () => {
+    render(<AffiliateHubScreen {...baseProps()} />);
+    const heading = screen.getByText('Promotional materials');
+    const headingSvg = heading.parentElement!.querySelector('svg')!;
+    const rowSvg = screen.getByTestId('affiliate-promo').querySelector('svg')!;
+
+    expect(headingSvg).toBeTruthy();
+    expect(rowSvg).toBeTruthy();
+    // Before the fix both used `ScreenPanelIcon` — same viewBox ("7 6 34 34"), only `size` (28 vs
+    // 84) differed. A genuinely distinct icon has its own viewBox, not just a different width/height
+    // on the same shape.
+    expect(headingSvg.getAttribute('viewBox')).not.toBe(rowSvg.getAttribute('viewBox'));
+    expect(headingSvg.getAttribute('viewBox')).toBe('0 0 24 24');
+    expect(rowSvg.getAttribute('viewBox')).toBe('7 6 34 34');
+  });
+
+  it('other heading/row pairs on the page keep using genuinely separate icons too (Become a partner, as a control)', () => {
+    render(<AffiliateHubScreen {...baseProps()} />);
+    const heading = screen.getByText('Become a partner');
+    const headingSvg = heading.parentElement!.querySelector('svg')!;
+    const rowSvg = screen.getByTestId('affiliate-partner').querySelector('svg')!;
+    expect(headingSvg.getAttribute('viewBox')).not.toBe(rowSvg.getAttribute('viewBox'));
+  });
+});
+
 describe('AffiliateHubScreen — campaigns', () => {
   beforeEach(() => stubClipboard());
 
