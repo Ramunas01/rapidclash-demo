@@ -292,10 +292,10 @@ describe('ProfileHubScreen', () => {
   // strip + '@' normalize helper, and VS colored by outcome.
   describe('recent games — zebra rows, opponent normalize, VS color (#441)', () => {
     const ZEBRA_MATCHES: RecentMatchEntry[] = [
-      { matchId: 'z1', gameId: 'coinflip', opponentId: 'p1', opponentDisplayName: '🤖 rival1', opponentAvatarId: 'default', outcome: 'win', delta: 50, settledAt: '2026-08-01T09:00:00Z' },
-      { matchId: 'z2', gameId: 'chess', opponentId: 'p2', opponentDisplayName: 'rival2', opponentAvatarId: 'default', outcome: 'loss', delta: -30, settledAt: '2026-08-02T09:00:00Z' },
-      { matchId: 'z3', gameId: 'coinflip', opponentId: 'p3', opponentDisplayName: '@rival3', opponentAvatarId: 'default', outcome: 'draw', delta: 0, settledAt: '2026-08-03T09:00:00Z' },
-      { matchId: 'z4', gameId: 'chess', opponentId: 'p4', opponentDisplayName: '🤖rival4', opponentAvatarId: 'default', outcome: 'win', delta: 20, settledAt: '2026-08-04T09:00:00Z' },
+      { matchId: 'z1', gameId: 'coinflip', opponentId: 'p1', opponentDisplayName: '🤖 rival1', opponentAvatarId: 'default', opponentTier: 'Unranked', outcome: 'win', delta: 50, settledAt: '2026-08-01T09:00:00Z' },
+      { matchId: 'z2', gameId: 'chess', opponentId: 'p2', opponentDisplayName: 'rival2', opponentAvatarId: 'default', opponentTier: 'Unranked', outcome: 'loss', delta: -30, settledAt: '2026-08-02T09:00:00Z' },
+      { matchId: 'z3', gameId: 'coinflip', opponentId: 'p3', opponentDisplayName: '@rival3', opponentAvatarId: 'default', opponentTier: 'Unranked', outcome: 'draw', delta: 0, settledAt: '2026-08-03T09:00:00Z' },
+      { matchId: 'z4', gameId: 'chess', opponentId: 'p4', opponentDisplayName: '🤖rival4', opponentAvatarId: 'default', opponentTier: 'Unranked', outcome: 'win', delta: 20, settledAt: '2026-08-04T09:00:00Z' },
     ];
 
     function stubZebraFetch() {
