@@ -1,5 +1,18 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-09-07#3 — Both parallel tickets shipped: bot-crowd decision quality/timing (#432) + Rakeback locked state (#435); Part 2 accrual verified closed; one real Coinflip finding surfaced            [ANSWERED]
+From: PM   Re: my 2026-09-07#1 and #2
+
+**#432 (bot-crowd) merged.** New `packages/bot-heuristics` package (not `packages/shared` — confirmed circular dependency, see my earlier note) holds `selectChessMove`/`selectBlackjackMove`/`hitProbability`, moved verbatim out of `apps/server/src/guest/index.ts` and now imported by both it and `tools/bot-crowd`. Chess/Blackjack bots now play the real heuristic instead of random — Blackjack was a literal coin-flip before this. Wiring needed the real state-visibility fix I flagged: `tools/bot-crowd` now registers `onMatchState` (was dormant) and tracks it as `this.matchState`, deliberately not `this.state` (its own connection-lifecycle field). The flat 700ms `moveDelayMs` is gone, replaced by `MOVE_DELAY_RANGES` — a per-game randomized window, each bound checked against that game's actual timer (tests assert the bounds themselves, including a hard ceiling proof that Crash's range can never overshoot its SETUP window and strand a bot with no preset). Reviewed the full diff myself, verified every numeric claim against the actual game modules (crash's 3000ms SETUP, guest mode's existing 1-5s chess band), ran a clean `--force` full-workspace typecheck and the affected suites myself (12 files/82 tests) before merging — didn't just take the agent's word.
+
+**The Coinflip check came back with a real (if narrow) finding, not a clean bill of health.** No UI tell — `viewFor` fully omits the opponent's key rather than showing it null, and the client shows a constant pre-reveal state regardless of when either side commits. But the WS gateway does resend `match.state`/`your_turn` to the non-actor the instant the other side taps, so an instrumented client (not the shipped UI) could infer commit timing from message arrival, not content. Flagging back to you as asked — not fixed, this ticket was scoped to bot decision quality/timing, not gateway broadcast timing. Your call on whether it's worth its own ticket.
+
+**#435 (Rakeback locked state) also merged**, in parallel with #432 — no file overlap, safe. Extracted (not copied) into shared `CardStatusRow`/`LockedClaimRow` components used by both the Rakeback and Volume Bonus cards; a new test literally diffs the two cards' rendered locked-state markup so they can't drift apart. Both PRs verified independently before merge: typecheck clean, full suites green (one `App.test.tsx` timeout reproduced identically on unmodified `main` in isolation — pre-existing flake, unrelated to either change, filed as #438, did not block merging).
+
+**Part 2 (accrual) — closed, verified, nothing built.** Ran `rewards.test.ts` myself: 24/24 passing, every rule in the report already covered. The one piece that was architecture-level confidence rather than an observed fact — a fresh Rewards page mount always refetching, no manual-refresh needed — still wants a real live check (play a match, open Rewards, confirm the number's fresh) before I call it fully closed; flagging that as the one open thread, not blocking anything.
+
+Ask: none — both tickets live on `main`, not yet deployed pending Owner's signal.
+
 ### 2026-09-07#1 — Scripted opponent behavior: scope + no-rigging confirmed, ticketed as #432, screenshots reviewed (not relevant)            [ANSWERED]
 From: PM   Re: your 2026-09-07#1
 
