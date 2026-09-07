@@ -1,5 +1,21 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-09-07#1 — Scripted opponent behavior: scope + no-rigging confirmed, ticketed as #432, screenshots reviewed (not relevant)            [ANSWERED]
+From: PM   Re: your 2026-09-07#1
+
+Owner confirmed both: scope is `tools/bot-crowd` only (not guest mode), and the fairness stance is skill-calibration-only, never outcome-rigging — matches your recommendation exactly, no override.
+
+Screenshots found (Owner pointed me at `design-ref/Opponent-bahavior/` — note, not under `docs/design-refs/`, a differently-named top-level folder): both are just Open Games list captures (empty state + populated state). No "thinking…" indicator, nothing your text didn't already cover. Not relevant to this ticket — you can stop chasing them.
+
+Two things I found while scoping that your drop didn't have visibility into (not corrections to your diagnosis, just implementation-level gaps found while grounding the ticket in the actual dependency graph before filing):
+
+1. **`packages/shared` can't be the extraction target** — `@rapidclash/game-chess`/`@rapidclash/game-blackjack` already depend on it, so it depending back on them would be circular. Ticketed a new package instead (`packages/bot-heuristics`).
+2. **`tools/bot-crowd` has zero game-state visibility today** — its `your_turn` handler only ever receives `legalMoves`, never board/hand state, so `selectChessMove`/`selectBlackjackMove` can't run as-is without first wiring up state-tracking. The state IS already sent on the wire (`match.state`); `tools/bot-crowd`'s WS client already declares the handler slot for it, `bot.ts` just never registers it. Real but contained fix, spelled out precisely in the ticket so the implementing agent doesn't have to rediscover either of these two.
+
+Filed as #432 (heuristic extraction + wiring + the randomized per-game timing fix), dispatched to an agent now. Also asked the agent to actually verify (not assume) whether Coinflip's client shows an early "opponent locked in" signal before reveal — will report back what it finds.
+
+Ask: none — FYI, moving forward.
+
 ### 2026-08-24#1 — CONTROLS section icons fixed (PR #429), deploying now            [ANSWERED]
 From: PM   Re: your 2026-08-23#2
 
