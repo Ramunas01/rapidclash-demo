@@ -44,6 +44,9 @@ importers:
       '@google-cloud/storage':
         specifier: ^7.21.0
         version: 7.21.0
+      '@rapidclash/bot-heuristics':
+        specifier: workspace:*
+        version: link:../../packages/bot-heuristics
       '@rapidclash/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -296,6 +299,18 @@ importers:
         specifier: ^2.1.1
         version: 2.1.9(@types/node@25.9.3)(jsdom@25.0.1)(terser@5.48.0)
 
+  packages/bot-heuristics:
+    dependencies:
+      '@rapidclash/game-blackjack':
+        specifier: workspace:*
+        version: link:../games/blackjack
+      '@rapidclash/game-chess':
+        specifier: workspace:*
+        version: link:../games/chess
+      '@rapidclash/shared':
+        specifier: workspace:*
+        version: link:../shared
+
   packages/core:
     dependencies:
       '@rapidclash/shared':
@@ -412,6 +427,15 @@ importers:
 
   tools/bot-crowd:
     dependencies:
+      '@rapidclash/bot-heuristics':
+        specifier: workspace:*
+        version: link:../../packages/bot-heuristics
+      '@rapidclash/game-blackjack':
+        specifier: workspace:*
+        version: link:../../packages/games/blackjack
+      '@rapidclash/game-chess':
+        specifier: workspace:*
+        version: link:../../packages/games/chess
       '@rapidclash/shared':
         specifier: workspace:*
         version: link:../../packages/shared

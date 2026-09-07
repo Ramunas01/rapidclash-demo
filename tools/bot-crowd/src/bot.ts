@@ -5,14 +5,17 @@ import type {
   ChallengesListPayload,
   ChallengesUpdatePayload,
   ErrorPayload,
+  GameState,
   MatchEndPayload,
   MatchStartPayload,
+  MatchStatePayload,
   MatchYourTurnPayload,
   Move,
   OpenChallenge,
   QueueWaitingPayload,
 } from '@rapidclash/shared';
-import { config, BOT_PREFIX, HUMAN_RESERVED_STAKES, type BotConfig } from './config.js';
+import { selectChessMove, selectBlackjackMove } from '@rapidclash/bot-heuristics';
+import { config, moveDelayMsFor, BOT_PREFIX, HUMAN_RESERVED_STAKES, type BotConfig } from './config.js';
 import { HttpError, type Api } from './http.js';
 import { BotWsClient } from './ws-client.js';
 
@@ -70,6 +73,48 @@ function hiloMove(moves: Move[]): Move | null {
   return (calls.length ? calls[Math.floor(Math.random() * calls.length)] : null) as Move | null;
 }
 
+/**
+ * Chess policy (issue #432): the shared, tested capture heuristic from
+ * `@rapidclash/bot-heuristics` — the SAME implementation guest mode's Demo Opponent uses
+ * (issue #278 §3), not a second copy that could drift. Deliberately imperfect: it evaluates every
+ * capture, then a 50/50 gate throws half of its best moves away, so it plays like an honest,
+ * fallible person rather than an engine.
+ *
+ * Unlike every other policy here it needs the full board, not just `legalMoves` — hence
+ * `Bot.matchState`, fed by `match.start` + `match.state`. Returns null when that state is missing
+ * or the heuristic can't produce a move, so the caller's `??`-chain falls back to a random legal
+ * move and the bot never wedges. `playerId` is the bot's own server-assigned id.
+ *
+ * Exported standalone (pure — no bot/WS/HTTP state) so `move-policy.test.ts` can exercise the
+ * wiring directly, matching `isTakeable`/`hasSufficientFunds`'s existing pattern in this file.
+ */
+export function chessMove(state: GameState | null, playerId: string, now: number = Date.now()): Move | null {
+  if (state == null) return null;
+  try {
+    return selectChessMove(state, playerId, now) as Move;
+  } catch {
+    return null; // not our turn, malformed/partial state — let the caller fall back
+  }
+}
+
+/**
+ * Blackjack policy (issue #432): the shared hit/stand probability curve from
+ * `@rapidclash/bot-heuristics` (issue #297's Owner-specified table — 100% at ≤14 tapering to 0% at
+ * ≥19), replacing what was previously a pure coin-flip between `hit` and `stand`.
+ *
+ * Reads only the bot's OWN hand, so the `viewFor`-redacted state that arrives over the wire is
+ * sufficient — no information the human opponent doesn't also have about their own hand. Same
+ * null-on-failure contract as `chessMove` above.
+ */
+export function blackjackMove(state: GameState | null, playerId: string): Move | null {
+  if (state == null) return null;
+  try {
+    return selectBlackjackMove(state, playerId) as Move;
+  } catch {
+    return null;
+  }
+}
+
 /** Ships Battle policy: in PLACEMENT, take the `auto` move (seeded server-side auto-placer — a
  *  random per-square build would be slow/unreliable); in SHOOTING, fire a random un-probed square.
  *  Returns null if neither is offered (caller falls back to a random move). */
@@ -119,6 +164,20 @@ export class Bot {
   private token = '';
   private balance = 0;
   private matchId: string | null = null;
+  /**
+   * Latest server-authoritative view of the CURRENT match's game state (issue #432) — seeded from
+   * `match.start`'s payload and refreshed by every `match.state` broadcast. Always the `viewFor`
+   * result, i.e. the opponent's hidden information is already stripped server-side before it
+   * reaches this process; a bot sees exactly what a human client at the same seat sees.
+   *
+   * Deliberately NOT named `state`: `this.state` is this bot's own connection-lifecycle machine
+   * ('connecting' | 'idle' | …), an entirely different thing. Null outside a match.
+   *
+   * Only Chess and Blackjack read it today — every other game's policy is a pure function of
+   * `legalMoves` — but it is stored unconditionally, since `onMatchState` is registered once for
+   * all games and the cost is one reference.
+   */
+  private matchState: GameState | null = null;
   /** One move in flight at a time. Roulette is concurrent (both bet at once), so the gateway
    *  resends `your_turn` to this bot whenever the OPPONENT places a chip — without this guard the
    *  bot would schedule duplicate all-ins from those resends (harmless but noisy rejections). */
@@ -142,6 +201,10 @@ export class Bot {
         onOpen: () => this.onOpen(),
         onQueueWaiting: (p) => this.onQueueWaiting(p),
         onMatchStart: (p, id) => this.onMatchStart(p, id),
+        // Issue #432: `BotWsClient` has always routed `match.state`, but nothing was registered
+        // here to receive it, so this process had zero game-state visibility. Chess/Blackjack
+        // decisions need the actual board/hand, not just `legalMoves`.
+        onMatchState: (p, id) => this.onMatchState(p, id),
         onMatchYourTurn: (p, id) => this.onMatchYourTurn(p, id),
         onMatchEnd: (p, id) => this.onMatchEnd(p, id),
         onChallengesList: (p) => this.onChallengesList(p),
@@ -276,7 +339,16 @@ export class Bot {
     this.matchId = matchId;
     this.crashActed = false;
     this.movePending = false;
+    this.matchState = p.state; // issue #432 — the opening position/deal, already viewFor'd
     this.log(`🎮 matched vs ${p.opponent.slice(0, 8)} (${p.gameId})`);
+  }
+
+  /** Every post-move state broadcast (issue #432). Ignores frames tagged for a different match —
+   *  a late arrival from a just-ended match must not overwrite the live one's board. `match.state`
+   *  is also the resume path's payload, so this doubles as reconnect recovery. */
+  private onMatchState(p: MatchStatePayload, matchId: string): void {
+    if (this.matchId !== null && matchId !== '' && matchId !== this.matchId) return;
+    this.matchState = p.state;
   }
 
   private onMatchYourTurn(p: MatchYourTurnPayload, matchId: string): void {
@@ -292,32 +364,40 @@ export class Bot {
       if (autos.length === 0) return;
       const pick = autos[Math.floor(Math.random() * autos.length)];
       this.crashActed = true;
+      // Crash's window is the SETUP phase, not a per-turn timer — see MOVE_DELAY_RANGES's note on
+      // why crash's range has a hard ceiling it must never approach (a late preset = no preset).
       setTimeout(() => {
         if (this.state === 'in_match' && this.matchId === matchId) {
           if (this.ws.makeMove(pick, matchId)) this.log(`↳ auto-eject ${describeMove(pick)}`);
         }
-      }, config.moveDelayMs);
+      }, moveDelayMsFor(this.cfg.gameId));
       return;
     }
 
     if (this.movePending) return; // one move in flight (dedupes roulette's concurrent your_turn resends)
-    // Roulette needs a full-stack policy (all-in on an even-money colour, then lock); every other
-    // game is fine with a random legal move. Fall back to random if the policy finds nothing.
+    // Roulette needs a full-stack policy (all-in on an even-money colour, then lock); Chess and
+    // Blackjack use the shared heuristics (issue #432 — they read `this.matchState`, not just
+    // `moves`); every other game is fine with a random legal move. Fall back to random if the
+    // policy finds nothing.
     const move =
       (this.cfg.gameId === 'roulette' ? rouletteMove(moves) : null) ??
       (this.cfg.gameId === 'ships-battle' ? shipsBattleMove(moves) : null) ??
       (this.cfg.gameId === 'keno' ? kenoMove(moves) : null) ??
       (this.cfg.gameId === 'limbo' ? limboMove(moves) : null) ??
       (this.cfg.gameId === 'hilo' ? hiloMove(moves) : null) ??
+      (this.cfg.gameId === 'chess' ? chessMove(this.matchState, this.playerId) : null) ??
+      (this.cfg.gameId === 'blackjack' ? blackjackMove(this.matchState, this.playerId) : null) ??
       moves[Math.floor(Math.random() * moves.length)];
-    // A brief "thinking" pause keeps cadence human-ish and the server unflooded.
+    // A "thinking" pause scaled to THIS game's real decision window and re-randomized per move
+    // (issue #432), replacing the old flat 700ms every game shared — that single sub-second
+    // constant was the one thing about the roster that read as structurally non-human.
     this.movePending = true;
     setTimeout(() => {
       this.movePending = false;
       if (this.state === 'in_match' && this.matchId === matchId) {
         if (this.ws.makeMove(move, matchId)) this.log(`↳ played ${describeMove(move)}`);
       }
-    }, config.moveDelayMs);
+    }, moveDelayMsFor(this.cfg.gameId));
   }
 
   private onMatchEnd(p: MatchEndPayload, _matchId: string): void {
@@ -332,6 +412,7 @@ export class Bot {
             : 'lost';
     this.log(`🏁 ${verdict} (${p.settlement.delta >= 0 ? '+' : ''}${p.settlement.delta}) — balance ${this.balance}`);
     this.matchId = null;
+    this.matchState = null; // don't carry a finished board into the next match (issue #432)
     this.state = 'idle';
     if (this.cfg.policy === 'rester') this.scheduleRepost();
     else this.tryTake();

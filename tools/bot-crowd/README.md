@@ -135,7 +135,7 @@ challenges — press JOIN on one to play it to settlement.
 | `BOT_PASSWORD`          | `bot-crowd-demo`        | Shared password for the bot accounts (usernames are distinct). |
 | `BOT_START_STAGGER_MS`  | `700`                   | Delay between bringing each bot online.                        |
 | `BOT_REPOST_DELAY_MS`   | `4000`                  | Pause before a rester re-posts after a match.                  |
-| `BOT_MOVE_DELAY_MS`     | `700`                   | "Thinking" pause before replying a move.                       |
+| ~~`BOT_MOVE_DELAY_MS`~~ | *(removed, issue #432)* | **No longer read.** The old flat 700ms "thinking" pause applied to every game's every decision; it is replaced by a per-game randomized range scaled to each game's real decision window — see `MOVE_DELAY_RANGES` in `src/config.ts` for the table and its per-game rationale. If your deployment still sets this var, it is now silently ignored; unset it to avoid confusion. Deliberately not kept as an override: a leftover `=700` would have silently reinstated exactly the behaviour this replaced. |
 | `BOT_RECONNECT_DELAY_MS`| `2000`                  | Delay before reconnecting a dropped socket.                    |
 | `BOT_LOW_BALANCE_FACTOR`| `5`                     | Top up when `balance < stake × factor`.                       |
 | `BOT_TOPUP_AMOUNT`      | `500`                   | Credits added per top-up.                                      |

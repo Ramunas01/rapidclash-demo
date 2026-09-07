@@ -13,6 +13,7 @@
     "@fastify/static": "^7.0.4",
     "@fastify/websocket": "^8.3.1",
     "@google-cloud/storage": "^7.21.0",
+    "@rapidclash/bot-heuristics": "workspace:*",
     "@rapidclash/core": "workspace:*",
     "@rapidclash/game-blackjack": "workspace:*",
     "@rapidclash/game-chess": "workspace:*",

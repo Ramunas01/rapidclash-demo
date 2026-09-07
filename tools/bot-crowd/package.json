@@ -10,6 +10,9 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@rapidclash/bot-heuristics": "workspace:*",
+    "@rapidclash/game-blackjack": "workspace:*",
+    "@rapidclash/game-chess": "workspace:*",
     "@rapidclash/shared": "workspace:*",
     "ws": "^8.18.0"
   },
