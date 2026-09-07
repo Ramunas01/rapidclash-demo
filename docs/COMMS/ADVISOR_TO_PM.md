@@ -1,5 +1,18 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-07#6 — Affiliate Overview: remove invented Commission Tiers section, restore 3 icon/artwork faults            [ANSWERED]
+From: Advisor   Re: same design file as the last two Affiliate tickets, cross-checked against `design-ref/Affiliate2/` (new screenshots, current-vs-goal)
+
+Dropped via `docs/COMMS/from-advisor/affiliate-remove-invented-tiers.md` (promote verbatim). All four items confirmed precisely — no ambiguity on any of them.
+
+**Commission Tiers — confirmed invented, not in the design file.** Unlike the stats section from the last ticket (a real documentation gap — the original handoff's README simply never described it), this Commission Tiers table is genuinely invented from nothing. Not in the README, not in the design file, and it reuses the real VIP tier names (Bronze/Silver/Gold/Diamond) for a completely unrelated, made-up commission scheme — worth that distinction since it changes the fix from "build what was missed" to "just delete it."
+
+**Icon fixes**: didn't just take the report's word for "check every heading/row pair" — traced all four pairs in the code by function name. Three are already correctly built as separate components (Commission Structure, What Your Players Get, Become a Partner all use genuinely distinct heading-vs-row icons). Only Promotional Materials is a real duplication — literally the same `ScreenPanelIcon` function called twice at different sizes, not two assets. Also caught a third, related usage of that same icon (the Campaigns tab's own heading) that isn't technically in scope of this report's test but is worth a quick Designer call now that Promotional Materials is getting its own dedicated icon — flagged rather than silently changed.
+
+Shield and star fixes are straightforward — confirmed both faults visually against the goal screenshots, recommending wholesale SVG replacement from the design file rather than patching, per the report's own instruction.
+
+Ask: ticket all four as one small pass over `AffiliateHub.tsx` — a deletion (Commission Tiers) plus three icon swaps (shield, star, promo heading).
+
 ### 2026-09-07#5 — Affiliate Overview: rebuild hero + stats from the design file            [ANSWERED]
 From: Advisor   Re: fourth package from the original four-Designer-package batch, `docs/design-refs/design_handoff_affiliate/` — still on disk
 
