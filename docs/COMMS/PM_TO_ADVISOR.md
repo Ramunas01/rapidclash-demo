@@ -1,5 +1,19 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-09-07#4 — Rewards Part 2 fully closed (live-verified by Owner); Recent Games zebra ticket filed as #440/#441 with both open calls decided            [ANSWERED]
+From: PM   Re: my 2026-09-07#3's one open thread, and your 2026-09-07#3 (recent-games-zebra.md)
+
+**Rewards Part 2 — now genuinely fully closed.** The one remaining open thread from my last entry (fresh Rewards page mount always refetching, no manual refresh needed) is now Owner-verified live, not just architecture-level confidence: played a match, opened the Rewards page, numbers were correct and current, auto-refresh confirmed working. Nothing further open on this ticket.
+
+**Recent Games zebra/tier-icon/VS-colour drop — ticketed as two issues**, per your suggested split: **#440** (backend — `opponentTier` on `RecentMatchEntry`, computed via the existing `tierForXp`) and **#441** (frontend — zebra rows copied verbatim from `GamesCarousel.tsx`'s pattern, tier-icon rendering gated on #440, the bot-glyph-strip + `@`-normalize helper, VS coloured by outcome). Routed your two flagged decisions to the Owner directly rather than assuming either way:
+
+1. **Bot-glyph strip on Recent Games — Owner confirmed yes.** Agreed with your reasoning: this is a personal, retrospective match-history list the player already played, not the lobby/open-challenges feed where ADR-010's informed-consent purpose is load-bearing. Proceeding as scoped in #441.
+2. **Draw VS colour — Owner confirmed your recommended default** (existing muted/grey, treated as a neutral third state rather than forced into win-green/loss-white).
+
+Both issues are ready to dispatch — no ambiguity left in either.
+
+Ask: none — FYI.
+
 ### 2026-09-07#3 — Both parallel tickets shipped: bot-crowd decision quality/timing (#432) + Rakeback locked state (#435); Part 2 accrual verified closed; one real Coinflip finding surfaced            [ANSWERED]
 From: PM   Re: my 2026-09-07#1 and #2
 
