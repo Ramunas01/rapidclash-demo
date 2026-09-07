@@ -7,10 +7,12 @@ import type {
   RankingType,
   RecentMatchEntry,
   RecentMatchesResponse,
+  VipTier,
   WinRateLeaderboardEntry,
 } from '@rapidclash/shared';
 import { PLATFORM_ACCOUNT } from './ledger.js';
 import type { AvatarLookup, UsernameLookup } from './identity.js';
+import { tierForXp } from './rewards.js';
 
 /** Back-compat alias: a win_rate row used to be the only leaderboard shape. */
 export type WinRateEntry = WinRateLeaderboardEntry;
@@ -178,6 +180,36 @@ export function createMatchHistory(
       `SELECT SUM(amount) AS net FROM ledger_entry WHERE match_id = ? AND account_id = ?`,
     );
     return stmtMatchNet;
+  }
+
+  // Opponent VIP tier for getRecentMatches (issue #440). `rewards` is owned and created by
+  // rewards.ts — same "another module's table, reached lazily" idea as netStmt/matchNetStmt
+  // above for `ledger_entry`, but UNLIKE ledger_entry, `rewards` is not guaranteed to exist by
+  // the time this is called: every getRecentMatches test/consumer creates a ledger, but not
+  // every one creates rewards too (and in the real server, createMatchHistory itself runs
+  // BEFORE createRewards — see server.ts). So the prepare is wrapped, not bare: a
+  // match-history-only consumer whose db has no `rewards` table falls back to 0 XP rather than
+  // throwing, which `tierForXp` correctly maps to 'Unranked' anyway.
+  let stmtXpLifetime: Database.Statement<[string], { xp_lifetime: number }> | null | undefined;
+  function xpLifetimeStmt(): Database.Statement<[string], { xp_lifetime: number }> | null {
+    if (stmtXpLifetime === undefined) {
+      try {
+        stmtXpLifetime = db.prepare<[string], { xp_lifetime: number }>(
+          `SELECT xp_lifetime FROM rewards WHERE account_id = ?`,
+        );
+      } catch {
+        stmtXpLifetime = null; // no `rewards` table in this db — every opponent reads as 0 XP.
+      }
+    }
+    return stmtXpLifetime;
+  }
+
+  // Tier is derived AT QUERY TIME from current xp_lifetime, not stored/snapshotted at match
+  // time — tiers only ever climb (tierForXp's doc comment), so "current tier" is always at
+  // least as accurate as "tier when the match was played".
+  function tierFor(playerId: string): VipTier {
+    const xpLifetime = xpLifetimeStmt()?.get(playerId)?.xp_lifetime ?? 0;
+    return tierForXp(xpLifetime).tier;
   }
 
   function recordResult(
@@ -378,6 +410,7 @@ export function createMatchHistory(
         opponentId,
         opponentDisplayName: displayNameFor(opponentId),
         opponentAvatarId: avatarFor(opponentId),
+        opponentTier: tierFor(opponentId),
         outcome,
         delta,
         settledAt: row.settled_at,

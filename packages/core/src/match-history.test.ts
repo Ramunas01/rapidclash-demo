@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 import type { RankingType } from '@rapidclash/shared';
 import { createMatchHistory, type WinRateEntry } from './match-history.js';
 import { createLedger, PLATFORM_ACCOUNT } from './ledger.js';
+import { createRewards } from './rewards.js';
 
 function freshDb() {
   return new Database(':memory:');
@@ -527,5 +528,51 @@ describe('createMatchHistory — getRecentMatches', () => {
     const res = mh.getRecentMatches('alice', 10, -5);
     expect(res.offset).toBe(0);
     expect(res.matches).toHaveLength(1);
+  });
+
+  // ─── opponentTier (issue #440) ─────────────────────────────────────────
+  // opponentTier is derived via tierForXp AT QUERY TIME from the opponent's current
+  // xp_lifetime in the `rewards` table — never reimplemented here, never stored/snapshotted.
+
+  it("reports the opponent's current VIP tier, derived from their xp_lifetime", () => {
+    const db = freshDb();
+    const ledger = createLedger(db);
+    const rewards = createRewards(db, ledger);
+    const mh = createMatchHistory(db, new Map([['rps', RPS_WIN_RATE]]));
+    ledger.grant('alice');
+    ledger.grant('bob');
+
+    // Give bob enough XP to clear the Bronze threshold (5,000) — see rewards.ts's VIP_ROWS.
+    rewards.getSnapshot('bob'); // ensure the row exists before writing xp_lifetime directly
+    db.prepare(`UPDATE rewards SET xp_lifetime = ? WHERE account_id = ?`).run(6_000, 'bob');
+
+    playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100);
+
+    const [row] = mh.getRecentMatches('alice').matches;
+    expect(row.opponentId).toBe('bob');
+    expect(row.opponentTier).toBe('Bronze');
+  });
+
+  it("reports 'Unranked' when the opponent has no rewards row at all", () => {
+    const { ledger, mh } = setup(); // setup() never wires up rewards — bob has no xp_lifetime
+    playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100);
+
+    const [row] = mh.getRecentMatches('alice').matches;
+    expect(row.opponentTier).toBe('Unranked');
+  });
+
+  it("reports 'Unranked' when the opponent has a rewards row but hasn't cleared Wood (500 XP)", () => {
+    const db = freshDb();
+    const ledger = createLedger(db);
+    const rewards = createRewards(db, ledger);
+    const mh = createMatchHistory(db, new Map([['rps', RPS_WIN_RATE]]));
+    ledger.grant('alice');
+    ledger.grant('bob');
+    rewards.getSnapshot('bob'); // creates bob's row at xp_lifetime = 0
+
+    playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100);
+
+    const [row] = mh.getRecentMatches('alice').matches;
+    expect(row.opponentTier).toBe('Unranked');
   });
 });
