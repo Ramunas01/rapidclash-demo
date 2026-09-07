@@ -33,6 +33,29 @@ const BOBBYLEE_SNAPSHOT: RewardsSnapshot = {
   nextTier: { tier: 'Silver', xpRequired: 25_000, rakebackRate: 0.07 },
 };
 
+// A brand-new player: below Wood, so a 0% rakeback rate and a claimable balance that is not just
+// currently 0 but can never be anything else (issue #435's locked-state gate).
+const UNRANKED_SNAPSHOT: RewardsSnapshot = {
+  xpLifetime: 250,
+  xpMonthly: 0,
+  wageredLifetime: 0,
+  claimableBalance: 0,
+  tier: 'Unranked',
+  rakebackRate: 0,
+  nextTier: { tier: 'Wood', xpRequired: 500, rakebackRate: 0.01 },
+};
+
+// The first paying tier — one step above the gate, where the card must be fully live again.
+const WOOD_SNAPSHOT: RewardsSnapshot = {
+  xpLifetime: 800,
+  xpMonthly: 800,
+  wageredLifetime: 2_000,
+  claimableBalance: 12,
+  tier: 'Wood',
+  rakebackRate: 0.01,
+  nextTier: { tier: 'Bronze', xpRequired: 5_000, rakebackRate: 0.04 },
+};
+
 function stubFetch(snapshot: RewardsSnapshot, claimResponse?: { credited: number; newClaimableBalance: number }) {
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     const u = String(url);
@@ -73,10 +96,7 @@ describe('RewardsHubScreen', () => {
   });
 
   it('reads 0-500 XP as Unranked progress toward Wood (no tier badge, since the design has none below Wood)', async () => {
-    stubFetch({
-      xpLifetime: 250, xpMonthly: 0, wageredLifetime: 0, claimableBalance: 0,
-      tier: 'Unranked', rakebackRate: 0, nextTier: { tier: 'Wood', xpRequired: 500, rakebackRate: 0.01 },
-    });
+    stubFetch(UNRANKED_SNAPSHOT); // 250 of the 500 XP to Wood
     render(<RewardsHubScreen {...baseProps()} />);
     await waitFor(() => expect(screen.getByTestId('rewards-progress-pct').textContent).toBe('50%'));
     expect(screen.getByTestId('rewards-tier-current').textContent).toContain('UNRANKED');
@@ -118,6 +138,56 @@ describe('RewardsHubScreen', () => {
     render(<RewardsHubScreen {...baseProps()} />);
     await waitFor(() => expect(screen.getByTestId('rewards-claimable').textContent).toBe('0'));
     expect(screen.getByTestId('rewards-claim-button')).toBeDisabled();
+  });
+
+  // Issue #435: Unranked earns 0% rakeback, so `claimableBalance` can only ever be 0 there — the
+  // card must not read as a live, claimable one. The active-state testids (`rewards-claimable`,
+  // `rewards-claim-button`) are deliberately absent in that state: there is no amount to show and
+  // no claim to make, so asserting they still render would be asserting the bug.
+  it('rakeback card renders the locked treatment at Unranked (no live amount, no claim button)', async () => {
+    stubFetch(UNRANKED_SNAPSHOT);
+    render(<RewardsHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('rewards-rakeback-locked').textContent).toBe('Wager to unlock'));
+    expect(screen.queryByTestId('rewards-claimable')).toBeNull();
+    expect(screen.queryByTestId('rewards-claim-button')).toBeNull();
+  });
+
+  it('rakeback card is live again at the first paying tier (Wood, 1%) — real amount + working CLAIM', async () => {
+    stubFetch(WOOD_SNAPSHOT);
+    render(<RewardsHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('rewards-claimable').textContent).toBe('12'));
+    expect(screen.getByTestId('rewards-claim-button')).not.toBeDisabled();
+    expect(screen.queryByTestId('rewards-rakeback-locked')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('rewards-claim-button'));
+    await waitFor(() => expect(screen.getByTestId('rewards-claimable').textContent).toBe('0'));
+    expect(screen.getByTestId('rewards-claim-button')).toBeDisabled();
+  });
+
+  // The Designer's requirement behind extracting the shared locked-state components: the two
+  // cards must be identical in their locked state apart from title and illustration. Comparing
+  // the rendered markup is what actually catches a future copy-paste divergence.
+  it('both cards render the SAME locked treatment at Unranked (one shared component, not two copies)', async () => {
+    stubFetch(UNRANKED_SNAPSHOT);
+    render(<RewardsHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('rewards-rakeback-locked')).toBeInTheDocument());
+
+    const claimRows = screen.getAllByTestId('rewards-locked-claim');
+    expect(claimRows).toHaveLength(2); // rakeback + volume bonus
+    expect(claimRows[0].outerHTML).toBe(claimRows[1].outerHTML);
+
+    // ...and the unlock copy above it matches too (same wording, same row styling).
+    const rakeback = screen.getByTestId('rewards-rakeback-locked');
+    const volume = screen.getByTestId('rewards-volume-progress');
+    expect(rakeback.textContent).toBe(volume.textContent);
+    expect(rakeback.getAttribute('style')).toBe(volume.getAttribute('style'));
+  });
+
+  it('only the volume bonus card is locked at a paying tier below Emerald', async () => {
+    stubFetch(BOBBYLEE_SNAPSHOT); // Bronze
+    render(<RewardsHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('rewards-claim-button')).toBeInTheDocument());
+    expect(screen.getAllByTestId('rewards-locked-claim')).toHaveLength(1);
   });
 
   it('volume bonus card reads "Wager to unlock" below Emerald', async () => {

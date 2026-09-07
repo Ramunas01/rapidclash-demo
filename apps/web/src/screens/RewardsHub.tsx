@@ -185,35 +185,12 @@ export function RewardsHubScreen({ token, username, balance, onHome, onOpenProfi
             {/* ── YOUR REWARDS — rakeback (real, claimable) + volume bonus (real progress). ── */}
             <SectionHeading icon={<RewardsShieldIcon />}>YOUR REWARDS</SectionHeading>
             <div style={{ marginTop: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              <div style={{ background: '#1A1A2E', borderRadius: '22px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div>
-                  <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '12px', fontWeight: 'bold', letterSpacing: '1.2px', color: '#FFFFFF', textAlign: 'center' }}>RAKEBACK</div>
-                  <div style={{ display: 'flex', justifyContent: 'center', margin: '10px 0 4px 0' }}>
-                    <RakebackIcon />
-                  </div>
-                  <div style={{ marginTop: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
-                    <RcIcon size={15} />
-                    <span data-testid="rewards-claimable" style={{ fontFamily: "'Space Grotesk', Arial, Helvetica, sans-serif", fontSize: '20px', fontWeight: 700, color: '#34D399' }}>
-                      {(snapshot?.claimableBalance ?? 0).toLocaleString('en-US')}
-                    </span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  data-testid="rewards-claim-button"
-                  onClick={handleClaim}
-                  disabled={claiming || !snapshot || snapshot.claimableBalance <= 0}
-                  style={{
-                    background: '#8B45F0', borderRadius: '999px', padding: '11px 0', display: 'flex',
-                    alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: 'none',
-                    opacity: !snapshot || snapshot.claimableBalance <= 0 ? 0.5 : 1,
-                  }}
-                >
-                  <span style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '13px', lineHeight: '13px', fontWeight: 'bold', letterSpacing: '0.8px', color: '#FFFFFF' }}>
-                    {claiming ? 'CLAIMING…' : 'CLAIM'}
-                  </span>
-                </button>
-              </div>
+              <RakebackCard
+                tier={tier}
+                claimableBalance={snapshot?.claimableBalance ?? 0}
+                claiming={claiming}
+                onClaim={handleClaim}
+              />
 
               <VolumeBonusCard tier={tier} xpMonthly={snapshot?.xpMonthly ?? 0} />
             </div>
@@ -259,12 +236,74 @@ export function RewardsHubScreen({ token, username, balance, onHome, onOpenProfi
   );
 }
 
+/* ── The two YOUR REWARDS cards. Both share one locked treatment (issue #435) — see the two ── */
+/* ── shared pieces below the cards; the Designer's requirement is that the locked RAKEBACK and ── */
+/* ── locked VOLUME BONUS be pixel-identical apart from title and illustration. ── */
+
+/* ── Rakeback card — locked at Unranked (verbatim locked treatment), real claimable above it. ── */
+
+function RakebackCard({
+  tier, claimableBalance, claiming, onClaim,
+}: {
+  tier: VipTier; claimableBalance: number; claiming: boolean; onClaim(): void;
+}) {
+  // Unranked earns a 0% rakeback rate (`packages/core/src/rewards.ts`), so `claimableBalance` can
+  // only ever be 0 at this tier — nothing can accrue and nothing can ever be claimed. Render the
+  // design's locked treatment (issue #435) instead of a live-looking purple CLAIM that could never
+  // pay out. Everything from Wood up is a paying tier and keeps today's active card exactly.
+  const locked = tier === 'Unranked';
+  return (
+    <div style={{ background: '#1A1A2E', borderRadius: '22px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div>
+        <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '12px', fontWeight: 'bold', letterSpacing: '1.2px', color: '#FFFFFF', textAlign: 'center' }}>RAKEBACK</div>
+        <div style={{ display: 'flex', justifyContent: 'center', margin: '10px 0 4px 0' }}>
+          <RakebackIcon />
+        </div>
+        {locked ? (
+          <CardStatusRow testid="rewards-rakeback-locked" text="Wager to unlock" />
+        ) : (
+          <div style={{ marginTop: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+            <RcIcon size={15} />
+            <span data-testid="rewards-claimable" style={{ fontFamily: "'Space Grotesk', Arial, Helvetica, sans-serif", fontSize: '20px', fontWeight: 700, color: '#34D399' }}>
+              {claimableBalance.toLocaleString('en-US')}
+            </span>
+          </div>
+        )}
+      </div>
+      {locked ? (
+        <LockedClaimRow />
+      ) : (
+        <button
+          type="button"
+          data-testid="rewards-claim-button"
+          onClick={onClaim}
+          disabled={claiming || claimableBalance <= 0}
+          style={{
+            background: '#8B45F0', borderRadius: '999px', padding: '11px 0', display: 'flex',
+            alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: 'none',
+            opacity: claimableBalance <= 0 ? 0.5 : 1,
+          }}
+        >
+          <span style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '13px', lineHeight: '13px', fontWeight: 'bold', letterSpacing: '0.8px', color: '#FFFFFF' }}>
+            {claiming ? 'CLAIMING…' : 'CLAIM'}
+          </span>
+        </button>
+      )}
+    </div>
+  );
+}
+
 /* ── Volume bonus card — locked below Emerald (verbatim), real monthly progress at/above it. ── */
 
 function VolumeBonusCard({ tier, xpMonthly }: { tier: VipTier; xpMonthly: number }) {
   const qualifies = tier === 'Emerald' || tier === 'Diamond';
   const milestones = qualifies ? VOLUME_MILESTONES[tier] : undefined;
   const nextMilestone = milestones?.find((m) => xpMonthly < m);
+  const status = !qualifies
+    ? 'Wager to unlock'
+    : nextMilestone
+      ? `${xpMonthly.toLocaleString('en-US')} / ${nextMilestone.toLocaleString('en-US')} XP`
+      : 'Max bonus reached';
   return (
     <div style={{ background: '#1A1A2E', borderRadius: '22px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
       <div>
@@ -272,30 +311,42 @@ function VolumeBonusCard({ tier, xpMonthly }: { tier: VipTier; xpMonthly: number
         <div style={{ display: 'flex', justifyContent: 'center', margin: '10px 0 4px 0' }}>
           <VolumeBonusIcon />
         </div>
-        <div data-testid="rewards-volume-progress" style={{ marginTop: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '24px' }}>
-          {!qualifies ? (
-            <span style={{ fontSize: '13px', fontWeight: 600, color: '#FFFFFF', textAlign: 'center' }}>Wager to unlock</span>
-          ) : nextMilestone ? (
-            <span style={{ fontSize: '13px', fontWeight: 600, color: '#FFFFFF', textAlign: 'center' }}>
-              {xpMonthly.toLocaleString('en-US')} / {nextMilestone.toLocaleString('en-US')} XP
-            </span>
-          ) : (
-            <span style={{ fontSize: '13px', fontWeight: 600, color: '#FFFFFF', textAlign: 'center' }}>Max bonus reached</span>
-          )}
-        </div>
+        <CardStatusRow testid="rewards-volume-progress" text={status} />
       </div>
       {/* CLAIM here stays the design's non-interactive locked visual in every state — the design
           file only ever shows this ONE (locked) rendering, and the actual claimable amount
           (rakeback + any swept-in volume bonus) is a single pooled `claimableBalance`, already
           claimed from the RAKEBACK card above. Inventing a second, independently-clickable CLAIM
           here would duplicate that one balance, not reflect a second one. */}
-      <div style={{ position: 'relative', background: '#0B0B0B', borderRadius: '999px', padding: '11px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="#83838F" style={{ display: 'block', position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }}>
-          <path d="M12 2.5A4.7 4.7 0 0 0 7.3 7.2v2.4h2.4V7.2a2.3 2.3 0 0 1 4.6 0v2.4h2.4V7.2A4.7 4.7 0 0 0 12 2.5z" />
-          <rect x="5" y="9.6" width="14" height="11.9" rx="2.6" />
-        </svg>
-        <span style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '13px', lineHeight: '13px', fontWeight: 'bold', letterSpacing: '0.8px', color: '#83838F' }}>CLAIM</span>
-      </div>
+      <LockedClaimRow />
+    </div>
+  );
+}
+
+/* ── Shared card pieces — deliberately ONE copy each, used by both cards above. The locked ── */
+/* ── RAKEBACK and locked VOLUME BONUS must stay pixel-identical apart from title/illustration ── */
+/* ── (issue #435), so duplicating this markup per card is exactly the drift to avoid. ── */
+
+/** The one-line status/unlock row under a card's illustration, at the design's fixed 24px height.
+ *  Callers supply the copy (and their own testid) — locked cards both read "Wager to unlock". */
+function CardStatusRow({ testid, text }: { testid: string; text: string }) {
+  return (
+    <div data-testid={testid} style={{ marginTop: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '24px' }}>
+      <span style={{ fontSize: '13px', fontWeight: 600, color: '#FFFFFF', textAlign: 'center' }}>{text}</span>
+    </div>
+  );
+}
+
+/** The design's locked CLAIM pill — dark `#0B0B0B` with a padlock, non-interactive by design in
+ *  every state it appears in (see VolumeBonusCard's note on the single pooled claimable balance). */
+function LockedClaimRow() {
+  return (
+    <div data-testid="rewards-locked-claim" style={{ position: 'relative', background: '#0B0B0B', borderRadius: '999px', padding: '11px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="#83838F" style={{ display: 'block', position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }}>
+        <path d="M12 2.5A4.7 4.7 0 0 0 7.3 7.2v2.4h2.4V7.2a2.3 2.3 0 0 1 4.6 0v2.4h2.4V7.2A4.7 4.7 0 0 0 12 2.5z" />
+        <rect x="5" y="9.6" width="14" height="11.9" rx="2.6" />
+      </svg>
+      <span style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '13px', lineHeight: '13px', fontWeight: 'bold', letterSpacing: '0.8px', color: '#83838F' }}>CLAIM</span>
     </div>
   );
 }
