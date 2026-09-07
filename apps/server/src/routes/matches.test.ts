@@ -135,6 +135,7 @@ interface RecentMatchesBody {
     opponentId: string;
     opponentDisplayName: string;
     opponentAvatarId: string;
+    opponentTier: string;
     outcome: 'win' | 'loss' | 'draw';
     delta: number;
     settledAt: string;
@@ -248,6 +249,32 @@ describe('GET /matches/recent', () => {
     const loserBody = loserRes.json<RecentMatchesBody>();
     expect(loserBody.matches[0].outcome).toBe('loss');
     expect(loserBody.matches[0].delta).toBe(-STAKE);
+  });
+
+  it("reports the opponent's VIP tier (issue #440), 'Unranked' by default and the real tier once they've earned enough XP", async () => {
+    await playMatch(p1, p2);
+
+    // Freshly-registered players stay Unranked off one small-stake match's XP.
+    const before = await app.inject({
+      method: 'GET',
+      url: '/matches/recent',
+      headers: { authorization: `Bearer ${p1.token}` },
+    });
+    expect(before.json<RecentMatchesBody>().matches[0].opponentTier).toBe('Unranked');
+
+    // Push p2 (p1's opponent) past the Bronze threshold (5,000 XP) directly via the rewards
+    // service, then confirm the SAME match now reports the opponent's current tier.
+    services.rewards.getSnapshot(p2.id); // ensure the row exists
+    services.db
+      .prepare(`UPDATE rewards SET xp_lifetime = ? WHERE account_id = ?`)
+      .run(6_000, p2.id);
+
+    const after = await app.inject({
+      method: 'GET',
+      url: '/matches/recent',
+      headers: { authorization: `Bearer ${p1.token}` },
+    });
+    expect(after.json<RecentMatchesBody>().matches[0].opponentTier).toBe('Bronze');
   });
 
   it('paginates via ?limit=&?offset=, newest-settled-first', async () => {

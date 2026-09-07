@@ -27,6 +27,9 @@ const ALL_MATCHES: RecentMatchEntry[] = Array.from({ length: 12 }, (_, i) => {
     opponentId: `p${n}`,
     opponentDisplayName: `rival${n}`,
     opponentAvatarId: 'default',
+    // Not yet rendered (issue #441 handles the frontend); populated here only so this fixture
+    // still satisfies the RecentMatchEntry type after issue #440 added the field.
+    opponentTier: 'Unranked',
     outcome,
     delta: outcome === 'win' ? 100 + n : outcome === 'loss' ? -(50 + n) : 0,
     settledAt: `2026-08-${String((n % 28) + 1).padStart(2, '0')}T09:42:00Z`,

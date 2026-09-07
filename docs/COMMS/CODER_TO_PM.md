@@ -1,5 +1,24 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-09-07#1 — RecentMatchEntry gains opponentTier — PR #443 (issue #440)            [OPEN]
+From: Coder   Re: issue #440 (split from #441, frontend rendering — separate ticket)
+
+Worktree at `.claude/worktrees/agent-a433a129f13f3b938`, branch `feature/440-opponent-tier`, started from `main` (`fca16d1`). Read the issue, `CODER_BRIEF.md`, `WORKING_AGREEMENT.md`, and the current `packages/shared/src/protocol.ts` / `packages/core/src/match-history.ts` / `packages/core/src/rewards.ts` before writing anything — the issue's line numbers were approximate, actual locations differed slightly but the shapes matched.
+
+**The change**: `RecentMatchEntry` (`packages/shared/src/protocol.ts`) gains `opponentTier: VipTier`. `getRecentMatches` (`packages/core/src/match-history.ts`) resolves it via a new `tierFor()` helper that reuses `tierForXp` (no reimplementation) against a lazily-read `rewards.xp_lifetime` row — same "reach into another module's table lazily" idiom already used there for `ledger_entry` (`netStmt`/`matchNetStmt`), except this one wraps the `db.prepare` in try/catch and falls back to 0 XP on failure. That guard is necessary and not just defensive-for-its-own-sake: `createMatchHistory` runs *before* `createRewards` in `apps/server/src/server.ts`, and a good number of existing `match-history.test.ts` setups exercise match-history without ever instantiating rewards at all — a bare `db.prepare` would have thrown on every one of those the moment a match row triggered `tierFor`.
+
+Backend/shared-type only, exactly as scoped — did not touch `ProfileHub.tsx` or any other client file. The one client-adjacent edit is `apps/web/src/test/ProfileHub.test.tsx`: its `RecentMatchEntry[]` fixture is an object-literal array, so the new required field failed typecheck until I added `opponentTier: 'Unranked'` to it (commented as unused-until-#441). No rendering logic touched.
+
+**Acceptance criteria, verified explicitly**:
+- `RecentMatchEntry.opponentTier: VipTier` — done, with a doc comment on why it's derived at query time rather than snapshotted (tiers never drop, per `tierForXp`'s own doc comment).
+- `/matches/recent` populates it via `tierForXp` against `xp_lifetime` at query time — done, no tier math reimplemented.
+- No client-side rendering change — confirmed via `git diff --stat`, only the fixture line above touches `apps/`.
+- Tests for both a ranked opponent and `'Unranked'` — three new cases in `match-history.test.ts` (ranked via direct `xp_lifetime` write after `rewards.getSnapshot()` seeds the row, no-rewards-row-at-all, and rewards-row-but-below-Wood-threshold), plus one integration-level case in `apps/server/src/routes/matches.test.ts` that starts a real player at `'Unranked'` off normal small-stake play and then pushes them past Bronze via `services.rewards`/`services.db` to confirm the same match's `opponentTier` updates.
+
+**Verification**: fresh worktree had no installed deps and no `dist/` output at all — `pnpm install` then `npx tsc -b` were needed before anything would resolve `@rapidclash/shared`/`@rapidclash/game-rps`; confirmed this was pre-existing (stashed my diff, same failures) not caused by this change. After that: `npx tsc -b` clean (workspace build/typecheck). `npx eslint --ext .ts,.tsx` on all 5 changed files clean. `npx vitest run` (full workspace): **93 test files, 1027 tests, all passed.**
+
+**Ask**: PR #443 (https://github.com/Ramunas01/rapidclash-demo/pull/443) opens against issue #440. Not merging myself. Flagging per `WORKING_AGREEMENT.md`: this touches the shared contract (`packages/shared/src/protocol.ts`), so it needs owner approval, not just PM approval.
+
 ### 2026-08-20#19 — bot-crowd: replace exact-name taker allowlist with Demo* prefix gating — PR #369 (issue #368)            [OPEN]
 From: Coder   Re: PM dispatch (2026-08-20) / Advisor doc `docs/COMMS/from-advisor/investor-bot-economy-real-ledger.md` §B (updated in place) / `ADVISOR_TO_PM.md` `2026-08-20#2`
 

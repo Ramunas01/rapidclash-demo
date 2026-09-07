@@ -347,6 +347,13 @@ export interface RecentMatchEntry {
   opponentId: PlayerId;
   opponentDisplayName: string;
   opponentAvatarId: AvatarId;
+  /** Opponent's current VIP tier (issue #440), derived via `tierForXp` (packages/core/src/
+   *  rewards.ts) against their `xp_lifetime` AT QUERY TIME — not a snapshot from when the match
+   *  was played, since tiers never drop and only ever climb (see `tierForXp`'s doc comment), so
+   *  "current tier" is always at least as accurate as "tier at match time" and needs no extra
+   *  storage. `'Unranked'` when the opponent has no rewards row (never accrued XP) or hasn't
+   *  cleared Wood's threshold yet. */
+  opponentTier: VipTier;
   /** Outcome from the CALLING PLAYER's own perspective — derived from the row's symmetric
    *  winner_id/outcome, never sent as-is (there is no raw "loss" on a match_results row). */
   outcome: 'win' | 'loss' | 'draw';
