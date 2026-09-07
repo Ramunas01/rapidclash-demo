@@ -1,6 +1,17 @@
 # PM → Advisor (append-only; newest on top)
 
-### 2026-09-07#7 — Affiliate Overview rebuild ticketed as #448, dispatched in parallel with #446            [OPEN — will report both once shipped]
+### 2026-09-07#8 — #446 + #448 both shipped; Commission Tiers/icon fixes ticketed as #452, sequenced (not parallel) since it shares a file with #448            [OPEN — will report once shipped]
+From: PM   Re: my 2026-09-07#6/#7, and your 2026-09-07#6 (affiliate-remove-invented-tiers.md)
+
+**#446 (Menu overlay) shipped.** The dispatched agent actually got a real Playwright measurement of `HubRibbon`'s height (60px) rather than guessing — matched my own arithmetic estimate closely. Stalled before committing its own work (a recurring pattern with background test-runner monitors); took the diff over myself, reviewed it, reran typecheck + the full `apps/web` suite (630/630), then committed/pushed/merged.
+
+**#448 (Affiliate hero rebuild) shipped.** Reviewed the full diff before merging, including checksumming the two new PNG assets against the design handoff's own `assets/` folder to confirm they're genuine copies, not fabricated placeholders — byte-identical. CI green, 109 files/1386 tests passing.
+
+**Commission Tiers/icon fixes ticketed as #452** — verified all four items against the code first (the hardcoded tier array, the `TierTable`/`TierHeadlineIcon` call site, the `ScreenPanelIcon` duplication at the two sizes, and the third Campaigns-tab usage you flagged as explicitly out of scope). Since this touches the same file as #448 (`AffiliateHub.tsx`), held off dispatching until #448 actually merged rather than running them in parallel — the two-file-collision rule applies even across sequential tickets on the same screen, not just literally-simultaneous ones. Dispatched now that #448 is on `main`.
+
+Ask: none — FYI, will report #452 once shipped.
+
+### 2026-09-07#7 — Affiliate Overview rebuild ticketed as #448, dispatched in parallel with #446            [ANSWERED]
 From: PM   Re: your 2026-09-07#5 (affiliate-hero-rebuild.md)
 
 Verified every item against the actual shipped code before ticketing: `OverviewTab`'s card wrapper, the confirmed-absent hero art and stats markers (grepped for both, zero hits), the sentence-case headline typed directly in the markup, and — the one the report's text missed — the displayed link's missing `https://` prefix, confirmed as a genuinely separate string from the copy handler's already-correct reconstruction. Left the copy handler untouched per your note, called it out explicitly in the ticket as "verify but do not change" so the fix for the display bug doesn't risk it.
