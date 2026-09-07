@@ -285,6 +285,117 @@ describe('ProfileHubScreen', () => {
     });
   });
 
+  // Issue #441: zebra rows (matching GamesCarousel.tsx's Open Games rows exactly), the bot-glyph
+  // strip + '@' normalize helper, and VS colored by outcome.
+  describe('recent games — zebra rows, opponent normalize, VS color (#441)', () => {
+    const ZEBRA_MATCHES: RecentMatchEntry[] = [
+      { matchId: 'z1', gameId: 'coinflip', opponentId: 'p1', opponentDisplayName: '🤖 rival1', opponentAvatarId: 'default', outcome: 'win', delta: 50, settledAt: '2026-08-01T09:00:00Z' },
+      { matchId: 'z2', gameId: 'chess', opponentId: 'p2', opponentDisplayName: 'rival2', opponentAvatarId: 'default', outcome: 'loss', delta: -30, settledAt: '2026-08-02T09:00:00Z' },
+      { matchId: 'z3', gameId: 'coinflip', opponentId: 'p3', opponentDisplayName: '@rival3', opponentAvatarId: 'default', outcome: 'draw', delta: 0, settledAt: '2026-08-03T09:00:00Z' },
+      { matchId: 'z4', gameId: 'chess', opponentId: 'p4', opponentDisplayName: '🤖rival4', opponentAvatarId: 'default', outcome: 'win', delta: 20, settledAt: '2026-08-04T09:00:00Z' },
+    ];
+
+    function stubZebraFetch() {
+      vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes('/rewards')) return { ok: true, json: async () => REWARDS } as Response;
+        if (u.includes('/matches/recent')) return { ok: true, json: async () => ({ matches: ZEBRA_MATCHES, limit: 5, offset: 0, total: ZEBRA_MATCHES.length }) } as Response;
+        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: 1009, entries: [] }) } as Response;
+        return { ok: true, json: async () => ({}) } as Response;
+      }));
+    }
+
+    // Regression: these literals must match GamesCarousel.tsx's Open Games row styling exactly
+    // (height: '74px', gap: '11px', background/borderRadius keyed off even/odd index, padding
+    // '0 16px') — see the `g.zebra ? '#1A1A2E' : 'transparent'` / `g.zebra ? '26px' : '0px'` row
+    // around line 553 of that file.
+    it('rows alternate the GamesCarousel zebra fill/radius by index, with no gap between rows', async () => {
+      stubZebraFetch();
+      render(<ProfileHubScreen {...baseProps()} />);
+      await waitFor(() => expect(screen.getByTestId('profile-match-z1')).toBeInTheDocument());
+
+      const even = screen.getByTestId('profile-match-z1'); // index 0 — filled
+      const evenStyle = even.getAttribute('style') ?? '';
+      expect(evenStyle).toContain('height: 74px');
+      expect(evenStyle).toContain('gap: 11px');
+      expect(evenStyle).toContain('padding: 0px 16px');
+      expect(evenStyle).toContain('background: rgb(26, 26, 46)'); // #1A1A2E
+      expect(evenStyle).toContain('border-radius: 26px');
+
+      const odd = screen.getByTestId('profile-match-z2'); // index 1 — transparent
+      const oddStyle = odd.getAttribute('style') ?? '';
+      expect(oddStyle).toContain('background: transparent');
+      expect(oddStyle).toContain('border-radius: 0px');
+
+      // No `gap` on the rows' flex container — each row supplies its own spacing via height/fill.
+      const container = even.parentElement!;
+      expect(container.getAttribute('style')).toContain('gap: 0;');
+    });
+
+    it('normalizes opponent names: strips a leading 🤖 (with or without a space) and any leading @, then always prepends exactly one @', async () => {
+      stubZebraFetch();
+      render(<ProfileHubScreen {...baseProps()} />);
+      await waitFor(() => expect(screen.getByTestId('profile-match-z1')).toBeInTheDocument());
+
+      expect(within(screen.getByTestId('profile-match-z1')).getByText('@rival1')).toBeInTheDocument(); // '🤖 rival1' → '@rival1'
+      expect(within(screen.getByTestId('profile-match-z2')).getByText('@rival2')).toBeInTheDocument(); // 'rival2' (missing '@') → '@rival2'
+      expect(within(screen.getByTestId('profile-match-z3')).getByText('@rival3')).toBeInTheDocument(); // '@rival3' (already correct) → '@rival3'
+      expect(within(screen.getByTestId('profile-match-z4')).getByText('@rival4')).toBeInTheDocument(); // '🤖rival4' (no space) → '@rival4'
+
+      // The raw 🤖 glyph itself never reaches the DOM.
+      expect(screen.getByTestId('profile-hub').textContent ?? '').not.toContain('🤖');
+    });
+
+    it('colors VS green on a win, white on a loss, and the existing muted grey on a draw', async () => {
+      stubZebraFetch();
+      render(<ProfileHubScreen {...baseProps()} />);
+      await waitFor(() => expect(screen.getByTestId('profile-match-z1')).toBeInTheDocument());
+
+      const winVs = within(screen.getByTestId('profile-match-z1')).getByText('VS');
+      expect(winVs.getAttribute('style')).toContain('color: rgb(52, 211, 153)'); // #34D399 green
+
+      const lossVs = within(screen.getByTestId('profile-match-z2')).getByText('VS');
+      expect(lossVs.getAttribute('style')).toContain('color: rgb(255, 255, 255)'); // #FFFFFF white
+
+      const drawVs = within(screen.getByTestId('profile-match-z3')).getByText('VS');
+      expect(drawVs.getAttribute('style')).toContain('color: rgb(131, 131, 143)'); // #83838F muted grey
+    });
+
+    // #440 (the parallel backend ticket adding `opponentTier`) may not have merged when this
+    // ships — a match with no `opponentTier` field must still render cleanly, with no tier icon
+    // and no placeholder/reserved gap for one.
+    it('omits the tier icon entirely when opponentTier is absent/Unranked (guards #440 not being merged yet)', async () => {
+      stubZebraFetch();
+      render(<ProfileHubScreen {...baseProps()} />);
+      await waitFor(() => expect(screen.getByTestId('profile-match-z1')).toBeInTheDocument());
+      const row = screen.getByTestId('profile-match-z1');
+      // None of these fixture rows carry `opponentTier` — the row's only two <svg>s are the
+      // opponent's default-avatar glyph (`Avatar`'s `PersonGlyph`) and the credits `RcIcon` next
+      // to the settlement delta; neither is a tier icon, and no third <svg> (a `TierIcon`) exists.
+      expect(row.querySelectorAll('svg')).toHaveLength(2);
+    });
+
+    // Forward-compat: once #440 lands `opponentTier` on the real `RecentMatchEntry`/wire
+    // response, a ranked opponent's row must pick it up and render the shared `TierIcon` — this
+    // stands in for that not-yet-existing field via a loosened fixture cast.
+    it('renders the opponent TierIcon once an opponentTier field is present and not Unranked (forward-compat for #440)', async () => {
+      const rankedMatch = { ...ZEBRA_MATCHES[0], matchId: 'z-ranked', opponentTier: 'Gold' } as RecentMatchEntry;
+      vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes('/rewards')) return { ok: true, json: async () => REWARDS } as Response;
+        if (u.includes('/matches/recent')) return { ok: true, json: async () => ({ matches: [rankedMatch], limit: 5, offset: 0, total: 1 }) } as Response;
+        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: 1009, entries: [] }) } as Response;
+        return { ok: true, json: async () => ({}) } as Response;
+      }));
+      render(<ProfileHubScreen {...baseProps()} />);
+      await waitFor(() => expect(screen.getByTestId('profile-match-z-ranked')).toBeInTheDocument());
+      const row = screen.getByTestId('profile-match-z-ranked');
+      // Avatar glyph + RcIcon (both present in the Unranked case above) + one more for the tier
+      // icon = 3.
+      expect(row.querySelectorAll('svg')).toHaveLength(3);
+    });
+  });
+
   describe('CONTROLS / Affiliate', () => {
     it('renders every CONTROLS row plus the Affiliate row', () => {
       render(<ProfileHubScreen {...baseProps()} />);
