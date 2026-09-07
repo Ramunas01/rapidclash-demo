@@ -4,6 +4,8 @@
 
 RapidClash is a demo of a player-versus-player gaming platform. It exists to show the **full core experience** convincingly on a mobile handset, not to be a finished product. Everything we build serves that demonstration.
 
+This is a structural fact, not a milestone the demo eventually graduates past — a convincing demo is the *goal*, never evidence that it's ready to become the real platform. See `PRODUCTION_GATE.md` for the explicit rule and the required process if the production question is ever raised.
+
 ## The thesis (why this platform exists)
 
 House games are built so the house always wins — the odds are written by the operator to extract money from players into its own pocket. RapidClash's bet is that this **entire category can be reshaped into player-versus-player games**: the same familiar games — Limbo, Crash, Keno, Roulette, Dice, Hilo, Blackjack, Baccarat — refactored so players win and lose to *each other*, never to a house that set the rules in its own favour. The ambition is to convert the **whole house-game canon**, including the games that sound impossible to make two-player; doing so is the product, and the challenge a serious team is meant to take on. This is why every game on the roster is either natively PvP or a **confirmed PvP redefinition** — never a house game in disguise. The conversion backlog and method live in `GAME_REDEFINITION.md`.

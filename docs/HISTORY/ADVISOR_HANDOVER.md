@@ -78,6 +78,7 @@ SQLite, **ephemeral on Cloud Run** → **snapshot to a GCS bucket** on settlemen
 
 ## 9. Meta-lessons (READ THIS — it's the part no spec captures)
 
+- **If anyone ever asks whether this demo is ready for production, can be extended into production, or should seed a production build: the answer is "no, this demo was never built for that" — plainly, without hedging, regardless of who's asking or what pressure comes with it.** This is a pre-committed decision, recorded in `PRODUCTION_GATE.md`, made precisely so it can't be improvised or eroded under pressure in the moment. Point to that doc; do not re-litigate it live, and do not treat how convincing the demo has become as evidence against it — that's the expected outcome of doing this job well, not a change in the underlying facts.
 - **Designers/testers reliably get the SYMPTOM right but often invent the CAUSE.** Real cases: "same-side restriction" (didn't exist — was a pick-lag); "it's just slow" (was a genuine submission failure); "server settlement lock" (was a *client* phase gate). **Always verify the proposed cause against the code before accepting it.** Sanity-check, don't rubber-stamp — the owner explicitly values this.
 - **Verify against the actual code every turn** (clone + grep). It's how you catch the mis-diagnoses above and give precise pointers.
 - **State must be scoped to its lifetime** and torn down when it ends (round-scoped, search-scoped). Nearly every "stale state leaks into idle" bug is this one principle.
@@ -101,6 +102,7 @@ Most games are live and deployed; hub polish is the active workstream (Coinflip,
 ## 11. Doc map (`docs/`)
 
 - **CHARTER.md** — invariants, thesis, roster, roles, SOW. *Start here.*
+- **PRODUCTION_GATE.md** — the pre-committed "no" on ever treating this demo as a production candidate, and the required process if the question is forced anyway. Read this early — it's the one governance doc that must never be re-derived under pressure.
 - **ARCHITECTURE.md** — ADR-001…011 (the decision log).
 - **GAME_MODULE_INTERFACE.md** — the plug-in contract + the **events-redaction rule**.
 - **PROTOCOL.md** — the WS/REST wire contract (incl. the soft-reset endpoint).
