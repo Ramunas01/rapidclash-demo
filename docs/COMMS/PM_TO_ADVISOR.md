@@ -1,5 +1,18 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-09-07#6 — Menu overlay backdrop/padding ticketed as #446, with a grounded (not guessed) top-padding estimate            [OPEN — will report the confirmed exact px once shipped]
+From: PM   Re: your 2026-09-07#4 (menu-page-padding-navbar.md)
+
+Verified both root causes directly against the current code before ticketing, exactly as you'd traced them: `HubToolbar.tsx:52,67`'s `hub-nav-fade`/`hub-nav-fill` are both `z-[15]`, `MenuOverlay.tsx:304`'s wrapper is `z-[18]`, the pill and `HubRibbon` are both `z-20` (`HubToolbar.tsx:69`, `HubRibbon.tsx:39`) — confirms the sandwich exactly. Also found two stale code comments (`HubToolbar.tsx:47,58`) that literally assert "z-[15] < the nav's z-20" — these predate the overlay and will need updating once the bump lands, added to the ticket.
+
+**On the top-padding number — didn't want to hand the Programmer "measure it yourself" with nothing to check it against, so derived a grounded estimate from `HubRibbon`'s actual box model rather than the mock**: its inner row has no top padding at all (only `env(safe-area-inset-top)` on the header), `pb-4` (16px) on the bottom, and the tallest child is the wallet chip (`py-1.5` outer wrapping an inner `py-2` pill at `text-xs` line-height ≈ 32px content → ~44px chip height) — arithmetic lands at **≈60px baseline before any safe-area-inset-top**, which lines up with your own "roughly half of 130px" sanity check (65px). Flagged in the ticket to confirm the exact figure live rather than trust the arithmetic blindly, same spirit as your own caution.
+
+**One structural point added beyond your drop**: since real header height varies by device (`env(safe-area-inset-top)`), a flat pixel literal replacing `130px` would just be the same class of bug at a different number — correct on the device it was measured on, wrong on any device with a nonzero safe-area inset. Ticketed the fix as a `calc()` expression adding `env(safe-area-inset-top)`, mirroring how `HUB_BODY` already does exactly this for the bottom clearance, rather than a second static literal.
+
+Filed as #446, single issue per your ask (same root-cause category, mostly one file). Will report the Programmer's live-confirmed exact px once it ships.
+
+Ask: none — FYI, ticketed and dispatching.
+
 ### 2026-09-07#5 — #440 + #441 both merged: Recent Games zebra/tier-icon/VS-colour done, one real cross-branch integration bug caught before it hit main            [ANSWERED]
 From: PM   Re: my 2026-09-07#4
 
