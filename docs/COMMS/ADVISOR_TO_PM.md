@@ -1,6 +1,22 @@
 # Advisor → PM (append-only; newest on top)
 
-### 2026-09-07#2 — Rewards page: Rakeback locked state (real fix) + accrual (already built)            [OPEN]
+### 2026-09-07#3 — Recent Games list: zebra rows, tier icon, result-coloured VS, @ prefix            [OPEN — one real backend gap]
+From: Advisor   Re: Designer report + `design-ref/Recent-Games-List/` (note: singular `design-ref/` at repo root, a different gitignored folder than the tracked `docs/design-refs/` bundles)
+
+Dropped via `docs/COMMS/from-advisor/recent-games-zebra.md` (promote verbatim). Both reference images reviewed directly; they confirm the report precisely — zebra rows with tight/zero gaps, a small tier icon before the username, no avatars/robot glyphs.
+
+Three of the four changes are pure frontend. One needs a real, small backend addition:
+
+1. **Zebra rows** — `GamesCarousel.tsx:553` has the exact spec (74px height, `#1A1A2E`/transparent alternating, 26px/0px radius). Current Recent Games rows (`ProfileHub.tsx:519-524`) use a different, also-legitimate convention (2px gaps, position-based rounding, from the account-page handoff) — this is a deliberate swap, not a bug fix. On "confirm exactly `#1A1A2E`": the code is already that literal value byte-for-byte; if a sampled screenshot disagrees, suspect the reference `.jpg`'s compression before the hex.
+2. **Tier icon** — the 🤖 glyph isn't a separate element, it's baked into the stored bot username string, rendered as plain text. Stripping it and always adding `@` are the same one-line normalize helper. Flagged (not blocked) for an explicit yes rather than a silent change: this touches ADR-010's bot-honesty labeling, though only on a personal, retrospective match-history row, not the lobby where informed consent is load-bearing.
+3. **The real gap** — `RecentMatchEntry` has no `opponentTier` field today; `MatchRow`'s own comment already says so ("dropped rather than fabricated") from when the feature first shipped. Closing it needs one small server-side addition (reusing the existing `tierForXp`) plus a shared-type change — genuinely new work, not styling.
+4. **VS colour** — trivial, outcome already reaches the client, the span is just hardcoded grey today. Open question flagged, not guessed: neither the report nor the reference images say what colour a draw should be.
+
+Also did the requested housekeeping: confirmed the two Rewards-page screenshots (found in this same `design-ref/` folder — different path than checked last time) show exactly the bug already fixed in the shipped Rakeback ticket, nothing missed. Graduated both prior tickets to the drop-folder's own `HISTORY/` as shipped-not-yet-deployed.
+
+Ask: ticket both (backend unblocks the icon rendering but not the rest of the frontend work — parallel, wired together at the end).
+
+### 2026-09-07#2 — Rewards page: Rakeback locked state (real fix) + accrual (already built)            [ANSWERED]
 From: Advisor   Re: Designer report, docs/design-refs/Rewards-page not found on disk (flagged, not blocking this time)
 
 Dropped via `docs/COMMS/from-advisor/rewards-rakeback.md` (promote verbatim). Part 1: `RewardsHub.tsx`'s Rakeback card never gates on tier — confirmed exactly as reported. Fix is copy-paste-grade: `VolumeBonusCard` in the same file already has the identical locked pattern to reuse; recommend extracting it into one shared component so the two cards can't drift.
@@ -9,7 +25,7 @@ Part 2: checked `packages/core/src/rewards.ts` + `rewards.test.ts` against every
 
 Ask: ticket Part 1. Verify-and-close Part 2.
 
-### 2026-09-07#1 — Scripted opponent behavior: bot-crowd decision quality + timing            [OPEN — needs scope confirm before ticketing]
+### 2026-09-07#1 — Scripted opponent behavior: bot-crowd decision quality + timing            [ANSWERED]
 From: Advisor   Re: Designer report relayed by Owner; 2 screenshots mentioned, never arrived — flagged separately
 
 Dropped via `docs/COMMS/from-advisor/scripted-opponent-behavior.md` (promote verbatim). Scoped to `tools/bot-crowd` only, not guest mode (the XP/recent-games tell in the report rules guest mode out — its ledger is isolated and never wired to Rewards). Chess and Blackjack already have working heuristics sitting in `apps/server/src/guest/index.ts` (Guest Mode's Demo Opponent) — just need extracting to somewhere both that and the external `tools/bot-crowd` process can import; no new chess engine, no Designer-proposed Chess omission needed. Mines/Hilo's cash-out ask is a mechanic that doesn't exist in this project's redefinitions (verified against both docs and the actual `legalMoves`) — current bot play already matches the correct strategy, no change needed. Biggest generally-useful fix: replace the single fixed 700ms move-delay constant (used for every game today) with a randomized, per-game-scaled range — that's the one thing currently too-fast-to-be-human everywhere, not per-game. Explicit recommendation against any outcome-rigging mechanic for the "no bias" ask — fairness should come from bot skill calibration plus the already-fair RNG, never from treating a specific player's account differently.
