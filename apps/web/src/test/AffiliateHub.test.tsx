@@ -133,6 +133,52 @@ describe('AffiliateHubScreen — clipboard copy', () => {
     fireEvent.click(screen.getByTestId('affiliate-copy-code'));
     expect(writeText).toHaveBeenCalledTimes(2);
   });
+
+  // Issue #448: the displayed link text was missing `https://` while the copy button already
+  // reconstructed the full URL independently — two different strings for what should be one.
+  it('the displayed link value and the copied link value are the same https:// URL', () => {
+    const writeText = stubClipboard();
+    render(<AffiliateHubScreen {...baseProps()} />);
+
+    const displayed = screen.getByTestId('affiliate-copy-link-value').textContent;
+    expect(displayed).toMatch(/^https:\/\/rapidclash\.com\/r\/.+/);
+
+    fireEvent.click(screen.getByTestId('affiliate-copy-link'));
+    expect(writeText).toHaveBeenCalledWith(displayed);
+  });
+});
+
+describe('AffiliateHubScreen — Overview hero (issue #448)', () => {
+  it('renders the hero directly on the page background, with no card wrapper', () => {
+    render(<AffiliateHubScreen {...baseProps()} />);
+    const headline = screen.getByText('EARN DOUBLE THE MARKET STANDARD');
+    // Walk up to the hero's outer container and confirm none of its ancestors (up to the
+    // Overview tab root) carry the old panel's rounded/surface/padding classes.
+    let el: HTMLElement | null = headline.parentElement;
+    while (el && !el.className?.includes('flex-col gap-6')) {
+      expect(el.className).not.toMatch(/rounded-\[26px\]/);
+      expect(el.className).not.toMatch(/bg-surface/);
+      el = el.parentElement;
+    }
+  });
+
+  it('renders the uppercase headline as literal text, not sentence case', () => {
+    render(<AffiliateHubScreen {...baseProps()} />);
+    expect(screen.getByText('EARN DOUBLE THE MARKET STANDARD')).toBeInTheDocument();
+    expect(screen.queryByText('Earn double the market standard')).not.toBeInTheDocument();
+  });
+
+  it('renders the three stats tiles with their labels and seeded mock values', () => {
+    render(<AffiliateHubScreen {...baseProps()} />);
+    expect(within(screen.getByTestId('affiliate-stat-users-referred')).getByText('USERS REFERRED')).toBeInTheDocument();
+    expect(within(screen.getByTestId('affiliate-stat-users-referred')).getByText('18')).toBeInTheDocument();
+
+    expect(within(screen.getByTestId('affiliate-stat-total-wagered')).getByText('TOTAL WAGERED')).toBeInTheDocument();
+    expect(within(screen.getByTestId('affiliate-stat-total-wagered')).getByText('42,910')).toBeInTheDocument();
+
+    expect(within(screen.getByTestId('affiliate-stat-total-earned')).getByText('TOTAL EARNED')).toBeInTheDocument();
+    expect(within(screen.getByTestId('affiliate-stat-total-earned')).getByText('1,284')).toBeInTheDocument();
+  });
 });
 
 describe('AffiliateHubScreen — campaigns', () => {

@@ -7,6 +7,8 @@ import { useMenuOverlay } from '../components/hub-chrome/useMenuOverlay.js';
 import { HUB_SHELL } from '../components/hub-chrome/layout.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
 import { RcIcon } from '../components/hub-shared/RcIcon.js';
+import affiliateMegaphoneArt from '../assets/affiliate/affiliate-megaphone.png';
+import affiliateMoneyArt from '../assets/affiliate/affiliate-money-sm.png';
 
 /**
  * Affiliate Program (issue #423) — the last of the four Designer handoff packages (Account →
@@ -57,6 +59,14 @@ const BASE_COMMISSION_RATE = TIERS[0]!.rate;
  *  deliberately NOT the prototype's permanently-disabled 0.00 default, so CLAIM is actually
  *  pressable in an investor demo. */
 const SEEDED_CLAIMABLE = 84.2;
+
+/** Seeded mock stats for the Overview hero's new stats tiles (issue #448) — same session-local
+ *  mock-state approach as SEEDED_CLAIMABLE above (no real backend). Values match the design
+ *  source's own placeholder data (`Affiliate Page.dc.html` lines 960/964/968: 18 / 42,910 / 1,284)
+ *  rather than inventing new ones. */
+const SEEDED_USERS_REFERRED = 18;
+const SEEDED_TOTAL_WAGERED = 42910;
+const SEEDED_TOTAL_EARNED = 1284;
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 function randomSuffix(len: number): string {
@@ -532,6 +542,17 @@ function CopyField({ testid, label, value, onCopy }: { testid: string; label: st
   );
 }
 
+/** One Overview stats tile (`Affiliate Page.dc.html` lines 958-961: `--rc-surface`, radius 20px,
+ *  16px 18px padding, 6px gap; 11px bold micro-label, 24px Space Grotesk 700 green value). */
+function StatTile({ testid, label, value }: { testid: string; label: string; value: string }) {
+  return (
+    <div data-testid={testid} className="flex flex-col gap-1.5 rounded-[20px] bg-surface px-[18px] py-4">
+      <span className="text-[11px] font-bold uppercase tracking-[1.2px] text-foreground" style={{ fontFamily: ARIAL }}>{label}</span>
+      <span className="text-[24px] font-bold text-success" style={{ fontFamily: SPACE_GROTESK }}>{value}</span>
+    </div>
+  );
+}
+
 // ── OVERVIEW ─────────────────────────────────────────────────────────────────────────────────
 
 function OverviewTab({
@@ -564,23 +585,48 @@ function OverviewTab({
 }) {
   return (
     <div className="mt-6 flex flex-col gap-6">
-      <section className="rounded-[26px] bg-surface p-5">
-        <div className="flex items-baseline gap-2.5">
-          <span className="text-[42px] font-bold leading-none text-success" style={{ fontFamily: SPACE_GROTESK }}>{BASE_COMMISSION_RATE}</span>
-          <span className="text-[17px] font-bold uppercase leading-[1.25] text-success">
-            Commission
-            <br />
-            Rate
-          </span>
+      {/* Hero — no card wrapper; sits directly on the page background per `Affiliate Page.dc.html`
+       *  lines 917-954 (the previous `rounded-[26px] bg-surface p-5` panel didn't exist there). */}
+      <div className="relative flex flex-col items-center pb-1">
+        <div className="relative flex w-full items-center justify-center">
+          <img
+            src={affiliateMegaphoneArt}
+            alt=""
+            aria-hidden="true"
+            className="relative left-[-14px] top-[-16px] block w-full max-w-[340px]"
+          />
         </div>
-        <p className="mt-3 text-[21px] font-bold leading-[1.2] text-foreground">Earn double the market standard</p>
-        <p className="mt-2.5 text-[14px] leading-[20px] text-foreground/90">
+        <div className="-mt-[34px] flex w-full items-center gap-2.5">
+          <span className="text-[58px] font-bold leading-[58px] tracking-[-1.6px] text-success" style={{ fontFamily: SPACE_GROTESK }}>{BASE_COMMISSION_RATE}</span>
+          <div className="flex flex-col">
+            <span className="text-[20px] font-bold uppercase leading-[27px] tracking-[0.6px] text-success" style={{ fontFamily: ARIAL }}>Commission</span>
+            <span className="text-[20px] font-bold uppercase leading-[27px] tracking-[0.6px] text-success" style={{ fontFamily: ARIAL }}>Rate</span>
+          </div>
+        </div>
+        <div className="mt-2 w-full text-[31px] font-bold leading-[34px] tracking-[0.6px] text-foreground" style={{ fontFamily: ARIAL }}>
+          EARN DOUBLE THE MARKET STANDARD
+        </div>
+        <p className="mt-[11px] w-full text-justify text-[15px] font-semibold leading-[20px] text-foreground">
           The biggest crypto casinos pay 10% — we pay {BASE_COMMISSION_RATE}. Your cut comes from the rake on every game your referrals play — there is no negative carryover, you get paid when they wager, win or lose.
         </p>
 
-        <div className="mt-5 flex flex-col gap-2.5">
-          <CopyField testid="affiliate-copy-link" label="LINK:" value={`rapidclash.com/r/${refCode}`} onCopy={onCopyLink} />
+        <div className="mt-5 w-full">
+          <CopyField testid="affiliate-copy-link" label="LINK:" value={`https://rapidclash.com/r/${refCode}`} onCopy={onCopyLink} />
+        </div>
+        <div className="mt-2.5 w-full">
           <CopyField testid="affiliate-copy-code" label="CODE:" value={refCode} onCopy={onCopyCode} />
+        </div>
+      </div>
+
+      {/* Stats — new (issue #448). Grid + art per `Affiliate Page.dc.html` lines 956-972. */}
+      <section className="grid items-center gap-[14px]" style={{ gridTemplateColumns: 'calc(50% - 5px) 1fr' }}>
+        <div className="grid grid-cols-1 gap-2.5">
+          <StatTile testid="affiliate-stat-users-referred" label="USERS REFERRED" value={SEEDED_USERS_REFERRED.toLocaleString('en-US')} />
+          <StatTile testid="affiliate-stat-total-wagered" label="TOTAL WAGERED" value={SEEDED_TOTAL_WAGERED.toLocaleString('en-US')} />
+          <StatTile testid="affiliate-stat-total-earned" label="TOTAL EARNED" value={SEEDED_TOTAL_EARNED.toLocaleString('en-US')} />
+        </div>
+        <div className="flex items-center justify-center overflow-hidden">
+          <img src={affiliateMoneyArt} alt="" aria-hidden="true" className="block h-auto w-[130%] max-w-none flex-none" />
         </div>
       </section>
 
