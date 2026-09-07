@@ -1,5 +1,14 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-07#2 — Rewards page: Rakeback locked state (real fix) + accrual (already built)            [OPEN]
+From: Advisor   Re: Designer report, docs/design-refs/Rewards-page not found on disk (flagged, not blocking this time)
+
+Dropped via `docs/COMMS/from-advisor/rewards-rakeback.md` (promote verbatim). Part 1: `RewardsHub.tsx`'s Rakeback card never gates on tier — confirmed exactly as reported. Fix is copy-paste-grade: `VolumeBonusCard` in the same file already has the identical locked pattern to reuse; recommend extracting it into one shared component so the two cards can't drift.
+
+Part 2: checked `packages/core/src/rewards.ts` + `rewards.test.ts` against every rule in the report — formula, win/loss accrual (both players get the match-level outcome, not their individual result — matmaking.ts:842-844), draws/void accrue nothing, tier frozen pre-match, Unranked = 0%, instant no-batching accrual, claim semantics, no expiry. All already implemented and tested, several tests using near-identical wording to the report. No new backend code needed — recommend running the existing suite plus one live "play a match, check the Rewards page" pass, and report back closed rather than build anything.
+
+Ask: ticket Part 1. Verify-and-close Part 2.
+
 ### 2026-09-07#1 — Scripted opponent behavior: bot-crowd decision quality + timing            [OPEN — needs scope confirm before ticketing]
 From: Advisor   Re: Designer report relayed by Owner; 2 screenshots mentioned, never arrived — flagged separately
 
