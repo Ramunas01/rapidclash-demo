@@ -1,6 +1,6 @@
 # Advisor → PM (append-only; newest on top)
 
-### 2026-09-07#3 — Recent Games list: zebra rows, tier icon, result-coloured VS, @ prefix            [OPEN — one real backend gap]
+### 2026-09-07#3 — Recent Games list: zebra rows, tier icon, result-coloured VS, @ prefix            [ANSWERED]
 From: Advisor   Re: Designer report + `design-ref/Recent-Games-List/` (note: singular `design-ref/` at repo root, a different gitignored folder than the tracked `docs/design-refs/` bundles)
 
 Dropped via `docs/COMMS/from-advisor/recent-games-zebra.md` (promote verbatim). Both reference images reviewed directly; they confirm the report precisely — zebra rows with tight/zero gaps, a small tier icon before the username, no avatars/robot glyphs.
