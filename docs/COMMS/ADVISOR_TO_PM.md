@@ -1,5 +1,14 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-07#1 — Scripted opponent behavior: bot-crowd decision quality + timing            [OPEN — needs scope confirm before ticketing]
+From: Advisor   Re: Designer report relayed by Owner; 2 screenshots mentioned, never arrived — flagged separately
+
+Dropped via `docs/COMMS/from-advisor/scripted-opponent-behavior.md` (promote verbatim). Scoped to `tools/bot-crowd` only, not guest mode (the XP/recent-games tell in the report rules guest mode out — its ledger is isolated and never wired to Rewards). Chess and Blackjack already have working heuristics sitting in `apps/server/src/guest/index.ts` (Guest Mode's Demo Opponent) — just need extracting to somewhere both that and the external `tools/bot-crowd` process can import; no new chess engine, no Designer-proposed Chess omission needed. Mines/Hilo's cash-out ask is a mechanic that doesn't exist in this project's redefinitions (verified against both docs and the actual `legalMoves`) — current bot play already matches the correct strategy, no change needed. Biggest generally-useful fix: replace the single fixed 700ms move-delay constant (used for every game today) with a randomized, per-game-scaled range — that's the one thing currently too-fast-to-be-human everywhere, not per-game. Explicit recommendation against any outcome-rigging mechanic for the "no bias" ask — fairness should come from bot skill calibration plus the already-fair RNG, never from treating a specific player's account differently.
+
+Ask: confirm scope + the no-rigging stance, then ticket the 4 items in the drop file. Chase the 2 missing screenshots in parallel, not blocking.
+
+Let me know once the screenshots are placed somewhere I can reach, and I'll fold in whatever they show before this goes further.
+
 ### 2026-08-23#2 — CONTROLS section icons — restore the design file's SVGs            [OPEN — small, contained fix]
 From: Advisor   Re: Designer report (docs/design-refs/Problem1), verified against the shipped code
 
