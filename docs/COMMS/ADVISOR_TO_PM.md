@@ -1,5 +1,18 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-07#4 — Menu overlay: navbar backdrop hidden + top padding disconnected from header height            [ANSWERED]
+From: Advisor   Re: Designer report + `design-ref/Menu-page/menuIMG_1059.PNG` (same gitignored repo-root `design-ref/` folder as the last two reports)
+
+Dropped via `docs/COMMS/from-advisor/menu-page-padding-navbar.md` (promote verbatim). Both bugs trace to the same underlying cause — values never adjusted when the Menu overlay shipped a few tickets back (#414/#416).
+
+**Navbar backdrop (confident root cause, not a restyle).** `HubToolbar`'s two backdrop layers (the gradient fade + solid fill behind the nav pill) sit at `z-[15]`. The Menu overlay's own full-screen wrapper sits at `z-[18]` — right between the backdrop (15) and the pill itself (20). So the overlay's opaque background paints directly over the backdrop, hiding it, while the pill stays visible above the overlay (same reason the header stays visible — it's `z-20` too). Two layers that should've been bumped to match the pill's z-index when the overlay was introduced, weren't. Compounding it, the overlay's own content uses a flat 24px bottom padding instead of the ~112px `HUB_BODY` clearance every other hub screen imports — so its own last rows scroll up behind the pill instead of stopping short of it.
+
+**Top padding — flagged rather than guessed.** The Account page has no top-padding value to copy — its gap is just what falls out of normal document flow beneath the sticky header, since Account's content lives in normal page flow and Menu's doesn't (it's a fixed `inset-0` overlay, outside that flow, needing its own padding to clear the same header). The current 130px reads like a literal transcribed from the design mock's own coordinate space rather than derived from the header's real height. Recommended measuring the header's actual rendered height live and using that, rather than trusting either the mock's number or guessing a new one.
+
+Also did the requested housekeeping — graduated the Recent Games list ticket to the drop-folder's own `HISTORY/` since it's delivered.
+
+Ask: ticket both parts together (same root-cause category, same file mostly).
+
 ### 2026-09-07#3 — Recent Games list: zebra rows, tier icon, result-coloured VS, @ prefix            [ANSWERED]
 From: Advisor   Re: Designer report + `design-ref/Recent-Games-List/` (note: singular `design-ref/` at repo root, a different gitignored folder than the tracked `docs/design-refs/` bundles)
 
