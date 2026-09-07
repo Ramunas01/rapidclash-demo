@@ -16,6 +16,7 @@
     { "path": "./packages/games/keno" },
     { "path": "./packages/games/limbo" },
     { "path": "./packages/games/hilo" },
+    { "path": "./packages/bot-heuristics" },
     { "path": "./apps/server" },
     { "path": "./apps/web" }
   ]

@@ -260,6 +260,89 @@ function num(envName: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * Per-game "thinking" delay window `[minMs, maxMs)` before a bot submits its chosen move
+ * (issue #432, replacing the single flat `BOT_MOVE_DELAY_MS`/700 that every game shared).
+ *
+ * Each range is scaled to that game's REAL decision window, read off the modules themselves — not
+ * guessed. The goal is "plausibly a person deciding": comfortably above sub-second, comfortably
+ * below the timeout so a slow tick or a bit of WS latency can never cost the bot its turn.
+ *
+ *   game          real window (source)                                          range
+ *   ────────────────────────────────────────────────────────────────────────────────────────
+ *   coinflip      10s absolute pick window (coinflip.ts PICK_WINDOW_MS)          2-6s
+ *   rps           10s absolute pick window (rps.ts PICK_WINDOW_MS)               2-6s
+ *   blackjack     10s per-decision (blackjack.ts meta.moveTimeoutMs)             2-6s
+ *   limbo         10s pick clock (limbo/roll.ts PICK_TIMEOUT_MS)                 2-6s
+ *   mines         5s per move (mines/board.ts MOVE_TIMEOUT_MS)                   1-3s
+ *   keno          20s pick clock (keno/draw.ts PICK_TIMEOUT_MS)                  3-8s
+ *   roulette      30s betting window (roulette/wheel.ts BETTING_TIMEOUT_MS)      3-8s
+ *   ships-battle  60s placement / 20s per shot (fleet.ts)                        2-6s
+ *   chess         cumulative rapid10 clock (chess.ts CHESS_TIME_CONTROL)         1-5s
+ *   dice          no timer; single confirm/reveal (meta.averageDurationSec 5)    1.5-4s
+ *   baccarat      no timer; single confirm/reveal (meta.averageDurationSec 5)    1.5-4s
+ *
+ * Two deliberate exceptions, both documented rather than silently special-cased:
+ *
+ * - `crash` is NOT a per-turn delay. The bot pre-sets one auto-eject during the SETUP window and
+ *   then idles, so this delay must land INSIDE that window. The hard ceiling is
+ *   `CRASH_CONFIG.setupMs + ignitionMs` = 3000 + 1000 = 4000ms from match formation (crash.ts:
+ *   "Pre-set auto-eject — SETUP/ignition only (before the climb origin)"). 0.8-2.0s keeps the
+ *   whole range inside even the earlier 3s SETUP boundary at <=70% of it, leaving headroom for WS
+ *   latency and the gap between match formation and the `your_turn` that triggers the timer;
+ *   overshooting would not merely look robotic, it would break the bot (no preset ⇒ it rides the
+ *   rocket into the crash every round). `move-timing.test.ts` pins this ceiling deliberately.
+ *
+ * - `hilo` is the one game where a multi-second pause is LESS human, not more. It has no per-move
+ *   timer at all: it is a 30s whole-match race (hilo/deck.ts MATCH_CAP_MS) across a 64-card
+ *   sequence (SEQ_LEN), so every second spent "thinking" is a call not made. A person playing it
+ *   taps quickly by design. 0.8-1.8s is the honest human cadence here, and is still ~2.5x the old
+ *   flat 700ms at the bottom of the range.
+ *
+ * `chess` deliberately reuses guest mode's already-shipped, Owner-approved 1-5s band
+ * (`apps/server/src/guest/index.ts`'s `thinkMsMin`/`thinkMsMax`) rather than inventing a second
+ * number for the same game.
+ *
+ * Skill/timing calibration ONLY. Nothing here — and nothing that reads it — varies by which
+ * account the bot is playing; issue #432's binding fairness stance forbids outcome-rigging of any
+ * kind, and a per-game constant table is structurally incapable of it.
+ */
+export const MOVE_DELAY_RANGES: Readonly<Record<string, readonly [number, number]>> = {
+  coinflip: [2_000, 6_000],
+  rps: [2_000, 6_000],
+  blackjack: [2_000, 6_000],
+  limbo: [2_000, 6_000],
+  mines: [1_000, 3_000],
+  keno: [3_000, 8_000],
+  roulette: [3_000, 8_000],
+  'ships-battle': [2_000, 6_000],
+  chess: [1_000, 5_000],
+  dice: [1_500, 4_000],
+  baccarat: [1_500, 4_000],
+  crash: [800, 2_000],
+  hilo: [800, 1_800],
+};
+
+/** Fallback window for a game with no explicit entry above — a new game module added to the
+ *  roster gets human-plausible timing by default rather than inheriting a sub-second one. Matches
+ *  the most common ~10s-window band. */
+export const DEFAULT_MOVE_DELAY_RANGE: readonly [number, number] = [2_000, 6_000];
+
+/** The `[minMs, maxMs)` window for `gameId` (see `MOVE_DELAY_RANGES`). */
+export function moveDelayRangeFor(gameId: string): readonly [number, number] {
+  return MOVE_DELAY_RANGES[gameId] ?? DEFAULT_MOVE_DELAY_RANGE;
+}
+
+/**
+ * A fresh, uniformly random "thinking" delay in `gameId`'s window — drawn per decision, so two
+ * consecutive moves by the same bot (and two bots in the same game) never share a cadence. The
+ * single helper every call site uses; `random` is injectable purely so the bounds are testable.
+ */
+export function moveDelayMsFor(gameId: string, random: () => number = Math.random): number {
+  const [min, max] = moveDelayRangeFor(gameId);
+  return min + random() * (max - min);
+}
+
 /** http(s)://… → ws(s)://… (preserves host/port/path prefix). */
 function toWsBase(httpUrl: string): string {
   return httpUrl.replace(/^http/, 'ws');
@@ -284,7 +367,9 @@ export const config = {
   /** Cadence — deliberately modest so a single max-instances=1 server is never flooded. */
   startStaggerMs: num('BOT_START_STAGGER_MS', 700), // gap between bringing each bot online
   repostDelayMs: num('BOT_REPOST_DELAY_MS', 4000), // pause before a rester re-posts
-  moveDelayMs: num('BOT_MOVE_DELAY_MS', 700), // "thinking" pause before replying a move
+  // NB: the old flat `moveDelayMs` (`BOT_MOVE_DELAY_MS`, 700) is GONE — issue #432. A single
+  // sub-second constant applied to every game's every decision was the one structurally
+  // too-fast-to-be-human thing about the whole roster. See `moveDelayMsFor()` above.
   reconnectDelayMs: num('BOT_RECONNECT_DELAY_MS', 2000),
 
   /** Top-ups: when balance < stake × factor, admin-credit `topUpAmount` (if admin login works). */

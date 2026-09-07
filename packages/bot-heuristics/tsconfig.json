@@ -10,10 +10,8 @@
   "include": ["src"],
   "exclude": ["src/**/*.test.ts"],
   "references": [
-    { "path": "../../packages/shared" },
-    { "path": "../../packages/core" },
-    { "path": "../../packages/games/rps" },
-    { "path": "../../packages/games/coinflip" },
-    { "path": "../../packages/bot-heuristics" }
+    { "path": "../shared" },
+    { "path": "../games/chess" },
+    { "path": "../games/blackjack" }
   ]
 }

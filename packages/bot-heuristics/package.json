@@ -1,0 +1,23 @@
+{
+  "name": "@rapidclash/bot-heuristics",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared, tested move-selection heuristics for scripted opponents (guest-mode Demo Opponent and tools/bot-crowd alike). Sits ABOVE the game packages so both consumers import one implementation instead of forking it.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@rapidclash/game-blackjack": "workspace:*",
+    "@rapidclash/game-chess": "workspace:*",
+    "@rapidclash/shared": "workspace:*"
+  }
+}
