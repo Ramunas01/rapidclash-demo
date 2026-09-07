@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import { Check, X } from 'lucide-react';
-import type { AvatarId, RecentMatchEntry, RewardsSnapshot } from '@rapidclash/shared';
+import type { AvatarId, RecentMatchEntry, RewardsSnapshot, VipTier } from '@rapidclash/shared';
 import { api } from '../api.js';
 import { Credits } from '../components/hub-shared/RcIcon.js';
 import { TierIcon, progressPercent } from '../components/hub-shared/vipTier.js';
@@ -178,6 +178,24 @@ function formatMatchTime(iso: string): string {
   const date = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   return `${date}, ${time}`;
+}
+
+/** Issue #441: strip a leading 🤖 bot glyph (and any leading '@') from an opponent's display
+ *  name, then always prepend exactly one '@'. Owner-confirmed 2026-09-07: fine to drop the 🤖
+ *  prefix on this personal, retrospective match-history list — ADR-010's informed-consent
+ *  labeling targets the lobby/open-challenges feed, not here. Applied uniformly to every row, so
+ *  this also fixes names that are missing their '@' today (no per-account special-casing). */
+function normalizeOpponentName(name: string): string {
+  return `@${name.replace(/^🤖\s*/, '').replace(/^@/, '')}`;
+}
+
+/** Issue #441: the opponent's VIP tier, for the tier-icon glyph next to their name. #440 (a
+ *  parallel backend ticket) adds a real `opponentTier` field to `RecentMatchEntry` — guarded
+ *  here via an optional-field read (rather than a hard type dependency) since #440 may not have
+ *  merged to `main` yet when this ships. A missing field reads as 'Unranked', same as any other
+ *  gap in the tier ladder (see `TierIcon`'s own established precedent) — no fabricated tier. */
+function opponentTierOf(m: RecentMatchEntry): VipTier {
+  return (m as RecentMatchEntry & { opponentTier?: VipTier }).opponentTier ?? 'Unranked';
 }
 
 /**
@@ -362,9 +380,9 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
                 </p>
               ) : (
                 <>
-                  <div style={{ position: 'relative', overflow: matchesExpanded ? 'visible' : 'hidden', maxHeight: matchesExpanded ? 'none' : RECENT_PAGE_SIZE * 74 + (RECENT_PAGE_SIZE - 1) * 2, transition: 'max-height 320ms cubic-bezier(0.22, 0.61, 0.36, 1)' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      {matches.map((m, i) => <MatchRow key={m.matchId} m={m} first={i === 0} last={i === matches.length - 1} />)}
+                  <div style={{ position: 'relative', overflow: matchesExpanded ? 'visible' : 'hidden', maxHeight: matchesExpanded ? 'none' : RECENT_PAGE_SIZE * 74, transition: 'max-height 320ms cubic-bezier(0.22, 0.61, 0.36, 1)' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                      {matches.map((m, i) => <MatchRow key={m.matchId} m={m} index={i} />)}
                     </div>
                     {!matchesExpanded && hasMorePages && (
                       <>
@@ -504,23 +522,24 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
   );
 }
 
-/** One recent-games row — game art thumbnail, game name, opponent, signed delta (green on a
- *  win, muted otherwise per README §1 point 4), and a formatted settlement timestamp. The
- *  design's row also shows the OPPONENT's VIP tier gem next to their name — `RecentMatchEntry`
- *  (issue #400) doesn't carry an opponent VIP tier field (only `opponentAvatarId`/
- *  `opponentDisplayName`), so that gem is dropped rather than fabricated; the opponent's real
- *  Avatar renders in its place, which is arguably more informative anyway. */
-function MatchRow({ m, first, last }: { m: RecentMatchEntry; first: boolean; last: boolean }) {
+/** One recent-games row — game art thumbnail, game name, opponent (normalized name + tier icon),
+ *  signed delta (green on a win, muted otherwise per README §1 point 4), and a formatted
+ *  settlement timestamp. Issue #441: rows now use the exact zebra pattern `GamesCarousel.tsx`'s
+ *  Open Games rows already use (`height: 74px`, alternating fill on even index, 26px radius on
+ *  filled rows / 0px on transparent ones), replacing the old striped-table
+ *  position-based-rounding convention (26px first/last, 6px interior, every row filled). */
+function MatchRow({ m, index }: { m: RecentMatchEntry; index: number }) {
   const art = TILE_ART[m.gameId];
   const win = m.outcome === 'win';
-  const top = first ? 26 : 6;
-  const bottom = last ? 26 : 6;
+  const zebra = index % 2 === 0;
+  const opponentTier = opponentTierOf(m);
+  const vsColor = m.outcome === 'win' ? RC.green : m.outcome === 'loss' ? RC.text : RC.muted;
   return (
     <div
       data-testid={`profile-match-${m.matchId}`}
       style={{
-        height: 74, boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: 11, padding: '0 16px',
-        background: RC.surface, borderRadius: `${top}px ${top}px ${bottom}px ${bottom}px`,
+        height: '74px', boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: '11px', padding: '0 16px',
+        background: zebra ? '#1A1A2E' : 'transparent', borderRadius: zebra ? '26px' : '0px',
       }}
     >
       <div
@@ -534,10 +553,11 @@ function MatchRow({ m, first, last }: { m: RecentMatchEntry; first: boolean; las
           {titleCase(m.gameId)}
         </div>
         <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
-          <span style={{ fontFamily: ARIAL, fontSize: 11, fontWeight: 'bold', letterSpacing: '1px', color: RC.muted, flex: '0 0 auto' }}>VS</span>
+          <span style={{ fontFamily: ARIAL, fontSize: 11, fontWeight: 'bold', letterSpacing: '1px', color: vsColor, flex: '0 0 auto' }}>VS</span>
           <Avatar avatarId={m.opponentAvatarId} username={m.opponentDisplayName} size={16} />
+          {opponentTier !== 'Unranked' && <TierIcon tier={opponentTier} size={14} />}
           <span style={{ fontFamily: ARIAL, fontSize: 12, fontWeight: 'bold', color: RC.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {m.opponentDisplayName}
+            {normalizeOpponentName(m.opponentDisplayName)}
           </span>
         </div>
       </div>
