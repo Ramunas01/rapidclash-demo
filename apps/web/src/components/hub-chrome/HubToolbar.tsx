@@ -43,28 +43,32 @@ export function HubToolbar({ onGames, onAccount, onRewards, onMenu, active = 'ga
           content scrolling under the bar fades into the background instead of cutting off hard.
           `--rc-bg` from the design handoff is this app's own `bg-background` token (#0B0B0B in both
           — confirmed via apps/web/src/index.css), so we build the gradient from it rather than a
-          parallel custom property. Purely visual (`pointer-events-none`) and BELOW the nav
-          (z-[15] < the nav's z-20) so the pill still floats over it and its buttons still tap
-          through. Full width, not max-w-md, so nothing peeks past its sides on wider screens. */}
+          parallel custom property. Purely visual (`pointer-events-none`) and sits at z-20, the same
+          tier as the nav pill (issue #446 — was z-[15], which the Menu overlay's own z-[18] wrapper
+          painted over, hiding this layer whenever that overlay was open) so the pill still floats
+          over it and its buttons still tap through. Full width, not max-w-md, so nothing peeks past
+          its sides on wider screens. */}
       <div
         aria-hidden="true"
         data-testid="hub-nav-fade"
-        className="pointer-events-none fixed bottom-[calc(2.75rem_+_env(safe-area-inset-bottom))] left-0 right-0 z-[15] h-[62px] bg-[linear-gradient(to_top,hsl(var(--background))_0%,transparent_100%)]"
+        className="pointer-events-none fixed bottom-[calc(2.75rem_+_env(safe-area-inset-bottom))] left-0 right-0 z-20 h-[62px] bg-[linear-gradient(to_top,hsl(var(--background))_0%,transparent_100%)]"
       />
       {/* Solid base behind & below the nav: a FULL-viewport-width #0B0B0B block (the canonical
           `bg-background` token — never a fresh literal, or we recreate the drift the unification
           removed) so scrolled content can't peek through the pill's rounded-corner notches or the
           strip below it, and Safari's bottom bar samples a constant colour instead of moving content.
-          Purely visual (`pointer-events-none`) and BELOW the nav (z-[15] < the nav's z-20) so the pill
-          still floats over it and its buttons still tap through. It rises to ~half the pill's height
-          (so the pill's lower rounded corners have solid behind them — tuned blind, adjust vs the
-          running UI) and reaches bottom:0 including the home-indicator safe-area (matching the nav's
-          own pb). Full width, not max-w-md, so nothing peeks past its sides on wider screens. This is
-          the design handoff's "solid mask" layer (#407) — the fade layer above sits on top of it. */}
+          Purely visual (`pointer-events-none`) and sits at z-20, the same tier as the nav pill (issue
+          #446 — was z-[15], which the Menu overlay's own z-[18] wrapper painted over, hiding this
+          layer whenever that overlay was open) so the pill still floats over it and its buttons still
+          tap through. It rises to ~half the pill's height (so the pill's lower rounded corners have
+          solid behind them — tuned blind, adjust vs the running UI) and reaches bottom:0 including
+          the home-indicator safe-area (matching the nav's own pb). Full width, not max-w-md, so
+          nothing peeks past its sides on wider screens. This is the design handoff's "solid mask"
+          layer (#407) — the fade layer above sits on top of it. */}
       <div
         aria-hidden="true"
         data-testid="hub-nav-fill"
-        className="pointer-events-none fixed bottom-0 left-0 right-0 z-[15] h-[calc(2.75rem_+_env(safe-area-inset-bottom))] bg-background"
+        className="pointer-events-none fixed bottom-0 left-0 right-0 z-20 h-[calc(2.75rem_+_env(safe-area-inset-bottom))] bg-background"
       />
       <nav aria-label="Primary" className="fixed bottom-0 left-1/2 z-20 w-full max-w-md -translate-x-1/2 bg-transparent px-3 pb-[calc(0.5rem_+_env(safe-area-inset-bottom))] pt-1">
       <div className="flex items-center justify-between rounded-[26px] bg-surface px-1.5 py-3">

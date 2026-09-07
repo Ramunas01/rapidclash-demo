@@ -19,6 +19,23 @@ export const HUB_SHELL = 'relative min-h-[100dvh] bg-background text-foreground'
 export const HUB_BODY = 'pb-[calc(7rem_+_env(safe-area-inset-bottom))]';
 
 /**
+ * Top clearance for a `fixed inset-0` hub screen (e.g. `MenuOverlay`) that sits outside normal
+ * document flow and so can't inherit the free spacing an in-flow screen gets automatically
+ * beneath the sticky `HubRibbon` (see `HUB_BODY`'s own note above for the bottom-clearance
+ * equivalent). `60px` is `HubRibbon`'s own real rendered height before any safe-area inset —
+ * confirmed live (issue #446) by rendering `HubRibbon` in a real Chromium instance (Playwright,
+ * 390x844 viewport) and reading `getBoundingClientRect().height` on its `<header>`: exactly 60px
+ * with `env(safe-area-inset-top)` at 0. That matches the box model directly: the header itself
+ * carries no fixed padding beyond `pt-[env(safe-area-inset-top)]`; its inner row has no top
+ * padding, `pb-4` (16px) on the bottom, and its tallest child is the wallet chip (`py-1.5` wrapping
+ * the "Wallet" pill's own `py-2` + text-xs line-height, ≈44px) — 44px content + 16px `pb-4` = 60px.
+ * `env(safe-area-inset-top)` is added on top, mirroring exactly how `HUB_BODY` adds
+ * `env(safe-area-inset-bottom)` for the opposite edge. Use this instead of a flat literal so a
+ * future fixed-overlay screen doesn't drift out of sync with `HubRibbon` the way `MenuOverlay` did.
+ */
+export const HUB_FIXED_TOP = 'pt-[calc(60px_+_env(safe-area-inset-top))]';
+
+/**
  * Guest variant of `HUB_SHELL` (issue #292 / SEAM-001): `min-h-[100vh]` instead of
  * `min-h-[100dvh]`. Only the unit differs — everything else is byte-identical to `HUB_SHELL`, so
  * the non-guest hub (which keeps using the plain constant) is provably unaffected.

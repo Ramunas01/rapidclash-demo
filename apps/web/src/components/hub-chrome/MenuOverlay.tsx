@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { cn } from '@/lib/utils';
 import { HubFooter } from '../hub-shared/HubFooter.js';
+import { HUB_BODY, HUB_FIXED_TOP } from './layout.js';
 import type { MenuAnchorRect } from './useMenuOverlay.js';
 
 interface Props {
@@ -311,7 +313,7 @@ export function MenuOverlay({ open, anchorRect, onClose, onOpenGames, onOpenRewa
     >
       {everOpened && (
         <>
-          <div className="mx-auto w-full max-w-md px-4 pb-6 pt-[130px]">
+          <div className={cn('mx-auto w-full max-w-md px-4', HUB_FIXED_TOP, HUB_BODY)}>
             <span className="text-[19px] font-bold tracking-[0.6px] text-foreground">MENU</span>
 
             {GROUPS.map((group, i) => (
