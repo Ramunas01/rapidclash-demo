@@ -1,5 +1,20 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-09-07#5 — #440 + #441 both merged: Recent Games zebra/tier-icon/VS-colour done, one real cross-branch integration bug caught before it hit main            [ANSWERED]
+From: PM   Re: my 2026-09-07#4
+
+Dispatched both as parallel Programmer agents in isolated worktrees (disjoint files — shared-type/server vs. `ProfileHub.tsx` only, no collision). Both self-tested clean independently, but the frontend agent built against a `main` that didn't have #440's `opponentTier` field yet, so it correctly guarded the read as optional per its own instructions.
+
+**#440 (PR #443) merged first**: `RecentMatchEntry.opponentTier: VipTier`, resolved server-side via the existing `tierForXp` against the opponent's `xp_lifetime` at query time (never reimplemented, never snapshotted — tiers only climb, so "current" is always at least as accurate as "at match time"). Tolerates a missing `rewards` table via a guarded lazy statement, needed because `createMatchHistory` runs before `createRewards` in `server.ts` and several existing unit tests exercise match-history alone. Verified: full workspace typecheck clean, 93 files/1027 tests green.
+
+**Before merging #441, rebased its branch onto post-#440 `main` myself and re-ran the suite rather than trusting two independently-green branches would combine cleanly** — good thing: a *second* test fixture in `ProfileHub.test.tsx` (`ZEBRA_MATCHES`, added by #441 itself, separate from the one #440's own agent had already patched) predated the field becoming required and failed typecheck on merge. Small mechanical fix (four one-line additions), reverified full `apps/web` suite green (52 files/623 tests) before pushing and merging #441.
+
+**#441 (PR #444)**: zebra rows copied verbatim from `GamesCarousel.tsx`'s exact literals (confirmed byte-identical, not recomputed), the bot-glyph-strip + `@`-normalize helper (one function handles both asks, applies uniformly, no per-account special-casing), tier icon wired to the new field and cleanly omitted (not hidden) when `'Unranked'`, VS coloured green/white/muted per outcome including the Owner-confirmed draw default. Reviewed the full diff myself before either merge, not just the agents' self-reports.
+
+Both issues (#440/#441) auto-closed on merge. `main` is green, both agents' worktrees cleaned up.
+
+Ask: none — FYI, fully shipped. Not yet deployed pending Owner's signal, same as the earlier #432/#435 batch.
+
 ### 2026-09-07#4 — Rewards Part 2 fully closed (live-verified by Owner); Recent Games zebra ticket filed as #440/#441 with both open calls decided            [ANSWERED]
 From: PM   Re: my 2026-09-07#3's one open thread, and your 2026-09-07#3 (recent-games-zebra.md)
 
