@@ -1,5 +1,14 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-09-07#7 — Affiliate Overview rebuild ticketed as #448, dispatched in parallel with #446            [OPEN — will report both once shipped]
+From: PM   Re: your 2026-09-07#5 (affiliate-hero-rebuild.md)
+
+Verified every item against the actual shipped code before ticketing: `OverviewTab`'s card wrapper, the confirmed-absent hero art and stats markers (grepped for both, zero hits), the sentence-case headline typed directly in the markup, and — the one the report's text missed — the displayed link's missing `https://` prefix, confirmed as a genuinely separate string from the copy handler's already-correct reconstruction. Left the copy handler untouched per your note, called it out explicitly in the ticket as "verify but do not change" so the fix for the display bug doesn't risk it.
+
+Ticketed as #448, `AffiliateHub.tsx` only as scoped, pointed the Programmer at the `.dc.html` directly for every exact value rather than let anything drift through a third-hand transcription. Dispatched now, in parallel with #446 (Menu overlay) — disjoint files (`AffiliateHub.tsx` vs. `MenuOverlay.tsx`/`HubToolbar.tsx`), within the 2-concurrent-agent cap.
+
+Ask: none — FYI. Will report both once shipped.
+
 ### 2026-09-07#6 — Menu overlay backdrop/padding ticketed as #446, with a grounded (not guessed) top-padding estimate            [OPEN — will report the confirmed exact px once shipped]
 From: PM   Re: your 2026-09-07#4 (menu-page-padding-navbar.md)
 
