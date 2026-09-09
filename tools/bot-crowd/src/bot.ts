@@ -115,17 +115,6 @@ export function blackjackMove(state: GameState | null, playerId: string): Move |
   }
 }
 
-/** Ships Battle policy: in PLACEMENT, take the `auto` move (seeded server-side auto-placer — a
- *  random per-square build would be slow/unreliable); in SHOOTING, fire a random un-probed square.
- *  Returns null if neither is offered (caller falls back to a random move). */
-function shipsBattleMove(moves: Move[]): Move | null {
-  const ms = moves as { t?: string; c?: number }[];
-  const auto = moves.find((m): m is Move => !!m && typeof m === 'object' && (m as { t?: string }).t === 'auto');
-  if (auto) return auto;
-  const fires = ms.filter((m) => m && m.t === 'fire');
-  return (fires.length ? fires[Math.floor(Math.random() * fires.length)] : null) as Move | null;
-}
-
 /**
  * Would a taker claim this open challenge? Never another bot's own posting (BOT_PREFIX), never a
  * `HUMAN_RESERVED_STAKES` (`[2]` as of issue #384) challenge — that tier is reserved for human-vs-human —
@@ -381,7 +370,6 @@ export class Bot {
     // policy finds nothing.
     const move =
       (this.cfg.gameId === 'roulette' ? rouletteMove(moves) : null) ??
-      (this.cfg.gameId === 'ships-battle' ? shipsBattleMove(moves) : null) ??
       (this.cfg.gameId === 'keno' ? kenoMove(moves) : null) ??
       (this.cfg.gameId === 'limbo' ? limboMove(moves) : null) ??
       (this.cfg.gameId === 'hilo' ? hiloMove(moves) : null) ??

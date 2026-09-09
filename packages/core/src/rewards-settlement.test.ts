@@ -105,7 +105,7 @@ describe('settleMatch → onPlayerSettled → Rewards (issue #306 acceptance cri
     expect(rewards.getSnapshot('bob').xpLifetime).toBe(100);
   });
 
-  it('a decisive win at 10% rake (the Chess/Ships-Battle rate) credits both players proportionally more XP', () => {
+  it('a decisive win at 10% rake (the Chess rate) credits both players proportionally more XP', () => {
     const mod = makeModule('game-10pct', 0.1);
     const { matchmaking, matchId, rewards } = setupMatch(mod, 100);
     forceWin(matchmaking, matchId, 'alice');

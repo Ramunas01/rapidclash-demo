@@ -41,7 +41,7 @@ The wall falls at the **commit to play** (`PLAY`/`JOIN`), never at the door. Bro
 
 ### `game-hub` — one template, one instance per game
 
-Instances (one per registered game, **all live**): `game-hub:coinflip`, `:rps`, `:chess`, `:blackjack`, `:mines`, `:crash`, `:roulette`, `:dice`, `:baccarat`, `:keno`, `:limbo`, `:hilo`, `:ships-battle`. Same regions, per-game arena. (`ships-battle` is route-reachable but kept off the home grid until it has tile art — `HIDDEN_ON_HOME`, #148.)
+Instances (one per registered game, **all live**): `game-hub:coinflip`, `:rps`, `:chess`, `:blackjack`, `:mines`, `:crash`, `:roulette`, `:dice`, `:baccarat`, `:keno`, `:limbo`, `:hilo`. Same regions, per-game arena.
 
 | Region | Purpose | Data source (real) |
 |--------|---------|--------------------|
@@ -92,7 +92,7 @@ Register/login step over the current hub, triggered by `PLAY`/`JOIN`/account whe
 
 **Controls** (design fidelity > exact behavior, client-side over the tile list): **Find** (looking-glass → text field → substring filter), **Filter** (Card-games / Table-games / Logic-games), **Sort** (A–Z / Z–A / by popularity; popularity = a simple demo metric).
 
-**Roster.** Live PvP (all registered in `/games`, data-driven tiles): **RPS, Coinflip, Chess, Blackjack, Mines, Crash, Roulette, Dice, Baccarat, Keno, Limbo, Hilo** — 12 on the home grid — **plus Ships Battle** (live + route-reachable but `HIDDEN_ON_HOME` until it has tile art, #148), for **13 registered games total**. **No "coming soon" tiles remain**: the whole house canon has been redefined into two-player form and shipped. The `COMING_SOON` list in `tiles.ts` (`baccarat, keno, hilo, dice, roulette`) is now **vestigial** — every entry is registered, so `HomeHub` filters it against the live set and auto-promotes them, rendering **zero** coming-soon tiles. Per the conversion thesis (`CHARTER.md` / `GAME_REDEFINITION.md`), each became playable only once it had a confirmed two-player spec; none is ever shown in house form. Should a future game ship pre-spec, it would render as a dimmed static coming-soon tile via that same mechanism.
+**Roster.** Live PvP (all registered in `/games`, data-driven tiles): **RPS, Coinflip, Chess, Blackjack, Mines, Crash, Roulette, Dice, Baccarat, Keno, Limbo, Hilo** — **12 registered games total**, all on the home grid. **No "coming soon" tiles remain**: the whole house canon has been redefined into two-player form and shipped. The `COMING_SOON` list in `tiles.ts` (`baccarat, keno, hilo, dice, roulette`) is now **vestigial** — every entry is registered, so `HomeHub` filters it against the live set and auto-promotes them, rendering **zero** coming-soon tiles. Per the conversion thesis (`CHARTER.md` / `GAME_REDEFINITION.md`), each became playable only once it had a confirmed two-player spec; none is ever shown in house form. Should a future game ship pre-spec, it would render as a dimmed static coming-soon tile via that same mechanism.
 
 ## How to request a change
 

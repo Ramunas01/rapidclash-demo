@@ -386,7 +386,7 @@ describe('POST /admin/players/:id/clear-password (soft reset)', () => {
     // ELO ratings live in a separate derivation (replayed from match_results) and are
     // likewise untouched by a wallet credit. This coinflip fixture has no ELO board;
     // the equality above plus the null match_id is the proof for net_winnings. For ELO
-    // games (Chess, Ships Battle) the same holds by construction — the rating replay
+    // games (Chess) the same holds by construction — the rating replay
     // never reads the ledger, so an ADMIN_CREDIT cannot move a rating.
   });
 

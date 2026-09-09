@@ -20,17 +20,17 @@ afterEach(() => {
 });
 
 describe('ROSTER — general (non-gated) mode is unaffected', () => {
-  it('builds the full 26-bot roster when TAKER_ONLY_GAMES is unset (regression guard)', async () => {
+  it('builds the full 24-bot roster when TAKER_ONLY_GAMES is unset (regression guard)', async () => {
     const { ROSTER, BOT_PREFIX } = await loadConfig({ TAKER_ONLY_GAMES: undefined });
-    expect(ROSTER).toHaveLength(26);
+    expect(ROSTER).toHaveLength(24);
     expect(ROSTER.every((b) => b.name.startsWith(BOT_PREFIX))).toBe(true);
     // The gated-mode '-rest-<stake>' naming convention must never leak into the general roster.
     expect(ROSTER.some((b) => b.name.includes('-rest-'))).toBe(false);
   });
 
-  it('builds the full 26-bot roster when TAKER_ONLY_GAMES is empty (regression guard)', async () => {
+  it('builds the full 24-bot roster when TAKER_ONLY_GAMES is empty (regression guard)', async () => {
     const { ROSTER } = await loadConfig({ TAKER_ONLY_GAMES: '' });
-    expect(ROSTER).toHaveLength(26);
+    expect(ROSTER).toHaveLength(24);
   });
 });
 
@@ -144,9 +144,9 @@ describe('ROSTER — gated mode (TAKER_ONLY_GAMES set, issue #361; weighted rest
 });
 
 describe('bot name pools stay disjoint across rosters (issue #375)', () => {
-  it('the general roster (Pool 1) has 26 distinct names', async () => {
+  it('the general roster (Pool 1) has 24 distinct names', async () => {
     const { ROSTER } = await loadConfig({ TAKER_ONLY_GAMES: undefined });
-    expect(new Set(ROSTER.map((b) => b.name)).size).toBe(26);
+    expect(new Set(ROSTER.map((b) => b.name)).size).toBe(24);
   });
 
   it('no gated-roster name collides with a general-roster name, for the real deployment config (coinflip,blackjack,chess)', async () => {

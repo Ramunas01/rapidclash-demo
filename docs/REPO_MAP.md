@@ -102,11 +102,11 @@ packages/games/<name>/src/
   <name>.ts        the rules: applyMove, viewFor, settlement outcome
   <extra files>    only when the game needs them, e.g.:
                    deck.ts (blackjack, hilo) · curve.ts (crash) · wheel.ts (roulette)
-                   board.ts (mines) · fleet.ts (ships-battle) · draw.ts (keno)
+                   board.ts (mines) · draw.ts (keno)
                    roll.ts (limbo)
 ```
 
-Thirteen game packages exist today: `rps`, `coinflip`, `chess`, `blackjack`, `mines`, `crash`, `roulette`, `ships-battle`, `dice`, `baccarat`, `keno`, `limbo`, `hilo` — see `CHARTER.md`'s game roster table for which are native-PvP vs. redefined-house-game, and each game's own `docs/<GAME>.md` for its ruleset.
+Twelve game packages exist today: `rps`, `coinflip`, `chess`, `blackjack`, `mines`, `crash`, `roulette`, `dice`, `baccarat`, `keno`, `limbo`, `hilo` — see `CHARTER.md`'s game roster table for which are native-PvP vs. redefined-house-game, and each game's own `docs/<GAME>.md` for its ruleset.
 
 ## `tools/bot-crowd` — demo-only, not shipped (ADR-010)
 
