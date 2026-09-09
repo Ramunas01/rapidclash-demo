@@ -576,3 +576,34 @@ describe('createMatchHistory — getRecentMatches', () => {
     expect(row.opponentTier).toBe('Unranked');
   });
 });
+
+describe('getPopularity (issue #465)', () => {
+  it('returns an empty map when no matches have been recorded', () => {
+    const mh = createMatchHistory(freshDb());
+    expect(mh.getPopularity()).toEqual({});
+  });
+
+  it('counts settled matches per gameId', () => {
+    const mh = createMatchHistory(freshDb());
+    mh.recordResult('m1', 'rps', ['alice', 'bob'], 'win', 'alice', 100);
+    mh.recordResult('m2', 'rps', ['alice', 'carol'], 'win', 'carol', 100);
+    mh.recordResult('m3', 'chess', ['bob', 'carol'], 'draw', undefined, 50);
+
+    expect(mh.getPopularity()).toEqual({ rps: 2, chess: 1 });
+  });
+
+  it('excludes void matches (never really played, same convention as getRecentMatches)', () => {
+    const mh = createMatchHistory(freshDb());
+    mh.recordResult('m1', 'rps', ['alice', 'bob'], 'win', 'alice', 100);
+    mh.recordResult('m2', 'rps', ['alice', 'bob'], 'void', undefined, 100);
+
+    expect(mh.getPopularity()).toEqual({ rps: 1 });
+  });
+
+  it('a gameId with zero settled matches is absent, not present with 0', () => {
+    const mh = createMatchHistory(freshDb());
+    mh.recordResult('m1', 'rps', ['alice', 'bob'], 'win', 'alice', 100);
+    const popularity = mh.getPopularity();
+    expect('chess' in popularity).toBe(false);
+  });
+});

@@ -11,29 +11,20 @@ import { TILE_ART, COMING_SOON, titleCase } from '../components/hub-shared/tiles
 import { GamesCarousel } from '../components/hub-shared/GamesCarousel.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
+import {
+  CATEGORY_IDS, CATEGORY_TAB_LABEL, CATEGORY_TITLE, isInCategory, type CategoryId,
+} from '../components/hub-shared/categories.js';
+import {
+  OriginalsIcon, CardGamesIcon, ChanceGamesIcon, SkillGamesIcon, EventsIcon,
+} from '../components/hub-shared/categoryIcons.js';
+import {
+  SORT_MODES, SORT_LABEL, INTRO_ORDER, RANDOM_PLAYABLE_GAME_IDS, RANDOM_TOTAL_MS, type SortMode,
+} from '../components/hub-shared/gameSort.js';
 import hero1 from '../assets/banners/hero-1.webp';
 import hero2 from '../assets/banners/hero-2.webp';
 // Third slide of the Designer's final 3-banner set (trophy / "Win Real Rivals' Stakes").
 import heroFront from '../assets/banners/hero-front.webp';
 import boltMark from '../assets/brand/bolt-mark.webp';
-import diceRush from '../assets/events/dice-rush.webp';
-
-/** Demo taxonomy for the Filter control (Card / Table / Logic). Client-side, presentation only. */
-const GAME_KIND: Record<string, 'card' | 'table' | 'logic'> = {
-  chess: 'logic', rps: 'logic', mines: 'logic',
-  coinflip: 'table', dice: 'table', roulette: 'table', crash: 'table', keno: 'table', limbo: 'table',
-  blackjack: 'card', baccarat: 'card', hilo: 'card',
-};
-
-/** Demo popularity metric for the Sort control (higher = more popular). Static — not real data. */
-const POPULARITY: Record<string, number> = {
-  coinflip: 100, blackjack: 92, chess: 88, mines: 80, rps: 74,
-  crash: 60, dice: 55, roulette: 50, hilo: 45, keno: 40, baccarat: 35, limbo: 30,
-};
-
-type Cat = 'all' | 'originals' | 'classics' | 'events';
-type Kind = 'all' | 'card' | 'table' | 'logic';
-type Sort = 'popular' | 'az' | 'za';
 
 /** A unified grid entry — a live playable game (from /games) or a coming-soon breadth tile. */
 interface Tile {
@@ -69,11 +60,12 @@ interface Props {
 }
 
 /**
- * Home hub — the landing for everyone. A 1:1 transfer of the Start_Building_Frame design
- * (fixed-width mobile composition): promo hero carousel, group tabs (All/Originals/Classics/
- * Events) + Find/Filter/Sort, an art-only 3-up game grid (PvP playable vs dimmed coming-soon),
- * a "Bring a Rival" card, the scrolling Open Games ticker (real feed; teaser-free), and a
- * sanitized footer. Presentation only — real data, play-money credits, no house games playable.
+ * Home hub — the landing for everyone. Games-page hero rebuilt for the new design (issue #465):
+ * promo hero carousel (UNCHANGED — carried over from production, out of this rebuild's scope),
+ * a 5-tab category rail (ORIGINALS/CARD GAMES/CHANCE GAMES/SKILL GAMES/EVENTS, many-to-many —
+ * see `hub-shared/categories.ts`), SEARCH/SORT/RANDOM controls, a section title, an art-only 3-up
+ * game grid, a "Bring a Rival" card, the scrolling Open Games ticker, and a sanitized footer.
+ * Presentation only — real data, play-money credits, no house games playable.
  */
 export function HomeHubScreen({
   token, balance, challengesByGame, onTrackChallenges, onUntrackChallenges,
@@ -81,6 +73,9 @@ export function HomeHubScreen({
 }: Props) {
   const [games, setGames] = useState<GameMeta[]>([]);
   const [liveBalance, setLiveBalance] = useState(balance);
+  // Issue #465: all-time settled-match count per gameId, backing the SORT sheet's default
+  // "Popularity" mode. Public endpoint — fetched regardless of loggedIn, same as /games.
+  const [popularity, setPopularity] = useState<Record<string, number>>({});
   // Issue #414: the Menu overlay's own open/close/reveal-origin state.
   const menu = useMenuOverlay();
   useEffect(() => { setLiveBalance(balance); }, [balance]);
@@ -89,6 +84,7 @@ export function HomeHubScreen({
     // /games is public; the wallet is auth-only — only fetch it when signed in.
     if (loggedIn) api.wallet(token).then((w) => { if (alive) setLiveBalance(w.balance); }).catch(() => {});
     api.games(token).then((g) => { if (alive && Array.isArray(g)) setGames(g); }).catch(() => {});
+    api.gamePopularity().then((p) => { if (alive && p && typeof p === 'object') setPopularity(p); }).catch(() => {});
     return () => { alive = false; };
   }, [token, loggedIn]);
 
@@ -113,25 +109,60 @@ export function HomeHubScreen({
     return [...playable, ...soon];
   }, [games]);
 
-  // Grid controls (client-side, presentation only — fidelity over exact behavior).
-  const [cat, setCat] = useState<Cat>('all');
-  const [kind, setKind] = useState<Kind>('all');
-  const [sort, setSort] = useState<Sort>('popular');
+  // Grid controls (client-side, presentation only). Category defaults to ORIGINALS (all 12).
+  const [cat, setCat] = useState<CategoryId>('originals');
+  const [sort, setSort] = useState<SortMode>('popularity');
   const [query, setQuery] = useState('');
 
+  // SEARCH (Owner-resolved 2026-09-09): case-insensitive substring on display name, across ALL
+  // games regardless of the active category tab. Empty query → normal category-filtered view.
+  const trimmedQuery = query.trim();
+  const searching = trimmedQuery.length > 0;
+
   const shownTiles = useMemo(() => {
-    let out = tiles;
-    if (cat === 'originals') out = out.filter((t) => t.id !== 'chess');
-    else if (cat === 'classics') out = out.filter((t) => t.id === 'chess');
-    if (kind !== 'all') out = out.filter((t) => GAME_KIND[t.id] === kind);
-    const q = query.trim().toLowerCase();
-    if (q) out = out.filter((t) => t.name.toLowerCase().includes(q));
-    const by = [...out];
-    if (sort === 'az') by.sort((a, b) => a.name.localeCompare(b.name));
-    else if (sort === 'za') by.sort((a, b) => b.name.localeCompare(a.name));
-    else by.sort((a, b) => (POPULARITY[b.id] ?? 0) - (POPULARITY[a.id] ?? 0));
-    return by;
-  }, [tiles, cat, kind, sort, query]);
+    const q = trimmedQuery.toLowerCase();
+    const base = q
+      ? tiles.filter((t) => t.name.toLowerCase().includes(q))
+      : tiles.filter((t) => isInCategory(t.id, cat));
+
+    const sorted = [...base];
+    if (sort === 'alphabetical') {
+      sorted.sort((a, b) => a.name.localeCompare(b.name));
+    } else if (sort === 'newest') {
+      // Descending ordinal — the highest (most-recently-added) ordinal sorts first.
+      sorted.sort((a, b) => (INTRO_ORDER[b.id] ?? -1) - (INTRO_ORDER[a.id] ?? -1));
+    } else {
+      sorted.sort((a, b) => {
+        const diff = (popularity[b.id] ?? 0) - (popularity[a.id] ?? 0);
+        return diff !== 0 ? diff : a.name.localeCompare(b.name);
+      });
+    }
+    return sorted;
+  }, [tiles, cat, sort, trimmedQuery, popularity]);
+
+  // EVENTS is empty by design (the prototype's own `catEmpty` state) — but only when there's no
+  // active search; a search always looks across all 12 games regardless of the active tab.
+  const eventsEmpty = !searching && cat === 'events';
+
+  // RANDOM (issue #465, prototype's `spinRandom`): spins for RANDOM_TOTAL_MS (1560ms — a 1500ms
+  // die-spin keyframe + a 60ms post-settle delay), then navigates to a uniformly-random pick among
+  // exactly the six PLAYABLE games (never one of the six with no dedicated hub today — see
+  // `gameSort.ts`'s RANDOM_PLAYABLE_GAME_IDS doc comment).
+  const [randSpinning, setRandSpinning] = useState(false);
+  const randTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (randTimer.current) clearTimeout(randTimer.current); }, []);
+
+  function handleRandom() {
+    if (randSpinning) return; // re-entrancy guard, matches the prototype's own `if (randSpin) return`
+    setRandSpinning(true);
+    randTimer.current = setTimeout(() => {
+      setRandSpinning(false);
+      const pool = games.filter((g) => (RANDOM_PLAYABLE_GAME_IDS as readonly string[]).includes(g.id));
+      if (pool.length === 0) return; // playable games not loaded yet — nothing safe to navigate to
+      const pick = pool[Math.floor(Math.random() * pool.length)];
+      onSelectGame(pick);
+    }, RANDOM_TOTAL_MS);
+  }
 
   return (
     <div className={HUB_SHELL}>
@@ -141,26 +172,27 @@ export function HomeHubScreen({
         <div className="mx-auto flex w-full max-w-md flex-col gap-6">
           <HeroCarousel />
 
-          {/* Game grid — the prime real-estate: group tabs + controls + art-only tiles. */}
+          {/* Game grid — the prime real-estate: category rail + SEARCH/SORT/RANDOM + art-only tiles. */}
           <section data-testid="home-grid" aria-label="Games">
             <CategoryTabs cat={cat} onChange={setCat} />
             <GridControls
               query={query} onQuery={setQuery}
-              kind={kind} onKind={setKind}
               sort={sort} onSort={setSort}
+              onRandom={handleRandom} randSpinning={randSpinning}
             />
-            <div className="mb-3 mt-5 flex items-center gap-2.5 px-4">
-              <img src={boltMark} alt="" aria-hidden="true" className="h-5 w-5 -translate-y-[3px] object-contain" />
-              <h2 className="text-[15px] font-black uppercase leading-none tracking-[0.04em]">{CAT_TITLE[cat]}</h2>
-              {cat !== 'events' && (
-                <span className="ml-auto text-xs text-muted-foreground">{shownTiles.length} games</span>
-              )}
+            <div className="mb-3 mt-[26px] flex items-center gap-3 px-4">
+              <img src={boltMark} alt="" aria-hidden="true" className="h-[26px] w-[26px] -translate-y-[3px] object-contain" />
+              <h2 data-testid="home-section-title" className="text-[15px] font-black uppercase leading-none tracking-[0.04em]">
+                {CATEGORY_TITLE[cat]}
+              </h2>
             </div>
 
-            {cat === 'events' ? (
-              <EventsBanner />
+            {eventsEmpty ? (
+              <div data-testid="home-events-empty" className="flex items-center justify-center px-4 py-[54px] pb-2.5">
+                <span className="text-sm font-semibold tracking-[0.02em] text-foreground">No events running</span>
+              </div>
             ) : shownTiles.length === 0 ? (
-              <p className="px-4 py-6 text-center text-xs text-muted-foreground">No games match — clear the filter or search.</p>
+              <p className="px-4 py-6 text-center text-xs text-muted-foreground">No games match — try a different search or category.</p>
             ) : (
               <div className="grid grid-cols-3 gap-2 px-4">
                 {shownTiles.map((t) =>
@@ -204,19 +236,17 @@ export function HomeHubScreen({
         onOpenGames={onHome}
         onOpenRewards={onOpenRewards}
         onOpenAffiliate={onOpenAffiliate}
+        // Issue #465: the GAMES group's "RapidClash Originals"/"Card games"/"Chance games"/
+        // "Skill games" rows — previously permanent placeholder toasts — now open THIS games
+        // view pre-filtered to the tapped category. Menu is rendered by HomeHub itself, so this
+        // is a direct, local state update: no round-trip through App-level routing needed.
+        onOpenGamesCategory={setCat}
       />
     </div>
   );
 }
 
-const CAT_TITLE: Record<Cat, string> = {
-  all: 'All Games',
-  originals: 'RapidClash Originals',
-  classics: 'Classics',
-  events: 'Events',
-};
-
-/* ── Hero carousel ─────────────────────────────────────────────────────────── */
+/* ── Hero carousel (UNCHANGED — out of scope for #465, carried over from production as-is) ──── */
 
 const HERO_SLIDES: { src: string; alt: string }[] = [
   { src: hero1, alt: 'RapidClash — Players vs Players, Never the House' },
@@ -273,47 +303,39 @@ function HeroCarousel() {
   );
 }
 
-/* ── Group tabs (All / Originals / Classics / Events) ──────────────────────── */
+/* ── Category rail (ORIGINALS / CARD GAMES / CHANCE GAMES / SKILL GAMES / EVENTS) ──────────── */
 
-const CATS: { id: Cat; label: string; icon: ReactNode }[] = [
-  {
-    id: 'all', label: 'ALL GAMES',
-    icon: (<svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="8" height="8" rx="2" /><rect x="13" y="3" width="8" height="8" rx="2" /><rect x="3" y="13" width="8" height="8" rx="2" /><rect x="13" y="13" width="8" height="8" rx="2" /></svg>),
-  },
-  {
-    id: 'originals', label: 'ORIGINALS',
-    icon: (<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round"><path d="M13 2L4.5 13.5H11L9 22L19.5 10H13L13 2Z" /></svg>),
-  },
-  {
-    id: 'classics', label: 'CLASSICS',
-    icon: (<svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" strokeWidth="2" /><circle cx="8" cy="12" r="2" /><circle cx="16" cy="12" r="2" /><path d="M11 12h2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>),
-  },
-  {
-    id: 'events', label: 'EVENTS',
-    icon: (<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M8 21h8M12 17v4M7 4H5a2 2 0 0 0-2 2v1a4 4 0 0 0 4 4M17 4h2a2 2 0 0 1 2 2v1a4 4 0 0 1-4 4" /><path d="M7 4h10v7a5 5 0 0 1-10 0V4Z" /></svg>),
-  },
-];
+const CATEGORY_ICON: Record<CategoryId, (props: { className?: string }) => ReactNode> = {
+  originals: OriginalsIcon,
+  card: CardGamesIcon,
+  chance: ChanceGamesIcon,
+  skill: SkillGamesIcon,
+  events: EventsIcon,
+};
 
-function CategoryTabs({ cat, onChange }: { cat: Cat; onChange(c: Cat): void }) {
+function CategoryTabs({ cat, onChange }: { cat: CategoryId; onChange(c: CategoryId): void }) {
   return (
-    <div className="no-scrollbar flex gap-2.5 overflow-x-auto px-4 pt-1" role="tablist" aria-label="Game groups">
-      {CATS.map((c) => {
-        const active = cat === c.id;
+    <div className="no-scrollbar flex gap-2.5 overflow-x-auto px-4 pt-1" role="tablist" aria-label="Game categories">
+      {CATEGORY_IDS.map((id) => {
+        const active = cat === id;
+        const Icon = CATEGORY_ICON[id];
         return (
           <button
-            key={c.id}
+            key={id}
             type="button"
             role="tab"
             aria-selected={active}
-            data-testid={`home-cat-${c.id}`}
-            onClick={() => onChange(c.id)}
+            data-testid={`home-cat-${id}`}
+            onClick={() => onChange(id)}
             className={cn(
-              'flex h-20 w-20 shrink-0 flex-col items-center justify-center gap-2 rounded-[14px] transition-colors focus:outline-none',
-              active ? 'bg-[#1a1030]' : 'bg-surface',
+              'flex h-[77px] w-[76px] shrink-0 flex-col items-center justify-center gap-2.5 rounded-[14px] px-1 text-center transition-colors focus:outline-none',
+              active ? 'bg-brand/10' : 'bg-surface',
             )}
           >
-            <span className={cn('flex', active ? 'text-brand drop-shadow-[0_0_5px_#8140e299]' : 'text-[#6a6a78]')}>{c.icon}</span>
-            <span className={cn('text-[10px] font-extrabold tracking-[0.06em]', active ? 'text-brand drop-shadow-[0_0_8px_#8140e2bb]' : 'text-[#6a6a78]')}>{c.label}</span>
+            <Icon className={cn('block h-[26px] w-[26px]', active ? 'text-brand drop-shadow-[0_0_5px_hsl(var(--primary)/0.6)]' : 'text-muted-foreground')} />
+            <span className={cn('text-[11px] font-extrabold leading-[1.25]', active ? 'text-brand' : 'text-muted-foreground')}>
+              {CATEGORY_TAB_LABEL[id]}
+            </span>
           </button>
         );
       })}
@@ -321,104 +343,204 @@ function CategoryTabs({ cat, onChange }: { cat: Cat; onChange(c: Cat): void }) {
   );
 }
 
-/* ── Find / Filter / Sort ──────────────────────────────────────────────────── */
+/* ── SEARCH / SORT / RANDOM ─────────────────────────────────────────────────────────────────── */
+
+const SEARCH_ICON = (
+  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+    <circle cx="10.6" cy="10.6" r="6.9" />
+    <path d="M15.8 15.8 21 21" />
+  </svg>
+);
+
+const SORT_ICON = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round">
+    <path d="M3.6 6.6h16.8M6.4 12h11.2M9.6 17.4h4.8" />
+  </svg>
+);
+
+const CHEVRON_DOWN = (
+  <svg width="15" height="15" viewBox="0 0 24 24"><path d="M4.4 7.8 19.6 7.8 12 16.6z" fill="currentColor" /></svg>
+);
+
+const DIE_ICON = (
+  <svg width="18" height="18" viewBox="0 0 24 24">
+    <rect x="3" y="3" width="18" height="18" rx="5" fill="currentColor" />
+    <circle cx="8.4" cy="8.4" r="1.7" className="fill-surface" />
+    <circle cx="15.6" cy="8.4" r="1.7" className="fill-surface" />
+    <circle cx="12" cy="12" r="1.7" className="fill-surface" />
+    <circle cx="8.4" cy="15.6" r="1.7" className="fill-surface" />
+    <circle cx="15.6" cy="15.6" r="1.7" className="fill-surface" />
+  </svg>
+);
+
+const CHECK_ICON = (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4.5 12.6 9.8 18 19.5 6.6" />
+  </svg>
+);
 
 function GridControls({
-  query, onQuery, kind, onKind, sort, onSort,
+  query, onQuery, sort, onSort, onRandom, randSpinning,
 }: {
   query: string; onQuery(q: string): void;
-  kind: Kind; onKind(k: Kind): void;
-  sort: Sort; onSort(s: Sort): void;
+  sort: SortMode; onSort(s: SortMode): void;
+  onRandom(): void; randSpinning: boolean;
 }) {
-  const [findOpen, setFindOpen] = useState(false);
-  return (
-    <div className="flex items-center gap-2.5 px-4 pt-4">
-      <button
-        type="button"
-        aria-label="Find a game"
-        data-testid="home-find-toggle"
-        onClick={() => { setFindOpen((o) => !o); if (findOpen) onQuery(''); }}
-        className={cn('grid h-11 w-11 shrink-0 place-items-center rounded-full transition-colors focus:outline-none',
-          findOpen ? 'bg-brand text-white' : 'bg-surface text-muted-foreground')}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m20 20-3-3" /></svg>
-      </button>
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-      {findOpen ? (
+  function openSearch() {
+    setSearchOpen(true);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }
+  function closeSearch() {
+    setSearchOpen(false);
+    onQuery('');
+  }
+
+  return (
+    <div className="mt-3.5 flex items-center gap-2.5 px-4">
+      <div
+        className={cn(
+          'flex h-11 items-center gap-2.5 overflow-hidden rounded-full bg-surface px-3.5 transition-all duration-[380ms] ease-out',
+          searchOpen ? 'flex-1' : 'w-11 shrink-0 flex-none',
+        )}
+      >
+        <button
+          type="button"
+          aria-label="Search games"
+          data-testid="home-search-toggle"
+          onClick={openSearch}
+          className="grid h-[19px] w-[19px] shrink-0 place-items-center text-muted-foreground"
+        >
+          {SEARCH_ICON}
+        </button>
         <input
-          autoFocus
+          ref={inputRef}
           value={query}
           onChange={(e) => onQuery(e.target.value)}
-          placeholder="Search games"
+          placeholder="Search Game"
           aria-label="Search games"
-          data-testid="home-find-input"
-          className="h-11 flex-1 rounded-full bg-surface px-4 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-brand"
+          data-testid="home-search-input"
+          className={cn(
+            'h-11 min-w-0 flex-1 border-none bg-transparent text-sm font-semibold text-foreground outline-none placeholder:text-muted-foreground transition-opacity duration-[380ms]',
+            searchOpen ? 'opacity-100' : 'pointer-events-none w-0 opacity-0',
+          )}
         />
-      ) : (
+      </div>
+
+      {searchOpen && (
+        <span
+          onClick={closeSearch}
+          role="button"
+          tabIndex={0}
+          data-testid="home-search-cancel"
+          className="shrink-0 cursor-pointer whitespace-nowrap text-sm font-semibold text-muted-foreground"
+        >
+          Cancel
+        </span>
+      )}
+
+      {!searchOpen && (
         <>
-          <ControlMenu
-            testid="home-filter"
-            label={kind === 'all' ? 'Filter' : KIND_LABEL[kind]}
-            icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M7 12h10M10 18h4" /></svg>}
-            value={kind}
-            options={[['all', 'All types'], ['card', 'Card games'], ['table', 'Table games'], ['logic', 'Logic games']]}
-            onSelect={(v) => onKind(v as Kind)}
-          />
-          <ControlMenu
-            testid="home-sort"
-            label={SORT_LABEL[sort]}
-            icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h2M10 6h10M4 12h10M18 12h2M4 18h2M10 18h10" /></svg>}
-            value={sort}
-            options={[['popular', 'Popular'], ['az', 'A–Z'], ['za', 'Z–A']]}
-            onSelect={(v) => onSort(v as Sort)}
-          />
+          <button
+            type="button"
+            data-testid="home-sort-toggle"
+            onClick={() => setSortOpen(true)}
+            className="flex h-11 shrink-0 items-center gap-1.5 rounded-full bg-surface px-3.5 text-[13px] font-bold text-muted-foreground transition-colors hover:text-foreground focus:outline-none"
+          >
+            {SORT_ICON}
+            SORT
+            <span className={cn('block transition-transform duration-300', sortOpen && 'rotate-180')}>{CHEVRON_DOWN}</span>
+          </button>
+
+          <button
+            type="button"
+            data-testid="home-random"
+            aria-label="Random game"
+            onClick={onRandom}
+            className="flex h-11 shrink-0 items-center gap-2.5 rounded-full bg-surface px-3.5 text-[13px] font-bold text-muted-foreground transition-colors hover:text-foreground focus:outline-none"
+          >
+            <span className={cn('block', randSpinning && 'animate-spin')}>{DIE_ICON}</span>
+            RANDOM
+          </button>
         </>
       )}
+
+      <SortSheet sort={sort} onSort={onSort} open={sortOpen} onClose={() => setSortOpen(false)} />
     </div>
   );
 }
 
-const KIND_LABEL: Record<Kind, string> = { all: 'Filter', card: 'Card games', table: 'Table games', logic: 'Logic games' };
-const SORT_LABEL: Record<Sort, string> = { popular: 'Popular', az: 'A–Z', za: 'Z–A' };
-
-function ControlMenu({
-  testid, label, icon, value, options, onSelect,
-}: {
-  testid: string; label: string; icon: ReactNode; value: string;
-  options: [string, string][]; onSelect(v: string): void;
-}) {
-  const [open, setOpen] = useState(false);
+/** SORT sheet (prototype's `sortOpen` modal) — a centered sheet over a dimmed backdrop, three
+ *  fixed options (Popularity default / Newest / Alphabetical), the active one tinted + checked. */
+function SortSheet({
+  sort, onSort, open, onClose,
+}: { sort: SortMode; onSort(s: SortMode): void; open: boolean; onClose(): void }) {
+  if (!open) return null;
   return (
-    <div className="relative">
-      <button
-        type="button"
-        data-testid={testid}
-        onClick={() => setOpen((o) => !o)}
-        className="flex h-11 items-center gap-1.5 rounded-[22px] bg-surface px-3.5 text-[13px] font-semibold text-muted-foreground transition-colors hover:text-foreground focus:outline-none"
-      >
-        {icon}
-        {label}
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="m6 9 6 6 6-6" /></svg>
-      </button>
-      {open && (
-        <div className="absolute left-0 top-12 z-30 min-w-[140px] overflow-hidden rounded-xl border border-border bg-card py-1 shadow-2xl">
-          {options.map(([v, l]) => (
-            <button
-              key={v}
-              type="button"
-              data-testid={`${testid}-opt-${v}`}
-              onClick={() => { onSelect(v); setOpen(false); }}
-              className={cn('block w-full px-4 py-2 text-left text-[13px] transition-colors hover:bg-surface',
-                value === v ? 'font-bold text-brand' : 'text-foreground')}
-            >
-              {l}
-            </button>
-          ))}
+    <div className="fixed inset-0 z-30" data-testid="home-sort-sheet">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="absolute left-[26px] right-[26px] top-1/2 -translate-y-1/2 rounded-[26px] bg-card p-2 shadow-2xl">
+        <div className="flex items-center gap-2.5 px-4 pb-2.5 pt-3">
+          <span className="block w-5" aria-hidden="true" />
+          <span className="flex-1 text-center text-[15px] font-bold tracking-[0.06em] text-foreground">SORT</span>
+          <button
+            type="button"
+            aria-label="Close sort"
+            data-testid="home-sort-close"
+            onClick={onClose}
+            className="grid h-5 w-5 shrink-0 place-items-center text-foreground"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4.5 12.6 9.8 18 19.5 6.6" />
+            </svg>
+          </button>
         </div>
-      )}
+        {SORT_MODES.map((mode) => {
+          const active = sort === mode;
+          return (
+            <button
+              key={mode}
+              type="button"
+              data-testid={`home-sort-opt-${mode}`}
+              onClick={() => { onSort(mode); onClose(); }}
+              className={cn('flex w-full items-center gap-3 rounded-[18px] px-4 py-3.5 text-left', active && 'bg-brand/10')}
+            >
+              <span className={cn('grid h-[22px] w-[22px] shrink-0 place-items-center', active ? 'text-brand' : 'text-muted-foreground')}>
+                {SORT_OPTION_ICON[mode]}
+              </span>
+              <span className="flex-1 text-[13px] font-bold uppercase tracking-[0.04em] text-foreground">{SORT_LABEL[mode]}</span>
+              {active && <span className="text-brand">{CHECK_ICON}</span>}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
+
+const SORT_OPTION_ICON: Record<SortMode, ReactNode> = {
+  popularity: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12.6 2.2c.5 3.2-.9 4.9-2.5 6.5-1.9 1.9-3.5 3.6-3.5 6.2a6.4 6.4 0 0 0 12.8.2c0-1.9-.7-3.5-1.8-4.9.1 1.3-.3 2.3-1 3 .2-4-1.7-8-4-11z" />
+    </svg>
+  ),
+  newest: (
+    <svg width="22" height="22" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9.4" fill="currentColor" />
+      <text x="12" y="15" textAnchor="middle" fontFamily="Arial, Helvetica, sans-serif" fontSize="7" fontWeight="bold" className="fill-surface">NEW</text>
+    </svg>
+  ),
+  alphabetical: (
+    <svg width="22" height="22" viewBox="1.6 1.6 20.8 20.8">
+      <path d="M10.2 6 13.8 6 12 3z" fill="currentColor" />
+      <text x="12" y="15.8" textAnchor="middle" fontFamily="Arial, Helvetica, sans-serif" fontSize="9.5" fontWeight="bold" fill="currentColor">AZ</text>
+      <path d="M10.2 18.4 13.8 18.4 12 21.4z" fill="currentColor" />
+    </svg>
+  ),
+};
 
 /* ── Tiles (art-only) ──────────────────────────────────────────────────────── */
 
@@ -469,21 +591,6 @@ function TileArt({ art, name }: { art?: string; name: string }) {
   return (
     <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-brand/30 to-indigo-900/50">
       <span className="px-1 text-center text-sm font-black uppercase tracking-wide text-white/85">{name}</span>
-    </div>
-  );
-}
-
-/* ── Events banner (Coin Flip tournament announcement) ─────────────────────── */
-
-function EventsBanner() {
-  return (
-    <div className="px-4">
-      <img
-        src={diceRush}
-        alt="Dice Rush tournament — one roll per round, highest number wins the bracket"
-        data-testid="home-events"
-        className="block h-auto w-full rounded-[18px]"
-      />
     </div>
   );
 }

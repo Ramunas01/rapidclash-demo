@@ -5,14 +5,18 @@ import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
 import { MenuOverlay } from '../components/hub-chrome/MenuOverlay.js';
 import { useMenuOverlay } from '../components/hub-chrome/useMenuOverlay.js';
 import { HUB_BODY, HUB_FIXED_TOP } from '../components/hub-chrome/layout.js';
+import type { CategoryId } from '../components/hub-shared/categories.js';
 
 /** A minimal stand-in for how every real hub screen wires `useMenuOverlay` + `HubToolbar` +
  *  `MenuOverlay` together (see HomeHub.tsx/GameHub.tsx/RewardsHub.tsx/ProfileHub.tsx) — issue
  *  #414's own three-piece pattern, without any of a real screen's API/balance/match-history
  *  plumbing that isn't relevant to the overlay's own behavior. */
 function Harness({
-  onGames = vi.fn(), onRewards = vi.fn(), onAffiliate = vi.fn(),
-}: { onGames?(): void; onRewards?(): void; onAffiliate?(): void }) {
+  onGames = vi.fn(), onRewards = vi.fn(), onAffiliate = vi.fn(), onGamesCategory,
+}: {
+  onGames?(): void; onRewards?(): void; onAffiliate?(): void;
+  onGamesCategory?(category: CategoryId): void;
+}) {
   const menu = useMenuOverlay();
   return (
     <>
@@ -23,7 +27,15 @@ function Harness({
         onMenu={menu.onMenu}
         active={menu.open ? 'menu' : 'games'}
       />
-      <MenuOverlay open={menu.open} anchorRect={menu.anchorRect} onClose={menu.close} onOpenGames={onGames} onOpenRewards={onRewards} onOpenAffiliate={onAffiliate} />
+      <MenuOverlay
+        open={menu.open}
+        anchorRect={menu.anchorRect}
+        onClose={menu.close}
+        onOpenGames={onGames}
+        onOpenRewards={onRewards}
+        onOpenAffiliate={onAffiliate}
+        onOpenGamesCategory={onGamesCategory}
+      />
     </>
   );
 }
@@ -144,10 +156,9 @@ describe('Menu overlay (issue #414) — row navigation', () => {
     expect(screen.getByTestId('menu-placeholder-toast')).toHaveTextContent('Complaint form — coming soon');
   });
 
-  it('every GAMES/COMPETE/PLATFORM/SUPPORT row is present and shows its own placeholder toast', () => {
+  it('every COMPETE/PLATFORM/SUPPORT row is present and shows its own placeholder toast', () => {
     render(<Harness />);
     const rows = [
-      'originals', 'card-games', 'chance-games', 'skill-games',
       '24h-race', 'weekly-race', 'leaderboards', 'tournaments',
       'how-it-works', 'provably-fair', 'fees-rake', 'game-rules',
       'help-center', 'contact-us', 'responsible-gaming',
@@ -161,5 +172,38 @@ describe('Menu overlay (issue #414) — row navigation', () => {
       expect(toastText).toContain('coming soon');
       expect(toastText).toContain(label);
     }
+  });
+});
+
+// Issue #465: the GAMES group's "RapidClash Originals"/"Card games"/"Chance games"/"Skill games"
+// rows used to be permanent placeholder toasts (built speculatively ahead of the games-hero
+// rebuild) — they now open the Games view pre-filtered to the tapped category.
+describe('Menu overlay (issue #465) — GAMES group category rows', () => {
+  const ROW_CATEGORY: [string, CategoryId][] = [
+    ['originals', 'originals'],
+    ['card-games', 'card'],
+    ['chance-games', 'chance'],
+    ['skill-games', 'skill'],
+  ];
+
+  it.each(ROW_CATEGORY)('the "%s" row calls onOpenGamesCategory with %s and closes the overlay, no toast', (key, category) => {
+    const onGamesCategory = vi.fn();
+    render(<Harness onGamesCategory={onGamesCategory} />);
+    fireEvent.click(screen.getByTestId('hub-nav-menu'));
+    fireEvent.click(screen.getByTestId(`menu-row-${key}`));
+    expect(onGamesCategory).toHaveBeenCalledWith(category);
+    expect(onGamesCategory).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('menu-placeholder-toast')).toBeNull();
+    expect(screen.getByTestId('menu-overlay').getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('without onOpenGamesCategory wired, a GAMES-group row falls back to plain onOpenGames (real nav, not a toast)', () => {
+    const onGames = vi.fn();
+    render(<Harness onGames={onGames} />); // no onGamesCategory passed
+    fireEvent.click(screen.getByTestId('hub-nav-menu'));
+    fireEvent.click(screen.getByTestId('menu-row-card-games'));
+    expect(onGames).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('menu-placeholder-toast')).toBeNull();
+    expect(screen.getByTestId('menu-overlay').getAttribute('aria-hidden')).toBe('true');
   });
 });

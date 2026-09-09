@@ -36,6 +36,13 @@ export interface MatchHistory {
    *  implementation for the exact defaults/cap) — a caller passing an absurd `limit` cannot
    *  force a wasteful scan. */
   getRecentMatches(playerId: string, limit?: number, offset?: number): RecentMatchesResponse;
+  /** All-time settled-match count per gameId (issue #465's Games-hero "Popularity" sort —
+   *  Owner-confirmed 2026-09-09: all-time, no rolling window; every bot-crowd match is
+   *  bot-vs-human, so there's no bot-vs-bot pairing to exclude — every non-void row counts).
+   *  `void` matches are excluded, same convention/rationale as `getRecentMatches`: a refund was
+   *  never really "played" to a result. A gameId with zero settled matches is simply absent from
+   *  the returned map (callers default missing entries to 0), not present with a 0 value. */
+  getPopularity(): Record<string, number>;
 }
 
 interface ResultRow {
@@ -162,6 +169,15 @@ export function createMatchHistory(
      WHERE (player1_id = ? OR player2_id = ?) AND outcome != 'void'
      ORDER BY settled_at DESC, rowid DESC
      LIMIT ? OFFSET ?`,
+  );
+
+  // Popularity (issue #465): all-time settled-match count per game, `void` excluded (same
+  // rationale as stmtRecent above). One row per gameId that has at least one settled match.
+  const stmtPopularity = db.prepare<[], { game_id: string; cnt: number }>(
+    `SELECT game_id, COUNT(*) AS cnt
+     FROM match_results
+     WHERE outcome != 'void'
+     GROUP BY game_id`,
   );
 
   const stmtRecentCount = db.prepare<[string, string], { cnt: number }>(
@@ -420,5 +436,10 @@ export function createMatchHistory(
     return { matches, limit: cappedLimit, offset: cappedOffset, total };
   }
 
-  return { recordResult, getLeaderboard, getRecentMatches };
+  function getPopularity(): Record<string, number> {
+    const rows = stmtPopularity.all();
+    return Object.fromEntries(rows.map((r) => [r.game_id, r.cnt]));
+  }
+
+  return { recordResult, getLeaderboard, getRecentMatches, getPopularity };
 }
