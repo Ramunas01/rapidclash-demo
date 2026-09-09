@@ -1,5 +1,7 @@
 import type { Page } from 'playwright-core';
 
+export type Theme = 'dark' | 'light';
+
 /**
  * The screen catalogue. Each entry knows how to drive the prototype (and, later, the built app)
  * into one specific state, starting from a freshly-loaded page in the default state
@@ -17,7 +19,10 @@ export interface ScreenDef {
   legacyShot?: string;
   /** Whether this state requires a signed-in session. */
   signedIn?: boolean;
+  /** Drive the prototype (`design/prototype/RapidClash Full Spec.html`) into this state. */
   driveProto: (page: Page) => Promise<void>;
+  /** Drive the built app into this state. Added per screen as it's rebuilt; absent = skipped. */
+  driveApp?: (page: Page) => Promise<void>;
 }
 
 /** Bottom-nav helpers, shared across screens. The nav items are `<div role="button">` with a
@@ -40,6 +45,8 @@ export async function signIn(page: Page): Promise<void> {
     .locator('input[placeholder="Enter password"]')
     .locator('xpath=following::*[@role="button"][1]')
     .click();
+  // submitAuth fires a "LOGGED IN" toast — wait for it to clear so it doesn't bleed into captures.
+  await page.getByText('LOGGED IN', { exact: true }).waitFor({ state: 'hidden', timeout: 6_000 }).catch(() => {});
   await page.waitForTimeout(400);
 }
 
@@ -50,6 +57,11 @@ export const SCREENS: ScreenDef[] = [
     legacyShot: '01-games-originals.png',
     driveProto: async () => {
       /* default state — nothing to do */
+    },
+    // The current HomeHub is the pre-redesign screen; this captures its starting fidelity.
+    driveApp: async (page) => {
+      await page.waitForSelector('[data-testid="home-hub"]', { timeout: 10_000 });
+      await page.waitForTimeout(400);
     },
   },
   {

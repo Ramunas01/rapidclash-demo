@@ -1,7 +1,6 @@
-# Generated app captures and diff images — regenerated on every run, never committed.
+# Generated on every run, never committed.
 captures/
 diffs/
 
-# The prototype reference set. Committed once the capture format is finalised (frame-cropped,
-# stable per-screen nav) — until then it is regenerated locally via `pnpm capture:prototype`.
-references/
+# references/ IS committed — the stable prototype reference set every rebuild diffs against.
+# Regenerate with `pnpm capture:prototype` when the prototype export changes.
