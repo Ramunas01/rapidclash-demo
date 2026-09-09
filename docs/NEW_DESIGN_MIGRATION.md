@@ -192,18 +192,15 @@ Supersedes the loose "sizing candidates" list. Phases 1→3 are sequential; Phas
 - `design/prototype/` is on `main`: 131 files, `assets/export/` with its 14 webp tiles, `RapidClash Full Spec.html` + runtime. Plain commit, ~37.7 MB (git-lfs offered, not taken).
 - **Remaining:** asset triage — delete the ~61 unreferenced exploration PNGs, decide git-lfs-or-drop for the ~1.5 MB masters now that `assets/export/`'s webp tiles are what ship. Mechanical follow-up PR, no blocking decisions.
 
-### Phase 2 — Playwright screenshot-diff harness — **PR #459 READY FOR PM REVIEW**
+### Phase 2 — Playwright screenshot-diff harness — **MERGED (#459 + #466)**
 - `tools/design-fidelity/` — demo/dev-only package, ADR-010 carve-out like `bot-crowd`.
-- **Working & proven end-to-end:** hermetic prototype render (the spec HTML doesn't run standalone — its dc-runtime pulls React 18.3.1 from unpkg; the harness serves it from the workspace); light theme via initial-state injection (the "System" option is cosmetic, value not persisted); `capture-prototype` → 16 committed references, chrome-clipped (fake status bar + fake URL bar removed); `capture-app --url` → the running app, both themes; `diff` → pixelmatch %, diff images, `report.json`. `games-originals` scores ~80% dark / ~40% light vs the current HomeHub.
-- **Follow-up PR (Designer answers, `TO-designer-harness-and-hero.md`, 2026-09-09):**
-  - **Fidelity gate = ≤ 0.5% differing pixels**, AND a human looks at the diff image for anything > 0 (200 wrong pixels in the wrong place passes a % gate and still looks broken). pixelmatch AA tolerance stays 0.1. *Engine noise is not a concern* — the harness renders prototype and app in the same Chromium/fonts/rasteriser, so every diff is real.
-  - **Kill the real noise sources before comparing, both sides:** inject CSS disabling all transitions/animations; pin every random or time-based value (die spin, nav pop, seeded opponent data, clocks) to a constant.
-  - **Mask deliberately-carried-over regions** out of the diff — first one is the games-hero **banner** (Q5: keep production's carousel as-is). Per-screen mask rects.
-  - **Canonical viewport = 390 × 840** (not 844). The `#__df_screen` inner box is 390×840; the 437×893 wrapper only holds `assets/iphone-frame.png` and is irrelevant. Content column 390, 16px page margins (build fluid, not a hardcoded 358).
-  - **1:1 means the whole scrollable page, captured in viewport-sized frames at defined scroll offsets** — not one tall screenshot (the header + bottom nav are fixed overlays; the scroll container carries 118px top / 184px bottom padding). Diff frame-by-frame.
-  - CI: `pnpm exec playwright install chromium` if ever run in CI (nothing runs it today).
+- **#459** (`2d88e54`): hermetic prototype render (dc-runtime pulls React 18.3.1 from unpkg; harness serves it from the workspace); light theme via initial-state injection; `capture-prototype` → 16 committed references, chrome-clipped; `capture-app --url` → the running app; `diff` → pixelmatch %, diff images, `report.json`. Proven end-to-end.
+- **#466** (`8795f59`): Designer's harness spec — fidelity gate **≤ 0.5% differing pixels** + a human look at any drift (`diff` prints PASS/FAIL); **freeze layer** (`src/freeze.ts`) pins `Math.random`/`Date.now` and strips all transitions/animations, both sides; **region masking** (`MaskRect`) — `BANNER_MASK` excludes the carried-over carousel from the 4 games screens; viewport **390 × 840**.
+- **Still to do — 3rd harness PR (Advisor):** whole-page comparison in **viewport-sized scroll frames** (Designer Q3) — not blocking Games-hero (above the fold); needed before Rewards / Account rebuilds. Also: CI `playwright install chromium` if the harness is ever run in CI.
 
-### Phase 3 — Games page hero rebuild — **UNBLOCKED, ready to ticket** (Designer answered 2026-09-09)
+### Phase 3 — Games page hero rebuild — **IN PROGRESS: issue #465, coder dispatched (2026-09-10)**
+- Coder working in an isolated agent worktree; implementation diffs across `HomeHub.tsx` / `MenuOverlay.tsx` / `categories.ts` / `gameSort.ts` / `match-history.ts`; not yet at fidelity-measurement or a PR. PM supervising, will pick up wherever it lands. Full spec: `ADVISOR_TO_PM.md` 2026-09-09#3.
+- **PM review focus** when the PR lands: (1) the `match-history.ts` / core change is a *generic* aggregate query, no `if (gameId === …)` (invariant #5); (2) the banner is genuinely left untouched; (3) categories are a client-side tag *set* per game, not a single value.
 - Scope: category rail, filter pills (SEARCH / SORT / RANDOM), section title. **NOT the banner** — see below.
 - **Category rail** — `CAT_GAMES` mapping (many-to-many tags, see the category table above). `MenuOverlay.tsx`'s placeholder "Card games / Chance games / Skill games" rows get wired here.
 - **Search / Sort** — behaviour RESOLVED (see "Two UI elements"): name substring across all 12, ignore tab; Popularity = all-time settled-match count; Newest = fixed intro-order ordinal; Alphabetical = display name.
@@ -226,11 +223,13 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 - **Races (24h / Weekly) + Leaderboards tab** — genuine new feature work (time-windowed leaderboard logic), sized separately from the lobby/stake-entry/play/result → single-screen-with-phases collapse.
 - **lobby / stake-entry / play / result → one screen, internal phases** — real architectural simplification (`App.tsx:1292-1317` today).
 
-## Status snapshot (2026-09-09)
+## Status snapshot — 2026-09-10, end of day (paused)
 
-- Merged: prototype export (#458), Ships Battle removal (#457), deploy record (#456), migration tracker + PM brief (#460), PM role acknowledgment (#461), currency-skin note (#462).
-- **Phase 1 — DONE.** Search/Sort, content corrections, currency skin, and all 6 Designer harness/hero questions — RESOLVED. Nothing blocked on the Designer.
-- **Phase 2 — PR #459 READY for PM review + merge** (foundation + proven pipeline). Harness refinements from the Designer answers (0.5% gate, animation/randomness killing, region masking, 390×840, scroll-frame capture) = a follow-up PR, Advisor-owned.
-- **Phase 3 — Games hero — UNBLOCKED, ticket next** (Advisor writes it → PM runs it).
-- **Process:** Advisor now works in a git worktree (`worktree-advisor-migration`), PM keeps the primary checkout — no more shared-checkout collisions.
+- **`main` = `8795f59`.** Merged: #456–#464 (setup + tracker + PM brief + currency-skin note), **#459 + #466 (Phase 2 harness — complete)**.
+- **Phase 1 — DONE.** All decisions (Search/Sort, content corrections, currency skin, 6 Designer harness/hero answers) — RESOLVED.
+- **Phase 2 — DONE** (#459 + #466 merged). Follow-up: scroll-frame capture (Advisor, not blocking).
+- **Phase 3 — Games hero — IN PROGRESS.** Issue **#465**, coder dispatched, working in an isolated agent worktree. Not yet at a PR. PM supervising, safe to run unsupervised (isolated, can't merge/collide); PM picks it up next session. Review-focus notes under Phase 3 above.
+- **No open PRs. Nothing Owner-gated.**
+- **Process:** Advisor works in worktree `worktree-advisor-migration`; PM keeps the primary checkout; the Games-hero coder is in its own agent worktree. No shared-checkout risk.
+- **Next up after Games hero:** rps/mines/dice full rebuilds; then shared-chrome + light-theme rollout (biggest item); currency skin + stake ladder; chat; races/leaderboards; lobby-collapse.
 - **Pending mechanical:** prototype asset triage (~61 unreferenced PNGs).
