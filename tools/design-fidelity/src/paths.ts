@@ -58,6 +58,30 @@ export function chromeExecutable(): string {
   );
 }
 
-/** iPhone-class portrait viewport the migration targets. */
-export const VIEWPORT = { width: 390, height: 844 } as const;
+/**
+ * Canonical viewport (Designer, 2026-09-09): 390 × 840 — the prototype's inner `#__df_screen`
+ * box, not the 437 × 893 wrapper (which only holds a picture of a phone). Content column 390,
+ * 16px page margins.
+ */
+export const VIEWPORT = { width: 390, height: 840 } as const;
 export const DEVICE_SCALE_FACTOR = 2;
+
+/**
+ * Injected into both the prototype and the app before every capture. The Designer's fidelity
+ * gate assumes a genuinely static frame: no transitions, no animations, no blinking caret, and
+ * `Math.random` / `Date.now` pinned so seeded mock data and clocks don't drift between runs.
+ */
+export const FREEZE_STYLE =
+  '*,*::before,*::after{transition:none!important;animation:none!important;caret-color:transparent!important}' +
+  'html{scroll-behavior:auto!important}';
+
+export const FREEZE_SCRIPT = `(() => {
+  let n = 0;
+  const seq = [0.42, 0.13, 0.87, 0.55, 0.29, 0.71, 0.04, 0.63];
+  Math.random = () => seq[n++ % seq.length];
+  const FIXED = 1757000000000; // 2025-09-04T12:53:20Z — arbitrary but constant
+  const _Date = Date;
+  // @ts-expect-error - test shim
+  Date = class extends _Date { constructor(...a) { super(...(a.length ? a : [FIXED])); } static now() { return FIXED; } };
+  Date.prototype = _Date.prototype;
+})()`;

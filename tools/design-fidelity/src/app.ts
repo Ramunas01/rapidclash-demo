@@ -1,5 +1,6 @@
 import type { Browser, Page } from 'playwright-core';
 import { chromium } from 'playwright-core';
+import { armFreeze, settleFrozen } from './freeze.js';
 import { chromeExecutable, DEVICE_SCALE_FACTOR, VIEWPORT } from './paths.js';
 import type { ScreenDef, Theme } from './screens.js';
 
@@ -41,8 +42,10 @@ export async function openApp(browser: Browser, baseUrl: string, theme: Theme): 
       /* private mode */
     }
   }, theme);
+  await armFreeze(page);
   await page.goto(baseUrl, { waitUntil: 'load', timeout: 30_000 });
   await page.waitForSelector('[data-testid="home-hub"], #root > *', { timeout: 15_000 });
+  await settleFrozen(page);
   await page.waitForTimeout(600);
   return page;
 }

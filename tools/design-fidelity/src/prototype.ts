@@ -10,6 +10,7 @@ import {
   REACT_UMD,
   VIEWPORT,
 } from './paths.js';
+import { armFreeze, settleFrozen } from './freeze.js';
 import type { ScreenDef, Theme } from './screens.js';
 
 export type { Theme };
@@ -54,6 +55,7 @@ export async function openPrototype(browser: Browser, theme: Theme = 'dark'): Pr
     // @ts-expect-error - injected shim
     window.__name = window.__name || ((fn: unknown) => fn);
   });
+  await armFreeze(page);
 
   await page.route(PROTOTYPE_URL, (r) => r.fulfill({ body: html, contentType: 'text/html; charset=utf-8' }));
   await page.route(/unpkg\.com\/react@[\d.]+\/umd\/react\.production\.min\.js/, (r) =>
@@ -73,6 +75,7 @@ export async function openPrototype(browser: Browser, theme: Theme = 'dark'): Pr
     );
   });
   await tagScreenElement(page);
+  await settleFrozen(page);
   await page.waitForTimeout(600); // fonts + first paint settle
   return page;
 }
@@ -131,6 +134,7 @@ export async function resetPrototype(page: Page): Promise<void> {
   await page.reload({ waitUntil: 'load' });
   await page.waitForSelector('[data-rc-scroll]', { timeout: 15_000 });
   await tagScreenElement(page);
+  await settleFrozen(page);
   await page.waitForTimeout(600);
 }
 

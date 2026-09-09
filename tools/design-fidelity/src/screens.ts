@@ -2,6 +2,23 @@ import type { Page } from 'playwright-core';
 
 export type Theme = 'dark' | 'light';
 
+/** A rectangle in capture CSS px (the 390-wide × 732-tall clipped space), scaled by the device
+ *  pixel ratio when applied to a PNG. */
+export interface MaskRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  reason: string;
+}
+
+/**
+ * Regions the Designer said to carry over from production unchanged (Q5, 2026-09-09) — the
+ * games-hero banner carousel is the first. Masked in both images before diffing so a rebuild
+ * doesn't fail the gate on a difference we chose on purpose. Measured from the running prototype.
+ */
+export const BANNER_MASK: MaskRect = { x: 12, y: 72, w: 366, h: 156, reason: 'carousel banner — carried over, Designer Q5' };
+
 /**
  * The screen catalogue. Each entry knows how to drive the prototype (and, later, the built app)
  * into one specific state, starting from a freshly-loaded page in the default state
@@ -23,6 +40,8 @@ export interface ScreenDef {
   driveProto: (page: Page) => Promise<void>;
   /** Drive the built app into this state. Added per screen as it's rebuilt; absent = skipped. */
   driveApp?: (page: Page) => Promise<void>;
+  /** Regions excluded from the diff (carried-over-from-production areas). */
+  masks?: MaskRect[];
 }
 
 /** Bottom-nav helpers, shared across screens. The nav items are `<div role="button">` with a
@@ -63,6 +82,7 @@ export const SCREENS: ScreenDef[] = [
       await page.waitForSelector('[data-testid="home-hub"]', { timeout: 10_000 });
       await page.waitForTimeout(400);
     },
+    masks: [BANNER_MASK],
   },
   {
     id: 'games-chance',
@@ -72,6 +92,7 @@ export const SCREENS: ScreenDef[] = [
       await page.getByText(/^CHANCE GAMES$/i).first().click();
       await page.waitForTimeout(300);
     },
+    masks: [BANNER_MASK],
   },
   {
     id: 'search-open',
@@ -83,11 +104,13 @@ export const SCREENS: ScreenDef[] = [
       await page.locator('div:has(> [data-rc-search]) > svg').first().click();
       await page.waitForTimeout(600); // expand animation
     },
+    masks: [BANNER_MASK],
   },
   {
     id: 'sort-sheet',
     title: 'Sort sheet open',
     legacyShot: '04-sort-sheet.png',
+    masks: [BANNER_MASK],
     driveProto: async (page) => {
       await page.getByText(/^SORT$/i).first().click();
       await page.waitForTimeout(400);

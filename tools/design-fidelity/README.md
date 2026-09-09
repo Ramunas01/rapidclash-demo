@@ -43,23 +43,38 @@ or set `DESIGN_FIDELITY_APP_URL` to a deployed preview.
 `PLAYWRIGHT_BROWSERS_PATH`); or set `DESIGN_FIDELITY_CHROME`. CI would need
 `pnpm exec playwright install chromium` — nothing runs the harness in CI today.
 
+## The Designer's fidelity spec (2026-09-09, `TO-designer-harness-and-hero.md`)
+
+- **Gate: ≥ 99.5% fidelity** (≤ 0.5% differing pixels), pixelmatch at 0.1 AA tolerance — **plus a
+  human looks at any diff image with drift** (200 wrong pixels in the wrong place passes a % gate
+  and still looks broken). `diff` prints PASS/FAIL per screen/theme.
+- **Engine noise isn't a concern** — prototype and app render in the *same* Chromium/fonts/
+  rasteriser, so every diff is real. What *is* noise — animation, randomness, clocks — is killed
+  by the freeze layer (`src/freeze.ts`): pins `Math.random`/`Date.now`, strips all transitions
+  and animations, both sides, before capture.
+- **Masked regions** (`src/screens.ts` `MaskRect`) are areas the Designer said to carry over from
+  production unchanged — the games-hero **banner carousel** is the first. Filled flat-grey in
+  both images and excluded from the score, so a rebuild doesn't fail on a difference chosen on
+  purpose.
+- **Canonical viewport 390×840** — the prototype's inner `#__df_screen` box, not the 437×893
+  wrapper (a picture of a phone).
+
 ## How it works — the non-obvious parts
 
 - **The prototype doesn't render standalone.** Its `support.js` (dc-runtime) fetches React 18.3.1
   UMD from unpkg at boot. The harness intercepts those requests in Playwright and fulfils them
   from the workspace's own `react`/`react-dom` — hermetic, version-locked, no CDN.
 - **Light mode** is injected as `theme: 'light'` into the component's initial state via an HTML
-  route. The prototype's "System" option is cosmetic (nothing reads `prefers-color-scheme`) and
-  the value isn't persisted, so driving the in-app picker per capture was unreliable.
+  route. The prototype's "System" option is cosmetic and the value isn't persisted.
 - **The committed `design/prototype/screenshots/*` are 924×540 canvas thumbnails** — unusable as
-  pixel references. The harness self-captures the real set from the running prototype, per the
-  Designer's instruction ("don't wait on design, don't relay phone photos").
+  pixel references. The harness self-captures the real set from the running prototype.
 - **Prototype captures are clipped** to the phone-screen element minus the fake iOS status bar
   (top 44px) and the fake in-app-browser URL bar (bottom 64px) — `CAPTURE_INSET` in
   `src/prototype.ts`. The real app renders neither.
-- **Size mismatch** (reference is chrome-clipped at 778×1464, app capture is the full 780×1688
-  viewport): `diff` compares the shared top-left region — effectively the above-the-fold area —
-  and flags it. Refine once Designer Q2/Q3 (canonical viewport, above-fold-vs-full-page) land.
+- **Size mismatch** (reference is chrome-clipped, app capture is the full viewport): `diff`
+  compares the shared top-left region — the above-the-fold area. **Whole-page comparison in
+  viewport-sized scroll frames (Designer Q3) is a follow-up** — needed before the long screens
+  (Rewards, Account) are rebuilt; the games-hero screens are above the fold.
 
 ## Adding a screen to the app side
 
