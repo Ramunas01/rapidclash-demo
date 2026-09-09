@@ -1,5 +1,47 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-09#3 — Games-page hero rebuild — first migration screen ticket            [READY TO TICKET]
+From: Advisor   Re: Phase 3, `NEW_DESIGN_MIGRATION.md`; Designer answers `TO-designer-harness-and-hero.md` 2026-09-09
+
+**This is the first screen-rebuild ticket. Start it once PR #459 (harness) is merged** — the coder needs `capture-prototype` / `diff` to measure against. My harness-refinement PR (0.5% gate, animation/randomness killing, banner masking, 390×840, scroll-frames) runs in parallel and should land before this ticket closes; coordinate timing with me.
+
+**Scope: the games-page hero on `HomeHub.tsx` — everything above the game grid EXCEPT the banner.**
+
+Rebuild from `design/prototype/RapidClash Full Spec.html` — pull every pixel/type/spacing value from that file directly, do not transcribe from screenshots or this ticket. 390px content column, 16px page margins, build fluid (no hardcoded 358).
+
+**In scope:**
+
+1. **Category rail** — five tabs: `ORIGINALS / CARD GAMES / CHANCE GAMES / SKILL GAMES / EVENTS`. Membership is many-to-many per `CAT_GAMES` (prototype line ~2843; also in the tracker's category table). **Data model: a game carries a *set* of category tags, not one value.** Client-side static map keyed by gameId (`apps/web`) — categories are presentation taxonomy, not core (invariant #5 unaffected). `EVENTS` is empty by design and has its own empty state (`catEmpty` in the prototype). `MenuOverlay.tsx`'s existing placeholder "Card games / Chance games / Skill games" rows get wired to open this view filtered.
+
+2. **SEARCH** — the magnifier expands to an input (animation already designed). Behaviour (Owner-resolved): case-insensitive **substring match on game display name across all 12 games, ignoring the active category tab**, as-you-type. Empty query → the normal category-filtered grid. `searchQuery` filters nothing in the prototype — that logic is ours to add.
+
+3. **SORT** — the sort sheet (`sortOpen`), three options:
+   - **Popularity** (default) = all-time settled-match count per `gameId` (source: `match-history.ts` aggregate; every settled match counts — no bot-vs-bot exists).
+   - **Newest** = a fixed per-game introduction-order ordinal. Establish it once from each game package's first-landed commit (`git log` on `packages/games/<name>/`), encode as a static `introOrder` map. Not a live date field.
+   - **Alphabetical** = by display name.
+   The sheet UI is built; the reorder logic is ours.
+
+4. **RANDOM** — defined intent (Designer Q4), not "ours": `spinRandom` (prototype line 3991) spins the die **1560 ms**, then opens a random game's hub. The prototype only picks mines/rps/dice (its only views) — **real behaviour: uniform random among the six *playable* games — `rps`, `dice`, `mines`, `coinflip`, `blackjack`, `chess`.** Never the six unbuilt ones. The die-spin keyframe is 1500 ms; navigation fires 60 ms after it settles.
+
+5. **Section title** — "RAPIDCLASH ORIGINALS" (or the active category's title).
+
+**Explicitly out of scope:**
+
+- **The banner carousel.** Designer Q5: the three rotating banners, artwork, rotation and dots are carried over from production unchanged — do not restyle or rebuild. The harness masks that region. *(One tiny follow-up, NOT this ticket: the inactive dot `#3B3B47` has no light-theme value — that's logged against the light-theme rollout.)*
+- The game grid/tiles themselves (unchanged).
+- Any hub screen.
+
+**Currency note:** the `$`/crypto skin is Owner-approved (`CHARTER.md` #4, tracker "Currency presentation") — do not reject `$` in this screen. `¢` is guest-mode only now.
+
+**Done when:** category rail + search + sort + random all functional per the above; harness `diff` for `games-originals`, `games-chance`, `search-open`, `sort-sheet` at ≤ 0.5% differing pixels (banner masked), both themes, diff images clean on human review; `HomeHub.test.tsx` updated; full suite green; no hardcoded hex, no `$`-rejection, redaction/humans-play-humans untouched.
+
+Ask: ticket as one PR against `HomeHub.tsx` (+ a new client-side categories module + `MenuOverlay.tsx` wiring). One agent — this is `HomeHub`, adjacent to but not inside the `App.tsx` matchmaking collision zone. Hold until #459 is on `main`.
+
+### 2026-09-09#2 — Currency skin: don't bounce `$` on rebuild PRs            [FYI]
+From: Advisor   Re: `CHARTER.md` #4 amendment (PR #462, merged)
+
+Heads-up before the first rebuild PR: the registered/investor demo now uses a cosmetic `$` + multi-currency wallet skin over the same integer credits (Owner-approved 2026-09-09). **Do not bounce a rebuild PR for showing `$` instead of `¢`** — that's the intended design now. Guest mode stays `¢`. The stale "`¢` only, reject `$`" line in your merge-gate checklist (2026-09-09#1 item 6) is fixed in #462. Full context: tracker → "Currency presentation". The fixed `$1/$5/$10/$25/$50/$100` stake ladder that replaces free-typed entry is a **separate** workstream (touches core/matchmaking) — not part of any screen rebuild.
+
 ### 2026-09-09#1 — Design migration: your role, the merge gate, and the activation trigger            [ACTION NEEDED — see Ask]
 From: Advisor   Re: Owner-agreed role model for the old→new design migration (2026-09-09)
 

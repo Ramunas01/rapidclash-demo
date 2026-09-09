@@ -127,7 +127,7 @@ Confirmed directly from the prototype's script block; behaviour was ours to defi
 
 ## Standing decision — resolved: light theme is fully in scope, not deferred
 
-Closes the loop every prior ticket (Account, Preferences, Menu) independently deferred. Designer's decision (2026-09-09): **build it, all the way, this round.** Theme model is `dark | light | system` (three values — `PreferencesHub.tsx:23`'s current `'dark' | 'light'` needs a third option, with "system" watching `prefers-color-scheme`). Two values fall outside the documented token table and need adding to it rather than hardcoding (sort-sheet background, theme-button shadows). Verification: the Playwright harness generates its own light-mode reference screenshots directly from the prototype (which has a working theme picker) rather than waiting on design or relaying phone photos. Coinflip/Blackjack/Chess (already-done, not rebuilt this round) get an explicit interim rule — light everywhere except their player-boxes/board, via one scoped dark-override wrapper, never forked components — with a real light treatment for those three parked as its own follow-up once rps/mines/dice ship. Full detail: `docs/COMMS/from-advisor/light-theme-rollout.md`.
+Closes the loop every prior ticket (Account, Preferences, Menu) independently deferred. Designer's decision (2026-09-09): **build it, all the way, this round.** Theme model is `dark | light | system` (three values — `PreferencesHub.tsx:23`'s current `'dark' | 'light'` needs a third option, with "system" watching `prefers-color-scheme`). Three values fall outside the documented token table and need adding to it rather than hardcoding: sort-sheet background, theme-button shadows, and the **games-hero carousel inactive dot** (hardcoded `#3B3B47`, dark-only, no light equivalent in the file — Designer Q5, 2026-09-09). Verification: the Playwright harness generates its own light-mode reference screenshots directly from the prototype (which has a working theme picker) rather than waiting on design or relaying phone photos. Coinflip/Blackjack/Chess (already-done, not rebuilt this round) get an explicit interim rule — light everywhere except their player-boxes/board, via one scoped dark-override wrapper, never forked components — with a real light treatment for those three parked as its own follow-up once rps/mines/dice ship. Full detail: `docs/COMMS/from-advisor/light-theme-rollout.md`.
 
 ## Stop in-flight design work — RESOLVED (Designer 2026-09-09, `migration-order-of-work.md`)
 
@@ -192,25 +192,33 @@ Supersedes the loose "sizing candidates" list. Phases 1→3 are sequential; Phas
 - `design/prototype/` is on `main`: 131 files, `assets/export/` with its 14 webp tiles, `RapidClash Full Spec.html` + runtime. Plain commit, ~37.7 MB (git-lfs offered, not taken).
 - **Remaining:** asset triage — delete the ~61 unreferenced exploration PNGs, decide git-lfs-or-drop for the ~1.5 MB masters now that `assets/export/`'s webp tiles are what ship. Mechanical follow-up PR, no blocking decisions.
 
-### Phase 2 — Playwright screenshot-diff harness — **IN PROGRESS (draft PR #459)**
+### Phase 2 — Playwright screenshot-diff harness — **PR #459 READY FOR PM REVIEW**
 - `tools/design-fidelity/` — demo/dev-only package, ADR-010 carve-out like `bot-crowd`.
-- **Working:** hermetic prototype render (the spec HTML doesn't run standalone — its dc-runtime pulls React 18.3.1 from unpkg; the harness serves it from the workspace instead); light theme via initial-state injection (the prototype's "System" option is cosmetic, value not persisted); `capture-prototype` produces all **8 screens × 2 themes = 16 references** at 390×844, bezel-clipped; `diff`/`report` via pixelmatch → per-screen fidelity %.
-- **Remaining:** trim capture clip to content height + drop the mock status/URL bars; `capture-app` for the built app; one screen wired end-to-end; commit the reference set (gitignored until the clip is final); CI `playwright install chromium`.
+- **Working & proven end-to-end:** hermetic prototype render (the spec HTML doesn't run standalone — its dc-runtime pulls React 18.3.1 from unpkg; the harness serves it from the workspace); light theme via initial-state injection (the "System" option is cosmetic, value not persisted); `capture-prototype` → 16 committed references, chrome-clipped (fake status bar + fake URL bar removed); `capture-app --url` → the running app, both themes; `diff` → pixelmatch %, diff images, `report.json`. `games-originals` scores ~80% dark / ~40% light vs the current HomeHub.
+- **Follow-up PR (Designer answers, `TO-designer-harness-and-hero.md`, 2026-09-09):**
+  - **Fidelity gate = ≤ 0.5% differing pixels**, AND a human looks at the diff image for anything > 0 (200 wrong pixels in the wrong place passes a % gate and still looks broken). pixelmatch AA tolerance stays 0.1. *Engine noise is not a concern* — the harness renders prototype and app in the same Chromium/fonts/rasteriser, so every diff is real.
+  - **Kill the real noise sources before comparing, both sides:** inject CSS disabling all transitions/animations; pin every random or time-based value (die spin, nav pop, seeded opponent data, clocks) to a constant.
+  - **Mask deliberately-carried-over regions** out of the diff — first one is the games-hero **banner** (Q5: keep production's carousel as-is). Per-screen mask rects.
+  - **Canonical viewport = 390 × 840** (not 844). The `#__df_screen` inner box is 390×840; the 437×893 wrapper only holds `assets/iphone-frame.png` and is irrelevant. Content column 390, 16px page margins (build fluid, not a hardcoded 358).
+  - **1:1 means the whole scrollable page, captured in viewport-sized frames at defined scroll offsets** — not one tall screenshot (the header + bottom nav are fixed overlays; the scroll container carries 118px top / 184px bottom padding). Diff frame-by-frame.
+  - CI: `pnpm exec playwright install chromium` if ever run in CI (nothing runs it today).
 
-### Phase 3 — Games page hero rebuild
-- Banner, category rail, filter pills, section title.
-- Category data model is unblocked — `CAT_GAMES` in the prototype is the mapping (many-to-many tags, see the category table above). `MenuOverlay.tsx`'s placeholder "Card games / Chance games / Skill games" rows get wired here.
-- Depends on Phase 4's Search + Sort decisions being made (not necessarily built) so this pass isn't guessing.
+### Phase 3 — Games page hero rebuild — **UNBLOCKED, ready to ticket** (Designer answered 2026-09-09)
+- Scope: category rail, filter pills (SEARCH / SORT / RANDOM), section title. **NOT the banner** — see below.
+- **Category rail** — `CAT_GAMES` mapping (many-to-many tags, see the category table above). `MenuOverlay.tsx`'s placeholder "Card games / Chance games / Skill games" rows get wired here.
+- **Search / Sort** — behaviour RESOLVED (see "Two UI elements"): name substring across all 12, ignore tab; Popularity = all-time settled-match count; Newest = fixed intro-order ordinal; Alphabetical = display name.
+- **RANDOM button** — defined intent, not ours (Designer Q4): `spinRandom` (line 3991) spins the die 1560 ms, then opens a random game's hub. Prototype only picks mines/rps/dice because those are its only views — **real behaviour: random among the six *playable* games (rps, dice, mines, coinflip, blackjack, chess)**, never the six unbuilt ones (dead hub is worse than a smaller pool). Spin keyframe is 1500 ms, nav fires 60 ms after it settles.
+- **Banner carousel — DO NOT rebuild** (Designer Q5). The three rotating banners, artwork, rotation and dots are carried over from production unchanged. Harness masks the region. *One thing to do:* the inactive dot is hardcoded `#3B3B47` dark-only with no light value — add a light-theme token for it (rides with the light-theme rollout).
 
 ### Phase 4 — Remaining open decisions (parallel with Phase 2)
 - **Search matching — RESOLVED** (Owner 2026-09-09): substring match on game name across all 12 games, ignore active tab, case-insensitive, as-you-type. See "Two UI elements" section.
 - **Sort metrics — RESOLVED** (Owner 2026-09-09): Popularity = all-time settled-match count per game; Newest = fixed introduction-order ordinal from git history, not a live date field; Alphabetical = by display name. See "Two UI elements" section.
 - **Content corrections — RESOLVED** (`content-corrections-answer.md`): nothing to override.
-- **Harness + hero questions — sent to Designer** (`TO-designer-harness-and-hero.md`, 2026-09-09): fidelity bar / canonical viewport / above-fold-vs-full-page; RANDOM button; banner carousel slides; rps/mines/dice screen finality. Rebuild tickets that depend on these are held until answered.
+- **Harness + hero questions — ALL 6 ANSWERED** by the Designer 2026-09-09 (`TO-designer-harness-and-hero.md`): harness answers folded into Phase 2; Games-hero answers (RANDOM, banner) folded into Phase 3; rps/mines/dice confirmed final (see below). Nothing left held.
 
 ### After the plan — sequenced, not yet scheduled
 These are scoped in their own sections/comms docs and sequence *after* the harness exists:
-- **rps / mines / dice** full screen rebuilds — the only 3 games needing new screens.
+- **rps / mines / dice** full screen rebuilds — the only 3 games needing new screens. **Designer-confirmed final, not sketches (Q6): build them fully, gameplay included.** Each has a real phase machine (mines: idle → match → run → done, with a matchmaking phase), clocks, opponent state, seeded history, outcome logic (`rpsOutcome` win/lose/draw; mines gems/bombs/bust; dice belt animation + roll history) — ~25 state keys across the three. Reference screenshots come from the harness.
 - **Currency skin + fixed stake ladder** — `$`/multi-currency wallet skin (cosmetic) + the 6-rung `$1–$100` `STAKE_LADDER` replacing free-typed stake entry. See "Currency presentation" above. The stake-ladder half touches the core/matchmaking, size it separately from the skin.
 - **Shared chrome + light theme rollout** platform-wide (`light-theme-rollout.md`) — the single biggest item; likely its own iteration. Carries the 6 chrome-only hubs and the interim Coinflip/Blackjack/Chess dark-region override with it.
 - **Chat** — full UI + `ChatTransport` local impl + server-checked kill switch (`chat-local-transport.md`).
@@ -220,9 +228,9 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 
 ## Status snapshot (2026-09-09)
 
-- Merged 2026-09-09: prototype export (#458), Ships Battle removal (#457), deploy record (#456), migration tracker + PM brief (#460), PM role acknowledgment (#461).
-- **Phase 1 — DONE.** Phase 4 Search/Sort — RESOLVED. Content corrections — RESOLVED. Currency skin — Owner-approved, see "Currency presentation".
-- **Phase 2 — IN PROGRESS**, draft PR #459 (harness foundation working; clip/status-bar refinement + app-side + one worked screen remain).
-- **Blocked on Designer:** the 6 questions in `TO-designer-harness-and-hero.md` (fidelity bar, viewport, RANDOM, banner, rps/mines/dice finality).
+- Merged: prototype export (#458), Ships Battle removal (#457), deploy record (#456), migration tracker + PM brief (#460), PM role acknowledgment (#461), currency-skin note (#462).
+- **Phase 1 — DONE.** Search/Sort, content corrections, currency skin, and all 6 Designer harness/hero questions — RESOLVED. Nothing blocked on the Designer.
+- **Phase 2 — PR #459 READY for PM review + merge** (foundation + proven pipeline). Harness refinements from the Designer answers (0.5% gate, animation/randomness killing, region masking, 390×840, scroll-frame capture) = a follow-up PR, Advisor-owned.
+- **Phase 3 — Games hero — UNBLOCKED, ticket next** (Advisor writes it → PM runs it).
+- **Process:** Advisor now works in a git worktree (`worktree-advisor-migration`), PM keeps the primary checkout — no more shared-checkout collisions.
 - **Pending mechanical:** prototype asset triage (~61 unreferenced PNGs).
-- **Next PM action:** review + merge PR #459 when it's marked ready; then run the rebuild phase off the first screen ticket.
