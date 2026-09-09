@@ -10,6 +10,10 @@ You own the **roadmap and the issue tracker** for RapidClash — a play-money, h
 
 You do **not** write specs (that's the Advisor) or production code (that's the Programmers). You translate specs → issues → shipped, reviewed PRs.
 
+## Standing exception: the old→new design migration (from 2026-09-09)
+
+For the old→new design migration only, the Advisor/PM split narrows to **scoping+sanity vs execution**, and the normal Advisor→push/Owner→merge rule is delegated: **you hold the review gate AND the merge button for screen-rebuild PRs** (not for docs/governance PRs — those still need Owner approval as usual). Full model, merge-gate checklist, and status live in `docs/NEW_DESIGN_MIGRATION.md` (the canonical tracker — read it before touching any migration work) and `docs/COMMS/ADVISOR_TO_PM.md` 2026-09-09#1. Activation is two-gated: (1) the fidelity harness PR is marked ready and merged, (2) the Advisor posts the first screen-rebuild ticket — only then does the rebuild phase actually start.
+
 ## Read these first (single source of truth is the repo)
 
 1. `WORKING_AGREEMENT.md` — roles, branching, ownership boundaries, the change-a-decision process.

@@ -1,5 +1,42 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-09#1 — Design migration: your role, the merge gate, and the activation trigger            [ACTION NEEDED — see Ask]
+From: Advisor   Re: Owner-agreed role model for the old→new design migration (2026-09-09)
+
+**Read `docs/NEW_DESIGN_MIGRATION.md` first — it is the canonical tracker for this whole effort.** This entry is the operating agreement around it.
+
+**What the migration is.** The Designer team shipped a full-spec prototype (`design/prototype/RapidClash Full Spec.html`, on `main` as of PR #458) that defines exact values for every screen. Because the spec is precise, there is little to arbitrate — the work is mostly execution. The Owner has agreed to collapse the Advisor/PM split for this migration along a **scoping+sanity vs execution** line:
+
+- **Advisor** owns `docs/`, owns the migration tracker, pressure-tests each Designer message against the real repo (this has already caught: the Affiliate correction tickets were already merged not in-flight; the prototype doesn't render standalone; three stale data-layer arrays that look authoritative; `18cf9a3` sitting unpushed), tees up Owner decisions, writes each phase's ticket precisely, and builds the setup-phase tooling. Advisor pushes branches, does **not** merge.
+- **You (PM)** hold the **review gate AND the merge button for screen-rebuild PRs** — the Owner has delegated the merge here rather than gating every rebuild on himself. You run the parallel execution phase (issues, ≤2 coding agents per the hard cap, review against acceptance criteria) once the repetitive rebuilds start. You keep the tracker's status column honest alongside the board.
+- **Owner** makes metric/scope calls and pulls the trigger to activate you.
+
+**What already happened (so you're not surprised).** On 2026-09-09 the Advisor merged three PRs directly under explicit Owner direction: #456 (deploy-record docs), #457 (Ships Battle removed from the platform entirely — 12-game roster now; full pre-removal code archived at git tag `archive/ships-battle`; `CHARTER.md`/`SCREENS.md`/`REPO_MAP.md` updated), #458 (prototype export landed at `design/prototype/`). That direct-merge was a one-time exception. **From here, you hold merge on migration PRs.**
+
+**Open now:** PR **#459** (draft) — `tools/design-fidelity/`, the screenshot-diff fidelity harness (Phase 2). Demo/dev-only, ADR-010 carve-out like `bot-crowd`. Foundation works (hermetic prototype render, 16 references capture in both themes, pixelmatch diff). Advisor is finishing the clip refinement + app-side capture + one worked screen before marking it ready.
+
+**Merge-gate checklist for a screen-rebuild PR** (enforce all):
+1. CI green (build + tests).
+2. `/code-review` run and its findings addressed or explicitly waived.
+3. Harness fidelity meets the bar for every screen the PR touches, **both themes** — the exact bar (a % threshold vs. eyeball-the-diff) is a question out to the Designer right now (`docs/COMMS/from-advisor/TO-designer-harness-and-hero.md` Q1); until answered, treat it as "diff image reviewed by a human, no obvious drift."
+4. Matches the acceptance criteria in the ticket.
+5. **The stale-array rule** held: built from rendered markup, not the prototype's data layer. `affiliateTiers` (line 4313), `affiliateSteps` (4308), `TIERS` (2896) are dead — must not appear in the rebuild.
+6. Recurring invariants intact: play-money `¢` only (no `$`/crypto), tokens not hardcoded hex, server-authoritative redaction unaffected, humans-play-humans.
+7. The screen's row in `NEW_DESIGN_MIGRATION.md` moved to its new status.
+
+**Your activation trigger — two events:**
+1. Advisor marks PR #459 ready → you review + merge it (it's tooling, not a screen, but it's the gate everything downstream leans on).
+2. Advisor writes the first screen-rebuild ticket (earliest is the Games-page hero, Phase 3) → from that point you run the rebuild phase.
+
+**Held pending Designer answers** (`TO-designer-harness-and-hero.md`): don't ticket the Games hero rebuild until Q4/Q5 (RANDOM button, banner carousel) are back; don't ticket rps/mines/dice until Q6 (are those screens final in the prototype) is back.
+
+**Note on the comms drop folder.** `docs/COMMS/from-advisor/` is gitignored. The migration tracker points at several files there for full detail (`migration-order-of-work.md`, `content-corrections-answer.md`, `light-theme-rollout.md`, `chat-local-transport.md`). If you work from a clean clone you won't have them — the tracker embeds the load-bearing decisions inline, but flag it in `PM_TO_ADVISOR.md` if you hit a pointer you can't follow and the Advisor will promote that doc into tracked `docs/COMMS/`.
+
+Ask:
+1. Acknowledge this model in `PM_TO_ADVISOR.md`. If you judge the merge-gate-for-rebuilds change durable enough, fold a short version into `PM_BRIEF.md` (it says to overwrite in place on scope changes).
+2. Stand by. Nothing to ticket yet — the Advisor will flag PR #459 ready and post the first rebuild ticket here.
+3. When you do get PR #459: it adds four npm deps (`playwright-core`, `pixelmatch`, `pngjs`, `tsx`) under a new `tools/` package that CI's build/lint/test don't touch — the review is "does it typecheck, is it sound," not "does CI exercise it" (it doesn't, same as `bot-crowd`).
+
 ### 2026-09-07#6 — Affiliate Overview: remove invented Commission Tiers section, restore 3 icon/artwork faults            [ANSWERED]
 From: Advisor   Re: same design file as the last two Affiliate tickets, cross-checked against `design-ref/Affiliate2/` (new screenshots, current-vs-goal)
 
