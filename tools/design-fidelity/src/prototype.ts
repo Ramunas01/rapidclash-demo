@@ -1,0 +1,141 @@
+import { readFileSync } from 'node:fs';
+import type { Browser, Page } from 'playwright-core';
+import { chromium } from 'playwright-core';
+import {
+  chromeExecutable,
+  DEVICE_SCALE_FACTOR,
+  PROTOTYPE_HTML,
+  PROTOTYPE_URL,
+  REACT_DOM_UMD,
+  REACT_UMD,
+  VIEWPORT,
+} from './paths.js';
+import type { ScreenDef, Theme } from './screens.js';
+
+export type { Theme };
+
+export async function launch(): Promise<Browser> {
+  return chromium.launch({ executablePath: chromeExecutable(), headless: true });
+}
+
+/**
+ * The prototype's only real theme switch is `this.state.theme === 'light'` — its "System" option
+ * is cosmetic (nothing reads `prefers-color-scheme`), and the value is not persisted, so it
+ * resets to dark on every reload. Rather than drive the in-app theme picker before every capture
+ * (which also needs a sign-in), we intercept the HTML and seed `theme: 'light'` straight into the
+ * component's initial state. Survives reloads because the route stays installed.
+ */
+function patchThemeIntoHtml(html: string, theme: Theme): string {
+  if (theme === 'dark') return html;
+  const anchor = "tab: 0, view: 'games'";
+  if (!html.includes(anchor)) {
+    throw new Error("prototype: could not find the initial-state anchor to seed the light theme — the spec's script block changed");
+  }
+  return html.replace(anchor, `tab: 0, theme: 'light', view: 'games'`);
+}
+
+/**
+ * Open the prototype in a fresh page, in the given theme, with React served from the workspace
+ * (not unpkg), and wait for the dc-runtime to render.
+ */
+export async function openPrototype(browser: Browser, theme: Theme = 'dark'): Promise<Page> {
+  const react = readFileSync(REACT_UMD());
+  const reactDom = readFileSync(REACT_DOM_UMD());
+  const html = patchThemeIntoHtml(readFileSync(PROTOTYPE_HTML, 'utf8'), theme);
+
+  const page = await browser.newPage({
+    viewport: VIEWPORT,
+    deviceScaleFactor: DEVICE_SCALE_FACTOR,
+  });
+
+  // tsx/esbuild compiles page.evaluate() callbacks with `keepNames`, which emits `__name(...)`
+  // calls that don't exist in the browser. Polyfill it as identity so any evaluate body works.
+  await page.addInitScript(() => {
+    // @ts-expect-error - injected shim
+    window.__name = window.__name || ((fn: unknown) => fn);
+  });
+
+  await page.route(PROTOTYPE_URL, (r) => r.fulfill({ body: html, contentType: 'text/html; charset=utf-8' }));
+  await page.route(/unpkg\.com\/react@[\d.]+\/umd\/react\.production\.min\.js/, (r) =>
+    r.fulfill({ body: react, contentType: 'application/javascript' }),
+  );
+  await page.route(/unpkg\.com\/react-dom@[\d.]+\/umd\/react-dom\.production\.min\.js/, (r) =>
+    r.fulfill({ body: reactDom, contentType: 'application/javascript' }),
+  );
+
+  const failures: string[] = [];
+  page.on('pageerror', (e) => failures.push(e.message));
+
+  await page.goto(PROTOTYPE_URL, { waitUntil: 'load', timeout: 30_000 });
+  await page.waitForSelector('[data-rc-scroll]', { timeout: 15_000 }).catch(() => {
+    throw new Error(
+      `prototype did not render (no [data-rc-scroll]).${failures.length ? ' pageerrors: ' + failures.join(' | ') : ''}`,
+    );
+  });
+  await tagScreenElement(page);
+  await page.waitForTimeout(600); // fonts + first paint settle
+  return page;
+}
+
+/**
+ * The prototype renders inside a phone-bezel mockup. Tag the inner "screen" element (the
+ * `width:390px; border-radius:52px; overflow:hidden` div that also declares the `--rc-*` custom
+ * properties) so captures can clip to it and drop the bezel.
+ */
+async function tagScreenElement(page: Page): Promise<void> {
+  const tagged = await page.evaluate(() => {
+    const el = Array.from(document.querySelectorAll<HTMLElement>('div')).find((d) => {
+      const cs = getComputedStyle(d);
+      return (
+        cs.borderTopLeftRadius === '52px' &&
+        cs.overflow === 'hidden' &&
+        Math.round(d.getBoundingClientRect().width) === 390
+      );
+    });
+    if (el) {
+      el.id = '__df_screen';
+      return true;
+    }
+    return false;
+  });
+  if (!tagged) throw new Error('prototype: could not locate the phone-screen element to clip to');
+  await page.waitForSelector('#__df_screen', { timeout: 5_000 });
+}
+
+export const SCREEN_CLIP = '#__df_screen';
+
+/**
+ * Insets to strip from the prototype's phone-screen when capturing, so a diff compares the app
+ * UI only. Measured from the running prototype (`src` positions, CSS px, screen-relative):
+ *   - fake iOS status bar ("01:06 · 5G · battery") occupies y 0–37 → strip the top 44
+ *   - fake in-app browser URL bar ("…run.app — Private") occupies y 776–840 → strip the bottom 64
+ * The real app renders neither. Everything between (header, content, bottom nav) is kept.
+ */
+export const CAPTURE_INSET = { top: 44, bottom: 64 } as const;
+
+/** The screen-content clip rect in page coordinates (status bar + URL bar removed). */
+async function captureClip(page: Page): Promise<{ x: number; y: number; width: number; height: number }> {
+  const box = await page.locator(SCREEN_CLIP).boundingBox();
+  if (!box) throw new Error('prototype: #__df_screen has no bounding box');
+  return {
+    x: box.x,
+    y: box.y + CAPTURE_INSET.top,
+    width: box.width,
+    height: box.height - CAPTURE_INSET.top - CAPTURE_INSET.bottom,
+  };
+}
+
+/** Reload to the default state (cheaper and more reliable than unwinding overlays). Theme sticks
+ *  because the HTML route stays installed. */
+export async function resetPrototype(page: Page): Promise<void> {
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForSelector('[data-rc-scroll]', { timeout: 15_000 });
+  await tagScreenElement(page);
+  await page.waitForTimeout(600);
+}
+
+export async function captureScreen(page: Page, screen: ScreenDef): Promise<Buffer> {
+  await screen.driveProto(page);
+  await page.waitForTimeout(250);
+  return page.screenshot({ clip: await captureClip(page), animations: 'disabled', caret: 'hide' });
+}

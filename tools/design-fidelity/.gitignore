@@ -1,0 +1,6 @@
+# Generated on every run, never committed.
+captures/
+diffs/
+
+# references/ IS committed — the stable prototype reference set every rebuild diffs against.
+# Regenerate with `pnpm capture:prototype` when the prototype export changes.

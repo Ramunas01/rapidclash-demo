@@ -1,0 +1,24 @@
+{
+  "name": "@rapidclash/design-fidelity",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Demo/dev-only (ADR-010): screenshot-diff harness that measures how close a built screen is to design/prototype/RapidClash Full Spec.html, in both themes. Not shipped.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "capture:prototype": "tsx src/cli.ts capture-prototype",
+    "diff": "tsx src/cli.ts diff",
+    "report": "tsx src/cli.ts report"
+  },
+  "dependencies": {
+    "pixelmatch": "^6.0.0",
+    "playwright-core": "^1.62.0",
+    "pngjs": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/pngjs": "^6.0.5",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4"
+  }
+}
