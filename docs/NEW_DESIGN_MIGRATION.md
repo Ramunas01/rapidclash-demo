@@ -27,6 +27,31 @@ arbitrate. For this migration the Advisor/PM split collapses into **scoping+sani
 - PRs #456 / #457 / #458 were merged directly by the Advisor under Owner direction on 2026-09-09 —
   a one-time exception; the PM holds merge from here.
 
+## Currency presentation (Owner-approved 2026-09-09) — `CHARTER.md` #4
+
+The registered/investor demo drops the `¢` credit glyph and presents a **`$` symbol plus a
+cosmetic multi-currency wallet skin** (the prototype's `curOpen` picker — USD + SOL/BTC/USDT/
+ETH/LTC/USDC/XRP, with a fiat/crypto display toggle). **This is presentation only:**
+
+- The ledger, protocol, schema and stored values stay **plain integer demo credits** — exactly
+  what `apps/web/src/format.ts`'s own header already says. No FX math, no conversion, no rail,
+  no cash-out, no real value. The picker just changes which icon/format wraps the same integer;
+  per-currency balances are mock display strings (as in the prototype), not derived from one
+  number.
+- **Stakes are a fixed 6-rung `$` ladder — $1 / $5 / $10 / $25 / $50 / $100** (the prototype's
+  `STAKES` set; its bet selector is literally `/ 6`). This replaces today's free-typed stake
+  entry (`StakeEntry.tsx`) and is a real matchmaking improvement, not just a reskin — free-typed
+  stakes fragment the pairing pool today. **Size it as its own workstream**, with a shared
+  `STAKE_LADDER` constant + matchmaking/validation changes, not folded into a screen rebuild.
+- **Guest mode is unchanged** — stays `¢` / play-money-framed (a Board condition, `CHARTER.md`
+  line 32). `format.ts` / `<Credits>` keep working for the guest surface; the registered app
+  gets the `$` skin alongside, not instead.
+- The `~8 "no $" tests` (`RouletteHub.test`, `Wallet.test`'s `not.toMatch(/deposit|crypto/)`,
+  `ProfileHub.test` "no $ anywhere", …) flip **organically** as the rebuild PRs touch those
+  screens — no separate pass.
+- Owners are aware of the framing implications of showing a crypto-styled skin externally
+  (Owner confirmed 2026-09-09).
+
 ## Before anything else — three things to resolve, not work around
 
 1. **DONE — landed on `main`.** `design/prototype/` (131 files: HTML + 119 `assets/` incl. `assets/export/`'s 14 webp tiles + `image-slot.js`/`support.js` + README + 8 screenshots) merged via **PR #458** (2026-09-09, squash `68fb896`). Plain commit, ~37.7 MB — git-lfs was offered and not taken. Asset triage (the ~61 unreferenced exploration PNGs) is a pending mechanical follow-up.
@@ -186,6 +211,7 @@ Supersedes the loose "sizing candidates" list. Phases 1→3 are sequential; Phas
 ### After the plan — sequenced, not yet scheduled
 These are scoped in their own sections/comms docs and sequence *after* the harness exists:
 - **rps / mines / dice** full screen rebuilds — the only 3 games needing new screens.
+- **Currency skin + fixed stake ladder** — `$`/multi-currency wallet skin (cosmetic) + the 6-rung `$1–$100` `STAKE_LADDER` replacing free-typed stake entry. See "Currency presentation" above. The stake-ladder half touches the core/matchmaking, size it separately from the skin.
 - **Shared chrome + light theme rollout** platform-wide (`light-theme-rollout.md`) — the single biggest item; likely its own iteration. Carries the 6 chrome-only hubs and the interim Coinflip/Blackjack/Chess dark-region override with it.
 - **Chat** — full UI + `ChatTransport` local impl + server-checked kill switch (`chat-local-transport.md`).
 - **Auth modal** replacement — `referral` field stays cosmetic/session-local (resolved).
@@ -194,8 +220,8 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 
 ## Status snapshot (2026-09-09)
 
-- `main` = `68fb896`. Merged today: prototype export (#458), Ships Battle removal (#457), deploy record (#456).
-- **Phase 1 — DONE.** Phase 4 Search/Sort — RESOLVED. Content corrections — RESOLVED.
+- Merged 2026-09-09: prototype export (#458), Ships Battle removal (#457), deploy record (#456), migration tracker + PM brief (#460), PM role acknowledgment (#461).
+- **Phase 1 — DONE.** Phase 4 Search/Sort — RESOLVED. Content corrections — RESOLVED. Currency skin — Owner-approved, see "Currency presentation".
 - **Phase 2 — IN PROGRESS**, draft PR #459 (harness foundation working; clip/status-bar refinement + app-side + one worked screen remain).
 - **Blocked on Designer:** the 6 questions in `TO-designer-harness-and-hero.md` (fidelity bar, viewport, RANDOM, banner, rps/mines/dice finality).
 - **Pending mechanical:** prototype asset triage (~61 unreferenced PNGs).
