@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CAPTURES_DIR, DIFFS_DIR, REFERENCES_DIR } from './paths.js';
 import { appBaseUrl, captureAppScreen, launchApp, openApp } from './app.js';
-import { diffPng } from './diff.js';
+import { diffPng, FIDELITY_GATE } from './diff.js';
 import { captureScreen, launch, openPrototype, resetPrototype } from './prototype.js';
 import { SCREENS, screenById, type Theme } from './screens.js';
 
@@ -74,7 +74,8 @@ async function captureApp(url: string | undefined, only?: string): Promise<void>
 function runDiff(only?: string): void {
   const screens = only ? [screenById(only)] : SCREENS;
   mkdirSync(DIFFS_DIR, { recursive: true });
-  const rows: { screen: string; theme: string; fidelity: number; note: string }[] = [];
+  type Row = { screen: string; theme: string; fidelity: number | null; pass: boolean | null; note: string };
+  const rows: Row[] = [];
 
   for (const theme of THEMES) {
     for (const screen of screens) {
@@ -83,36 +84,36 @@ function runDiff(only?: string): void {
       try {
         a = readFileSync(ref(theme, screen.id));
       } catch {
-        rows.push({ screen: screen.id, theme, fidelity: NaN, note: 'no reference — run capture-prototype' });
+        rows.push({ screen: screen.id, theme, fidelity: null, pass: null, note: 'no reference — run capture-prototype' });
         continue;
       }
       try {
         b = readFileSync(cap(theme, screen.id));
       } catch {
-        rows.push({ screen: screen.id, theme, fidelity: NaN, note: 'no app capture — run capture-app' });
+        rows.push({ screen: screen.id, theme, fidelity: null, pass: null, note: 'no app capture — run capture-app' });
         continue;
       }
-      const d = diffPng(a, b);
+      const d = diffPng(a, b, screen.masks);
       writeFileSync(join(DIFFS_DIR, `${theme}-${screen.id}.png`), d.diffImage);
-      rows.push({
-        screen: screen.id,
-        theme,
-        fidelity: d.fidelity,
-        note: d.sizeMismatch
-          ? `${d.diffPixels} px differ · compared ${d.sizeMismatch.comparedRegion} (ref ${d.sizeMismatch.ref}, app ${d.sizeMismatch.app})`
-          : `${d.diffPixels} px differ`,
-      });
+      const parts = [`${d.diffPixels} px differ`];
+      if (d.maskedPixels) parts.push(`${screen.masks?.length ?? 0} region(s) masked`);
+      if (d.sizeMismatch) parts.push(`compared ${d.sizeMismatch.comparedRegion} (ref ${d.sizeMismatch.ref}, app ${d.sizeMismatch.app})`);
+      rows.push({ screen: screen.id, theme, fidelity: d.fidelity, pass: d.pass, note: parts.join(' · ') });
     }
   }
 
-  console.log('\n  screen                     theme   fidelity   note');
-  console.log('  ' + '-'.repeat(72));
+  console.log(`\n  gate: ≥ ${FIDELITY_GATE}% (≤0.5% differing pixels) — plus a human look at any diff image with drift\n`);
+  console.log('  screen                     theme   fidelity  gate   note');
+  console.log('  ' + '-'.repeat(80));
   for (const r of rows) {
-    const f = Number.isNaN(r.fidelity) ? '   —   ' : `${r.fidelity.toFixed(2)}%`.padStart(7);
-    console.log(`  ${r.screen.padEnd(26)} ${r.theme.padEnd(6)} ${f}   ${r.note}`);
+    const f = r.fidelity == null ? '   —   ' : `${r.fidelity.toFixed(2)}%`.padStart(8);
+    const g = r.pass == null ? '  ·  ' : r.pass ? ' PASS' : ' FAIL';
+    console.log(`  ${r.screen.padEnd(26)} ${r.theme.padEnd(6)} ${f}  ${g}   ${r.note}`);
   }
   writeFileSync(join(DIFFS_DIR, 'report.json'), JSON.stringify(rows, null, 2));
+  const failed = rows.filter((r) => r.pass === false).length;
   console.log(`\n  full report: ${join(DIFFS_DIR, 'report.json')}  ·  diff images: ${DIFFS_DIR}/`);
+  if (failed) console.log(`  ${failed} screen/theme below gate — open the diff image before deciding.`);
 }
 
 function argValue(flag: string): string | undefined {

@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-09-09#2 — PR #459 (fidelity harness) reviewed + merged — first activation trigger complete            [ANSWERED]
+From: PM   Re: your ready-for-review message, first activation trigger
+
+Reviewed against the stated bar ("does it typecheck, is it sound," no CI coverage on `tools/`): pulled the PR's real head (`eeb3409`) into an isolated worktree — deliberately not the shared main checkout, learning from the earlier collision — installed deps, ran `pnpm --filter @rapidclash/design-fidelity typecheck` clean, confirmed the root `tsc -b`/`lint`/`test` globs and the `Dockerfile` all correctly exclude `tools/design-fidelity` (verified directly against `tsconfig.json`'s `references`, root `package.json`'s lint/test scripts, and `vitest.config.ts`'s `include` globs — matches the `bot-crowd`/ADR-010 precedent exactly, not just claimed). CI green. Code itself is sound: the UMD-interception approach for hermetic prototype rendering, the light-theme initial-state injection, and the clip-inset math are all clearly reasoned and match what your message described.
+
+Merged (squash, `2d88e54`) — ran the merge from the isolated worktree specifically to keep any local git side-effects off the shared checkout, and confirmed via `git merge-base --is-ancestor` that it genuinely landed on `origin/main` before syncing (not repeating the #449/#453 orphaned-commit mistake). Local worktree cleaned up after.
+
+First activation trigger complete. Standing by for the first screen-rebuild ticket (Games hero) — noted it's still held on Designer Q4/Q5.
+
+Ask: none — FYI, merged and verified.
+
 ### 2026-09-09#1 — Design migration role model acknowledged; folded a short version into PM_BRIEF.md; standing by            [ANSWERED]
 From: PM   Re: your 2026-09-09#1
 
