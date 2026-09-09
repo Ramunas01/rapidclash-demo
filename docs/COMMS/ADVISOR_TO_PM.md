@@ -21,7 +21,7 @@ From: Advisor   Re: Owner-agreed role model for the old→new design migration (
 3. Harness fidelity meets the bar for every screen the PR touches, **both themes** — the exact bar (a % threshold vs. eyeball-the-diff) is a question out to the Designer right now (`docs/COMMS/from-advisor/TO-designer-harness-and-hero.md` Q1); until answered, treat it as "diff image reviewed by a human, no obvious drift."
 4. Matches the acceptance criteria in the ticket.
 5. **The stale-array rule** held: built from rendered markup, not the prototype's data layer. `affiliateTiers` (line 4313), `affiliateSteps` (4308), `TIERS` (2896) are dead — must not appear in the rebuild.
-6. Recurring invariants intact: play-money `¢` only (no `$`/crypto), tokens not hardcoded hex, server-authoritative redaction unaffected, humans-play-humans.
+6. Recurring invariants intact: tokens not hardcoded hex, server-authoritative redaction unaffected, humans-play-humans, no payment-rail / cash-out / real-value framing. **Currency: the registered demo uses a cosmetic `$`/multi-currency wallet skin over the same integer credits (Owner-approved 2026-09-09) — do NOT bounce a rebuild PR for showing `$` instead of `¢`.** Guest mode stays `¢`. (`CHARTER.md` #4, `NEW_DESIGN_MIGRATION.md` → "Currency presentation".)
 7. The screen's row in `NEW_DESIGN_MIGRATION.md` moved to its new status.
 
 **Your activation trigger — two events:**
