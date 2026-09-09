@@ -1,6 +1,6 @@
 # Gated demo-taker VM setup (plan-B)
 
-A small, **always-on** Google Cloud VM that runs `tools/bot-crowd` in its **gated** mode: for each curated game it stands up one allowlist-gated **taker** plus a **weighted resting pool** (`gameId:N` in `TAKER_ONLY_GAMES`, issue #393 — `N` resters per game, default 1 if omitted), currently 32 bots across all 12 non-Ships-Battle games. Any self-registered account whose name starts with `Demo` (e.g. `DemoAcme`, `DemoGM`) gets a near-instant, honestly-labelled `🤖` opponent at almost any stake, any time of day — no VM start/stop, no Owner action needed once it's running. Project: **`rapidclash-demotaker`**.
+A small, **always-on** Google Cloud VM that runs `tools/bot-crowd` in its **gated** mode: for each curated game it stands up one allowlist-gated **taker** plus a **weighted resting pool** (`gameId:N` in `TAKER_ONLY_GAMES`, issue #393 — `N` resters per game, default 1 if omitted), currently 32 bots across all 12 games. Any self-registered account whose name starts with `Demo` (e.g. `DemoAcme`, `DemoGM`) gets a near-instant, honestly-labelled `🤖` opponent at almost any stake, any time of day — no VM start/stop, no Owner action needed once it's running. Project: **`rapidclash-demotaker`**.
 
 **Standing policy (confirmed with the Owner): leave this VM running always. Do not stop it between demos.** It replaced the old start-before/stop-after plan-B — see §8.
 

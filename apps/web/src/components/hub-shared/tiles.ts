@@ -24,12 +24,6 @@ export const TILE_ART: Record<string, string> = {
  *  never shown in house form, never a playable house route (invariant #1). */
 export const COMING_SOON = ['baccarat', 'keno', 'hilo', 'dice', 'roulette'];
 
-/** Live games kept off the demo home grid until they have tile art — they'd otherwise fall
- *  back to the black gradient placeholder and look broken (#148). They stay registered and
- *  route-reachable; this is presentation-only (same "needs art before it's shown" rule as #99).
- *  NOT coming-soon — these are live. */
-export const HIDDEN_ON_HOME = new Set(['ships-battle']);
-
 export function titleCase(id: string): string {
   return id.charAt(0).toUpperCase() + id.slice(1);
 }

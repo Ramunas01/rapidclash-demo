@@ -129,7 +129,7 @@ const GATED_ROSTER_NAMES = [
 ] as const;
 
 /**
- * Roster: 26 bots, all 🤖-prefixed — per live game (coinflip, rps, chess, blackjack, mines, crash, roulette, ships-battle, dice, baccarat, keno, limbo, hilo):
+ * Roster: 24 bots, all 🤖-prefixed — per live game (coinflip, rps, chess, blackjack, mines, crash, roulette, dice, baccarat, keno, limbo, hilo):
  *   • 1 RESTER at a random stake (STAKE_SET, chosen at startup) — a stable, joinable open
  *     challenge for a human; a single bot per game can never self-pair (no bot-vs-bot); and
  *   • 1 TAKER that claims only HUMAN-posted challenges (never a bot's), giving a human who
@@ -142,10 +142,9 @@ const GATED_ROSTER_NAMES = [
  * delay keeps the bots well inside the 5–10s windows. Two exceptions: Crash (continuous, turn-less)
  * pre-sets a RANDOM auto-eject during SETUP (never taps the pad); and Roulette, where a random move
  * would fiddle chips forever, so its bot uses a full-stack policy (all-in on a random even-money
- * colour, then lock) — see `rouletteMove` in bot.ts. And Ships Battle, whose bot auto-places its
- * fleet (the `auto` move) then fires random un-probed squares — see `shipsBattleMove` in bot.ts.
+ * colour, then lock) — see `rouletteMove` in bot.ts.
  *
- * NOTE: the crash/roulette/ships-battle bots only resolve via real human JOINs (no bot-vs-bot), same as the rest.
+ * NOTE: the crash/roulette bots only resolve via real human JOINs (no bot-vs-bot), same as the rest.
  *
  * Gated mode (TAKER_ONLY_GAMES set, issue #361; weighted resters, issue #393) is built the same
  * "one BotConfig entry per identity" way — each game gets 1 taker + `weight` resters, each rester
@@ -231,7 +230,6 @@ export const ROSTER: BotConfig[] = takerOnlyGames.length
   { name: `${BOT_PREFIX}@sweeper`, gameId: 'mines', stake: randStake(), policy: 'rester' },
   { name: `${BOT_PREFIX}@rocketman`, gameId: 'crash', stake: randStake(), policy: 'rester' },
   { name: `${BOT_PREFIX}@redblack`, gameId: 'roulette', stake: randStake(), policy: 'rester' },
-  { name: `${BOT_PREFIX}@goldrush`, gameId: 'ships-battle', stake: randStake(), policy: 'rester' },
   { name: `${BOT_PREFIX}@sixsided`, gameId: 'dice', stake: randStake(), policy: 'rester' },
   { name: `${BOT_PREFIX}@punto`, gameId: 'baccarat', stake: randStake(), policy: 'rester' },
   { name: `${BOT_PREFIX}@luckyseven`, gameId: 'keno', stake: randStake(), policy: 'rester' },
@@ -245,7 +243,6 @@ export const ROSTER: BotConfig[] = takerOnlyGames.length
   { name: `${BOT_PREFIX}@lowball`, gameId: 'mines', stake: 5, policy: 'taker' },
   { name: `${BOT_PREFIX}@zerospin`, gameId: 'crash', stake: 5, policy: 'taker' },
   { name: `${BOT_PREFIX}@dealerdan`, gameId: 'roulette', stake: 5, policy: 'taker' },
-  { name: `${BOT_PREFIX}@overshoot`, gameId: 'ships-battle', stake: 5, policy: 'taker' },
   { name: `${BOT_PREFIX}@rollone`, gameId: 'dice', stake: 5, policy: 'taker' },
   { name: `${BOT_PREFIX}@banco`, gameId: 'baccarat', stake: 5, policy: 'taker' },
   { name: `${BOT_PREFIX}@ninehundred`, gameId: 'keno', stake: 5, policy: 'taker' },
@@ -277,7 +274,6 @@ function num(envName: string, fallback: number): number {
  *   mines         5s per move (mines/board.ts MOVE_TIMEOUT_MS)                   1-3s
  *   keno          20s pick clock (keno/draw.ts PICK_TIMEOUT_MS)                  3-8s
  *   roulette      30s betting window (roulette/wheel.ts BETTING_TIMEOUT_MS)      3-8s
- *   ships-battle  60s placement / 20s per shot (fleet.ts)                        2-6s
  *   chess         cumulative rapid10 clock (chess.ts CHESS_TIME_CONTROL)         1-5s
  *   dice          no timer; single confirm/reveal (meta.averageDurationSec 5)    1.5-4s
  *   baccarat      no timer; single confirm/reveal (meta.averageDurationSec 5)    1.5-4s
@@ -315,7 +311,6 @@ export const MOVE_DELAY_RANGES: Readonly<Record<string, readonly [number, number
   mines: [1_000, 3_000],
   keno: [3_000, 8_000],
   roulette: [3_000, 8_000],
-  'ships-battle': [2_000, 6_000],
   chess: [1_000, 5_000],
   dice: [1_500, 4_000],
   baccarat: [1_500, 4_000],

@@ -49,7 +49,7 @@ describe('recordMatchSettlement — per-player XP + rakeback accrual', () => {
     expect(snap.wageredLifetime).toBe(100);
   });
 
-  it('at 10% rake (Chess/Ships-Battle), a 100 RC win credits proportionally more XP', () => {
+  it('at 10% rake (the Chess rate), a 100 RC win credits proportionally more XP', () => {
     const { rewards, ledger } = setup();
     ledger.grant('alice');
     rewards.recordMatchSettlement('alice', 100, 0.1, 'win');

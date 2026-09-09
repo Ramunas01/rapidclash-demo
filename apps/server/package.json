@@ -24,7 +24,6 @@
     "@rapidclash/game-keno": "workspace:*",
     "@rapidclash/game-limbo": "workspace:*",
     "@rapidclash/game-hilo": "workspace:*",
-    "@rapidclash/game-ships-battle": "workspace:*",
     "@rapidclash/game-dice": "workspace:*",
     "@rapidclash/game-baccarat": "workspace:*",
     "@rapidclash/game-rps": "workspace:*",

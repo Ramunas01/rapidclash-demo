@@ -236,9 +236,10 @@ describe('HomeHubScreen — Bring a Rival banner (#301)', () => {
 });
 
 describe('HomeHubScreen — no-art game handling (#148)', () => {
-  // A live roster that includes Limbo (now has approved art) and Ships Battle (live, no art).
+  // A live roster including Limbo, whose art was approved in #148 — it must render as designed
+  // art, never the gradient-name fallback.
   const GAMES_148: GameMeta[] = [
-    META('coinflip', 'Coinflip'), META('limbo', 'Limbo'), META('ships-battle', 'Ships Battle'),
+    META('coinflip', 'Coinflip'), META('limbo', 'Limbo'),
   ];
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
@@ -261,19 +262,13 @@ describe('HomeHubScreen — no-art game handling (#148)', () => {
     expect(screen.queryByTestId('home-coming-soon-limbo')).toBeNull();
   });
 
-  it('Ships Battle is hidden from the grid but stays live & reachable (still loaded + subscribed)', async () => {
+  it('every live game is tracked for the cross-game challenge ticker', async () => {
     const onTrackChallenges = vi.fn();
     render(<HomeHubScreen {...baseProps({ onTrackChallenges })} />);
     await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
 
-    // Absent from the home grid — neither a playable tile nor a (mislabeled) coming-soon one.
-    expect(screen.queryByTestId('home-tile-ships-battle')).toBeNull();
-    expect(screen.queryByTestId('home-coming-soon-ships-battle')).toBeNull();
-
-    // Registration/reachability unaffected: it's still in the loaded /games set and subscribed
-    // for the cross-game ticker (HIDDEN_ON_HOME only suppresses the grid tile, not the route).
     await waitFor(() => expect(onTrackChallenges).toHaveBeenCalled());
-    expect(onTrackChallenges).toHaveBeenCalledWith(expect.arrayContaining(['ships-battle']));
+    expect(onTrackChallenges).toHaveBeenCalledWith(expect.arrayContaining(['coinflip', 'limbo']));
   });
 });
 

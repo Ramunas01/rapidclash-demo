@@ -53,7 +53,6 @@ describe('MOVE_DELAY_RANGES — the table itself', () => {
       mines: 5_000, // mines/board.ts MOVE_TIMEOUT_MS
       keno: 20_000, // keno/draw.ts PICK_TIMEOUT_MS
       roulette: 30_000, // roulette/wheel.ts BETTING_TIMEOUT_MS
-      'ships-battle': 20_000, // fleet.ts SHOT_TIMEOUT_MS (the tighter of its two phases)
       crash: 3_000, // curve.ts CRASH_CONFIG.setupMs — the SETUP window, a HARD ceiling
       hilo: 30_000, // hilo/deck.ts MATCH_CAP_MS (whole-match cap, not per-move)
     };

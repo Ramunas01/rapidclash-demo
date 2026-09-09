@@ -20,7 +20,6 @@ import { RpsHubScreen } from './screens/RpsHub.js';
 import { BlackjackHubScreen } from './screens/BlackjackHub.js';
 import { MinesHubScreen } from './screens/MinesHub.js';
 import { RouletteHubScreen } from './screens/RouletteHub.js';
-import { ShipsBattleHubScreen } from './screens/ShipsBattleHub.js';
 import { DiceHubScreen } from './screens/DiceHub.js';
 import { BaccaratHubScreen } from './screens/BaccaratHub.js';
 import { KenoHubScreen } from './screens/KenoHub.js';
@@ -37,7 +36,7 @@ import { AuthModal } from './components/AuthModal.js';
 import { api } from './api.js';
 import { GuestGamePicker } from './screens/GuestGamePicker.js';
 
-type Screen = 'auth' | 'home' | 'profile' | 'preferences' | 'affiliate' | 'rewards' | 'wallet' | 'game-list' | 'guest-loading' | 'guest-picker' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub' | 'crash-hub' | 'roulette-hub' | 'ships-battle-hub' | 'dice-hub' | 'baccarat-hub' | 'keno-hub' | 'limbo-hub' | 'hilo-hub';
+type Screen = 'auth' | 'home' | 'profile' | 'preferences' | 'affiliate' | 'rewards' | 'wallet' | 'game-list' | 'guest-loading' | 'guest-picker' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub' | 'crash-hub' | 'roulette-hub' | 'dice-hub' | 'baccarat-hub' | 'keno-hub' | 'limbo-hub' | 'hilo-hub';
 
 /** A commit-to-play action captured when a logged-out visitor hits the auth wall. After sign-in
  *  the user lands on the intent's hub with the stake armed and presses PLAY to commit — nothing
@@ -50,11 +49,11 @@ const RECONNECT_NOTICE = 'Connection lost — reconnecting. Try again in a momen
 
 /** Games that play through the shared one-screen Game hub (vs the multi-screen flow).
  *  Each maps to a `<gameId>-hub` screen. Adding a game here wires it to the hub. */
-const HUB_GAMES = new Set(['coinflip', 'rps', 'blackjack', 'mines', 'chess', 'crash', 'roulette', 'ships-battle', 'dice', 'baccarat', 'keno', 'limbo', 'hilo']);
+const HUB_GAMES = new Set(['coinflip', 'rps', 'blackjack', 'mines', 'chess', 'crash', 'roulette', 'dice', 'baccarat', 'keno', 'limbo', 'hilo']);
 const hubScreenFor = (gameId: string | null | undefined): Screen | null =>
   gameId && HUB_GAMES.has(gameId) ? (`${gameId}-hub` as Screen) : null;
 const isGameHubScreen = (s: Screen): boolean =>
-  s === 'coinflip-hub' || s === 'rps-hub' || s === 'blackjack-hub' || s === 'mines-hub' || s === 'chess-hub' || s === 'crash-hub' || s === 'roulette-hub' || s === 'ships-battle-hub' || s === 'dice-hub' || s === 'baccarat-hub' || s === 'keno-hub' || s === 'limbo-hub' || s === 'hilo-hub';
+  s === 'coinflip-hub' || s === 'rps-hub' || s === 'blackjack-hub' || s === 'mines-hub' || s === 'chess-hub' || s === 'crash-hub' || s === 'roulette-hub' || s === 'dice-hub' || s === 'baccarat-hub' || s === 'keno-hub' || s === 'limbo-hub' || s === 'hilo-hub';
 
 export interface RpsView {
   players: [string, string];
@@ -283,27 +282,6 @@ export interface HiloView {
   seed?: number;
 }
 
-/** One player's board in the redacted Ships Battle view. Own board: full (ships + current build +
- *  incoming shots). Opponent board: only my probes (`shots`) + revealed SUNK ships (`ships`). */
-export interface ShipsBoardView {
-  ships: number[][];
-  current: number[];
-  placementDone: boolean;
-  shots: Record<number, 'hit' | 'miss'>;
-  sunk: number[];
-}
-export interface ShipsBattleView {
-  players: [string, string];
-  phase: 'placement' | 'shooting';
-  placementStartedAt: number;
-  turn: string | null;
-  turnStartedAt: number;
-  boards: Record<string, ShipsBoardView>;
-  seed?: number;
-  winner?: string;
-  forcedOutcome?: { type: string };
-}
-
 /** Redacted Dice view (independent-roll). Pre-terminal carries only the public scaffolding; the
  *  rolls + seeds appear only in `result`/`seeds` at the simultaneous reveal (terminal). */
 export interface DiceView {
@@ -335,7 +313,7 @@ export interface BaccaratView {
 
 /** A per-game redacted view as it arrives from the server. The active game (and so
  *  which screen renders it) is tracked separately in `activeGameId`. */
-export type GameView = RpsView | CoinflipView | ChessView | BlackjackView | MinesView | CrashView | RouletteView | ShipsBattleView | DiceView | BaccaratView | KenoView | LimboView | HiloView;
+export type GameView = RpsView | CoinflipView | ChessView | BlackjackView | MinesView | CrashView | RouletteView | DiceView | BaccaratView | KenoView | LimboView | HiloView;
 
 /** Coerce a persisted avatar id back to a valid AvatarId (defensive — an old/edited store could
  *  carry anything). Defaults to `'default'`. Kept local so App has no runtime dep on the enum list. */
@@ -1216,7 +1194,6 @@ export function App() {
       case 'chess-hub':
       case 'crash-hub':
       case 'roulette-hub':
-      case 'ships-battle-hub':
       case 'dice-hub':
       case 'baccarat-hub':
       case 'keno-hub':
@@ -1235,19 +1212,17 @@ export function App() {
                     ? CrashHubScreen
                     : screen === 'roulette-hub'
                       ? RouletteHubScreen
-                      : screen === 'ships-battle-hub'
-                        ? ShipsBattleHubScreen
-                        : screen === 'dice-hub'
-                          ? DiceHubScreen
-                          : screen === 'baccarat-hub'
-                            ? BaccaratHubScreen
-                            : screen === 'keno-hub'
-                              ? KenoHubScreen
-                              : screen === 'limbo-hub'
-                                ? LimboHubScreen
-                                : screen === 'hilo-hub'
-                                  ? HiloHubScreen
-                                  : CoinflipHubScreen;
+                      : screen === 'dice-hub'
+                        ? DiceHubScreen
+                        : screen === 'baccarat-hub'
+                          ? BaccaratHubScreen
+                          : screen === 'keno-hub'
+                            ? KenoHubScreen
+                            : screen === 'limbo-hub'
+                              ? LimboHubScreen
+                              : screen === 'hilo-hub'
+                                ? HiloHubScreen
+                                : CoinflipHubScreen;
         return <HubScreen
           token={token ?? ''}
           playerId={playerId}
