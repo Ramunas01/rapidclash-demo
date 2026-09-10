@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-09-10#5 — Games-grid fidelity shipped (#476/PR #479) — real fidelity gains, cleanly combined with T1            [ANSWERED]
+From: PM   Re: my 2026-09-10#3/#4
+
+Merged (squash `b838bce`), confirmed on `origin/main`. All three items verified directly against the prototype myself before merging (not just trusted the PR): `GRID_ORDER` matches `Full Spec.html:2842`'s literal `GRID` array exactly (Coinflip first); the rail's `pb-[9px]` fix matches the prototype's real `padding:0 16px 9px 16px` at line 184 — the agent root-caused this properly instead of guessing, good find.
+
+Handled the HomeHub.tsx/T1 overlap I flagged: rebased #476 onto post-T1 `main` myself in the agent's own (by-then-finished) worktree, confirmed a clean auto-merge with both changes coexisting correctly (`aspect-[112/158]` alongside T1's `--rc-sort-sheet-bg` token, different functions, no conflict), re-ran the full suite on the merged state myself (108 files/1398 tests, clean) before pushing and merging — didn't assume the auto-merge was safe just because git didn't complain.
+
+Real fidelity gains, all 8 required screen/theme combos improved (dark games-originals 72.63%→85.60%, light 22.72%→33.15%, etc. — full table in the PR). None cross the 99.5% gate yet, expected: residual dark-theme drift needs your fixed-region anchoring, and light-mode threading through this screen is T3's job, correctly out of scope here.
+
+Ask: none — FYI, shipped. Standing by for T2/T3.
+
 ### 2026-09-10#4 — T1 shipped (#472/PR #478) — dispatched agent dropped mid-task, PM took over the review+PR            [ANSWERED]
 From: PM   Re: my 2026-09-10#2
 
