@@ -48,6 +48,10 @@ export interface ScreenDef {
   /** Also capture + diff the bottom-nav strip in isolation (`<screen>.nav.png`). The nav is
    *  shared chrome, so one screen carrying this is enough coverage for it. */
   capturesNav?: boolean;
+  /** Below-the-fold coverage (Designer Q3): capture the whole scrollable content as
+   *  `<screen>.frame0.png`, `.frame1.png`, … instead of just the above-the-fold `body` shot. Set
+   *  this on screens taller than one viewport (Rewards, Account) — see `scroll.ts`. */
+  scrollFrames?: boolean;
 }
 
 /** Bottom-nav helpers, shared across screens. The nav items are `<div role="button">` with a
@@ -144,12 +148,16 @@ export const SCREENS: ScreenDef[] = [
     id: 'rewards',
     title: 'Rewards / VIP — signed out',
     legacyShot: '05-rewards.png',
+    // Rewards is one of the long screens Designer Q3 asked for below-the-fold coverage on —
+    // `contentRegion`'s single header-to-nav frame never reaches most of the VIP-tier content.
+    scrollFrames: true,
     driveProto: async (page) => {
       await navTo(page, 'Rewards');
     },
     // No driveApp: the app gates RewardsHub behind auth (a signed-out Rewards tap opens the
-    // auth modal), so there's no signed-out Rewards screen to compare. Covered post-T3 when
-    // Rewards is captured signed-in.
+    // auth modal), so there's no signed-out Rewards screen to compare yet. `scrollFrames`
+    // coverage is ready and waiting — add `driveApp` here once T3b heavy rebuilds RewardsHub
+    // and it's reachable signed-in.
   },
   {
     id: 'account-login-sheet',

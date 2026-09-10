@@ -82,14 +82,23 @@ or set `DESIGN_FIDELITY_APP_URL` to a deployed preview.
   (`account-login-sheet`) is enough coverage.
 - **Size mismatch** — the header/nav-anchored regions still differ in height between the two
   sides; `diff` compares the shared top-left window and flags it.
+- **Below-the-fold coverage** (Designer Q3: "full page, captured in viewport-sized slices") is
+  separate from all of the above — a screen with `scrollFrames: true` skips anchor-cropping
+  entirely and instead scrolls its real content (`src/scroll.ts`), taking one raw, full-viewport
+  screenshot per scroll position: `<screen>.frame0.png`, `.frame1.png`, … The two sides scroll
+  differently under the hood (the prototype's phone-screen content scrolls inside
+  `[data-rc-scroll]`; the built app scrolls the real page `window`, since `HubRibbon`/`HubToolbar`
+  are sticky/fixed specifically so the body scrolls under them) — `scroll.ts` hides that behind
+  one call. Frame count isn't fixed; `diff` walks forward while either side has that index, so a
+  screen whose content grows doesn't need a hardcoded count anywhere. `rewards` carries
+  `scrollFrames: true` today with no `driveApp` yet — the reference frames are ready and diffed as
+  "no app capture" until RewardsHub is rebuilt and reachable to add one.
 
 ### Known limitations
 
 - **Residual vertical drift on the games screens** — measured (`NEW_DESIGN_MIGRATION.md`) to be
   real fidelity gaps (tile aspect ratio, spacing), not a harness artifact. Per-section anchoring
   would *hide* those, so it's deliberately not done. Read the diff image for vertical rhythm.
-- **No below-the-fold coverage** — Designer Q3's "whole page in viewport-sized scroll frames" is
-  a later harness PR; needed before Rewards / Account get rebuilt.
 - The number isn't a trustworthy pass/fail gate yet — the shared chrome + light theme still need
   to land across every screen.
 

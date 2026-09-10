@@ -12,6 +12,7 @@ import {
 } from './paths.js';
 import { armFreeze, settleFrozen } from './freeze.js';
 import { contentRegion, navRegion } from './region.js';
+import { captureScrollFrames } from './scroll.js';
 import type { ScreenDef, Theme } from './screens.js';
 
 export type { Theme };
@@ -122,6 +123,10 @@ export interface Capture {
   body: Buffer;
   /** The bottom-nav strip, when `screen.capturesNav` is set. */
   nav?: Buffer;
+  /** Below-the-fold, viewport-sized slices of the whole scrollable content, when
+   *  `screen.scrollFrames` is set. Replaces `body` as the thing actually diffed for that screen —
+   *  `body` is still captured too (cheap, keeps the header-to-nav single-frame check intact). */
+  frames?: Buffer[];
 }
 
 export async function captureScreen(page: Page, screen: ScreenDef): Promise<Capture> {
@@ -130,5 +135,6 @@ export async function captureScreen(page: Page, screen: ScreenDef): Promise<Capt
   const opts = { animations: 'disabled', caret: 'hide' } as const;
   const body = await page.screenshot({ clip: await contentRegion(page, 'prototype', screen.anchor), ...opts });
   const nav = screen.capturesNav ? await page.screenshot({ clip: await navRegion(page, 'prototype'), ...opts }) : undefined;
-  return { body, nav };
+  const frames = screen.scrollFrames ? await captureScrollFrames(page, 'prototype') : undefined;
+  return { body, nav, frames };
 }
