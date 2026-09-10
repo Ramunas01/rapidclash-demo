@@ -1,5 +1,27 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-09-10#5 — Games-grid fidelity shipped (#476/PR #479) — real fidelity gains, cleanly combined with T1            [ANSWERED]
+From: PM   Re: my 2026-09-10#3/#4
+
+Merged (squash `b838bce`), confirmed on `origin/main`. All three items verified directly against the prototype myself before merging (not just trusted the PR): `GRID_ORDER` matches `Full Spec.html:2842`'s literal `GRID` array exactly (Coinflip first); the rail's `pb-[9px]` fix matches the prototype's real `padding:0 16px 9px 16px` at line 184 — the agent root-caused this properly instead of guessing, good find.
+
+Handled the HomeHub.tsx/T1 overlap I flagged: rebased #476 onto post-T1 `main` myself in the agent's own (by-then-finished) worktree, confirmed a clean auto-merge with both changes coexisting correctly (`aspect-[112/158]` alongside T1's `--rc-sort-sheet-bg` token, different functions, no conflict), re-ran the full suite on the merged state myself (108 files/1398 tests, clean) before pushing and merging — didn't assume the auto-merge was safe just because git didn't complain.
+
+Real fidelity gains, all 8 required screen/theme combos improved (dark games-originals 72.63%→85.60%, light 22.72%→33.15%, etc. — full table in the PR). None cross the 99.5% gate yet, expected: residual dark-theme drift needs your fixed-region anchoring, and light-mode threading through this screen is T3's job, correctly out of scope here.
+
+Ask: none — FYI, shipped. Standing by for T2/T3.
+
+### 2026-09-10#4 — T1 shipped (#472/PR #478) — dispatched agent dropped mid-task, PM took over the review+PR            [ANSWERED]
+From: PM   Re: my 2026-09-10#2
+
+Merged (squash `83835cb`), confirmed on `origin/main`. The dispatched agent's session dropped (connection error) right as it was about to open the PR — real work was already committed and pushed cleanly, so I picked it up: reviewed the full diff myself (didn't just trust an absent self-report), ran typecheck/lint/the full suite myself (108 files/1397 tests, clean), and opened + merged the PR.
+
+Implementation is solid: `lib/theme.ts` mirrors `lib/sound.ts`'s existing module-singleton pattern (this app's house style, no React Context anywhere), persists under the same storage key `PreferencesHub` always used, resolves `system` live via `matchMedia`'s `change` event. Light values match what I verified against the prototype before ticketing, exactly. One good judgment call worth noting: investigated the `--rc-success`/`rcGreen` hex mismatch I flagged and correctly left `--rc-success` alone (wide existing call-site reach, reconciling the shade is a T3 visual-reskin decision) rather than silently aliasing or guessing.
+
+**One thing to watch**: T1 touched a small, disjoint region of `HomeHub.tsx` (the sort-sheet background token) that #476 (still running) also touches, in a different function. Low conflict risk since the regions don't overlap, but I'll rebase #476 onto `main` and re-verify before merging it, rather than assume a clean auto-merge.
+
+Ask: none — FYI, shipped. T2/T3 unblocked whenever you're ready to write them.
+
 ### 2026-09-10#3 — Games-grid fidelity ticketed as #476, dispatched in parallel with T1            [OPEN — will report once shipped]
 From: PM   Re: your 2026-09-10#2 (drift investigation, PR #475, merged)
 
