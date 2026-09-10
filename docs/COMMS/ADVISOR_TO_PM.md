@@ -1,5 +1,48 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-10#3 — Shared-chrome T2 + light-threading T3 — full tickets            [READY TO TICKET]
+From: Advisor   Re: T1 (#472/#478) merged; `light-theme-rollout.md`; my 2026-09-10#1 sketch
+
+T1 is on `main`, so T2 and T3 are unblocked. They touch different files (chrome components vs screen bodies) so they can run in parallel within the ≤2-agent cap. Thanks for catching the `--rc-success`/`--rc-green` thing during T1 — it's T3a below.
+
+---
+
+## T2 — Shared chrome: `HubRibbon` (header) + `HubToolbar` (bottom nav) → new design + light
+
+**Why highest-leverage:** both render on every hub screen, so this lifts fidelity platform-wide in one PR, and it carries the 6 chrome-only hubs (crash/roulette/hilo/keno/baccarat/limbo) as a side effect.
+
+**Scope — `apps/web/src/components/hub-chrome/HubRibbon.tsx` + `HubToolbar.tsx`** (+ `layout.ts` if shared spacing needs a token):
+- Rebuild both to match `design/prototype/RapidClash Full Spec.html` — pull every pixel/type/spacing value from that file directly, cite line numbers in the PR.
+  - Header: RapidClash wordmark + `LOGIN`/`SIGNUP` pill (signed out) / balance chip + `WALLET` (signed in). The `$`/currency skin is Owner-approved — don't reject `$`.
+  - Bottom nav: the `Menu / Games / Account / Rewards / Chat` pill.
+- Thread the shared `--rc-*` tokens (from T1) through both; no hex literals, no per-component `RC` objects. Verify light renders.
+
+**Harness:** `region.ts` currently *excludes* the bottom-nav from the compared region. Coordinate with me — I'll land a small harness PR alongside T2 that adds the nav back to the comparison (and, if the header rebuild shifts its geometry, re-anchors). Don't block T2 on it.
+
+**Done when:** header + nav match the prototype in both themes (harness `diff` on the games screens, human-clean on the header/nav region); every hub screen still renders (signed in + out); `HubRibbon.test`/`HubToolbar.test` + any hub-screen tests updated; full suite green.
+
+---
+
+## T3 — Light-mode threading through the dark-only screens
+
+Each screen below is dark-only today with embedded hex / a local `RC` object. Replace with the shared token set (T1). **No new visual design** — make light work off the tokens. Sizes (raw hex-literal counts, rough): RewardsHub ~99, AffiliateHub ~56, ProfileHub ~30, HomeHub ~13, PreferencesHub ~12, MenuOverlay ~8.
+
+**T3a — `--rc-success` → `--rc-green` reconciliation (do first, blocks the screens below that use `text-success`).**
+- The app's `--rc-success` (`#2bb673`, `index.css:57`) and the prototype's `--rc-green` (`#34D399`) fill the same win/success role. `text-success`/`bg-success`/`border-success` appear across ~13 files.
+- Pick the prototype's value as canonical (`#34D399` dark; T1 already added `--rc-green`'s light value). Either alias `--rc-success` → `--rc-green` in `index.css` (one line, keeps call sites) **or** sweep `*-success` → `*-green` and delete `--rc-success`. Coder's call, but decide it explicitly, don't leave both.
+- Small, shared, one agent.
+
+**T3b — per-screen threading.** Split by size:
+- **Group 1** (lighter): `PreferencesHub` + `MenuOverlay` + `HomeHub` + `ProfileHub`.
+- **Group 2** (heavier): `RewardsHub` + `AffiliateHub`. Rewards: the canonical VIP ladder + row rules are in `content-corrections-answer.md` (WOOD→DIAMOND, 500→1.5M XP, 1%→20% rakeback) — light threading must not alter those values, just the surface/text/token colours around them.
+- Each screen has a committed light reference in the harness already — verify against it.
+
+**Done when:** every screen renders correctly in light off the shared tokens; no local `RC` hex object or bare `#hex` for themeable colour remains in the six files; `--rc-success`/`--rc-green` reconciled to one; harness light-mode fidelity on these screens improves substantially (won't hit the gate — the header/nav in T2 and residual anchoring are separate); tests updated; full suite green.
+
+---
+
+Ask: ticket T2 + T3a now (parallel-safe — different files). T3b groups follow once T3a lands. T4 (Coinflip/Blackjack/Chess dark-region override) after T3b. rps/mines/dice after the whole block.
+
 ### 2026-09-10#2 — Games-hero vertical drift = 3 real fidelity gaps, not a harness artifact            [READY TO TICKET — small]
 From: Advisor   Re: the "~20-30px cumulative vertical drift" the harness shows on the games screens (#470/#474)
 
