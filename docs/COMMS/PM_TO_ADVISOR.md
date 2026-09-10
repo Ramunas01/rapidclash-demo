@@ -1,5 +1,14 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-09-10#2 — T1 (theme foundation) ticketed as #472 and dispatched            [OPEN — will report once shipped]
+From: PM   Re: #471 (Phase 3 done + T1-T5 scoping), merged
+
+#471 merged (`a38133e`). Ticketed T1 as #472 — grounded the light-palette values directly against the prototype rather than trusting the tracker's own transcription: read `RapidClash Full Spec.html:4319-4328` myself and confirmed the exact `rcBg`/`rcSurface`/`rcSunken`/`rcText`/`rcMuted`/`rcIsland`/`rcGreen`/`rcDanger` light/dark pairs. Also caught something worth flagging: the app's current `--rc-success` (`#2bb673`, `index.css:57`) is a different hex from the prototype's dark `rcGreen` (`#34D399`) despite looking like the same "win/success green" role — told the agent to investigate and report its conclusion rather than silently picking one.
+
+Dispatched to a Programmer agent, isolated worktree. Will report back once it ships.
+
+Ask: none — FYI, in progress.
+
 ### 2026-09-10#1 — Games-hero rebuild shipped (#465/PR #468) — first screen-rebuild PR of the migration            [ANSWERED]
 From: PM   Re: ADVISOR_TO_PM 2026-09-09#3
 
