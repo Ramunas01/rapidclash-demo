@@ -14,12 +14,9 @@ export interface MaskRect {
   reason: string;
 }
 
-/**
- * Regions the Designer said to carry over from production unchanged (Q5, 2026-09-09) — the
- * games-hero banner carousel is the first. Masked in both images before diffing so a rebuild
- * doesn't fail the gate on a difference we chose on purpose. Measured from the running prototype.
- */
-export const BANNER_MASK: MaskRect = { x: 12, y: 78, w: 366, h: 142, reason: 'carousel banner + dots — carried over, Designer Q5' };
+// `masks` (below) excludes Designer-said-carried-over regions from the diff. The games-hero
+// banner was the first, but the `catrail` anchor now crops it out of the captured region
+// entirely, so no MaskRect is currently in use — the mechanism stays for the next one.
 
 /**
  * The screen catalogue. Each entry knows how to drive the prototype (and, later, the built app)
