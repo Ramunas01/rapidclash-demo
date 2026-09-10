@@ -22,9 +22,30 @@ import affiliateMoneyArt from '../assets/affiliate/affiliate-money-sm.png';
  *
  * Design source: docs/design-refs/design_handoff_affiliate/ (README.md + screenshots/ +
  * `Affiliate Page.dc.html`). Recreated in this app's own React/Tailwind primitives and resolved
- * tokens (`bg-background`, `bg-surface`, `text-brand`/`bg-brand` for the design's `#8B45F0`)
- * rather than the handoff's literal (stale) hex values — same rule as every prior handoff
- * ticket. Dark-only (no app-wide light/dark theme exists yet — same scoping call as Menu/Preferences).
+ * tokens (`bg-surface`, `text-brand`/`bg-brand` for the design's `#8B45F0`) rather than the
+ * handoff's literal (stale) hex values — same rule as every prior handoff ticket.
+ *
+ * Light-mode threading (issue #498, T3b "heavy group"): this screen shipped dark-only (comment
+ * above used to say so, same scoping call as Menu/Preferences at the time). Unlike the hex-literal
+ * concern below, the gap here was this file's own `bg-background`/`text-foreground`/
+ * `text-muted-foreground`/`text-destructive`/`border-destructive`/`fill-background` — this app's
+ * pre-existing shadcn tokens, none of which carry a `[data-theme='light']` override (`index.css`'s
+ * light block only defines the T1 `--rc-*` set) — so every one of those became the T1 `--rc-*`
+ * equivalent instead (`bg-[var(--rc-bg)]`, `text-[var(--rc-text)]`, `text-[var(--rc-muted)]`,
+ * `text-[var(--rc-danger)]`/`border-[var(--rc-danger)]`, `fill-[var(--rc-bg)]`), same treatment
+ * `HubRibbon.tsx`/`MenuOverlay.tsx`/`HomeHub.tsx` already got in T2/T3a. `bg-surface`/`text-success`/
+ * `bg-brand`/`text-brand`/`fill-brand` were already theme-aware (`tailwind.config.js` maps them
+ * straight to `var(--rc-surface)`/`var(--rc-success)`/`var(--brand-purple)`) so those, and the
+ * fixed `text-white` used on brand-purple pills/toasts, are untouched. The two inline gradient
+ * fades (`onRailScroll`'s left/right fade masks) built off `hsl(var(--background))` directly, not
+ * a className — also swapped to `var(--rc-bg)`.
+ *
+ * The SVG icon hex literals below (`#A870F0`/`#7C3AED`/`#6D28D9`/`#EDEAFB`/etc.) are a separate,
+ * deliberately UNCHANGED concern — see the comment above the icon section: they're the design
+ * source's own fixed secondary/tertiary shading ramp, not surface/text roles, same as every prior
+ * handoff ticket's treatment of them. No committed fidelity reference exists yet for `affiliate`
+ * (no entry in `tools/design-fidelity/src/screens.ts`), so this call isn't screenshot-verified the
+ * way the `rewards` screen's was — flagged in the #498 PR for a design pass if that changes.
  */
 
 const SPACE_GROTESK = "'Space Grotesk', Arial, Helvetica, sans-serif";
@@ -244,11 +265,11 @@ export function AffiliateHubScreen({ username, balance, onBack, onHome, onOpenPr
               onClick={onBack}
               aria-label="Back to Account"
               data-testid="affiliate-back"
-              className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-full bg-surface text-foreground transition-opacity hover:opacity-80"
+              className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-full bg-surface text-[var(--rc-text)] transition-opacity hover:opacity-80"
             >
               <BackChevron />
             </button>
-            <h1 className="text-[19px] font-bold uppercase tracking-[0.6px] text-foreground">Affiliate Program</h1>
+            <h1 className="text-[19px] font-bold uppercase tracking-[0.6px] text-[var(--rc-text)]">Affiliate Program</h1>
           </div>
 
           <div className="relative mt-3.5">
@@ -269,7 +290,7 @@ export function AffiliateHubScreen({ username, balance, onBack, onHome, onOpenPr
                   onClick={() => pickTab(t)}
                   className={cn(
                     'flex-none whitespace-nowrap rounded-full px-4 py-[11px] text-[12px] font-bold uppercase tracking-[0.8px] transition-colors',
-                    tab === t ? 'bg-brand text-white' : 'bg-surface text-foreground',
+                    tab === t ? 'bg-brand text-white' : 'bg-surface text-[var(--rc-text)]',
                   )}
                 >
                   {t}
@@ -279,12 +300,12 @@ export function AffiliateHubScreen({ username, balance, onBack, onHome, onOpenPr
             <div
               aria-hidden="true"
               className="pointer-events-none absolute -left-0.5 -top-px -bottom-px w-[38px]"
-              style={{ opacity: leftFade, transition: 'opacity 180ms ease', background: 'linear-gradient(to right, hsl(var(--background)) 0%, hsl(var(--background)) 12%, transparent 100%)' }}
+              style={{ opacity: leftFade, transition: 'opacity 180ms ease', background: 'linear-gradient(to right, var(--rc-bg) 0%, var(--rc-bg) 12%, transparent 100%)' }}
             />
             <div
               aria-hidden="true"
               className="pointer-events-none absolute -right-0.5 -top-px -bottom-px w-[54px]"
-              style={{ opacity: rightFade, transition: 'opacity 180ms ease', background: 'linear-gradient(to left, hsl(var(--background)) 0%, hsl(var(--background)) 12%, transparent 100%)' }}
+              style={{ opacity: rightFade, transition: 'opacity 180ms ease', background: 'linear-gradient(to left, var(--rc-bg) 0%, var(--rc-bg) 12%, transparent 100%)' }}
             />
           </div>
 
@@ -389,7 +410,7 @@ function Triangle({ open, small }: { open: boolean; small?: boolean }) {
       width={size.w}
       height={size.h}
       viewBox="0 0 8 12"
-      className="flex-none text-muted-foreground"
+      className="flex-none text-[var(--rc-muted)]"
       style={{ transform: open ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 300ms cubic-bezier(0.22,0.61,0.36,1)' }}
       aria-hidden="true"
     >
@@ -411,7 +432,7 @@ function SectionHeadline({ icon, title, size = 19 }: { icon: ReactNode; title: s
   return (
     <div className="flex items-center gap-2.5">
       {icon}
-      <span className={cn('font-bold uppercase tracking-[0.6px] text-foreground', size === 22 ? 'text-[22px]' : 'text-[19px]')} style={{ fontFamily: ARIAL }}>
+      <span className={cn('font-bold uppercase tracking-[0.6px] text-[var(--rc-text)]', size === 22 ? 'text-[22px]' : 'text-[19px]')} style={{ fontFamily: ARIAL }}>
         {title}
       </span>
     </div>
@@ -485,14 +506,14 @@ function StepRow({ testid, n, title, open, onToggle, children }: { testid: strin
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
         className="flex min-h-[52px] cursor-pointer items-center justify-between gap-3.5 px-[18px] py-3.5"
       >
-        <span className="text-[15px] font-bold leading-[1.3] text-foreground">
+        <span className="text-[15px] font-bold leading-[1.3] text-[var(--rc-text)]">
           <span className="text-success">Step {n}:</span> {title}
         </span>
         <Triangle open={open} small />
       </div>
       <div style={{ display: 'grid', gridTemplateRows: open ? '1fr' : '0fr', transition: 'grid-template-rows 330ms cubic-bezier(0.22,0.61,0.36,1)' }}>
         <div className="overflow-hidden">
-          <div style={{ opacity: open ? 1 : 0, transition: 'opacity 260ms ease' }} className="px-[18px] pb-4 text-[14px] leading-[20px] text-foreground/90">
+          <div style={{ opacity: open ? 1 : 0, transition: 'opacity 260ms ease' }} className="px-[18px] pb-4 text-[14px] leading-[20px] text-[var(--rc-text)]/90">
             {children}
           </div>
         </div>
@@ -514,10 +535,10 @@ function CopyField({ testid, label, value, onCopy }: { testid: string; label: st
   return (
     <div className="flex items-center gap-2">
       <div className="flex h-[46px] min-w-0 flex-1 items-center gap-2.5 overflow-hidden rounded-full bg-surface px-[18px]">
-        <span className="flex-none text-[11px] font-bold uppercase tracking-[1.2px] text-foreground">{label}</span>
+        <span className="flex-none text-[11px] font-bold uppercase tracking-[1.2px] text-[var(--rc-text)]">{label}</span>
         <span
           data-testid={`${testid}-value`}
-          className="no-scrollbar min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-[14px] font-bold tracking-[0.6px] text-foreground"
+          className="no-scrollbar min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-[14px] font-bold tracking-[0.6px] text-[var(--rc-text)]"
           style={{ fontFamily: SPACE_GROTESK }}
         >
           {value}
@@ -540,7 +561,7 @@ function CopyField({ testid, label, value, onCopy }: { testid: string; label: st
 function StatTile({ testid, label, value }: { testid: string; label: string; value: string }) {
   return (
     <div data-testid={testid} className="flex flex-col gap-1.5 rounded-[20px] bg-surface px-[18px] py-4">
-      <span className="text-[11px] font-bold uppercase tracking-[1.2px] text-foreground" style={{ fontFamily: ARIAL }}>{label}</span>
+      <span className="text-[11px] font-bold uppercase tracking-[1.2px] text-[var(--rc-text)]" style={{ fontFamily: ARIAL }}>{label}</span>
       <span className="text-[24px] font-bold text-success" style={{ fontFamily: SPACE_GROTESK }}>{value}</span>
     </div>
   );
@@ -596,10 +617,10 @@ function OverviewTab({
             <span className="text-[20px] font-bold uppercase leading-[27px] tracking-[0.6px] text-success" style={{ fontFamily: ARIAL }}>Rate</span>
           </div>
         </div>
-        <div className="mt-2 w-full text-[31px] font-bold leading-[34px] tracking-[0.6px] text-foreground" style={{ fontFamily: ARIAL }}>
+        <div className="mt-2 w-full text-[31px] font-bold leading-[34px] tracking-[0.6px] text-[var(--rc-text)]" style={{ fontFamily: ARIAL }}>
           EARN DOUBLE THE MARKET STANDARD
         </div>
-        <p className="mt-[11px] w-full text-justify text-[15px] font-semibold leading-[20px] text-foreground">
+        <p className="mt-[11px] w-full text-justify text-[15px] font-semibold leading-[20px] text-[var(--rc-text)]">
           The biggest crypto casinos pay 10% — we pay {BASE_COMMISSION_RATE}. Your cut comes from the rake on every game your referrals play — there is no negative carryover, you get paid when they wager, win or lose.
         </p>
 
@@ -650,11 +671,11 @@ function OverviewTab({
         <SectionHeadline icon={<PercentIcon />} title="Commission structure" size={22} />
         <ExpandableRow testid="affiliate-commission" icon={<ShieldIcon />} headline={<RowHeadline>No negative carryover</RowHeadline>} open={commissionOpen} onToggle={onToggleCommission}>
           <div className="flex flex-col gap-2.5">
-            <p className="text-[14px] leading-[20px] text-foreground/90">Every game on RapidClash generates commission based on its rake. The commission is calculated using this formula:</p>
-            <div className="rounded-[20px] bg-background px-4 py-3 text-center text-[14px] font-bold text-success" style={{ fontFamily: SPACE_GROTESK }}>
+            <p className="text-[14px] leading-[20px] text-[var(--rc-text)]/90">Every game on RapidClash generates commission based on its rake. The commission is calculated using this formula:</p>
+            <div className="rounded-[20px] bg-[var(--rc-bg)] px-4 py-3 text-center text-[14px] font-bold text-success" style={{ fontFamily: SPACE_GROTESK }}>
               (Rake % × wagered × Commission rate) / 2
             </div>
-            <p className="text-[14px] leading-[20px] text-foreground/90">No negative carryover. Rake is charged on every game, so you earn whether your referral wins or loses. A winning player never wipes out your balance.</p>
+            <p className="text-[14px] leading-[20px] text-[var(--rc-text)]/90">No negative carryover. Rake is charged on every game, so you earn whether your referral wins or loses. A winning player never wipes out your balance.</p>
           </div>
         </ExpandableRow>
       </section>
@@ -662,7 +683,7 @@ function OverviewTab({
       <section className="flex flex-col gap-2.5">
         <SectionHeadline icon={<GiftHeadlineIcon />} title="What your players get" size={22} />
         <ExpandableRow testid="affiliate-players" icon={<GiftBoxIcon />} headline={<RowHeadline>Welcome benefits</RowHeadline>} open={playersOpen} onToggle={onTogglePlayers}>
-          <p className="text-[14px] leading-[20px] text-foreground/90">Your players skip straight to Bronze tier — a 4% rakeback from their first game, race entry, and a real place on the VIP ladder. Everyone else starts unranked at 0% and plays 50 games to get there.</p>
+          <p className="text-[14px] leading-[20px] text-[var(--rc-text)]/90">Your players skip straight to Bronze tier — a 4% rakeback from their first game, race entry, and a real place on the VIP ladder. Everyone else starts unranked at 0% and plays 50 games to get there.</p>
         </ExpandableRow>
       </section>
 
@@ -682,7 +703,7 @@ function OverviewTab({
           open={partnerOpen}
           onToggle={onTogglePartner}
         >
-          <p className="text-[14px] leading-[20px] text-foreground/90">If you&apos;re a content creator or professional affiliate with a large audience, we&apos;ll make a tailored partnership program for you. Contact our affiliate team to find out more.</p>
+          <p className="text-[14px] leading-[20px] text-[var(--rc-text)]/90">If you&apos;re a content creator or professional affiliate with a large audience, we&apos;ll make a tailored partnership program for you. Contact our affiliate team to find out more.</p>
         </ExpandableRow>
       </section>
 
@@ -702,7 +723,7 @@ function OverviewTab({
           open={promoOpen}
           onToggle={onTogglePromo}
         >
-          <p className="text-[14px] leading-[20px] text-foreground/90">Our team has put together banners, logos and game artwork - everything you need, ready to use across all socials and streams.</p>
+          <p className="text-[14px] leading-[20px] text-[var(--rc-text)]/90">Our team has put together banners, logos and game artwork - everything you need, ready to use across all socials and streams.</p>
         </ExpandableRow>
       </section>
     </div>
@@ -718,7 +739,7 @@ function ReferredUsersTab() {
       <div className="relative -mx-4">
         <div className="overflow-x-auto px-4 pb-2">
           <div className="min-w-[550px]">
-            <div className="flex h-10 items-end pb-2.5 text-[10px] font-bold uppercase tracking-[1.2px] text-foreground">
+            <div className="flex h-10 items-end pb-2.5 text-[10px] font-bold uppercase tracking-[1.2px] text-[var(--rc-text)]">
               <span className="w-[150px] flex-none pl-1">Username</span>
               <span className="w-[110px] flex-none text-center">Registered</span>
               <span className="w-[110px] flex-none text-center">Campaign</span>
@@ -733,7 +754,7 @@ function ReferredUsersTab() {
           </div>
         </div>
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center pt-9">
-          <span data-testid="affiliate-referred-empty" className="text-[14px] font-semibold text-foreground">No referred users</span>
+          <span data-testid="affiliate-referred-empty" className="text-[14px] font-semibold text-[var(--rc-text)]">No referred users</span>
         </div>
       </div>
     </div>
@@ -764,7 +785,7 @@ function CampaignsTab({
       </button>
       <div className="flex flex-col gap-2.5" data-testid="affiliate-campaign-list">
         {campaigns.length === 0 ? (
-          <p className="py-6 text-center text-[13px] font-semibold text-muted-foreground">No campaigns yet</p>
+          <p className="py-6 text-center text-[13px] font-semibold text-[var(--rc-muted)]">No campaigns yet</p>
         ) : (
           campaigns.map((c) => (
             <CampaignCard key={c.id} campaign={c} open={!!openMap[c.id]} onToggle={() => onToggle(c.id)} onCopy={onCopy} />
@@ -788,11 +809,11 @@ function CampaignCard({ campaign, open, onToggle, onCopy }: { campaign: Campaign
         className="flex cursor-pointer items-center gap-3 px-[18px] py-[17px]"
       >
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[15px] font-bold text-foreground">{campaign.name}</div>
-          <div className="truncate text-[12px] font-semibold text-muted-foreground">{link}</div>
+          <div className="truncate text-[15px] font-bold text-[var(--rc-text)]">{campaign.name}</div>
+          <div className="truncate text-[12px] font-semibold text-[var(--rc-muted)]">{link}</div>
         </div>
         <div className="flex flex-none flex-col items-start gap-1">
-          <span className="text-[10px] font-bold uppercase tracking-[1px] text-foreground">Commission earned</span>
+          <span className="text-[10px] font-bold uppercase tracking-[1px] text-[var(--rc-text)]">Commission earned</span>
           <RcAmount value={campaign.earned} className="text-[14px] font-bold text-success" />
         </div>
         <Triangle open={open} />
@@ -800,21 +821,21 @@ function CampaignCard({ campaign, open, onToggle, onCopy }: { campaign: Campaign
       <div style={{ display: 'grid', gridTemplateRows: open ? '1fr' : '0fr', transition: 'grid-template-rows 330ms cubic-bezier(0.22,0.61,0.36,1)' }}>
         <div className="overflow-hidden">
           <div style={{ opacity: open ? 1 : 0, transition: 'opacity 260ms ease' }} className="px-[18px] pb-5">
-            <div className="mb-4 h-px bg-background" />
+            <div className="mb-4 h-px bg-[var(--rc-bg)]" />
             <div className="flex gap-3.5">
               <div className="flex-1">
-                <div className="text-[10px] font-bold uppercase tracking-[1px] text-foreground">Signups</div>
-                <div className="mt-1 text-[16px] font-bold text-foreground" style={{ fontFamily: SPACE_GROTESK }}>{campaign.signups}</div>
+                <div className="text-[10px] font-bold uppercase tracking-[1px] text-[var(--rc-text)]">Signups</div>
+                <div className="mt-1 text-[16px] font-bold text-[var(--rc-text)]" style={{ fontFamily: SPACE_GROTESK }}>{campaign.signups}</div>
               </div>
               <div className="flex-1">
-                <div className="text-[10px] font-bold uppercase tracking-[1px] text-foreground">Commission rate</div>
+                <div className="text-[10px] font-bold uppercase tracking-[1px] text-[var(--rc-text)]">Commission rate</div>
                 <div className="mt-1 text-[16px] font-bold text-success" style={{ fontFamily: SPACE_GROTESK }}>{BASE_COMMISSION_RATE}</div>
               </div>
             </div>
             <div className="mt-3.5">
-              <div className="text-[10px] font-bold uppercase tracking-[1px] text-foreground">Referral link</div>
+              <div className="text-[10px] font-bold uppercase tracking-[1px] text-[var(--rc-text)]">Referral link</div>
               <div className="mt-1.5 flex items-center gap-2">
-                <div className="min-w-0 flex-1 truncate rounded-full bg-background px-4 py-2.5 text-[12px] font-bold text-foreground" style={{ fontFamily: SPACE_GROTESK }}>{link}</div>
+                <div className="min-w-0 flex-1 truncate rounded-full bg-[var(--rc-bg)] px-4 py-2.5 text-[12px] font-bold text-[var(--rc-text)]" style={{ fontFamily: SPACE_GROTESK }}>{link}</div>
                 <button
                   type="button"
                   data-testid={`affiliate-campaign-${campaign.id}-copy-link`}
@@ -826,9 +847,9 @@ function CampaignCard({ campaign, open, onToggle, onCopy }: { campaign: Campaign
               </div>
             </div>
             <div className="mt-3">
-              <div className="text-[10px] font-bold uppercase tracking-[1px] text-foreground">Referral code</div>
+              <div className="text-[10px] font-bold uppercase tracking-[1px] text-[var(--rc-text)]">Referral code</div>
               <div className="mt-1.5 flex items-center gap-2">
-                <div className="min-w-0 flex-1 truncate rounded-full bg-background px-4 py-2.5 text-[13px] font-bold tracking-[1px] text-foreground" style={{ fontFamily: SPACE_GROTESK }}>{campaign.code}</div>
+                <div className="min-w-0 flex-1 truncate rounded-full bg-[var(--rc-bg)] px-4 py-2.5 text-[13px] font-bold tracking-[1px] text-[var(--rc-text)]" style={{ fontFamily: SPACE_GROTESK }}>{campaign.code}</div>
                 <button
                   type="button"
                   data-testid={`affiliate-campaign-${campaign.id}-copy-code`}
@@ -882,11 +903,11 @@ function CreateCampaignSheet({
           data-testid="affiliate-create-sheet-handle"
           onClick={onClose}
           aria-label="Close"
-          className="mx-auto mb-5 h-[5px] w-14 flex-none rounded-full bg-muted-foreground/40"
+          className="mx-auto mb-5 h-[5px] w-14 flex-none rounded-full bg-[var(--rc-muted)]/40"
         />
-        <h2 className="text-[22px] font-bold text-foreground">Create campaign</h2>
+        <h2 className="text-[22px] font-bold text-[var(--rc-text)]">Create campaign</h2>
 
-        <label className="mt-5 block text-[11px] font-bold uppercase tracking-[1px] text-foreground" htmlFor="affiliate-campaign-name">
+        <label className="mt-5 block text-[11px] font-bold uppercase tracking-[1px] text-[var(--rc-text)]" htmlFor="affiliate-campaign-name">
           Campaign name
         </label>
         <input
@@ -897,21 +918,21 @@ function CreateCampaignSheet({
           onBlur={onBlurName}
           placeholder="Enter campaign name"
           className={cn(
-            'mt-2 h-[50px] w-full rounded-full bg-background px-5 text-[14px] font-semibold text-foreground outline-none',
-            error ? 'border-[1.5px] border-destructive' : 'border-[1.5px] border-transparent',
+            'mt-2 h-[50px] w-full rounded-full bg-[var(--rc-bg)] px-5 text-[14px] font-semibold text-[var(--rc-text)] outline-none',
+            error ? 'border-[1.5px] border-[var(--rc-danger)]' : 'border-[1.5px] border-transparent',
           )}
         />
         {error && (
-          <p data-testid="affiliate-campaign-name-error" className="mt-1.5 text-[12.5px] font-bold text-destructive">
+          <p data-testid="affiliate-campaign-name-error" className="mt-1.5 text-[12.5px] font-bold text-[var(--rc-danger)]">
             Campaign name is required
           </p>
         )}
 
         <div className="mt-4">
-          <span className="block text-[11px] font-bold uppercase tracking-[1px] text-foreground">Code (campaign ID)</span>
+          <span className="block text-[11px] font-bold uppercase tracking-[1px] text-[var(--rc-text)]">Code (campaign ID)</span>
           <div
             data-testid="affiliate-campaign-code-preview"
-            className="mt-2 flex h-[50px] w-full items-center rounded-full bg-background px-5 text-[14px] font-bold tracking-[1px] text-muted-foreground"
+            className="mt-2 flex h-[50px] w-full items-center rounded-full bg-[var(--rc-bg)] px-5 text-[14px] font-bold tracking-[1px] text-[var(--rc-muted)]"
             style={{ fontFamily: SPACE_GROTESK }}
           >
             {code || '—'}
@@ -925,7 +946,7 @@ function CreateCampaignSheet({
           onClick={onSubmit}
           className={cn(
             'mt-6 flex h-[50px] w-full flex-none items-center justify-center rounded-full text-[13px] font-bold uppercase tracking-[1px]',
-            trimmed === '' ? 'bg-background text-muted-foreground' : 'bg-brand text-white',
+            trimmed === '' ? 'bg-[var(--rc-bg)] text-[var(--rc-muted)]' : 'bg-brand text-white',
           )}
         >
           Create campaign
@@ -954,14 +975,14 @@ function EarningsTab({
         <div className="flex items-center gap-4 rounded-[26px] bg-surface p-5">
           <SafeIcon />
           <div className="min-w-0 flex-1">
-            <div className="text-[10px] font-bold uppercase tracking-[1px] text-foreground">Total claimed</div>
-            <RcAmount value={claimed} size={19} className="mt-1.5 text-[22px] font-bold text-foreground" />
+            <div className="text-[10px] font-bold uppercase tracking-[1px] text-[var(--rc-text)]">Total claimed</div>
+            <RcAmount value={claimed} size={19} className="mt-1.5 text-[22px] font-bold text-[var(--rc-text)]" />
           </div>
         </div>
         <div className="flex items-center gap-4 rounded-[26px] bg-surface p-5">
           <CoinStackIcon />
           <div className="min-w-0 flex-1">
-            <div className="text-[10px] font-bold uppercase tracking-[1px] text-foreground">Total claimable</div>
+            <div className="text-[10px] font-bold uppercase tracking-[1px] text-[var(--rc-text)]">Total claimable</div>
             <RcAmount value={claimable} size={19} className="mt-1.5 text-[22px] font-bold text-success" />
           </div>
           <button
@@ -971,7 +992,7 @@ function EarningsTab({
             onClick={onClaim}
             className={cn(
               'flex h-11 flex-none items-center justify-center rounded-full px-6 text-[12px] font-bold uppercase tracking-[1px]',
-              canClaim ? 'bg-brand text-white' : 'bg-background text-muted-foreground',
+              canClaim ? 'bg-brand text-white' : 'bg-[var(--rc-bg)] text-[var(--rc-muted)]',
             )}
           >
             Claim
@@ -982,18 +1003,18 @@ function EarningsTab({
       <div className="flex flex-col gap-2.5">
         <SectionHeadline icon={<NotebookIcon />} title="Claim history" />
         {history.length === 0 ? (
-          <p data-testid="affiliate-claim-history-empty" className="py-6 text-center text-[13px] font-semibold text-muted-foreground">No claims yet</p>
+          <p data-testid="affiliate-claim-history-empty" className="py-6 text-center text-[13px] font-semibold text-[var(--rc-muted)]">No claims yet</p>
         ) : (
           <div className="flex flex-col gap-0.5 overflow-hidden rounded-[20px]" data-testid="affiliate-claim-history">
-            <div className="flex h-10 items-center px-4 text-[10px] font-bold uppercase tracking-[1.2px] text-foreground">
+            <div className="flex h-10 items-center px-4 text-[10px] font-bold uppercase tracking-[1.2px] text-[var(--rc-text)]">
               <span className="flex-1">Date</span>
               <span className="flex-1 text-center">Amount</span>
               <span className="flex-1 text-right">Status</span>
             </div>
             {history.map((h) => (
               <div key={h.id} data-testid={`affiliate-claim-${h.id}`} className="flex h-[54px] items-center bg-surface px-4">
-                <span className="flex-1 text-[13px] text-foreground">{h.date}</span>
-                <RcAmount value={h.amount} className="flex-1 justify-center text-[13px] font-bold text-foreground" />
+                <span className="flex-1 text-[13px] text-[var(--rc-text)]">{h.date}</span>
+                <RcAmount value={h.amount} className="flex-1 justify-center text-[13px] font-bold text-[var(--rc-text)]" />
                 <span className="flex-1 text-right text-[12px] font-bold uppercase text-success">{h.status}</span>
               </div>
             ))}
@@ -1163,7 +1184,7 @@ function PromoHeadlineIcon() {
   return (
     <svg width="28" height="28" viewBox="0 0 24 24" className="flex-none" aria-hidden="true">
       <rect x="3" y="3.4" width="18" height="17.2" rx="3.2" className="fill-brand" />
-      <g className="fill-background">
+      <g className="fill-[var(--rc-bg)]">
         <rect x="6.2" y="6.6" width="11.6" height="2.4" rx="1.2" />
         <rect x="6.2" y="10.2" width="5" height="2.4" rx="1.2" />
         <rect x="12.8" y="10.2" width="5" height="2.4" rx="1.2" />
@@ -1188,7 +1209,7 @@ function WalletIcon() {
   return (
     <svg width="26" height="26" viewBox="0 0 24 24" className="flex-none text-brand" aria-hidden="true">
       <path d="M4.6 5.2h14.8A2.6 2.6 0 0 1 22 7.8v10.4a2.6 2.6 0 0 1-2.6 2.6H4.6A2.6 2.6 0 0 1 2 18.2V7.8a2.6 2.6 0 0 1 2.6-2.6zm-1.2 4.4h17.2v2.2H3.4z" fill="currentColor" fillRule="evenodd" />
-      <rect x="15.4" y="13.4" width="4.4" height="2.8" rx="1.4" className="fill-background" />
+      <rect x="15.4" y="13.4" width="4.4" height="2.8" rx="1.4" className="fill-[var(--rc-bg)]" />
     </svg>
   );
 }
@@ -1248,7 +1269,7 @@ function NotebookIcon() {
     <svg width="26" height="26" viewBox="0 0 24 24" className="flex-none text-brand" aria-hidden="true">
       <path d="M7.4 2.6h11.2A2.6 2.6 0 0 1 21.2 5.2v13.6a2.6 2.6 0 0 1-2.6 2.6H7.4a2.6 2.6 0 0 1-2.6-2.6V5.2a2.6 2.6 0 0 1 2.6-2.6z" fill="currentColor" />
       <rect x="2.4" y="4.6" width="3.4" height="14.8" rx="1.7" fill="currentColor" opacity="0.6" />
-      <g className="fill-background">
+      <g className="fill-[var(--rc-bg)]">
         <rect x="8" y="6.6" width="10" height="2.2" rx="1.1" />
         <rect x="8" y="10.4" width="10" height="2.2" rx="1.1" />
         <rect x="8" y="14.2" width="6.4" height="2.2" rx="1.1" />
