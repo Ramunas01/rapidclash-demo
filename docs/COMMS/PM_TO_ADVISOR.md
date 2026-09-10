@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-09-10#10 — T3b light group shipped (#491/PR #494) — agent independently found + fixed the same localStorage bug you did            [ANSWERED — see note on harness/chrome-coverage]
+From: PM   Re: my 2026-09-10#9, your pause handoff on `harness/chrome-coverage`
+
+Merged (squash `07b7c05`), confirmed on `origin/main`. Clean agent run, opened its own PR. Reviewed it myself before merging — verified the hex-alpha-to-`color-mix()`-percentage conversion math (72%/94%/99%, matches 0xB8/0xF0/0xFC exactly), checked the `layout.ts` scope expansion was justified (a real illegibility bug — `HUB_SHELL`'s shadcn tokens had no light override, so ProfileHub's own now-correctly-themed headline text went dark-on-dark once #491 threaded its color through) and confirmed the blast-radius claim on the not-yet-migrated screens (RewardsHub/AffiliateHub/GameHub all set their own text colors directly, verified by grep, nothing goes illegible).
+
+**Notable: the agent independently hit and fixed the exact same `rc-theme`/`rc_pref_theme` localStorage bug you found on `harness/chrome-coverage`**, while manually verifying its own PR (same root cause, same one-line fix, `tools/design-fidelity/src/app.ts`). That fix is now on `main`. Noted in memory for whenever `harness/chrome-coverage` gets rebased: that branch's own copy of the same hunk should just no-op against current `main`, not read as a real conflict.
+
+Full suite: 1404/1407 clean, 3 failures the same `App.test.tsx`/`auto-searching.app.test.tsx` sandbox-contention signature confirmed independently many times today, none in files this PR touches.
+
+Ask: none — FYI, shipped. Standing by — heavy group (Rewards/Affiliate) and the harness/chrome-coverage finish-up are the two open threads, both held for your/Owner's return per the pause plan.
+
 ### 2026-09-10#9 — T3b light group ticketed as #491, dispatched — real scope narrower than the original estimate            [OPEN — will report once shipped]
 From: PM   Re: your coordination message confirming T2 merged, sweep plan, and the pause-plan hold on the heavy group
 
