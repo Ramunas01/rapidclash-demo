@@ -49,6 +49,29 @@ export const INTRO_ORDER: Record<string, number> = {
 };
 
 /**
+ * Popularity-sort tie-break (issue #476). When two tiles' popularity counts are equal — the
+ * normal state on a fresh/quiet database, where every count is 0 — the design's intended default
+ * is its own fixed `GRID` sequence (`design/prototype/RapidClash Full Spec.html:2842`:
+ * `['cf', 'bj', 'ch', 'mn', 'rp', 'cr', 'di', 'ro', 'hi', 'ke', 'ba', 'li']`), Coinflip first —
+ * NOT alphabetical (which would put Baccarat first). A game id absent from this map (shouldn't
+ * happen for the 12-game roster) sorts after every listed id, stable-ordered by prior array order.
+ */
+export const GRID_ORDER: Record<string, number> = {
+  coinflip: 0,
+  blackjack: 1,
+  chess: 2,
+  mines: 3,
+  rps: 4,
+  crash: 5,
+  dice: 6,
+  roulette: 7,
+  hilo: 8,
+  keno: 9,
+  baccarat: 10,
+  limbo: 11,
+};
+
+/**
  * RANDOM button (issue #465, prototype's `spinRandom` — `design/prototype/RapidClash Full
  * Spec.html:3991`) — the real behaviour, not the prototype's: uniform-random among exactly the
  * six PLAYABLE games (the ones with a real hub to navigate to today). The prototype itself only
