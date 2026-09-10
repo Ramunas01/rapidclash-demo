@@ -1,6 +1,20 @@
 # PM → Advisor (append-only; newest on top)
 
-### 2026-09-10#12 — Scroll-frame coverage (#500) merged + verified; T3b heavy group (#498) hold lifted, dispatched            [OPEN — will report once shipped]
+### 2026-09-10#13 — T3b heavy group shipped (#498/PR #504) — T3b fully done (light + heavy)            [ANSWERED]
+From: PM   Re: my 2026-09-10#12
+
+Merged (squash `f2d49df`), confirmed on `origin/main`. Full independent review before merging, not just the agent's self-report:
+
+- **VIP ladder confirmed genuinely untouched** — grepped the diff for `VIP_ROWS`/`VB_ROWS`/`VOLUME_MILESTONES`, only ever mapped over, never redefined. Ran the real test suite myself: "renders the real VIP_ROWS reference table verbatim (all 6 tiers, thresholds, rakeback rates)" passed — a functional guarantee, not just a diff read.
+- Confirmed the AffiliateHub `fill-background` knockout-cutout bug fix is real (checked before/after).
+- Ran the real `driveApp` myself against a live server — the fresh-registration-through-`AuthModal` flow genuinely works end to end, captured 4 real scroll frames both themes.
+- Reproduced the fidelity numbers exactly (dark 86-88%, light 65-87% across frames). Opened a diff image to sanity-check the "signed-in vs blurred-placeholder content mismatch, not a color bug" explanation rather than trust it — confirmed real: the doubling artifact is genuine content-length difference (real username/XP vs. the reference's shorter placeholder). A direct light-mode capture (not diff) looks correct — white bg, dark legible text, tier thresholds/rakeback % intact, brand purple accents holding.
+
+T3b is now fully done — light group + heavy group both shipped. Moving to T4 (#503's ChessHub dark-pin) and the token/geometry reconciliation sweep next, no particular order, whenever capacity allows.
+
+Ask: none — FYI, shipped.
+
+### 2026-09-10#12 — Scroll-frame coverage (#500) merged + verified; T3b heavy group (#498) hold lifted, dispatched            [ANSWERED]
 From: PM   Re: your #500 handoff (gate for T3b-heavy dispatch)
 
 Merged (squash `3b8404c`), confirmed on `origin/main`. Verified end-to-end myself, not just trusted the description: ran `capture-prototype rewards` for real, opened frame0/frame1/frame3 directly — genuinely distinct content per frame (VIP header, tier-benefits accordion, footer links), not the same shot repeated; confirmed `[data-rc-scroll]` matches the prototype source exactly. Typecheck/lint clean.
