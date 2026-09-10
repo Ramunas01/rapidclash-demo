@@ -17,11 +17,15 @@ export default {
         brand: 'var(--brand-purple)',
         // v2 brand-accent extension tokens (Hub Transition) — hubs use bg-success / bg-play
         // / bg-surface, never raw hex. Backed by --rc-* vars in index.css.
-        success: 'hsl(var(--rc-success))',
+        // --rc-success is now a raw-hex alias of --rc-green (issue #485, T3a) rather than its
+        // own HSL triple, so this reads it with var() (not hsl(var(...))) — same treatment as
+        // --rc-surface below. It carries a real, distinct light-theme value by inheriting
+        // whatever --rc-green resolves to in each theme.
+        success: 'var(--rc-success)',
         play: 'hsl(var(--rc-play))',
         // --rc-surface is a raw hex custom property (not an HSL triple) as of issue #472 — it
         // now carries a real, distinct light-theme value (index.css's `[data-theme="light"]`
-        // block), unlike --rc-success/--rc-play above which are unchanged by this ticket.
+        // block), unlike --rc-play above which is unchanged by this ticket.
         surface: 'var(--rc-surface)',
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
