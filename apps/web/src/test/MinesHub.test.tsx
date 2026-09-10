@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MinesHubScreen } from '../screens/MinesHub.js';
 import type { MinesView, MinesBoardView } from '../App.js';
 
@@ -143,5 +143,34 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     await waitFor(() => expect(screen.getByTestId('hub-result-overlay')).toBeInTheDocument());
     expect(screen.getByTestId('hub-result-text').textContent).toContain('You Won');
     expect(screen.getByTestId('hub-result-delta').textContent).toContain('+18');
+  });
+
+  // T5: the shared "VS" match-found overlay (GameHub.tsx, gated on `matchForming` = phase 'waiting'
+  // with a currentMatchId already assigned). Mines keeps the default 2400ms search-dwell floor
+  // (unlike RPS/Coinflip's `searchFloorMs={0}`, issue #387), so a match paired immediately after
+  // PLAY still holds `matchForming` open for that floor — the VS beat's real window.
+  it('T5: the shared VS label fades in while matchForming holds, then fades back out once in-match', async () => {
+    vi.useFakeTimers();
+    try {
+      const { rerender } = render(<MinesHubScreen {...baseProps({ initialStake: 10 })} />);
+      expect(screen.getByTestId('hub-match-vs').style.opacity).toBe('0'); // idle: hidden
+
+      fireEvent.click(screen.getByTestId('hub-play')); // arms the search dwell start (searchStartRef)
+
+      // The server pairs the match immediately — rerender with a live match right away.
+      rerender(<MinesHubScreen {...baseProps({ initialStake: 10, currentMatchId: 'm1', gameState: view({ uncovered: [] }), legalMoves: asLegal(allCovered) })} />);
+
+      // Still inside the 2400ms dwell floor: phase holds at 'waiting' (matchForming true) — VS shows.
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      expect(screen.getByTestId('hub-match-vs').style.opacity).toBe('1');
+      expect(screen.queryByTestId('cell-0')).toBeNull(); // board itself still withheld (unchanged behavior)
+
+      // Just past the floor: phase flips to in-match — VS fades back out, board mounts.
+      await act(async () => { await vi.advanceTimersByTimeAsync(1450); });
+      expect(screen.getByTestId('hub-match-vs').style.opacity).toBe('0');
+      expect(screen.getByTestId('cell-0')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { DiceHubScreen } from '../screens/DiceHub.js';
 import type { DiceView } from '../App.js';
 
@@ -81,5 +81,31 @@ describe('DiceHubScreen', () => {
     const header = container.querySelector('header');
     const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');
     expect(bodyText).not.toMatch(/\$/);
+  });
+
+  // T5: the shared "VS" match-found overlay (GameHub.tsx, gated on `matchForming`). Dice keeps the
+  // default 2400ms search-dwell floor (no `searchFloorMs` override), so an immediately-paired match
+  // still holds `matchForming` open for that floor — the VS beat's real window.
+  it('T5: the shared VS label fades in while matchForming holds, then fades back out once in-match', async () => {
+    vi.useFakeTimers();
+    try {
+      const { rerender } = render(<DiceHubScreen {...baseProps({ initialStake: 10 })} />);
+      expect(screen.getByTestId('hub-match-vs').style.opacity).toBe('0'); // idle: hidden
+
+      fireEvent.click(screen.getByTestId('hub-play')); // arms the search dwell start
+
+      // The server pairs the match immediately — rerender with a live match right away.
+      rerender(<DiceHubScreen {...baseProps({ initialStake: 10, currentMatchId: 'm1', gameState: preRoll(), legalMoves: ['reveal'] })} />);
+
+      // Still inside the 2400ms dwell floor: phase holds at 'waiting' (matchForming true) — VS shows.
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      expect(screen.getByTestId('hub-match-vs').style.opacity).toBe('1');
+
+      // Just past the floor: phase flips to in-match — VS fades back out.
+      await act(async () => { await vi.advanceTimersByTimeAsync(1450); });
+      expect(screen.getByTestId('hub-match-vs').style.opacity).toBe('0');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
