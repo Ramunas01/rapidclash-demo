@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 
 describe('HubRibbon — tight-cropped wordmark, shrunk logo box (Advisor #2)', () => {
@@ -20,10 +20,11 @@ describe('HubRibbon — tight-cropped wordmark, shrunk logo box (Advisor #2)', (
 });
 
 describe('HubRibbon — solid full-width bg + below-header gap (Advisor #7)', () => {
-  it('fills the outer header with the solid bg-background token, full width (not max-w-md)', () => {
+  it('fills the outer header with the solid --rc-bg token (issue #484 — was bg-background, dark-only, no light override), full width (not max-w-md)', () => {
     render(<HubRibbon balance={1000} onLogo={vi.fn()} onWallet={vi.fn()} />);
     const header = screen.getByAltText('RapidClash').closest('header');
-    expect(header?.className).toContain('bg-background');
+    expect(header?.className).toContain('bg-[var(--rc-bg)]');
+    expect(header?.className).not.toContain('bg-background');
     expect(header?.className).not.toContain('bg-transparent');
     expect(header?.className).not.toMatch(/max-w-md/);
     expect(header?.className).toContain('w-full');
@@ -81,5 +82,45 @@ describe('HubRibbon — logo aligned to the content grid (Advisor #4)', () => {
     const header = screen.getByAltText('RapidClash').closest('header');
     const row = header?.querySelector(':scope > div');
     expect(row?.className).toContain('px-4');
+  });
+});
+
+describe('HubRibbon — T2 rebuild (issue #484): prototype auth pills + $ wallet chip + light theme', () => {
+  it('signed-out renders literal "LOGIN"/"SIGNUP" (one word each — prototype line ~2222/2225), not "LOG IN"/"SIGN UP"', () => {
+    render(<HubRibbon balance={1000} onLogo={vi.fn()} onWallet={vi.fn()} loggedIn={false} />);
+    expect(screen.getByTestId('hub-login-chip').textContent).toBe('LOGIN');
+    expect(screen.getByTestId('hub-signin-chip').textContent).toBe('SIGNUP');
+    expect(screen.queryByText('LOG IN')).toBeNull();
+    expect(screen.queryByText('SIGN UP')).toBeNull();
+  });
+
+  it('signed-in (registered, non-guest) balance renders the Owner-approved $ skin (CHARTER.md #4), not the play-money ¢ RcIcon', () => {
+    render(<HubRibbon balance={1642} onLogo={vi.fn()} onWallet={vi.fn()} loggedIn />);
+    const balance = screen.getByTestId('hub-balance');
+    expect(balance.textContent).toBe('$1,642');
+  });
+
+  it('guest mode keeps the play-money ¢ RcIcon balance — the $ skin is a registered-app-only change (CHARTER.md guest surface stays unchanged)', () => {
+    render(<HubRibbon balance={200} onLogo={vi.fn()} onWallet={vi.fn()} loggedIn isGuest />);
+    const balance = screen.getByTestId('hub-balance');
+    expect(balance.textContent).not.toContain('$');
+    expect(balance.textContent).toContain('200');
+  });
+
+  it('the wallet/login pill wrapper and balance/label text use --rc-* tokens, not the theme-unaware foreground/muted-foreground shadcn tokens', () => {
+    render(<HubRibbon balance={1000} onLogo={vi.fn()} onWallet={vi.fn()} loggedIn />);
+    const balance = screen.getByTestId('hub-balance');
+    expect(balance.className).toContain('text-[var(--rc-text)]');
+    expect(balance.className).not.toContain('text-foreground');
+  });
+
+  it('swaps the wordmark image by resolved theme (prototype logoWhiteDisplay/logoDarkDisplay — white "Rapid" is unreadable on a light --rc-bg)', async () => {
+    const { setThemeChoice } = await import('../lib/theme.js');
+    render(<HubRibbon balance={1000} onLogo={vi.fn()} onWallet={vi.fn()} />);
+    const darkSrc = screen.getByAltText('RapidClash').getAttribute('src');
+    act(() => setThemeChoice('light'));
+    const lightSrc = screen.getByAltText('RapidClash').getAttribute('src');
+    expect(lightSrc).not.toBe(darkSrc);
+    act(() => setThemeChoice('dark')); // restore — theme.ts is a module-level singleton shared across tests
   });
 });

@@ -105,9 +105,11 @@ describe('LimboHubScreen (GameHub + LimboPanel)', () => {
     expect(screen.queryByTestId('lock-btn')).toBeNull();
   });
 
-  it('is sanitized: no $ anywhere on the hub', () => {
+  it('is sanitized: no $ leaks into the game body (the header wallet chip legitimately shows the Owner-approved $ skin — CHARTER.md #4, issue #484)', () => {
     const { container } = render(<LimboHubScreen {...inMatch()} />);
-    expect(container.textContent ?? '').not.toMatch(/\$/);
+    const header = container.querySelector('header');
+    const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');
+    expect(bodyText).not.toMatch(/\$/);
   });
 
   // ── Shared draw→rematch beat (#161) — reuse proof on a SECOND game ───────────

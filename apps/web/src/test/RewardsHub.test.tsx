@@ -242,11 +242,13 @@ describe('RewardsHubScreen', () => {
     expect(panel.style.gridTemplateRows).toBe('1fr');
   });
 
-  it('is sanitized: no $ anywhere on the hub', async () => {
+  it('is sanitized: no $ leaks into the game body (the header wallet chip legitimately shows the Owner-approved $ skin — CHARTER.md #4, issue #484)', async () => {
     stubFetch(BOBBYLEE_SNAPSHOT);
     const { container } = render(<RewardsHubScreen {...baseProps()} />);
     await waitFor(() => expect(screen.getByTestId('rewards-xp')).toBeInTheDocument());
-    expect(container.textContent ?? '').not.toMatch(/\$/);
+    const header = container.querySelector('header');
+    const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');
+    expect(bodyText).not.toMatch(/\$/);
   });
 
   it('renders the shared footer (#323) between Bring a Rival and the bottom nav, wired to Games/Rewards', async () => {

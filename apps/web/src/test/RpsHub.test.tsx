@@ -141,7 +141,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     expect(screen.getByTestId('hub-result-rps')).toBeInTheDocument();
   });
 
-  it('JOIN balance-check + chrome + no $ (shared GameHub behaviour holds for RPS)', () => {
+  it('JOIN balance-check + chrome + no $ leaking into the game body (shared GameHub behaviour holds for RPS; the header wallet chip legitimately shows the Owner-approved $ skin — CHARTER.md #4, issue #484)', () => {
     const onTakeChallenge = vi.fn();
     const { container } = render(<RpsHubScreen {...baseProps({ balance: 5, challengesByGame: { rps: [CHALLENGE] }, onTakeChallenge })} />);
     const row = document.querySelector('[data-match-id="c1"]') as HTMLElement;
@@ -149,7 +149,9 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     fireEvent.click(within(row).getByTestId(/^games-carousel-join-/));
     expect(onTakeChallenge).not.toHaveBeenCalled();
     expect(screen.getByTestId('games-carousel-notice').textContent).toMatch(/not enough/i);
-    expect(container.textContent ?? '').not.toMatch(/\$/);
+    const header = container.querySelector('header');
+    const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');
+    expect(bodyText).not.toMatch(/\$/);
   });
 
   // Issue #337: the shared footer must sit OUTSIDE the gapped `flex flex-col gap-4` content div

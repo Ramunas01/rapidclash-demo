@@ -1,5 +1,7 @@
 import { Credits } from '../hub-shared/RcIcon.js';
-import logoUrl from '../../assets/brand/rapidclash-wordmark.webp';
+import { useTheme } from '../../lib/theme.js';
+import logoLightBgUrl from '../../assets/brand/rapidclash-wordmark.webp';
+import logoDarkBgUrl from '../../assets/brand/rapidclash-wordmark-dark.png';
 
 interface Props {
   /** Live balance in integer credits, or null while it's still loading. */
@@ -20,23 +22,54 @@ interface Props {
 }
 
 /**
- * Top ribbon — solid #0B0B0B fill (the canonical `bg-background` token) except the wordmark
- * (left) and a pill control (right): the Login/Sign-up auth-gate when logged out, the live
- * wallet chip (RC-icon balance + Wallet) when signed in. Shared across hubs. `sticky top-0` (in-flow)
- * on the body-scroll layout (#142): it reserves the wordmark band at the top, then sticks as the
- * page scrolls so content slides *underneath* it and disappears behind the solid fill (mirrors
- * HubToolbar's full-viewport-width solid base — never a fresh literal, or we recreate the drift
- * the unification removed; also stabilizes Safari's chrome-color sampling). `pt-[safe-area-inset-top]`
- * keeps the wordmark below the status bar under viewport-fit=cover; the safe-area strip above it
- * is now painted solid too, not the transparent-over-shell look this used to have.
+ * Top ribbon (issue #484, T2 shared-chrome rebuild) — rebuilt against `design/prototype/RapidClash
+ * Full Spec.html`'s persistent header block (`~line 2217`: `display:flex; align-items:center;
+ * justify-content:space-between; ...position:absolute; top:0; left:0; right:0; z-index:7;
+ * background:var(--rc-bg);`). Wordmark (left) + a pill control (right): the LOGIN/SIGNUP auth-gate
+ * pair when signed out (`~2219-2228`), the currency-badge + balance + WALLET pill when signed in
+ * (`~2229-2240`). Shared across hubs. `sticky top-0` (in-flow) on the body-scroll layout (#142): it
+ * reserves the wordmark band at the top, then sticks as the page scrolls so content slides
+ * *underneath* it and disappears behind the solid fill (mirrors HubToolbar's full-viewport-width
+ * solid base — never a fresh literal, or we recreate the drift the unification removed; also
+ * stabilizes Safari's chrome-color sampling). `pt-[safe-area-inset-top]` keeps the wordmark below
+ * the status bar under viewport-fit=cover.
  *
  * Structural note: the outer `<header>` is full-width (not `max-w-md`) so the solid fill spans
  * the whole viewport on wide screens — only the inner row is `max-w-md`-constrained. The inner
- * row also carries `pb-4`, restoring a resting-state gap below the header (Advisor #7).
+ * row also carries `pb-4`, restoring a resting-state gap below the header (Advisor #7) — this
+ * predates #484 and is deliberately left untouched: `layout.ts`'s `HUB_FIXED_TOP` hardcodes
+ * HubRibbon's real rendered height (60px, measured live via Playwright) and a padding change here
+ * would silently invalidate it without being able to re-measure in this pass.
+ *
+ * Light-mode threading (#484's actual point — every color below used to read a shadcn token with
+ * no light override, so the header stayed black-on-dark even once the rest of the app switched to
+ * light): `bg-background`/`text-foreground`/`text-muted-foreground` → the T1 `--rc-*` set
+ * (`--rc-bg`/`--rc-text`/`--rc-muted`), which DOES carry a `[data-theme='light']` override.
+ * `bg-surface` was already theme-aware (tailwind.config.js maps it straight to `var(--rc-surface)`,
+ * no `hsl()` wrap) so it's untouched. `bg-brand` (the SIGNUP/WALLET accent pill) intentionally
+ * stays a fixed brand-purple in both themes — matches the prototype, whose own `navXColor`/pill
+ * literals (`#8B45F0`) never vary with `light`.
+ *
+ * Wordmark: the prototype swaps TWO logo images by theme (`logoWhiteDisplay`/`logoDarkDisplay`,
+ * `assets/rapidclash-logo-white-crop.png` vs `-dark-crop.png` — white "Rapid" for dark backgrounds,
+ * black "Rapid" for light ones; "Clash" stays brand-purple in both). This app's pre-existing single
+ * wordmark asset (`assets/brand/rapidclash-wordmark.webp`) IS the white-on-dark variant only — a
+ * real light-mode bug (white "Rapid" text would vanish on the light `--rc-bg`). Fixed here by
+ * copying the prototype's dark-crop PNG in alongside it and swapping on `useTheme().resolved`.
+ *
+ * Wallet chip: the `$`/multi-currency skin is Owner-approved (`CHARTER.md` #4 amendment,
+ * `docs/NEW_DESIGN_MIGRATION.md` → "Currency presentation") for the registered app — this renders
+ * a fixed USD badge (prototype's `<symbol id="cur-USD">`, line ~104: green circle + white "$") next
+ * to the balance instead of the play-money `¢` `RcIcon`. Guest mode is unchanged — CHARTER.md's
+ * guest surface stays `¢`/play-money-framed, so the `isGuest` branch below still renders `<Credits>`.
+ * The full multi-currency picker (`curOpen`, the dropdown this chip could expand into) is its own
+ * not-yet-started ticket (`NEW_DESIGN_MIGRATION.md`'s "Currency picker" row) — out of scope here.
  */
 export function HubRibbon({ balance, onLogo, onWallet, loggedIn = true, isGuest = false }: Props) {
+  const { resolved } = useTheme();
+  const logoUrl = resolved === 'light' ? logoDarkBgUrl : logoLightBgUrl;
   return (
-    <header className="sticky top-0 z-20 w-full bg-background pt-[env(safe-area-inset-top)]">
+    <header className="sticky top-0 z-20 w-full bg-[var(--rc-bg)] pt-[env(safe-area-inset-top)]">
       <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 pb-4">
         {isGuest ? (
           // #283: guest mode has no game list / home hub to return to — every OTHER piece of
@@ -60,46 +93,59 @@ export function HubRibbon({ balance, onLogo, onWallet, loggedIn = true, isGuest 
               data-testid="hub-guest-badge"
               className="flex items-center gap-2 rounded-full bg-surface py-1.5 pl-3.5 pr-4"
             >
-              <span className="text-sm font-bold tabular-nums text-foreground" data-testid="hub-balance">
+              <span className="text-sm font-bold tabular-nums text-[var(--rc-text)]" data-testid="hub-balance">
                 {balance === null ? '—' : <Credits amount={balance} />}
               </span>
-              <span className="text-xs font-extrabold uppercase tracking-wide text-muted-foreground">Demo</span>
+              <span className="text-xs font-extrabold uppercase tracking-wide text-[var(--rc-muted)]">Demo</span>
             </div>
           ) : loggedIn ? (
+            // Prototype `~2231-2241`: outer pill `padding:4px 4px 4px 14px; gap:0`, the
+            // currency+balance group carries its own `padding-right:12px` for the visual gap
+            // before the WALLET sub-pill (rather than a `gap` on the outer flex row).
             <button
               type="button"
               onClick={onWallet}
               aria-label="Open wallet"
               data-testid="hub-wallet-chip"
-              className="flex items-center gap-2 rounded-full bg-surface py-1.5 pl-3.5 pr-1.5 transition-colors hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+              className="flex items-center gap-0 rounded-full bg-surface py-1 pl-[14px] pr-1 transition-colors hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
             >
-              <span className="text-sm font-bold tabular-nums text-foreground" data-testid="hub-balance">
-                {balance === null ? '—' : <Credits amount={balance} />}
+              <span className="flex items-center gap-[7px] pr-3">
+                <UsdBadge />
+                <span
+                  className="tabular-nums text-[var(--rc-text)]"
+                  style={{ fontFamily: "'Space Grotesk', Arial, Helvetica, sans-serif", fontSize: '16px', fontWeight: 700, letterSpacing: '-0.2px' }}
+                  data-testid="hub-balance"
+                >
+                  {balance === null ? '—' : `$${balance.toLocaleString('en-US')}`}
+                </span>
               </span>
-              <span className="flex items-center gap-1.5 rounded-full bg-brand px-3.5 py-2 text-xs font-extrabold uppercase tracking-wide text-white">
+              <span className="flex items-center gap-1.5 rounded-full bg-brand px-[11px] py-[9px] text-xs font-extrabold uppercase tracking-wide text-white">
                 <WalletGlyph />
                 Wallet
               </span>
             </button>
           ) : (
-            <div className="flex items-center gap-1 rounded-full bg-surface py-1.5 pl-4 pr-1.5">
+            // Prototype `~2220-2227`: outer pill `gap:4px; padding:4px`; each inner pill
+            // `padding:9px 17px`, 14px bold text, `letter-spacing:0.6px`, literal "LOGIN"/"SIGNUP"
+            // (one word each — not "LOG IN"/"SIGN UP").
+            <div className="flex items-center gap-1 rounded-full bg-surface p-1">
               <button
                 type="button"
                 onClick={onWallet}
                 aria-label="Log in"
                 data-testid="hub-login-chip"
-                className="whitespace-nowrap px-2 py-1.5 text-[13px] font-bold tracking-wide text-foreground focus:outline-none"
+                className="whitespace-nowrap rounded-full px-[17px] py-[9px] text-[14px] font-bold tracking-[0.6px] text-[var(--rc-text)] focus:outline-none"
               >
-                LOG IN
+                LOGIN
               </button>
               <button
                 type="button"
                 onClick={onWallet}
                 aria-label="Sign up"
                 data-testid="hub-signin-chip"
-                className="whitespace-nowrap rounded-full bg-brand px-5 py-2.5 text-[13px] font-extrabold tracking-wide text-white transition-colors hover:brightness-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                className="whitespace-nowrap rounded-full bg-brand px-[17px] py-[9px] text-[14px] font-bold tracking-[0.6px] text-white transition-colors hover:brightness-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
               >
-                SIGN UP
+                SIGNUP
               </button>
             </div>
           )}
@@ -109,11 +155,33 @@ export function HubRibbon({ balance, onLogo, onWallet, loggedIn = true, isGuest 
   );
 }
 
+/** USD currency badge — prototype's `<symbol id="cur-USD">` (line ~104 of the spec HTML): a flat
+ *  green circle + white "$". Fixed brand-money colors, not `--rc-*` tokens — same treatment as
+ *  `RcIcon`'s own literal fills (`#0B4D24`/`#0F7A37`/…): a currency glyph's identity color, not
+ *  chrome, so it doesn't vary with theme (the prototype's own `cur-USD` symbol is unconditional
+ *  too — never swapped by `light`). */
+function UsdBadge() {
+  return (
+    <svg width="19" height="19" viewBox="0 0 32 32" aria-hidden="true" style={{ display: 'block', flex: '0 0 19px' }}>
+      <circle cx="16" cy="16" r="16" fill="#16A34A" />
+      <text
+        x="16" y="16.8" textAnchor="middle" dominantBaseline="central"
+        fontFamily="Arial, Helvetica, sans-serif" fontSize="24" fontWeight="bold" fill="#FFFFFF"
+      >
+        $
+      </text>
+    </svg>
+  );
+}
+
+/** Wallet glyph — prototype `~2238`: `width="17" height="17" viewBox="0 0 24 24" stroke-width="2"`,
+ *  a simple card-slot wallet (rounded rect + one horizontal divider line), not the flap/envelope
+ *  shape this replaces. Always white — it only ever sits on the fixed brand-purple sub-pill. */
 function WalletGlyph() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
-      <rect x="2" y="7" width="20" height="14" rx="2" />
-      <path d="M16 3H8L2 7" />
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2" y="6" width="20" height="13" rx="3" />
+      <path d="M2 10h20" />
     </svg>
   );
 }

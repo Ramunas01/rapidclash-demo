@@ -111,11 +111,13 @@ describe('HomeHubScreen', () => {
     expect(screen.getByTestId('games-carousel-notice').textContent).toMatch(/not enough/i);
   });
 
-  it('is sanitized: no $ anywhere on the hub', async () => {
+  it('is sanitized: no $ leaks into the game body (the header wallet chip legitimately shows the Owner-approved $ skin — CHARTER.md #4, issue #484)', async () => {
     const challengesByGame = { coinflip: [challenge('c1', 'alice', 5, 100)] };
     const { container } = render(<HomeHubScreen {...baseProps({ challengesByGame })} />);
     await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
-    expect(container.textContent ?? '').not.toMatch(/\$/);
+    const header = container.querySelector('header');
+    const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');
+    expect(bodyText).not.toMatch(/\$/);
   });
 
   it('renders the shared footer (#323) wired to Games/Rewards, no $ anywhere', async () => {
