@@ -477,7 +477,10 @@ function GridControls({
 }
 
 /** SORT sheet (prototype's `sortOpen` modal) — a centered sheet over a dimmed backdrop, three
- *  fixed options (Popularity default / Newest / Alphabetical), the active one tinted + checked. */
+ *  fixed options (Popularity default / Newest / Alphabetical), the active one tinted + checked.
+ *  Background reads the `--rc-sort-sheet-bg` token (issue #472 — light `#D3D3DD` / dark
+ *  `#1A1A2E`, the prototype's own dedicated `sortSheetBg` value, line 4005) rather than
+ *  `bg-card`, so it actually re-themes with the rest of the app. */
 function SortSheet({
   sort, onSort, open, onClose,
 }: { sort: SortMode; onSort(s: SortMode): void; open: boolean; onClose(): void }) {
@@ -485,7 +488,7 @@ function SortSheet({
   return (
     <div className="fixed inset-0 z-30" data-testid="home-sort-sheet">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="absolute left-[26px] right-[26px] top-1/2 -translate-y-1/2 rounded-[26px] bg-card p-2 shadow-2xl">
+      <div className="absolute left-[26px] right-[26px] top-1/2 -translate-y-1/2 rounded-[26px] bg-[var(--rc-sort-sheet-bg)] p-2 shadow-2xl">
         <div className="flex items-center gap-2.5 px-4 pb-2.5 pt-3">
           <span className="block w-5" aria-hidden="true" />
           <span className="flex-1 text-center text-[15px] font-bold tracking-[0.06em] text-foreground">SORT</span>
