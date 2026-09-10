@@ -1,5 +1,21 @@
 # Coder → PM (append-only; newest on top)
 
+### 2026-09-10#2 — Games-grid fidelity: tile aspect ratio + Popularity tie-break — PR #479 (issue #476)            [OPEN]
+From: Coder   Re: issue #476, `docs/COMMS/ADVISOR_TO_PM.md` 2026-09-10#2
+
+Worktree at `.claude/worktrees/agent-a29a2a1ae605a8394`, branch `feature/476-games-grid-fidelity`, started from `main` (`23824b3`, #475's merge). Read the issue, `CODER_BRIEF.md`, and `WORKING_AGREEMENT.md` before starting. Confirmed the two `aspect-[2/3]` locations, the `localeCompare` tie-break, and the prototype's `112 / 158`/`GRID` values directly in the code and `Full Spec.html` before touching anything — line numbers in the issue were close but not exact (tile aspect-ratio ended up at `HomeHub.tsx:554`/`:567` after `pnpm install`, matching the issue).
+
+**The change, all in `HomeHub.tsx` + `gameSort.ts`, no other files touched:**
+1. Both tile variants' `aspect-[2/3]` → `aspect-[112/158]`, matching the prototype's `aspect-ratio: 112 / 158` (`Full Spec.html:241`/`:931`) exactly. Spot-checked several tiles in a real capture afterward — cover-crop reads cleanly, nothing awkward.
+2. Added `GRID_ORDER` to `gameSort.ts` (same shape/pattern as the existing `INTRO_ORDER`), encoding the prototype's `GRID` array (`Full Spec.html:2842`) — Coinflip first. Wired it as the Popularity sort's tie-break in place of `localeCompare`.
+3. Item 3 (category-rail → SORT/RANDOM gap) — root-caused it rather than leaving it best-effort-skipped: the prototype's rail scroll container carries a `padding-bottom: 9px` (`Full Spec.html:185`) that `CategoryTabs`' `pt-1` (top-only) had no counterpart for. Added `pb-[9px]`. Confident in this one — it's an exact, quotable value with a real gap in the app-side CSS, not a guess.
+
+**Fidelity harness — ran it for real, before/after, both themes, all 4 required screens.** Needed `pnpm install` (fresh worktree, no `node_modules`), then `pnpm -w build` (root `tsc -b`, to materialize `@rapidclash/core`/games packages before `apps/server` would build — `apps/web` alone only needed `@rapidclash/shared`). "Before" = `git stash` of this branch's 3-file diff, rebuilt `apps/web`, served on :3002; "after" = this branch, rebuilt, served on :3001. All 8 screen/theme combos improved: dark +5 to +13pt, light +2 to +11pt (full table in the PR description). None crosses the 99.5% gate yet — expected, per the harness's own "known limitations" note (residual dark-theme drift is a separate fixed-region-anchoring gap) and the still-in-progress light-theme rollout (explicitly out of scope here). Visually confirmed via the diff images and a direct capture screenshot that the grid now shows Coinflip-first tiles at the new aspect ratio with no new drift introduced.
+
+**Verification**: `pnpm -w build` clean. `pnpm lint` clean. `pnpm test` (root `vitest run`, full workspace, no flakiness this run) — **106 test files, 1382 tests, all passed**, including a new `HomeHub.test.tsx` case asserting the Popularity tie-break falls back to the exact GRID order (not just "some order") when every count is 0.
+
+**Ask**: PR #479 (https://github.com/Ramunas01/rapidclash-demo/pull/479) opens against issue #476. Not merging myself. Nothing flagged for owner-level review — implementation-only, no contract/shared-type/docs-spec touch.
+
 ### 2026-09-10#1 — Games-page hero rebuild — PR #468 (issue #465, Phase 3)            [OPEN]
 From: Coder   Re: issue #465, `docs/NEW_DESIGN_MIGRATION.md` Phase 3
 
