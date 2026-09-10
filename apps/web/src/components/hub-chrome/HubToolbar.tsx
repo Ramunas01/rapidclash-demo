@@ -21,13 +21,29 @@ interface Props {
 }
 
 /**
- * Bottom navigation — the frame's transparent bar holding one rounded pill with 5 items
- * (Menu · Games · Account · Rewards · Chat). games/account/rewards/menu are all wired to live
- * surfaces (issue #414 flips Menu from reserved to live, opening the full-screen Menu overlay —
- * see `useMenuOverlay.ts`/`MenuOverlay.tsx`); chat remains reserved and renders visibly inactive
- * (greyed, no action) — never a live-looking button that silently no-ops. Shared across hubs;
- * `position: fixed` at the bottom (#142 keeps the footer fixed while the page body scrolls). The
- * bottom pad clears the home-indicator safe-area under viewport-fit=cover.
+ * Bottom navigation (issue #484, T2 shared-chrome rebuild) — the frame's transparent bar holding
+ * one rounded pill with 5 items (Menu · Games · Account · Rewards · Chat), rebuilt against
+ * `design/prototype/RapidClash Full Spec.html`'s persistent nav block (`~line 2724`:
+ * `position:absolute; bottom:74px; left:14px; right:14px; border-radius:26px;
+ * background:var(--rc-surface); box-shadow:0 -6px 18px rgba(0,0,0,0.45), 0 -1px 0
+ * rgba(255,255,255,0.06); padding:12px 6px;`, five items `~2725-2744` in the exact Menu / Games /
+ * Account / Rewards / Chat order, each icon+12px-bold-label pair colored by a per-item `nav*Color`
+ * state — `#8B45F0` active / `var(--rc-muted)` inactive). games/account/rewards/menu are all wired
+ * to live surfaces (issue #414 flips Menu from reserved to live, opening the full-screen Menu
+ * overlay — see `useMenuOverlay.ts`/`MenuOverlay.tsx`); chat remains reserved and renders visibly
+ * inactive (greyed, no action) — never a live-looking button that silently no-ops. Shared across
+ * hubs; `position: fixed` at the bottom (#142 keeps the footer fixed while the page body scrolls).
+ * The bottom pad clears the home-indicator safe-area under viewport-fit=cover.
+ *
+ * Light-mode threading (#484's actual point): the two backdrop layers below (`hub-nav-fade`'s
+ * gradient, `hub-nav-fill`) used to build off the shadcn `--background` token, which carries no
+ * `[data-theme='light']` override — so they stayed solid #0B0B0B even once the rest of the app
+ * went light, showing a dark bar under a light pill. Both now build off the T1 `--rc-bg` token
+ * instead (which DOES have a light value). The pill itself (`bg-surface`) was already
+ * theme-aware — `tailwind.config.js` maps it straight to `var(--rc-surface)`, no `hsl()` wrap —
+ * so it's untouched. The active-item glow (`--rc-nav-active-glow`, `index.css`) and `text-brand`
+ * are this app's own brand-purple, fixed in both themes — matches the prototype's own
+ * `navXColor` literal (`#8B45F0`), which never varies with `light` either.
  */
 export function HubToolbar({ onGames, onAccount, onRewards, onMenu, active = 'games' }: Props) {
   const menuBtnRef = useRef<HTMLButtonElement>(null);
@@ -41,37 +57,39 @@ export function HubToolbar({ onGames, onAccount, onRewards, onMenu, active = 'ga
     <>
       {/* Scroll fade (#407): a 62px gradient dissolve sitting just above the solid mask below, so
           content scrolling under the bar fades into the background instead of cutting off hard.
-          `--rc-bg` from the design handoff is this app's own `bg-background` token (#0B0B0B in both
-          — confirmed via apps/web/src/index.css), so we build the gradient from it rather than a
-          parallel custom property. Purely visual (`pointer-events-none`) and sits at z-20, the same
-          tier as the nav pill (issue #446 — was z-[15], which the Menu overlay's own z-[18] wrapper
-          painted over, hiding this layer whenever that overlay was open) so the pill still floats
-          over it and its buttons still tap through. Full width, not max-w-md, so nothing peeks past
-          its sides on wider screens. */}
+          Built from the T1 `--rc-bg` token (issue #484 — was `hsl(var(--background))`, which has
+          no `[data-theme='light']` override and so stayed dark under a light theme; `--rc-bg` does)
+          rather than a parallel custom property. Purely visual (`pointer-events-none`) and sits at
+          z-20, the same tier as the nav pill (issue #446 — was z-[15], which the Menu overlay's own
+          z-[18] wrapper painted over, hiding this layer whenever that overlay was open) so the pill
+          still floats over it and its buttons still tap through. Full width, not max-w-md, so
+          nothing peeks past its sides on wider screens. */}
       <div
         aria-hidden="true"
         data-testid="hub-nav-fade"
-        className="pointer-events-none fixed bottom-[calc(2.75rem_+_env(safe-area-inset-bottom))] left-0 right-0 z-20 h-[62px] bg-[linear-gradient(to_top,hsl(var(--background))_0%,transparent_100%)]"
+        className="pointer-events-none fixed bottom-[calc(2.75rem_+_env(safe-area-inset-bottom))] left-0 right-0 z-20 h-[62px] bg-[linear-gradient(to_top,var(--rc-bg)_0%,transparent_100%)]"
       />
-      {/* Solid base behind & below the nav: a FULL-viewport-width #0B0B0B block (the canonical
-          `bg-background` token — never a fresh literal, or we recreate the drift the unification
-          removed) so scrolled content can't peek through the pill's rounded-corner notches or the
-          strip below it, and Safari's bottom bar samples a constant colour instead of moving content.
-          Purely visual (`pointer-events-none`) and sits at z-20, the same tier as the nav pill (issue
-          #446 — was z-[15], which the Menu overlay's own z-[18] wrapper painted over, hiding this
-          layer whenever that overlay was open) so the pill still floats over it and its buttons still
-          tap through. It rises to ~half the pill's height (so the pill's lower rounded corners have
-          solid behind them — tuned blind, adjust vs the running UI) and reaches bottom:0 including
-          the home-indicator safe-area (matching the nav's own pb). Full width, not max-w-md, so
-          nothing peeks past its sides on wider screens. This is the design handoff's "solid mask"
-          layer (#407) — the fade layer above sits on top of it. */}
+      {/* Solid base behind & below the nav: a FULL-viewport-width block built from the T1 `--rc-bg`
+          token (issue #484 — was the shadcn `bg-background` token, dark-only, no light override;
+          `--rc-bg` carries one) so scrolled content can't peek through the pill's rounded-corner
+          notches or the strip below it, and Safari's bottom bar samples a constant colour instead
+          of moving content. Purely visual (`pointer-events-none`) and sits at z-20, the same tier
+          as the nav pill (issue #446 — was z-[15], which the Menu overlay's own z-[18] wrapper
+          painted over, hiding this layer whenever that overlay was open) so the pill still floats
+          over it and its buttons still tap through. It rises to ~half the pill's height (so the
+          pill's lower rounded corners have solid behind them — tuned blind, adjust vs the running
+          UI) and reaches bottom:0 including the home-indicator safe-area (matching the nav's own
+          pb). Full width, not max-w-md, so nothing peeks past its sides on wider screens. This is
+          the design handoff's "solid mask" layer (#407) — the fade layer above sits on top of it. */}
       <div
         aria-hidden="true"
         data-testid="hub-nav-fill"
-        className="pointer-events-none fixed bottom-0 left-0 right-0 z-20 h-[calc(2.75rem_+_env(safe-area-inset-bottom))] bg-background"
+        className="pointer-events-none fixed bottom-0 left-0 right-0 z-20 h-[calc(2.75rem_+_env(safe-area-inset-bottom))] bg-[var(--rc-bg)]"
       />
       <nav aria-label="Primary" className="fixed bottom-0 left-1/2 z-20 w-full max-w-md -translate-x-1/2 bg-transparent px-3 pb-[calc(0.5rem_+_env(safe-area-inset-bottom))] pt-1">
-      <div className="flex items-center justify-between rounded-[26px] bg-surface px-1.5 py-3">
+      {/* Prototype `~2724`: `border-radius:26px; background:var(--rc-surface); box-shadow:0 -6px
+          18px rgba(0,0,0,0.45), 0 -1px 0 rgba(255,255,255,0.06); padding:12px 6px`. */}
+      <div className="flex items-center justify-between rounded-[26px] bg-surface px-1.5 py-3 shadow-[0_-6px_18px_rgba(0,0,0,0.45),0_-1px_0_rgba(255,255,255,0.06)]">
         <ToolbarItem label="Menu" active={active === 'menu'} onClick={handleMenuClick} icon={ICON_MENU} btnRef={menuBtnRef} />
         <ToolbarItem label="Games" active={active === 'games'} onClick={onGames} icon={ICON_GAMES} />
         <ToolbarItem label="Account" active={active === 'account'} onClick={onAccount} icon={ICON_ACCOUNT} />
@@ -96,8 +114,9 @@ function ToolbarItem({
   btnRef?: Ref<HTMLButtonElement>;
 }) {
   const testid = `hub-nav-${label.toLowerCase()}`;
+  // Prototype `~2727` etc: `font-size:12px; letter-spacing:0.6px; font-weight:bold`.
   const labelText = (
-    <span className="text-[12px] font-bold tracking-[0.02em]">{label}</span>
+    <span className="text-[12px] font-bold tracking-[0.6px]">{label}</span>
   );
 
   if (comingSoon) {
@@ -107,7 +126,7 @@ function ToolbarItem({
         aria-disabled="true"
         data-testid={testid}
         title={`${label} — coming soon`}
-        className="flex flex-1 flex-col items-center gap-1.5 py-0.5 text-muted-foreground opacity-40"
+        className="flex flex-1 flex-col items-center gap-1.5 py-0.5 text-[var(--rc-muted)] opacity-40"
       >
         {icon}
         {labelText}
@@ -124,7 +143,7 @@ function ToolbarItem({
       data-testid={testid}
       className={cn(
         'flex flex-1 flex-col items-center gap-1.5 py-0.5 transition-colors focus:outline-none',
-        active ? 'text-brand drop-shadow-[0_0_5px_#8140e288]' : 'text-muted-foreground hover:text-foreground',
+        active ? 'text-brand drop-shadow-[var(--rc-nav-active-glow)]' : 'text-[var(--rc-muted)] hover:text-[var(--rc-text)]',
       )}
     >
       {icon}

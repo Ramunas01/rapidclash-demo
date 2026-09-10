@@ -438,11 +438,13 @@ describe('ProfileHubScreen', () => {
     });
   });
 
-  it('is sanitized: no $ anywhere on the hub', async () => {
+  it('is sanitized: no $ leaks into the game body (the header wallet chip legitimately shows the Owner-approved $ skin — CHARTER.md #4, issue #484)', async () => {
     const { container } = render(<ProfileHubScreen {...baseProps()} />);
     await waitFor(() => expect(screen.getByTestId('profile-xp').textContent).toBe('17,800'));
     await waitFor(() => expect(screen.getByTestId('profile-match-m1')).toBeInTheDocument());
-    expect(container.textContent ?? '').not.toMatch(/\$/);
+    const header = container.querySelector('header');
+    const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');
+    expect(bodyText).not.toMatch(/\$/);
   });
 
   it('renders the shared footer (#323), wired to Games/Rewards, replacing the old inline footer', async () => {

@@ -522,11 +522,13 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     expect(onOpenWallet).toHaveBeenCalled();
   });
 
-  it('is sanitized: no $ anywhere on the hub', () => {
+  it('is sanitized: no $ leaks into the game body (the header wallet chip legitimately shows the Owner-approved $ skin — CHARTER.md #4, issue #484)', () => {
     const { container } = render(
       <CoinflipHubScreen {...baseProps({ challengesByGame: { coinflip: [CHALLENGE] } })} />
     );
-    expect(container.textContent ?? '').not.toMatch(/\$/);
+    const header = container.querySelector('header');
+    const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');
+    expect(bodyText).not.toMatch(/\$/);
   });
 
   it('#161: a same-side draw runs the SHARED beat here too — orange on both bars, then clears (generic replays signal, no CoinflipHub change)', async () => {

@@ -185,8 +185,10 @@ describe('CrashHubScreen (GameHub + CrashPanel)', () => {
     await waitFor(() => expect(screen.getByTestId('crash-own-pill').className).toContain('ring-success'), { timeout: 2000 });
   });
 
-  it('is sanitized: no $ anywhere on the hub', () => {
+  it('is sanitized: no $ leaks into the game body (the header wallet chip legitimately shows the Owner-approved $ skin — CHARTER.md #4, issue #484)', () => {
     const { container } = render(<CrashHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: ['eject'] })} />);
-    expect(container.textContent ?? '').not.toMatch(/\$/);
+    const header = container.querySelector('header');
+    const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');
+    expect(bodyText).not.toMatch(/\$/);
   });
 });

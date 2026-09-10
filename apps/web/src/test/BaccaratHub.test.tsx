@@ -89,8 +89,10 @@ describe('BaccaratHubScreen', () => {
     expect(screen.queryByTestId('card-back-art')).toBeNull(); // nothing hidden anymore
   });
 
-  it('is sanitized: no $ anywhere on the hub', () => {
+  it('is sanitized: no $ leaks into the game body (the header wallet chip legitimately shows the Owner-approved $ skin — CHARTER.md #4, issue #484)', () => {
     const { container } = render(<BaccaratHubScreen {...baseProps({ currentMatchId: 'm1', gameState: resolved() })} />);
-    expect(container.textContent ?? '').not.toMatch(/\$/);
+    const header = container.querySelector('header');
+    const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');
+    expect(bodyText).not.toMatch(/\$/);
   });
 });

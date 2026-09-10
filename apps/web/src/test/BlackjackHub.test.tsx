@@ -292,9 +292,11 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
     expect(screen.getByTestId('hub-slot-opponent').textContent).toContain('Povcnent');
   });
 
-  it('is sanitized: no $ anywhere on the hub', () => {
+  it('is sanitized: no $ leaks into the game body (the header wallet chip legitimately shows the Owner-approved $ skin — CHARTER.md #4, issue #484)', () => {
     const { container } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: ['hit', 'stand'] })} />);
-    expect(container.textContent ?? '').not.toMatch(/\$/);
+    const header = container.querySelector('header');
+    const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');
+    expect(bodyText).not.toMatch(/\$/);
   });
 
   // ── Part 1: hand-value label (soft/hard) — the docs/BLACKJACK.md worked examples ──

@@ -14,9 +14,10 @@ describe('HubToolbar — solid #0B0B0B base fill behind the bottom nav', () => {
     expect(cls).toMatch(/\bleft-0\b/);
     expect(cls).toMatch(/\bright-0\b/);
     expect(cls).not.toMatch(/max-w-md/);
-    // The canonical token, never a fresh literal (would re-create the unification drift).
-    expect(cls).toContain('bg-background');
-    expect(cls).not.toContain('#'); // no inline hex
+    // The canonical --rc-bg token (issue #484 — was `bg-background`, dark-only, no light
+    // override; --rc-bg carries one so this layer re-themes with the rest of the app).
+    expect(cls).toContain('var(--rc-bg)');
+    expect(cls).not.toMatch(/#[0-9a-fA-F]{3,6}/); // no inline hex
     // Purely visual, z-20 — same tier as the nav pill (issue #446: was z-[15], which the Menu
     // overlay's own z-[18] wrapper painted over, hiding this layer whenever it was open). Document
     // order still puts the pill on top since it renders after this layer.
@@ -111,9 +112,10 @@ describe('HubToolbar — scroll-fade layer + label size (issue #407, navbar poli
     expect(cls).toMatch(/\bleft-0\b/);
     expect(cls).toMatch(/\bright-0\b/);
     expect(cls).not.toMatch(/max-w-md/);
-    // Gradient dissolve built from the canonical bg token, not a parallel --rc-bg literal.
+    // Gradient dissolve built from the canonical --rc-bg token (issue #484 — was
+    // `hsl(var(--background))`, which has no light override).
     expect(cls).toContain('linear-gradient(to_top');
-    expect(cls).toContain('hsl(var(--background))');
+    expect(cls).toContain('var(--rc-bg)');
     expect(cls).not.toMatch(/#[0-9a-fA-F]{3,6}/); // no inline hex
     expect(cls).toContain('h-[62px]');
     // Purely visual, z-20 (issue #446 — same tier as the nav pill), pointer-events pass through.
@@ -162,7 +164,7 @@ describe('HubToolbar — scroll-fade layer + label size (issue #407, navbar poli
     const games = screen.getByTestId('hub-nav-games');
     expect(games.getAttribute('aria-current')).toBe('page');
     expect(games.className).toContain('text-brand');
-    expect(games.className).toContain('drop-shadow-[0_0_5px_#8140e288]');
+    expect(games.className).toContain('drop-shadow-[var(--rc-nav-active-glow)]');
   });
 });
 
@@ -276,5 +278,38 @@ describe('HubToolbar — icon geometry & sizing (issue #328, matching design-ref
     expect(svg?.querySelector('path')?.getAttribute('d')).toBe(
       'M5.4 4h13.2A2.4 2.4 0 0 1 21 6.4v7.8a2.4 2.4 0 0 1-2.4 2.4H9.8L5.2 20.4A.7.7 0 0 1 4 19.8V6.4A2.4 2.4 0 0 1 5.4 4z',
     );
+  });
+});
+
+describe('HubToolbar — T2 rebuild (issue #484): prototype pill styling + light-theme tokens', () => {
+  it('the pill carries the prototype box-shadow (line ~2724: 0 -6px 18px rgba(0,0,0,.45), 0 -1px 0 rgba(255,255,255,.06))', () => {
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} />);
+    const pill = screen.getByTestId('hub-nav-games').parentElement;
+    expect(pill?.className).toContain('shadow-[0_-6px_18px_rgba(0,0,0,0.45),0_-1px_0_rgba(255,255,255,0.06)]');
+    // bg-surface maps straight to var(--rc-surface) (tailwind.config.js) — theme-aware already,
+    // no hsl() wrap, matching the prototype's `background:var(--rc-surface)`.
+    expect(pill?.className).toContain('bg-surface');
+  });
+
+  it('item labels use the prototype letter-spacing (0.6px), not an approximate em value', () => {
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} />);
+    for (const label of ['menu', 'games', 'account', 'rewards', 'chat']) {
+      const span = screen.getByTestId(`hub-nav-${label}`).querySelector('span');
+      expect(span?.className).toContain('tracking-[0.6px]');
+    }
+  });
+
+  it('inactive items and the reserved Chat item use the --rc-muted token, not the theme-unaware muted-foreground shadcn token', () => {
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} active="games" />);
+    expect(screen.getByTestId('hub-nav-account').className).toContain('text-[var(--rc-muted)]');
+    expect(screen.getByTestId('hub-nav-chat').className).toContain('text-[var(--rc-muted)]');
+    expect(screen.getByTestId('hub-nav-account').className).not.toContain('text-muted-foreground');
+    expect(screen.getByTestId('hub-nav-chat').className).not.toContain('text-muted-foreground');
+  });
+
+  it('the backdrop fade/fill layers use --rc-bg, not the theme-unaware background/hsl tokens', () => {
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} />);
+    expect(screen.getByTestId('hub-nav-fade').className).not.toContain('hsl(var(--background))');
+    expect(screen.getByTestId('hub-nav-fill').className).not.toContain('bg-background');
   });
 });

@@ -206,8 +206,10 @@ describe('RouletteHubScreen (GameHub + RoulettePanel)', () => {
     expect(within(screen.getByTestId('result-you')).queryByText(/win/i)).toBeNull();
   });
 
-  it('is sanitized: no $ anywhere on the hub (play-money credits, chips are scoring only)', () => {
+  it('is sanitized: no $ leaks into the game body (play-money credits, chips are scoring only — the header wallet chip legitimately shows the Owner-approved $ skin, CHARTER.md #4, issue #484)', () => {
     const { container } = render(<RouletteHubScreen {...inMatch()} />);
-    expect(container.textContent ?? '').not.toMatch(/\$/);
+    const header = container.querySelector('header');
+    const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');
+    expect(bodyText).not.toMatch(/\$/);
   });
 });
