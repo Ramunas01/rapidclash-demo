@@ -154,10 +154,32 @@ export const SCREENS: ScreenDef[] = [
     driveProto: async (page) => {
       await navTo(page, 'Rewards');
     },
-    // No driveApp: the app gates RewardsHub behind auth (a signed-out Rewards tap opens the
-    // auth modal), so there's no signed-out Rewards screen to compare yet. `scrollFrames`
-    // coverage is ready and waiting — add `driveApp` here once T3b heavy rebuilds RewardsHub
-    // and it's reachable signed-in.
+    // Issue #498 (T3b heavy group): RewardsHub is now light-mode-correct and reachable, so this
+    // gets a driveApp. Unlike the prototype (whose `isRewards` view renders signed-out too, with
+    // the profile card blurred), the real app gates RewardsHub behind auth entirely — a
+    // signed-out tap on the Rewards nav item opens `AuthModal`, not the hub (`App.tsx`'s
+    // `onRewardsTap`). So this drives a REAL sign-up through that modal first (mirrors the
+    // prototype module's own `signIn` helper above, but for the app's real `api.register` flow,
+    // not the prototype's `submitAuth` no-op): tap Rewards (signed out) → opens the auth modal →
+    // fill a freshly-minted, run-unique username/password so repeat harness runs never collide on
+    // "already taken" → submit → wait for the modal to close → tap Rewards again, now signed in,
+    // which actually navigates (`onOpenRewards` → `goToRewards`). The resulting capture is a
+    // real signed-in Rewards state (unranked, all locked-tier cards) rather than the prototype's
+    // signed-out/blurred one — an expected, not a defect, mismatch; see the harness README's
+    // fidelity-numbers caveat and the #498 PR description for the actual before/after numbers.
+    driveApp: async (page) => {
+      await page.waitForSelector('[data-testid="home-hub"]', { timeout: 10_000 });
+      await page.getByTestId('hub-nav-rewards').click();
+      await page.waitForSelector('[data-testid="auth-modal"]', { timeout: 8_000 });
+      const username = `df${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`;
+      await page.getByLabel('Username').fill(username);
+      await page.getByLabel('Password').fill('design-fidelity-pass');
+      await page.getByTestId('auth-submit').click();
+      await page.waitForSelector('[data-testid="auth-modal"]', { state: 'hidden', timeout: 10_000 });
+      await page.getByTestId('hub-nav-rewards').click();
+      await page.waitForSelector('[data-testid="rewards-hub"]', { timeout: 10_000 });
+      await page.waitForTimeout(400);
+    },
   },
   {
     id: 'account-login-sheet',
