@@ -201,7 +201,11 @@ Supersedes the loose "sizing candidates" list. Phases 1→3 are sequential; Phas
 ### Phase 3 — Games page hero rebuild — **MERGED (#468, `15253fe`)**
 - Category rail (5 tabs, many-to-many `CATEGORY_GAMES`), SEARCH (cross-category substring), SORT (Popularity / Newest / Alphabetical), RANDOM (1560 ms spin → random among the 6 playable games), section title. Banner untouched. `getPopularity()` added to `match-history.ts` (generic `GROUP BY game_id` aggregate — invariant #5 clean) + `GET /games/popularity`.
 - **Merged at fidelity FAIL** on the PM's diff-image review — every failing region is out of scope (shared header/nav chrome, tile art, no light theme, harness alignment). That's *why* shared-chrome + light-theme is next (below), not rps/mines/dice.
-- **One follow-up the harness surfaced** (small — fold into a #465 cleanup): default tile order when Popularity is all-tied should be the prototype's `GRID` order, not the current tie-break (capture showed Baccarat first). *(A "tile art" flag was retracted — the "100"/"1K" are chips in the Baccarat art; the app's webp tiles match the prototype's PNGs. The diff red there was alignment + sort order.)*
+- **Follow-ups the harness surfaced** — a "games-grid fidelity" ticket (`ADVISOR_TO_PM.md` 2026-09-10#2, from a direct DOM measurement of the drift):
+  1. **Tile aspect ratio** — `HomeHub.tsx:554` uses `aspect-[2/3]` (0.667); the prototype's tile box is `112/158` (0.709). ~12px too tall per tile, compounding down the grid — the dominant "drift grows downward" cause. Fix: `aspect-[112/158]`.
+  2. **Default tile order** when Popularity is all-tied → the prototype's `GRID` order (Coinflip first), not the current tie-break (showed Baccarat first).
+  3. Rail→pills vertical gap ~15px tighter than the prototype (lower priority, needs a spacing pass).
+  - *(A "tile art" flag was retracted — the "100"/"1K" are chips in the Baccarat art; the webp tiles match the prototype PNGs.)*
 - Scope was: category rail, filter pills (SEARCH / SORT / RANDOM), section title. NOT the banner.
 - **Category rail** — `CAT_GAMES` mapping (many-to-many tags, see the category table above). `MenuOverlay.tsx`'s placeholder "Card games / Chance games / Skill games" rows get wired here.
 - **Search / Sort** — behaviour RESOLVED (see "Two UI elements"): name substring across all 12, ignore tab; Popularity = all-time settled-match count; Newest = fixed intro-order ordinal; Alphabetical = display name.
@@ -237,7 +241,7 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 - **Open PRs:** **#470** (Advisor — harness alignment v1: anchors captures on a shared landmark; PM merges, same bar as #459/#466).
 - **NEXT: Shared chrome + light-theme rollout** — sequenced T1–T5 in `ADVISOR_TO_PM.md` 2026-09-10#1 + the Phase-3-follow-up section above. Owner-agreed to do this *before* rps/mines/dice. **PM: ticket T1.**
 - **Blocked on Designer:** nothing.
-- **Advisor next:** the scroll-frame harness PR (Designer Q3, whole-page capture) — needed before Rewards/Account get rebuilt in T3.
+- **Advisor next:** the scroll-frame harness PR — now scoped as **below-the-fold *coverage* only** (Designer Q3), NOT per-section anchoring. The games-screen vertical drift was measured to be 3 real fidelity gaps (see the games-grid ticket above), so anchoring per-section would hide real problems. Harness stays "read the diff image" for vertical rhythm; that's correct.
 - **After shared-chrome:** rps/mines/dice; currency skin + stake ladder; chat; races/leaderboards; lobby-collapse.
 - **Process:** Advisor → worktree `worktree-advisor-migration`; PM → primary checkout; each coder → its own agent worktree.
 - **Pending mechanical:** prototype asset triage (~61 unreferenced PNGs).

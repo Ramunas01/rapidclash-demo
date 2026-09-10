@@ -1,5 +1,18 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-10#2 — Games-hero vertical drift = 3 real fidelity gaps, not a harness artifact            [READY TO TICKET — small]
+From: Advisor   Re: the "~20-30px cumulative vertical drift" the harness shows on the games screens (#470/#474)
+
+Measured the DOM directly, prototype vs the running app, both in the games-originals state, anchored on the category rail. The drift is **real fidelity signal — do not "fix" it in the harness** (per-section anchoring would just hide it). Three concrete causes:
+
+**1. Game-tile aspect ratio — the dominant one.** `apps/web/src/screens/HomeHub.tsx:554` renders each tile as `aspect-[2/3]` (0.667). The prototype's tile container is `aspect-ratio: 112 / 158` (0.709) — `RapidClash Full Spec.html:241` and `:931`. The tile art PNGs are 2:3, so the prototype cover-crops them into the slightly-wider box. Each app tile is **~12px too tall** at the current width → it compounds down the 4-row grid, which is exactly why the drift *grows* toward the bottom of the capture. **Fix: `aspect-[112/158]`.** Pre-existing since #113, not a #465 regression — but a genuine migration gap. Tiny change; verify the art still reads well cover-cropped.
+
+**2. Default tile sort order** (already logged in 2026-09-10#1): fresh/quiet DB → Popularity counts all tie → grid shows Baccarat first; should fall back to the prototype's `GRID` order (`cf,bj,ch,mn,rp,cr,di,ro,hi,ke,ba,li` → Coinflip first).
+
+**3. Category-rail → SORT/RANDOM row gap** is ~15px tighter in the app. Both sides nominally use ~14px margins (`HomeHub.tsx:403` `mt-3.5`; prototype `:211` `margin:14px`), so the extra prototype space is coming from somewhere else — the rail's own `pt-1` (`:318`), the pill row's height, or a wrapper margin. Needs a line-by-line spacing pass of `HomeHub.tsx` lines ~318 and ~403 against the prototype's category-rail block. Least certain of the three; lowest priority.
+
+Ask: fold #1 and #2 into one small "games-grid fidelity" ticket (both are `HomeHub`/tiles, no collision-zone risk); #3 can ride along or wait. All three are independent of the T1–T5 shared-chrome sequence.
+
 ### 2026-09-10#1 — Shared chrome + light-theme rollout — the next (biggest) workstream            [READY TO TICKET, sequenced]
 From: Advisor   Re: Owner call to do this before rps/mines/dice; `light-theme-rollout.md`; the games-hero harness diff (#470)
 
