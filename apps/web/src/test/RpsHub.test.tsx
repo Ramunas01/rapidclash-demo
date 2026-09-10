@@ -247,5 +247,11 @@ describe('RpsHubScreen — search dwell floor bypassed (#387)', () => {
     expect(screen.getByTestId('hub-move-rock')).toBeInTheDocument();
     expect(screen.getByTestId('hub-move-paper')).toBeInTheDocument();
     expect(screen.getByTestId('hub-move-scissors')).toBeInTheDocument();
+    // T5: `matchForming` (phase 'waiting' with a currentMatchId already assigned) can only ever be
+    // true while `holdSearch` is holding the dwell floor open — and with searchFloorMs=0 that hold
+    // never arms (see the file-level comment above). So the shared VS label never gets a window to
+    // show for RPS at all — it stays at its resting opacity 0, same as idle, by construction of this
+    // same #387 bypass (not a separate carve-out).
+    expect(screen.getByTestId('hub-match-vs').style.opacity).toBe('0');
   });
 });

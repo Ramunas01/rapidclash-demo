@@ -771,6 +771,35 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       vi.useRealTimers();
     }
   });
+
+  // T5: the shared "VS" match-found overlay (GameHub.tsx, gated on `matchForming`). Blackjack keeps
+  // the default 2400ms search-dwell floor (the #387 regression guard above), so it shares exactly
+  // the same matchForming window Mines/Dice get — proof the shared addition doesn't regress
+  // Blackjack's own transition (it never had separate transition logic to begin with; every hub
+  // renders the same GameHub section).
+  it('T5: the shared VS label fades in while matchForming holds, then fades back out once in-match', async () => {
+    vi.useFakeTimers();
+    try {
+      const gameState = inPlayView();
+      const { rerender } = render(<BlackjackHubScreen {...baseProps({ initialStake: 10 })} />);
+      expect(screen.getByTestId('hub-match-vs').style.opacity).toBe('0'); // idle: hidden
+
+      fireEvent.click(screen.getByTestId('hub-play')); // arms the search dwell start
+      rerender(<BlackjackHubScreen {...baseProps({ initialStake: 10, currentMatchId: 'm1', gameState, legalMoves: [] })} />);
+
+      // Still inside the floor: matchForming holds — VS shows, hands stay withheld (unchanged).
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      expect(screen.getByTestId('hub-match-vs').style.opacity).toBe('1');
+      expect(screen.queryByTestId('own-hand')).toBeNull();
+
+      // Just past the floor: phase flips to in-match — VS fades back out, hands render.
+      await act(async () => { await vi.advanceTimersByTimeAsync(1450); });
+      expect(screen.getByTestId('hub-match-vs').style.opacity).toBe('0');
+      expect(screen.getByTestId('own-hand')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 // Issue #297: the guest chrome gates (hidden wallet/Open Games/related/footer/nav, locked bet

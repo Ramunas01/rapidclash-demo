@@ -33,6 +33,11 @@ const DRAW_REMATCH_HOLD_MS = 2000;
  *  RC-icon credits display, not a text currency symbol (issue #324). */
 const BET_PRESETS = [1, 5, 10, 25, 50, 100];
 
+/** T5: the "VS" match-found label's font stack — the prototype's explicit override
+ *  (`Full Spec.html:433`), not the app's default sans, matching the same idiom other migrated
+ *  screens use for prototype-exact text (AffiliateHub.tsx / ProfileHub.tsx's own `ARIAL` consts). */
+const ARIAL = 'Arial, Helvetica, sans-serif';
+
 /** Presets withheld from a guest's bet grid (issue #353): `GUEST_HUMAN_RESERVED_STAKE` (1) is
  *  reserved for human-to-human testing inside the isolated guest world
  *  (`packages/shared/src/guest.ts`) — no guest bot ever rests at or claims it, so a guest must
@@ -566,7 +571,39 @@ export function GameHub(props: GameHubProps) {
           {/* 1 — Arena: opponent slot pill, the per-game board, the player's own slot pill.
               No grey card frame here — each panel owns its surface (Blackjack's greyish table
               fills the section; the other arenas wrap themselves in a card). */}
-          <section data-testid="hub-section-game" aria-label={gameName} className="flex flex-col gap-3 px-4">
+          <section data-testid="hub-section-game" aria-label={gameName} className="relative flex flex-col gap-3 px-4">
+            {/* T5: the shared "VS" match-found beat (Full Spec.html:430-433's `matchVsLabel` /
+                `rpsMatchVsOp` / `rpsMatchVsScale` / `matchVsColor`) — the reveal between "Searching…"
+                and the frozen pre-match state, the instant a match is assigned but play hasn't
+                started (`matchForming`, line ~497 above). Every hub built on GameHub shares this
+                render path (OpponentSlot → board → OwnSlot below), so this one insertion covers all
+                of them, not just Mines/RPS/Dice.
+                Always mounted (never conditionally rendered) so the opacity/scale transition can
+                run BOTH ways — fading in on matchForming, then fading back out as `in-match` takes
+                over — exactly like the prototype's own always-bound style props. Centered on the
+                section's own vertical midpoint (top-1/2 + -translate-y-1/2) rather than the
+                prototype's fixed `matchVsTop` pixel offset: the prototype is a fixed-width mock with
+                a hand-tuned px value per game state, while this section's height is fluid (per-game
+                board sizes) — centering on the section itself is the faithful equivalent of "floating
+                between the two player bars" in a responsive layout. Every other value (opacity/scale
+                start-end, color, font, transition timing) is copied 1:1 from the cited lines. */}
+            <div
+              aria-hidden="true"
+              data-testid="hub-match-vs"
+              className="pointer-events-none absolute inset-x-0 top-1/2 z-[2] flex items-center justify-center"
+              style={{
+                opacity: matchForming ? 1 : 0,
+                transform: `translateY(-50%) scale(${matchForming ? 1 : 0.7})`,
+                transition: 'opacity 320ms ease, transform 420ms cubic-bezier(0.34,1.5,0.5,1)',
+              }}
+            >
+              <span
+                className="text-[18px] font-bold tracking-[1.5px] text-[var(--rc-muted)]"
+                style={{ fontFamily: ARIAL }}
+              >
+                VS
+              </span>
+            </div>
             <OpponentSlot phase={phase} opponentName={opponentName} scanNames={scanNames} aside={renderSlotAside?.(areaArgs, 'opponent')} drawBeat={barDrawBeat} />
             {renderGameArea(areaArgs)}
             <OwnSlot
