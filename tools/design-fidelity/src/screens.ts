@@ -1,9 +1,11 @@
 import type { Page } from 'playwright-core';
+import type { Anchor } from './region.js';
 
 export type Theme = 'dark' | 'light';
 
-/** A rectangle in capture CSS px (the 390-wide × 732-tall clipped space), scaled by the device
- *  pixel ratio when applied to a PNG. */
+/** A rectangle in capture CSS px (the header-to-nav band, ~390 × 729), scaled by the device
+ *  pixel ratio when applied to a PNG. `y` is relative to the top of the captured region (the
+ *  RapidClash wordmark row), not the viewport. */
 export interface MaskRect {
   x: number;
   y: number;
@@ -17,7 +19,7 @@ export interface MaskRect {
  * games-hero banner carousel is the first. Masked in both images before diffing so a rebuild
  * doesn't fail the gate on a difference we chose on purpose. Measured from the running prototype.
  */
-export const BANNER_MASK: MaskRect = { x: 12, y: 72, w: 366, h: 156, reason: 'carousel banner — carried over, Designer Q5' };
+export const BANNER_MASK: MaskRect = { x: 12, y: 78, w: 366, h: 142, reason: 'carousel banner + dots — carried over, Designer Q5' };
 
 /**
  * The screen catalogue. Each entry knows how to drive the prototype (and, later, the built app)
@@ -42,6 +44,10 @@ export interface ScreenDef {
   driveApp?: (page: Page) => Promise<void>;
   /** Regions excluded from the diff (carried-over-from-production areas). */
   masks?: MaskRect[];
+  /** Which fixed landmark to anchor the capture on. Default `header`; the games screens use
+   *  `catrail` because the carried-over banner above the rail differs in height between the
+   *  prototype and the real app. */
+  anchor?: Anchor;
 }
 
 /** Bottom-nav helpers, shared across screens. The nav items are `<div role="button">` with a
@@ -72,6 +78,7 @@ export async function signIn(page: Page): Promise<void> {
 export const SCREENS: ScreenDef[] = [
   {
     id: 'games-originals',
+    anchor: 'catrail',
     title: 'Games list — ORIGINALS',
     legacyShot: '01-games-originals.png',
     driveProto: async () => {
@@ -82,10 +89,10 @@ export const SCREENS: ScreenDef[] = [
       await page.waitForSelector('[data-testid="home-hub"]', { timeout: 10_000 });
       await page.waitForTimeout(400);
     },
-    masks: [BANNER_MASK],
   },
   {
     id: 'games-chance',
+    anchor: 'catrail',
     title: 'Games list — CHANCE GAMES',
     legacyShot: '02-chance-games.png',
     driveProto: async (page) => {
@@ -98,10 +105,10 @@ export const SCREENS: ScreenDef[] = [
       await page.getByTestId('home-cat-chance').click();
       await page.waitForTimeout(300);
     },
-    masks: [BANNER_MASK],
   },
   {
     id: 'search-open',
+    anchor: 'catrail',
     title: 'Search expanded',
     legacyShot: '03-search-open.png',
     driveProto: async (page) => {
@@ -116,13 +123,12 @@ export const SCREENS: ScreenDef[] = [
       await page.getByTestId('home-search-toggle').click();
       await page.waitForTimeout(600); // expand transition (380ms in the app's own CSS)
     },
-    masks: [BANNER_MASK],
   },
   {
     id: 'sort-sheet',
+    anchor: 'catrail',
     title: 'Sort sheet open',
     legacyShot: '04-sort-sheet.png',
-    masks: [BANNER_MASK],
     driveProto: async (page) => {
       await page.getByText(/^SORT$/i).first().click();
       await page.waitForTimeout(400);

@@ -11,6 +11,7 @@ import {
   VIEWPORT,
 } from './paths.js';
 import { armFreeze, settleFrozen } from './freeze.js';
+import { contentRegion } from './region.js';
 import type { ScreenDef, Theme } from './screens.js';
 
 export type { Theme };
@@ -107,27 +108,6 @@ async function tagScreenElement(page: Page): Promise<void> {
 
 export const SCREEN_CLIP = '#__df_screen';
 
-/**
- * Insets to strip from the prototype's phone-screen when capturing, so a diff compares the app
- * UI only. Measured from the running prototype (`src` positions, CSS px, screen-relative):
- *   - fake iOS status bar ("01:06 · 5G · battery") occupies y 0–37 → strip the top 44
- *   - fake in-app browser URL bar ("…run.app — Private") occupies y 776–840 → strip the bottom 64
- * The real app renders neither. Everything between (header, content, bottom nav) is kept.
- */
-export const CAPTURE_INSET = { top: 44, bottom: 64 } as const;
-
-/** The screen-content clip rect in page coordinates (status bar + URL bar removed). */
-async function captureClip(page: Page): Promise<{ x: number; y: number; width: number; height: number }> {
-  const box = await page.locator(SCREEN_CLIP).boundingBox();
-  if (!box) throw new Error('prototype: #__df_screen has no bounding box');
-  return {
-    x: box.x,
-    y: box.y + CAPTURE_INSET.top,
-    width: box.width,
-    height: box.height - CAPTURE_INSET.top - CAPTURE_INSET.bottom,
-  };
-}
-
 /** Reload to the default state (cheaper and more reliable than unwinding overlays). Theme sticks
  *  because the HTML route stays installed. */
 export async function resetPrototype(page: Page): Promise<void> {
@@ -141,5 +121,5 @@ export async function resetPrototype(page: Page): Promise<void> {
 export async function captureScreen(page: Page, screen: ScreenDef): Promise<Buffer> {
   await screen.driveProto(page);
   await page.waitForTimeout(250);
-  return page.screenshot({ clip: await captureClip(page), animations: 'disabled', caret: 'hide' });
+  return page.screenshot({ clip: await contentRegion(page, 'prototype', screen.anchor), animations: 'disabled', caret: 'hide' });
 }

@@ -76,12 +76,14 @@ export const FREEZE_STYLE =
   'html{scroll-behavior:auto!important}';
 
 export const FREEZE_SCRIPT = `(() => {
+  // tsx/esbuild compiles page.evaluate() callbacks with keepNames — emits __name(...) calls the
+  // browser doesn't have. Polyfill as identity so any evaluate body works.
+  if (typeof window !== 'undefined' && !window.__name) window.__name = (fn) => fn;
   let n = 0;
   const seq = [0.42, 0.13, 0.87, 0.55, 0.29, 0.71, 0.04, 0.63];
-  Math.random = () => seq[n++ % seq.length];
-  const FIXED = 1757000000000; // 2025-09-04T12:53:20Z — arbitrary but constant
-  const _Date = Date;
-  // @ts-expect-error - test shim
-  Date = class extends _Date { constructor(...a) { super(...(a.length ? a : [FIXED])); } static now() { return FIXED; } };
-  Date.prototype = _Date.prototype;
+  try { Math.random = () => seq[n++ % seq.length]; } catch (e) {}
+  // Pin the clock without touching the Date constructor (replacing the global Date class can
+  // hang app bundles that read it at module-eval time).
+  const FIXED = 1757000000000;
+  try { Date.now = () => FIXED; } catch (e) {}
 })()`;
