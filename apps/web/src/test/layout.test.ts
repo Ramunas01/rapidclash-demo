@@ -59,8 +59,12 @@ describe('hubShellClass', () => {
   });
 
   it('HUB_SHELL_GUEST differs from HUB_SHELL ONLY in the viewport-height unit (dvh → vh) — nothing else about the guest shell changes', () => {
-    expect(HUB_SHELL).toBe('relative min-h-[100dvh] bg-background text-foreground');
-    expect(HUB_SHELL_GUEST).toBe('relative min-h-[100vh] bg-background text-foreground');
+    // Issue #491: bg-background/text-foreground → bg-[var(--rc-bg)]/text-[var(--rc-text)] (the
+    // shadcn tokens carried no light override; the --rc-* set does). See layout.ts's own doc
+    // comment above HUB_SHELL for why this shared shell needed the same token swap the three
+    // per-screen light-threading tickets gave their own content.
+    expect(HUB_SHELL).toBe('relative min-h-[100dvh] bg-[var(--rc-bg)] text-[var(--rc-text)]');
+    expect(HUB_SHELL_GUEST).toBe('relative min-h-[100vh] bg-[var(--rc-bg)] text-[var(--rc-text)]');
     expect(HUB_SHELL_GUEST.replace('100vh', '100dvh')).toBe(HUB_SHELL);
   });
 });

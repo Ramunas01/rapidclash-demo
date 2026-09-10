@@ -56,9 +56,9 @@ const ROW_ICON = 'block h-[19px] w-[19px] flex-none';
 
 /* Row icons — inline SVG copied from docs/design-refs/design_handoff_menu/Menu Page.dc.html
  * (the row block starting at `clip-path:{{ menuClip }}`), `var(--rc-muted)` swapped for
- * `currentColor` (the wrapping row sets `text-muted-foreground`) and `var(--rc-surface)` swapped
- * for the `fill-surface` Tailwind utility (both resolve to the same tokens the rest of the app
- * already uses — see apps/web/tailwind.config.js / index.css's `--rc-surface`). The GAMES/Games-nav
+ * `currentColor` (the wrapping row sets `text-[var(--rc-muted)]`, issue #491) and `var(--rc-surface)`
+ * swapped for the `fill-surface` Tailwind utility (both resolve to the same tokens the rest of the
+ * app already uses — see apps/web/tailwind.config.js / index.css's `--rc-surface`). The GAMES/Games-nav
  * bolt mark is the same path HubToolbar.tsx's `ICON_GAMES` already ships — duplicated here rather
  * than imported, matching ProfileHub.tsx's own precedent for this exact path (`RecentGamesIcon`).
  * The four GAMES-group category icons below now live in `../hub-shared/categoryIcons.js` (issue
@@ -166,7 +166,7 @@ const ICON_RESPONSIBLE_GAMING = (
 );
 
 const CHEVRON = (
-  <svg width="8" height="12" viewBox="0 0 8 12" className="block flex-none text-muted-foreground" aria-hidden="true">
+  <svg width="8" height="12" viewBox="0 0 8 12" className="block flex-none text-[var(--rc-muted)]" aria-hidden="true">
     <path d="M1.4 1.6 6.6 6 1.4 10.4z" fill="currentColor" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" strokeLinecap="round" />
   </svg>
 );
@@ -226,10 +226,15 @@ const GROUPS: MenuGroup[] = [
  * purely `clip-path` + `pointer-events`, matching the design's own approach (its `menuClip`
  * defaults to a 0px circle, never actually removing the block from the DOM).
  *
- * Dark-only (Owner-confirmed scope decision on #414 — no app-wide light/dark theme exists yet;
- * see Preferences' own identical scoping call), built from this app's existing tokens
- * (`bg-background`, `bg-surface`, `text-brand`, `text-muted-foreground`) rather than the design
- * doc's literal hex values.
+ * Was dark-only (Owner-confirmed scope decision on #414 — no app-wide light/dark theme existed
+ * yet), built from this app's pre-existing shadcn tokens (`bg-background`, `text-foreground`,
+ * `text-muted-foreground`) — none of which carry a `[data-theme='light']` override, so this
+ * overlay stayed black-on-dark even once the rest of the app went light. Issue #491 (T3b, light
+ * group) threads it onto the shared `--rc-*` set instead (`bg-[var(--rc-bg)]`/
+ * `text-[var(--rc-text)]`/`text-[var(--rc-muted)]`), same treatment T2 already gave
+ * HubRibbon.tsx/HubToolbar.tsx. `bg-surface` was already theme-aware (tailwind.config.js maps it
+ * straight to `var(--rc-surface)`) so it's untouched, and `text-brand` stays the fixed
+ * brand-purple in both themes, same as everywhere else it's used.
  */
 export function MenuOverlay({ open, anchorRect, onClose, onOpenGames, onOpenRewards, onOpenAffiliate, onOpenGamesCategory }: Props) {
   // Lazy-mount the overlay's own content (including its `<HubFooter>`) only once Menu has
@@ -293,7 +298,7 @@ export function MenuOverlay({ open, anchorRect, onClose, onOpenGames, onOpenRewa
     <div
       data-testid="menu-overlay"
       aria-hidden={!open}
-      className="fixed inset-0 z-[18] overflow-y-auto bg-background"
+      className="fixed inset-0 z-[18] overflow-y-auto bg-[var(--rc-bg)]"
       style={{
         clipPath,
         WebkitClipPath: clipPath,
@@ -304,12 +309,12 @@ export function MenuOverlay({ open, anchorRect, onClose, onOpenGames, onOpenRewa
       {everOpened && (
         <>
           <div className={cn('mx-auto w-full max-w-md px-4', HUB_FIXED_TOP, HUB_BODY)}>
-            <span className="text-[19px] font-bold tracking-[0.6px] text-foreground">MENU</span>
+            <span className="text-[19px] font-bold tracking-[0.6px] text-[var(--rc-text)]">MENU</span>
 
             {GROUPS.map((group, i) => (
               <section key={group.label} className={i === 0 ? 'mt-[22px]' : 'mt-[26px]'}>
                 <div className="flex flex-col gap-[11px]">
-                  <h2 className="text-[12px] font-bold uppercase tracking-[1.4px] text-foreground">{group.label}</h2>
+                  <h2 className="text-[12px] font-bold uppercase tracking-[1.4px] text-[var(--rc-text)]">{group.label}</h2>
                   <div className="flex flex-col overflow-hidden rounded-[20px] bg-surface">
                     {group.rows.map((row) => (
                       <button
@@ -319,8 +324,8 @@ export function MenuOverlay({ open, anchorRect, onClose, onOpenGames, onOpenRewa
                         onClick={() => navigate(row)}
                         className="flex h-14 w-full items-center gap-3 px-[18px] text-left"
                       >
-                        <span className="flex flex-none items-center justify-center text-muted-foreground">{row.icon}</span>
-                        <span className="flex-1 text-sm font-semibold text-foreground">{row.label}</span>
+                        <span className="flex flex-none items-center justify-center text-[var(--rc-muted)]">{row.icon}</span>
+                        <span className="flex-1 text-sm font-semibold text-[var(--rc-text)]">{row.label}</span>
                         {CHEVRON}
                       </button>
                     ))}

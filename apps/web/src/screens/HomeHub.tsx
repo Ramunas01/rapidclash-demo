@@ -192,10 +192,10 @@ export function HomeHubScreen({
 
             {eventsEmpty ? (
               <div data-testid="home-events-empty" className="flex items-center justify-center px-4 py-[54px] pb-2.5">
-                <span className="text-sm font-semibold tracking-[0.02em] text-foreground">No events running</span>
+                <span className="text-sm font-semibold tracking-[0.02em] text-[var(--rc-text)]">No events running</span>
               </div>
             ) : shownTiles.length === 0 ? (
-              <p className="px-4 py-6 text-center text-xs text-muted-foreground">No games match — try a different search or category.</p>
+              <p className="px-4 py-6 text-center text-xs text-[var(--rc-muted)]">No games match — try a different search or category.</p>
             ) : (
               <div className="grid grid-cols-3 gap-2 px-4">
                 {shownTiles.map((t) =>
@@ -335,8 +335,8 @@ function CategoryTabs({ cat, onChange }: { cat: CategoryId; onChange(c: Category
               active ? 'bg-brand/10' : 'bg-surface',
             )}
           >
-            <Icon className={cn('block h-[26px] w-[26px]', active ? 'text-brand drop-shadow-[0_0_5px_hsl(var(--primary)/0.6)]' : 'text-muted-foreground')} />
-            <span className={cn('text-[11px] font-extrabold leading-[1.25]', active ? 'text-brand' : 'text-muted-foreground')}>
+            <Icon className={cn('block h-[26px] w-[26px]', active ? 'text-brand drop-shadow-[0_0_5px_hsl(var(--primary)/0.6)]' : 'text-[var(--rc-muted)]')} />
+            <span className={cn('text-[11px] font-extrabold leading-[1.25]', active ? 'text-brand' : 'text-[var(--rc-muted)]')}>
               {CATEGORY_TAB_LABEL[id]}
             </span>
           </button>
@@ -415,7 +415,7 @@ function GridControls({
           aria-label="Search games"
           data-testid="home-search-toggle"
           onClick={openSearch}
-          className="grid h-[19px] w-[19px] shrink-0 place-items-center text-muted-foreground"
+          className="grid h-[19px] w-[19px] shrink-0 place-items-center text-[var(--rc-muted)]"
         >
           {SEARCH_ICON}
         </button>
@@ -427,7 +427,7 @@ function GridControls({
           aria-label="Search games"
           data-testid="home-search-input"
           className={cn(
-            'h-11 min-w-0 flex-1 border-none bg-transparent text-sm font-semibold text-foreground outline-none placeholder:text-muted-foreground transition-opacity duration-[380ms]',
+            'h-11 min-w-0 flex-1 border-none bg-transparent text-sm font-semibold text-[var(--rc-text)] outline-none placeholder:text-[var(--rc-muted)] transition-opacity duration-[380ms]',
             searchOpen ? 'opacity-100' : 'pointer-events-none w-0 opacity-0',
           )}
         />
@@ -439,7 +439,7 @@ function GridControls({
           role="button"
           tabIndex={0}
           data-testid="home-search-cancel"
-          className="shrink-0 cursor-pointer whitespace-nowrap text-sm font-semibold text-muted-foreground"
+          className="shrink-0 cursor-pointer whitespace-nowrap text-sm font-semibold text-[var(--rc-muted)]"
         >
           Cancel
         </span>
@@ -451,7 +451,7 @@ function GridControls({
             type="button"
             data-testid="home-sort-toggle"
             onClick={() => setSortOpen(true)}
-            className="flex h-11 shrink-0 items-center gap-1.5 rounded-full bg-surface px-3.5 text-[13px] font-bold text-muted-foreground transition-colors hover:text-foreground focus:outline-none"
+            className="flex h-11 shrink-0 items-center gap-1.5 rounded-full bg-surface px-3.5 text-[13px] font-bold text-[var(--rc-muted)] transition-colors hover:text-[var(--rc-text)] focus:outline-none"
           >
             {SORT_ICON}
             SORT
@@ -463,7 +463,7 @@ function GridControls({
             data-testid="home-random"
             aria-label="Random game"
             onClick={onRandom}
-            className="flex h-11 shrink-0 items-center gap-2.5 rounded-full bg-surface px-3.5 text-[13px] font-bold text-muted-foreground transition-colors hover:text-foreground focus:outline-none"
+            className="flex h-11 shrink-0 items-center gap-2.5 rounded-full bg-surface px-3.5 text-[13px] font-bold text-[var(--rc-muted)] transition-colors hover:text-[var(--rc-text)] focus:outline-none"
           >
             <span className={cn('block', randSpinning && 'animate-spin')}>{DIE_ICON}</span>
             RANDOM
@@ -491,13 +491,13 @@ function SortSheet({
       <div className="absolute left-[26px] right-[26px] top-1/2 -translate-y-1/2 rounded-[26px] bg-[var(--rc-sort-sheet-bg)] p-2 shadow-2xl">
         <div className="flex items-center gap-2.5 px-4 pb-2.5 pt-3">
           <span className="block w-5" aria-hidden="true" />
-          <span className="flex-1 text-center text-[15px] font-bold tracking-[0.06em] text-foreground">SORT</span>
+          <span className="flex-1 text-center text-[15px] font-bold tracking-[0.06em] text-[var(--rc-text)]">SORT</span>
           <button
             type="button"
             aria-label="Close sort"
             data-testid="home-sort-close"
             onClick={onClose}
-            className="grid h-5 w-5 shrink-0 place-items-center text-foreground"
+            className="grid h-5 w-5 shrink-0 place-items-center text-[var(--rc-text)]"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
               <path d="M4.5 12.6 9.8 18 19.5 6.6" />
@@ -514,10 +514,10 @@ function SortSheet({
               onClick={() => { onSort(mode); onClose(); }}
               className={cn('flex w-full items-center gap-3 rounded-[18px] px-4 py-3.5 text-left', active && 'bg-brand/10')}
             >
-              <span className={cn('grid h-[22px] w-[22px] shrink-0 place-items-center', active ? 'text-brand' : 'text-muted-foreground')}>
+              <span className={cn('grid h-[22px] w-[22px] shrink-0 place-items-center', active ? 'text-brand' : 'text-[var(--rc-muted)]')}>
                 {SORT_OPTION_ICON[mode]}
               </span>
-              <span className="flex-1 text-[13px] font-bold uppercase tracking-[0.04em] text-foreground">{SORT_LABEL[mode]}</span>
+              <span className="flex-1 text-[13px] font-bold uppercase tracking-[0.04em] text-[var(--rc-text)]">{SORT_LABEL[mode]}</span>
               {active && <span className="text-brand">{CHECK_ICON}</span>}
             </button>
           );
@@ -557,7 +557,7 @@ function PlayableTile({ meta, onSelect }: { meta: GameMeta; onSelect(m: GameMeta
       onClick={() => onSelect(meta)}
       aria-label={`Play ${meta.displayName}`}
       data-testid={`home-tile-${meta.id}`}
-      className="group relative aspect-[112/158] overflow-hidden rounded-xl border border-border transition-transform duration-300 hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+      className="group relative aspect-[112/158] overflow-hidden rounded-xl border border-[var(--rc-surface)] transition-transform duration-300 hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
     >
       <TileArt art={TILE_ART[meta.id]} name={meta.displayName} />
     </button>
@@ -570,7 +570,7 @@ function ComingSoonTile({ id }: { id: string }) {
       aria-disabled="true"
       aria-label={`${titleCase(id)} — coming soon`}
       data-testid={`home-coming-soon-${id}`}
-      className="relative aspect-[112/158] overflow-hidden rounded-xl border border-border opacity-50"
+      className="relative aspect-[112/158] overflow-hidden rounded-xl border border-[var(--rc-surface)] opacity-50"
     >
       <TileArt art={TILE_ART[id]} name={titleCase(id)} />
       <span className="absolute right-1.5 top-1.5 rounded-full bg-black/55 px-1.5 py-0.5 text-[7px] font-bold uppercase tracking-wide text-white/80">

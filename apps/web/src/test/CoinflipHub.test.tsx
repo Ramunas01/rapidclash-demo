@@ -1066,13 +1066,16 @@ describe('CoinflipHubScreen — guest surface fills its container height (issue 
   it('a non-guest hub keeps the exact HUB_SHELL min-h-[100dvh] class — pixel-identical to before (regression guard)', () => {
     const { container } = render(<CoinflipHubScreen {...baseProps({ isGuest: false })} />);
     const shell = container.firstElementChild;
-    expect(shell?.className).toBe('relative min-h-[100dvh] bg-background text-foreground');
+    // Issue #491: bg-background/text-foreground → bg-[var(--rc-bg)]/text-[var(--rc-text)] — see
+    // layout.ts's doc comment above HUB_SHELL. The viewport-unit regression guard this test
+    // exists for is unaffected; only the color-token literal changed.
+    expect(shell?.className).toBe('relative min-h-[100dvh] bg-[var(--rc-bg)] text-[var(--rc-text)]');
   });
 
   it('a guest hub gets min-h-[100vh] instead of min-h-[100dvh] — the fix — so it reliably fills its (possibly iframed) container', () => {
     const { container } = render(<CoinflipHubScreen {...baseProps({ isGuest: true, initialStake: 100 })} />);
     const shell = container.firstElementChild;
-    expect(shell?.className).toBe('relative min-h-[100vh] bg-background text-foreground');
+    expect(shell?.className).toBe('relative min-h-[100vh] bg-[var(--rc-bg)] text-[var(--rc-text)]');
     expect(shell?.className).not.toContain('dvh');
   });
 });

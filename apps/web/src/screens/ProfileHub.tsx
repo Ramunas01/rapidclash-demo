@@ -47,21 +47,28 @@ interface Props {
 /** The selectable avatars in the picker: default + the six presets (presets-only, no upload). */
 const PICKER_AVATARS: AvatarId[] = ['default', 'boy-light', 'girl-light', 'boy-brown', 'boy-dark', 'hooded-mono', 'hooded-degen'];
 
-/** Design token literals (docs/design-refs/design_handoff_account_page/README.md's Dark column) —
- *  this screen is always dark (mirrors RewardsHub.tsx/BringARival.tsx precedent: only
- *  PreferencesHub.tsx scopes a switchable light/dark palette to itself). Inline styles, not
- *  Tailwind tokens: the design's `--rc-*` palette is its own precise set, distinct from this
- *  app's pre-existing shadcn tokens (e.g. `--rc-surface` #1A1A2E vs `bg-card` #151515) — using the
- *  literal hexes (as RewardsHub.tsx/PreferencesHub.tsx already do) keeps this screen visually
- *  consistent with those, rather than drifting onto a third, close-but-not-quite palette. */
+/** Design token references (docs/design-refs/design_handoff_account_page/README.md's Dark
+ *  column values) — issue #491 (T3b, light group): this object used to hold its own hardcoded
+ *  hex literals (a frozen snapshot of the dark column only, so this screen stayed dark-only even
+ *  once the rest of the app went light — the same class of bug T2 fixed in HubRibbon.tsx/
+ *  HubToolbar.tsx). Now a thin set of aliases onto the shared `--rc-*` custom properties defined
+ *  in `index.css` (T1, issue #472), which DO carry a real `[data-theme='light']` override — every
+ *  inline `style={{ color: RC.text }}`-style use site below re-themes automatically, no call-site
+ *  changes needed. `purple` aliases the fixed `--brand-purple` (index.css) instead — this screen's
+ *  accent stays the same fixed brand purple in both themes, matching the prototype's own
+ *  `navXColor` literal precedent used elsewhere (HubToolbar.tsx). Kept as a small object (rather
+ *  than inlining `var(--rc-*)` at every call site, PreferencesHub.tsx's own approach) because this
+ *  file consumes these values via plain inline `style={{}}` props and raw SVG `fill=`/`stroke=`
+ *  attributes throughout — both accept a CSS custom-property reference exactly as readily as a hex
+ *  literal, so the object stays the natural shape for this file's own call-site pattern. */
 const RC = {
-  surface: '#1A1A2E',
-  sunken: '#0B0B0B',
-  text: '#FFFFFF',
-  muted: '#83838F',
-  green: '#34D399',
-  danger: '#F0556B',
-  purple: '#8B45F0',
+  surface: 'var(--rc-surface)',
+  sunken: 'var(--rc-sunken)',
+  text: 'var(--rc-text)',
+  muted: 'var(--rc-muted)',
+  green: 'var(--rc-green)',
+  danger: 'var(--rc-danger)',
+  purple: 'var(--brand-purple)',
 };
 const SPACE_GROTESK = "'Space Grotesk', Arial, Helvetica, sans-serif";
 const ARIAL = 'Arial, Helvetica, sans-serif';
@@ -389,7 +396,12 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
                         <div
                           style={{
                             position: 'absolute', left: 0, right: 0, bottom: 0, height: 76, pointerEvents: 'none', borderRadius: '0 0 26px 26px',
-                            background: `linear-gradient(to bottom, transparent 0%, ${RC.sunken}B8 34%, ${RC.sunken}F0 66%, ${RC.sunken}FC 100%)`,
+                            // Issue #491: this used to append a hex alpha suffix directly onto RC.sunken's
+                            // own hex literal (`${RC.sunken}B8` etc.) — that trick only works on a raw hex
+                            // string, not the `var(--rc-sunken)` reference RC.sunken is now. color-mix()
+                            // reproduces the same alpha fade (0xB8/0xF0/0xFC ≈ 72%/94%/99% opacity) against
+                            // whatever --rc-sunken resolves to in the active theme.
+                            background: `linear-gradient(to bottom, transparent 0%, color-mix(in srgb, ${RC.sunken} 72%, transparent) 34%, color-mix(in srgb, ${RC.sunken} 94%, transparent) 66%, color-mix(in srgb, ${RC.sunken} 99%, transparent) 100%)`,
                           }}
                         />
                         <button
@@ -539,7 +551,7 @@ function MatchRow({ m, index }: { m: RecentMatchEntry; index: number }) {
       data-testid={`profile-match-${m.matchId}`}
       style={{
         height: '74px', boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: '11px', padding: '0 16px',
-        background: zebra ? '#1A1A2E' : 'transparent', borderRadius: zebra ? '26px' : '0px',
+        background: zebra ? RC.surface : 'transparent', borderRadius: zebra ? '26px' : '0px',
       }}
     >
       <div
@@ -657,7 +669,7 @@ function AvatarPicker({
       >
         <div className="mb-4 flex items-center justify-between">
           <span className="text-base font-bold">Choose your avatar</span>
-          <button type="button" onClick={onClose} aria-label="Dismiss" className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:text-foreground">
+          <button type="button" onClick={onClose} aria-label="Dismiss" className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--rc-muted)] hover:text-[var(--rc-text)]">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -673,7 +685,7 @@ function AvatarPicker({
                 aria-pressed={isSel}
                 data-testid={`avatar-option-${id}`}
                 className={cn(
-                  'flex items-center justify-center rounded-2xl bg-background p-3 transition-colors',
+                  'flex items-center justify-center rounded-2xl bg-[var(--rc-bg)] p-3 transition-colors',
                   isSel ? 'ring-[3px] ring-brand' : 'ring-1 ring-border hover:ring-white/20',
                 )}
               >
