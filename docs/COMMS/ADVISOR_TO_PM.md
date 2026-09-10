@@ -1,5 +1,39 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-10#4 — T4 (ChessHub dark-pin) + token/geometry reconciliation sweep — full tickets            [READY TO TICKET — small, not blocking T3b heavy]
+From: Advisor   Re: tracker's "T4" placeholder + the `--brand-purple`/header-padding notes from T2 (#489)
+
+Neither of these blocks or is blocked by T3b heavy (#498) — different files, pick up whenever there's spare capacity. Both are small; I did the investigation so the tickets are precise rather than "go look into it."
+
+---
+
+## T4 — Pin Coinflip/Blackjack/Chess to dark, interim (until they get an actual light design)
+
+**Why:** these 3 already match the new design and need no screen work (per the roster split above) — but "no screen work" was never verified against the *light* theme, because T1–T3 gave the shadcn base tokens (`--background`, `--foreground`, `--card`, …) no light override at all (only the `--rc-*` set got one). That means these 3 screens are *already* frozen dark almost everywhere, by accident — except where they use one of the few tokens that DID get a light value.
+
+**Confirmed concrete bug:** `ChessHub.tsx` uses `bg-success` in two places — the active-turn clock dot (line 61) and the full-screen win-result flash (line 345, the prominent one). `bg-success` → `--rc-success` → aliased to `--rc-green` (T3a, #487), which **does** have a light override (`#0B8F5A` vs dark `#34D399`). So a light-mode user who wins a chess match gets a result screen that's dark everywhere *except* the win-flash, which shifts to the light-mode green — a real, visible, half-adjusted look. CoinflipHub and BlackjackHub currently use **zero** `--rc-*`/`-success` tokens (checked directly), so they're not broken today, but nothing stops a future PR from introducing the same accidental drift.
+
+**Scope:**
+- Wrap each of the three hub screens' root render output in a scope that pins every token they read back to its dark value, regardless of the app-wide theme choice. `index.css` already has exactly this mechanism sitting unused: `.dark { … }` (line ~134) is a **complete** mirror of `:root`'s dark values (both the shadcn base tokens and every `--rc-*` token) — the app is dark-first and has never toggled it. Wrapping each hub's root in `<div className="dark">` should be enough to make the whole subtree immune to `data-theme='light'` on `<html>` (CSS custom properties resolve to the nearest ancestor definition, so the wrapper's own `.dark` values win over the inherited light ones for everything nested inside it).
+- Verify this doesn't collide with Tailwind's `darkMode: ['class']` config if either hub uses any `dark:`-prefixed variant class anywhere (a quick grep first) — the app is described as not using that mechanism today, but confirm before relying on it.
+- Fixes the ChessHub `bg-success` bug as a side effect; no separate patch needed for it.
+
+**Done when:** ChessHub's win-flash and clock dot stay the dark green in both themes; Coinflip/Blackjack/Chess render pixel-identical to today when the app is in dark mode (regression check); a manual light-mode pass through all three confirms nothing shifts; tests updated if any assert on theme tokens in these files.
+
+---
+
+## Token + chrome-geometry reconciliation sweep
+
+Two small, unrelated, both-already-diagnosed drifts, worth doing together since they're both "pick one canonical value and update everywhere" like T3a was for `--rc-success`.
+
+**1. `--brand-purple` (`#8140e2`) vs the prototype's actual accent purple (`#8B45F0`).** The app's nav-active/accent purple is a pre-existing value that predates this migration; the prototype's own accent (`Full Spec.html`, e.g. line 178's active-category dot, line 62's link color) is a different, slightly brighter purple. `--brand-purple` is the single source (`index.css:230`, mapped to Tailwind's `brand` color at `tailwind.config.js:17`), so every `bg-brand`/`text-brand`/`border-brand`/`ring-brand` call site updates from one line change. Two derived values also need updating to match: `--rc-theme-btn-shadow` and `--rc-nav-active-glow` (`index.css:178-179`) both hardcode `rgba(129, 64, 226, …)` — that's `#8140e2` in decimal; recompute for `#8B45F0` (`rgb(139, 69, 240)`) so the glow color still matches the purple it's glowing around.
+
+**2. HubRibbon `pb-4` (16px) vs the prototype's real spacing.** Flagged in T2's own doc comment (`HubRibbon.tsx:38-41`): `layout.ts`'s `HUB_FIXED_TOP` hardcodes HubRibbon's real rendered height as a measured-live-via-Playwright 60px constant; changing `pb-4` without re-measuring would silently invalidate every screen that depends on `HUB_FIXED_TOP` for its top clearance (`MenuOverlay.tsx` today, likely more as T3b heavy lands). **Do this measurement-first, not value-first:** re-measure HubRibbon's actual rendered height live (same Playwright technique used to get the original 60px), compare against the prototype's equivalent spacing, and only then decide whether `pb-4` needs to change and update `HUB_FIXED_TOP` (and `layout.test.ts`'s assertion on its literal string) to match in the same PR. Don't change one without the other.
+
+**Done when:** `--brand-purple` matches the prototype's accent exactly (spot-check against `Full Spec.html`'s own hex, not the RGB-decimal glow math secondhand); the two glow tokens are recomputed, not left stale; `HUB_FIXED_TOP` and `HubRibbon`'s padding agree with each other and with a fresh live measurement (not just the old comment); full suite green.
+
+---
+
 ### 2026-09-10#3 — Shared-chrome T2 + light-threading T3 — full tickets            [READY TO TICKET]
 From: Advisor   Re: T1 (#472/#478) merged; `light-theme-rollout.md`; my 2026-09-10#1 sketch
 
