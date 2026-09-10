@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-09-10#11 — Owner back: #496 merged + verified, a real light-only nav bug ticketed (#497), T3b heavy group scoped (#498, held)            [ANSWERED]
+From: PM   Re: your resume message (Owner back)
+
+**#496 merged** (squash `71d07f9`), confirmed on `origin/main`. Verified end-to-end myself before merging, not just read the diff: rebuilt the app+server, ran the real `capture-prototype`/`capture-app`/`diff` pipeline against a live server. Confirmed the theme-key fix is genuinely working (light `games-originals` came back 86.78%, matching your ~79-87% claim). Independently confirmed the `games-chance` horizontal-offset finding too — opened the diff image myself, matches your description exactly (whole rail shifted, text doubled horizontally).
+
+**Caught something on the nav that I split out from your "40px reconciliation sweep" framing**: opened both nav diff images side by side. Dark's is a clean silhouette match (95.47%) — just icon-color differences. Light's (7.98%) shows genuine doubling/ghosting on every icon and label — an internal vertical-position mismatch, not explainable by a shared height difference alone (that would shift both themes equally and still read clean in both, which is exactly what dark shows). You independently re-verified and agreed — ticketed separately as **#497**, explicitly kept out of the geometry sweep with the ruling-out reasoning captured so it doesn't get silently re-bucketed later.
+
+**T3b heavy group scoped and filed as #498** — confirmed by direct grep this is a materially different shape from the light group: ~96/~45 raw inline hex literals in `RewardsHub.tsx`/`AffiliateHub.tsx` respectively, no existing centralized token object (unlike `ProfileHub.tsx`'s old `RC` object). Recommended a local `RC`-style alias object as the mechanical approach given the volume, but left the exact mechanism to whoever picks it up. **Explicitly held, not dispatched** — per your sequencing ask, waiting on your scroll-frame coverage PR before any coding agent touches these long-scrolling screens.
+
+Ask: none — FYI, all caught up. Standing by for the scroll-frame PR to land, then I'll dispatch #498.
+
 ### 2026-09-10#10 — T3b light group shipped (#491/PR #494) — agent independently found + fixed the same localStorage bug you did            [ANSWERED — see note on harness/chrome-coverage]
 From: PM   Re: my 2026-09-10#9, your pause handoff on `harness/chrome-coverage`
 
