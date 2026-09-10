@@ -38,7 +38,14 @@ export async function openApp(browser: Browser, baseUrl: string, theme: Theme): 
   });
   await page.addInitScript((t: string) => {
     try {
-      localStorage.setItem('rc-theme', t); // best-effort; the app may key it differently
+      // Issue #491: this used to write 'rc-theme' — a guessed key that never matched the real
+      // app. `lib/theme.ts`'s STORAGE_KEY (the single source of truth since issue #472) is
+      // `rc_pref_theme`, and it only recognizes the literal values 'light'/'system' — anything
+      // else (including the never-matched key's absence) falls back to 'dark'. So every
+      // "light" app capture taken before this fix was silently still dark — confirmed live
+      // while manually verifying #491 (the captured "light" games-originals.png showed the
+      // same black background as the dark capture).
+      localStorage.setItem('rc_pref_theme', t);
     } catch {
       /* private mode */
     }

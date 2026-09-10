@@ -14,8 +14,25 @@
  * HUB_BODY pads the content so the last item clears the fixed toolbar (the nav pill ~84px +
  * the bottom safe-area) and nothing is ever hidden behind it. There is no top pad: the
  * sticky ribbon is in-flow, so it already reserves the ~96px wordmark band itself.
+ *
+ * `bg-[var(--rc-bg)] text-[var(--rc-text)]` (issue #491, T3b): was `bg-background
+ * text-foreground` — those shadcn tokens carry no `[data-theme='light']` override, so this
+ * shell (which every hub screen's own content sits directly on top of) stayed black-on-white-text
+ * regardless of theme. That's more than cosmetic: once #491 threaded ProfileHub.tsx's/
+ * HomeHub.tsx's own headline text onto the real `--rc-text` token (so it correctly goes dark in
+ * light mode), any of their headlines NOT wrapped in their own themed surface — e.g. ProfileHub's
+ * bare "ACCOUNT"/"RECENT GAMES"/"CONTROLS" section titles, which sit directly on this shell —
+ * rendered as dark text on this shell's still-dark background: illegible, not just mismatched.
+ * Swapping this shared constant onto the real `--rc-*` tokens is low-risk for the screens NOT
+ * yet migrated (RewardsHub.tsx/AffiliateHub.tsx/GameHub.tsx, still on their own hardcoded hex or
+ * `text-foreground`/`bg-card` literals): every text element in those files sets its own color
+ * directly (verified — none rely on inheriting color from this shell), so nothing there goes
+ * illegible; at most, gaps between their still-dark panels show through this shell's now-light
+ * background instead of a dark one — an expected, purely cosmetic transitional look pending
+ * their own migration ticket, not a functional regression. Identical to before in dark theme
+ * (`--rc-bg`/`--rc-text` default to the exact same values `--background`/`--foreground` did).
  */
-export const HUB_SHELL = 'relative min-h-[100dvh] bg-background text-foreground';
+export const HUB_SHELL = 'relative min-h-[100dvh] bg-[var(--rc-bg)] text-[var(--rc-text)]';
 export const HUB_BODY = 'pb-[calc(7rem_+_env(safe-area-inset-bottom))]';
 
 /**
@@ -62,8 +79,12 @@ export const HUB_FIXED_TOP = 'pt-[calc(60px_+_env(safe-area-inset-top))]';
  * same caveat) — this is grounded in the CSS Values and Units spec / MDN's viewport-unit
  * semantics, not a captured screenshot. Use `hubShellClass(isGuest)` below rather than reaching
  * for either constant directly.
+ *
+ * `bg-[var(--rc-bg)] text-[var(--rc-text)]` (issue #491) mirrors `HUB_SHELL`'s own token swap
+ * above — kept in lockstep so this constant stays byte-identical to `HUB_SHELL` apart from the
+ * viewport unit, per this doc comment's own first line.
  */
-export const HUB_SHELL_GUEST = 'relative min-h-[100vh] bg-background text-foreground';
+export const HUB_SHELL_GUEST = 'relative min-h-[100vh] bg-[var(--rc-bg)] text-[var(--rc-text)]';
 
 /**
  * Picks the guest or non-guest `HUB_SHELL` variant (see `HUB_SHELL_GUEST` above for why guest

@@ -228,11 +228,11 @@ describe('ProfileHubScreen', () => {
       // m1: win, delta 101 → green, signed '+'.
       const win = screen.getByTestId('profile-match-m1-amount');
       expect(win.textContent).toContain('+101');
-      expect(win.getAttribute('style')).toContain('color: rgb(52, 211, 153)'); // #34D399
+      expect(win.getAttribute('style')).toContain('color: var(--rc-green)'); // issue #491: RC.green now aliases the shared token
       // m2: loss, delta -52 → muted, no leading '+'.
       const loss = screen.getByTestId('profile-match-m2-amount');
       expect(loss.textContent).toContain('-52');
-      expect(loss.getAttribute('style')).toContain('color: rgb(131, 131, 143)'); // #83838F
+      expect(loss.getAttribute('style')).toContain('color: var(--rc-muted)'); // issue #491: RC.muted now aliases the shared token
     });
 
     it('collapsed view shows a VIEW MORE pill; expanding reveals numbered page pills + VIEW LESS', async () => {
@@ -322,7 +322,7 @@ describe('ProfileHubScreen', () => {
       expect(evenStyle).toContain('height: 74px');
       expect(evenStyle).toContain('gap: 11px');
       expect(evenStyle).toContain('padding: 0px 16px');
-      expect(evenStyle).toContain('background: rgb(26, 26, 46)'); // #1A1A2E
+      expect(evenStyle).toContain('background: var(--rc-surface)'); // issue #491: RC.surface now aliases the shared token
       expect(evenStyle).toContain('border-radius: 26px');
 
       const odd = screen.getByTestId('profile-match-z2'); // index 1 — transparent
@@ -355,13 +355,13 @@ describe('ProfileHubScreen', () => {
       await waitFor(() => expect(screen.getByTestId('profile-match-z1')).toBeInTheDocument());
 
       const winVs = within(screen.getByTestId('profile-match-z1')).getByText('VS');
-      expect(winVs.getAttribute('style')).toContain('color: rgb(52, 211, 153)'); // #34D399 green
+      expect(winVs.getAttribute('style')).toContain('color: var(--rc-green)'); // issue #491: RC.green now aliases the shared token
 
       const lossVs = within(screen.getByTestId('profile-match-z2')).getByText('VS');
-      expect(lossVs.getAttribute('style')).toContain('color: rgb(255, 255, 255)'); // #FFFFFF white
+      expect(lossVs.getAttribute('style')).toContain('color: var(--rc-text)'); // issue #491: RC.text now aliases the shared token
 
       const drawVs = within(screen.getByTestId('profile-match-z3')).getByText('VS');
-      expect(drawVs.getAttribute('style')).toContain('color: rgb(131, 131, 143)'); // #83838F muted grey
+      expect(drawVs.getAttribute('style')).toContain('color: var(--rc-muted)'); // issue #491: RC.muted now aliases the shared token
     });
 
     // #440 (the parallel backend ticket adding `opponentTier`) may not have merged when this
