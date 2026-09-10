@@ -75,24 +75,27 @@ or set `DESIGN_FIDELITY_APP_URL` to a deployed preview.
     bottom-nav. The carried-over banner between the header and the rail renders taller in the
     real app than in the prototype, so anchoring above it would push everything below out of
     line; anchoring on the rail sidesteps that.
-- **The bottom-nav is excluded** — it sits at different heights (prototype's squeezed mockup vs
-  the app's full viewport) and it's shared chrome the per-screen rebuilds don't own. It gets
-  compared when the shared-chrome workstream lands.
-- **Size mismatch** — the two regions still differ in height; `diff` compares the shared top-left
-  window and flags it.
+- **The bottom-nav** sits at different heights (prototype's squeezed mockup vs the app's full
+  viewport), so it's compared *separately*: a screen with `capturesNav: true` also grabs a
+  `<screen>.nav.png` strip (`navRegion` in `src/region.ts`), aligned on the nav's own top and
+  diffed as its own `<screen>.nav` row. The nav is shared chrome — one screen carrying it
+  (`account-login-sheet`) is enough coverage.
+- **Size mismatch** — the header/nav-anchored regions still differ in height between the two
+  sides; `diff` compares the shared top-left window and flags it.
 
-### Known limitations (v1 alignment)
+### Known limitations
 
-- **~20–30px residual vertical drift that grows down the page** on the games screens — either a
-  real rail/spacing fidelity gap the rebuild owns, or per-element rendering differences. The
-  full fix is per-fixed-region anchoring (part of the scroll-frame work).
+- **Residual vertical drift on the games screens** — measured (`NEW_DESIGN_MIGRATION.md`) to be
+  real fidelity gaps (tile aspect ratio, spacing), not a harness artifact. Per-section anchoring
+  would *hide* those, so it's deliberately not done. Read the diff image for vertical rhythm.
 - **No below-the-fold coverage** — Designer Q3's "whole page in viewport-sized scroll frames" is
-  the next harness PR; needed before Rewards / Account get rebuilt.
-- The number is **not yet a trustworthy gate** — read the diff image. It will settle once the
-  shared chrome + light theme land (they're failing on every screen right now).
+  a later harness PR; needed before Rewards / Account get rebuilt.
+- The number isn't a trustworthy pass/fail gate yet — the shared chrome + light theme still need
+  to land across every screen.
 
 ## Adding a screen to the app side
 
-`src/screens.ts` has all 8 states with a `driveProto`; `driveApp` is wired for the four games
-screens. As each other screen is rebuilt, add its `driveApp` (testid-based, mirrors `driveProto`)
-and pick an `anchor`.
+`src/screens.ts` has all 8 states with a `driveProto`. `driveApp` is wired for the four games
+screens (`catrail`-anchored) and `account-login-sheet` (`header`-anchored — the harness's
+HubRibbon + bottom-nav coverage). As each other screen is rebuilt, add its `driveApp`
+(testid-based, mirrors `driveProto`) and pick an `anchor`.

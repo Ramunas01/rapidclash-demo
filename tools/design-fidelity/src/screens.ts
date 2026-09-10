@@ -45,6 +45,9 @@ export interface ScreenDef {
    *  `catrail` because the carried-over banner above the rail differs in height between the
    *  prototype and the real app. */
   anchor?: Anchor;
+  /** Also capture + diff the bottom-nav strip in isolation (`<screen>.nav.png`). The nav is
+   *  shared chrome, so one screen carrying this is enough coverage for it. */
+  capturesNav?: boolean;
 }
 
 /** Bottom-nav helpers, shared across screens. The nav items are `<div role="button">` with a
@@ -144,13 +147,25 @@ export const SCREENS: ScreenDef[] = [
     driveProto: async (page) => {
       await navTo(page, 'Rewards');
     },
+    // No driveApp: the app gates RewardsHub behind auth (a signed-out Rewards tap opens the
+    // auth modal), so there's no signed-out Rewards screen to compare. Covered post-T3 when
+    // Rewards is captured signed-in.
   },
   {
     id: 'account-login-sheet',
     title: 'Account — login sheet (signed out)',
     legacyShot: '06-account-login-sheet.png',
+    // Header-anchored (default) — this is the harness's HubRibbon coverage. capturesNav adds
+    // the bottom-nav strip (shared chrome; one screen carrying it is enough).
+    capturesNav: true,
     driveProto: async (page) => {
       await navTo(page, 'Account');
+    },
+    driveApp: async (page) => {
+      await page.waitForSelector('[data-testid="home-hub"]', { timeout: 10_000 });
+      await page.getByTestId('hub-nav-account').click();
+      await page.waitForSelector('[data-testid="auth-modal"]', { timeout: 8_000 });
+      await page.waitForTimeout(400);
     },
   },
   {
