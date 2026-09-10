@@ -1,13 +1,22 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { PreferencesHubScreen } from '../screens/PreferencesHub.js';
 import { isMuted, setMuted } from '../lib/sound.js';
+import { setThemeChoice } from '../lib/theme.js';
 
 describe('PreferencesHubScreen', () => {
   beforeEach(() => {
     localStorage.clear();
     setMuted(false); // known baseline: sound ON (lib/sound.ts's in-memory state survives across tests in this file)
+    // lib/theme.ts is also a module-level singleton shared across every test in this file (same
+    // reasoning as lib/sound.ts above) — reset it to a known baseline explicitly, since a plain
+    // localStorage.clear() alone doesn't re-read storage into the already-loaded module.
+    setThemeChoice('dark');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('renders the header and back button, which navigates to Account', () => {
@@ -25,6 +34,7 @@ describe('PreferencesHubScreen', () => {
     // Appearance
     expect(screen.getByTestId('preferences-theme-dark')).toBeInTheDocument();
     expect(screen.getByTestId('preferences-theme-light')).toBeInTheDocument();
+    expect(screen.getByTestId('preferences-theme-system')).toBeInTheDocument(); // issue #472
     // Sound
     expect(screen.getByTestId('preferences-game-sound')).toBeInTheDocument();
     // Tipping
@@ -99,7 +109,7 @@ describe('PreferencesHubScreen', () => {
     expect(sound).toHaveAttribute('aria-checked', 'false');
   });
 
-  it('persists the theme choice and rehydrates it on a fresh mount', () => {
+  it('persists the theme choice (dark/light/system) and rehydrates it on a fresh mount', () => {
     const { unmount } = render(<PreferencesHubScreen onBack={() => {}} />);
 
     expect(screen.getByTestId('preferences-theme-dark')).toHaveAttribute('aria-checked', 'true');
@@ -110,23 +120,68 @@ describe('PreferencesHubScreen', () => {
     unmount();
     render(<PreferencesHubScreen onBack={() => {}} />);
     expect(screen.getByTestId('preferences-theme-light')).toHaveAttribute('aria-checked', 'true');
+
+    // System is a real third option, not just Dark/Light (issue #472).
+    fireEvent.click(screen.getByTestId('preferences-theme-system'));
+    expect(screen.getByTestId('preferences-theme-system')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('preferences-theme-light')).toHaveAttribute('aria-checked', 'false');
+    expect(localStorage.getItem('rc_pref_theme')).toBe('system'); // the raw 3-way choice is what's persisted
   });
 
-  it('scopes the Light theme to this screen only — the document root is untouched', () => {
+  // Issue #472: the old mechanism this replaces only ever re-themed PreferencesHub's own DOM
+  // subtree (its own code comment said so) -- this asserts the NEW app-wide provider instead, on
+  // the one place any screen (not just this one) can read the resolved theme from: <html
+  // data-theme>, per the issue's own verification note ("assert on the data-theme attribute...
+  // not just on Preferences' own local DOM").
+  it('stamps the app-wide <html data-theme> attribute, not just this screen own subtree', () => {
     render(<PreferencesHubScreen onBack={() => {}} />);
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
 
-    const rootBg = getComputedStyle(document.documentElement).getPropertyValue('--background');
     fireEvent.click(screen.getByTestId('preferences-theme-light'));
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
 
-    // The wrapper's own scoped custom properties flip to the light palette...
-    const wrapper = screen.getByTestId('preferences-hub');
-    expect(wrapper.style.getPropertyValue('--pref-bg')).toBe('#FFFFFF');
-    expect(wrapper.style.getPropertyValue('--pref-text')).toBe('#0B0B0B');
+    fireEvent.click(screen.getByTestId('preferences-theme-dark'));
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+  });
 
-    // ...but nothing was written to document.documentElement or any global token.
-    expect(document.documentElement.style.getPropertyValue('--background')).toBe('');
-    expect(getComputedStyle(document.documentElement).getPropertyValue('--background')).toBe(rootBg);
-    expect(document.documentElement.className).not.toMatch(/light/);
+  // Issue #472: `system` must react to a LIVE OS preference change while selected (the
+  // MediaQueryList `change` event), not just a one-time read at load.
+  it('System reacts live to a simulated OS prefers-color-scheme change while selected', () => {
+    let changeListener: (() => void) | undefined;
+    const fakeMql = {
+      matches: false, // OS starts light
+      media: '(prefers-color-scheme: dark)',
+      addEventListener: (_type: 'change', cb: () => void) => {
+        changeListener = cb;
+      },
+      removeEventListener: () => {
+        changeListener = undefined;
+      },
+      addListener: (cb: () => void) => {
+        changeListener = cb;
+      },
+      removeListener: () => {
+        changeListener = undefined;
+      },
+      dispatchEvent: () => false,
+    };
+    vi.stubGlobal('matchMedia', vi.fn(() => fakeMql));
+
+    render(<PreferencesHubScreen onBack={() => {}} />);
+    fireEvent.click(screen.getByTestId('preferences-theme-system'));
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light'); // OS was light at selection time
+
+    act(() => {
+      fakeMql.matches = true; // OS flips to dark while the app stays open
+      changeListener?.();
+    });
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+
+    act(() => {
+      fakeMql.matches = false;
+      changeListener?.();
+    });
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
   });
 
   it('the tipping toggles render but reject interaction (disabled, no state change)', () => {

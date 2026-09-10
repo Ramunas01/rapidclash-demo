@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   Bell,
   ChevronLeft,
@@ -8,50 +8,19 @@ import {
   EyeOff,
   Gift,
   Megaphone,
+  Monitor,
   Moon,
   Sun,
   Volume2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { isMuted, subscribe, toggleMute } from '../lib/sound.js';
+import { useTheme } from '../lib/theme.js';
 
 interface Props {
   /** Back button → returns to the Account (ProfileHub) screen. */
   onBack(): void;
 }
-
-type ThemeChoice = 'dark' | 'light';
-
-/**
- * Design-handoff §"Preferences" light-theme token table (docs/design-refs/design_handoff_account_page/
- * README.md). Dark values mirror this app's OWN existing dark tokens (--background #0b0b0b,
- * --rc-surface #1a1a2e, --muted-foreground #8a8a93-ish, --destructive #e0556c) rather than the
- * handoff's literal dark hexes, per issue #401 point 1 — "Dark" here should look like the rest of
- * the app already does, not introduce a second dark palette that happens to differ by a few hex
- * digits. Both palettes are scoped to THIS screen's own root wrapper via CSS custom properties
- * (--pref-*) set inline below — never on document.documentElement, so every other screen stays on
- * the app's normal dark theme regardless of this toggle.
- */
-const DARK_TOKENS = {
-  bg: '#0B0B0B',
-  surface: '#1A1A2E',
-  sunken: '#0B0B0B',
-  island: '#1A1930',
-  text: '#FFFFFF',
-  muted: '#83838F',
-  green: '#34D399',
-  danger: '#F0556B',
-};
-const LIGHT_TOKENS = {
-  bg: '#FFFFFF',
-  surface: '#E9E9F0',
-  sunken: '#D3D3DD',
-  island: '#E4E4EE',
-  text: '#0B0B0B',
-  muted: '#6E6E7A',
-  green: '#0B8F5A',
-  danger: '#C42B41',
-};
 
 const CURRENCIES: Array<{ code: string; symbol: string }> = [
   { code: 'USD', symbol: '$' },
@@ -68,8 +37,10 @@ const CURRENCIES: Array<{ code: string; symbol: string }> = [
 // Exception: sound (below) — that toggle controls the real `lib/sound.ts` mute module (issue
 // #418), which already persists itself under its own `rc:sound:muted` key, so there's no
 // `gameSound` entry here anymore (would've been a second, redundant source of truth).
+// Theme's own storage key ('rc_pref_theme') now lives in lib/theme.ts, the single source of
+// truth for both reading AND writing it (issue #472) — kept out of this KEYS map so there's no
+// second place that could drift out of sync with it.
 const KEYS = {
-  theme: 'rc_pref_theme',
   tips: 'rc_pref_tips',
   tipNotifsDisabled: 'rc_pref_tipNotifsDisabled',
   cashDisplay: 'rc_pref_cashDisplay',
@@ -93,13 +64,6 @@ function writeBool(key: string, value: boolean): void {
     /* localStorage may be unavailable — the in-memory state still works for this session */
   }
 }
-function readTheme(): ThemeChoice {
-  try {
-    return window.localStorage.getItem(KEYS.theme) === 'light' ? 'light' : 'dark';
-  } catch {
-    return 'dark';
-  }
-}
 function readCurrency(): string {
   try {
     const stored = window.localStorage.getItem(KEYS.currency);
@@ -113,15 +77,17 @@ function readCurrency(): string {
  * Preferences — a sub-page reached from the Account screen (issue #401, Account redesign Part A).
  * Most toggles here are persisted-only preferences: no tipping ledger, currency conversion, or
  * marketing pipeline actually exists behind these yet (see the issue's explicit scope calls). Two
- * exceptions have real, live behavior: the Appearance radio pair (re-themes this screen's own
- * subtree only, via the --pref-* custom properties set on the root wrapper below), and the Sound
- * effects toggle (issue #418 — wired directly to `lib/sound.ts`'s real mute module, the same one
- * `ChessHub.tsx` gates its `play()` calls on; this used to be decorative-only, with its own
- * `MuteToggle` living on the Account page instead — that control has moved here, its home per the
- * design spec, and now actually drives global mute state).
+ * exceptions have real, live behavior: the Appearance radio group (issue #472 — now app-wide, via
+ * `lib/theme.ts`'s `useTheme()`; this screen no longer maintains its own locally-scoped clone,
+ * it just reads/writes the shared `--rc-*` tokens like everything else will as later tickets
+ * thread light mode through), and the Sound effects toggle (issue #418 — wired directly to
+ * `lib/sound.ts`'s real mute module, the same one `ChessHub.tsx` gates its `play()` calls on;
+ * this used to be decorative-only, with its own `MuteToggle` living on the Account page instead —
+ * that control has moved here, its home per the design spec, and now actually drives global mute
+ * state).
  */
 export function PreferencesHubScreen({ onBack }: Props) {
-  const [theme, setTheme] = useState<ThemeChoice>(readTheme);
+  const { choice: theme, setChoice: pickTheme } = useTheme();
   // Sound ON is this toggle's own polarity — the inverse of the module's `isMuted()` (issue
   // #418). `subscribe()` keeps this row in sync if mute is ever flipped elsewhere (defense in
   // depth — nothing else should mute after this fix, but the module's contract is there to use).
@@ -137,27 +103,6 @@ export function PreferencesHubScreen({ onBack }: Props) {
   const [currency, setCurrency] = useState<string>(readCurrency);
   const [stealthMode, setStealthMode] = useState(() => readBool(KEYS.stealthMode, false));
   const [marketing, setMarketing] = useState(() => readBool(KEYS.marketing, true));
-
-  const tokens = theme === 'light' ? LIGHT_TOKENS : DARK_TOKENS;
-  const wrapperStyle = {
-    '--pref-bg': tokens.bg,
-    '--pref-surface': tokens.surface,
-    '--pref-sunken': tokens.sunken,
-    '--pref-island': tokens.island,
-    '--pref-text': tokens.text,
-    '--pref-muted': tokens.muted,
-    '--pref-green': tokens.green,
-    '--pref-danger': tokens.danger,
-  } as CSSProperties;
-
-  const pickTheme = useCallback((next: ThemeChoice) => {
-    setTheme(next);
-    try {
-      window.localStorage.setItem(KEYS.theme, next);
-    } catch {
-      /* in-memory state still reflects the choice for this session */
-    }
-  }, []);
 
   const handleGameSound = useCallback(() => {
     toggleMute(); // flips lib/sound.ts's real mute state; the subscribe() above syncs `gameSound`
@@ -207,8 +152,7 @@ export function PreferencesHubScreen({ onBack }: Props) {
   return (
     <div
       data-testid="preferences-hub"
-      style={wrapperStyle}
-      className="min-h-screen bg-[var(--pref-bg)] pb-12 text-[var(--pref-text)]"
+      className="min-h-screen bg-[var(--rc-bg)] pb-12 text-[var(--rc-text)]"
     >
       <div className="mx-auto max-w-md px-4 pt-4">
         {/* Header — 38px circular back button + PREFERENCES headline (README §2 row anatomy). */}
@@ -218,14 +162,15 @@ export function PreferencesHubScreen({ onBack }: Props) {
             onClick={onBack}
             aria-label="Back to Account"
             data-testid="preferences-back"
-            className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-full bg-[var(--pref-surface)] text-[var(--pref-text)] transition-opacity hover:opacity-80"
+            className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-full bg-[var(--rc-surface)] text-[var(--rc-text)] transition-opacity hover:opacity-80"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
           <h1 className="text-[19px] font-bold uppercase tracking-[0.6px]">Preferences</h1>
         </div>
 
-        {/* APPEARANCE — Dark/Light radio pair; re-themes this screen's subtree only. */}
+        {/* APPEARANCE — Dark/Light/System radio group (issue #472 adds System). Drives the
+            app-wide theme via lib/theme.ts's useTheme(); no longer scoped to this screen. */}
         <Section title="Appearance">
           <Group>
             <RadioRow
@@ -241,6 +186,13 @@ export function PreferencesHubScreen({ onBack }: Props) {
               selected={theme === 'light'}
               onSelect={() => pickTheme('light')}
               testId="preferences-theme-light"
+            />
+            <RadioRow
+              icon={<Monitor className="h-[19px] w-[19px]" />}
+              label="System"
+              selected={theme === 'system'}
+              onSelect={() => pickTheme('system')}
+              testId="preferences-theme-system"
             />
           </Group>
         </Section>
@@ -307,16 +259,16 @@ export function PreferencesHubScreen({ onBack }: Props) {
                 cashDisplay ? 'cursor-pointer opacity-100' : 'cursor-not-allowed opacity-40',
               )}
             >
-              <span className="shrink-0 text-[var(--pref-muted)]">
+              <span className="shrink-0 text-[var(--rc-muted)]">
                 <Coins className="h-[19px] w-[19px]" />
               </span>
               <span className="flex-1 text-sm font-semibold">Select currency</span>
-              <span className="shrink-0 text-[15px] font-bold text-[var(--pref-green)]">
+              <span className="shrink-0 text-[15px] font-bold text-[var(--rc-green)]">
                 {activeCurrency.symbol} {activeCurrency.code}
               </span>
               <ChevronRight
                 className={cn(
-                  'h-3 w-3 shrink-0 text-[var(--pref-muted)] transition-transform duration-300',
+                  'h-3 w-3 shrink-0 text-[var(--rc-muted)] transition-transform duration-300',
                   currencyOpen && cashDisplay && 'rotate-90',
                 )}
               />
@@ -334,7 +286,7 @@ export function PreferencesHubScreen({ onBack }: Props) {
                       data-testid={`preferences-currency-${c.code}`}
                       className={cn(
                         'flex h-10 items-center justify-center gap-1 rounded-full text-[13px] font-bold transition-colors',
-                        active ? 'bg-brand text-white' : 'bg-[var(--pref-sunken)] text-[var(--pref-muted)]',
+                        active ? 'bg-brand text-white' : 'bg-[var(--rc-sunken)] text-[var(--rc-muted)]',
                       )}
                     >
                       <span>{c.symbol}</span>
@@ -392,14 +344,14 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 function Group({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cn('flex flex-col overflow-hidden rounded-[20px] bg-[var(--pref-surface)]', className)}>
+    <div className={cn('flex flex-col overflow-hidden rounded-[20px] bg-[var(--rc-surface)]', className)}>
       {children}
     </div>
   );
 }
 
 function Helper({ children }: { children: ReactNode }) {
-  return <p className="px-1 text-[12.5px] leading-[19px] text-[var(--pref-muted)]">{children}</p>;
+  return <p className="px-1 text-[12.5px] leading-[19px] text-[var(--rc-muted)]">{children}</p>;
 }
 
 function RadioRow({
@@ -424,13 +376,13 @@ function RadioRow({
       data-testid={testId}
       className="flex h-[50px] w-full items-center gap-3 px-[18px] text-left"
     >
-      <span className="shrink-0 text-[var(--pref-muted)]">{icon}</span>
+      <span className="shrink-0 text-[var(--rc-muted)]">{icon}</span>
       <span className="flex-1 text-sm font-semibold">{label}</span>
-      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full bg-[var(--pref-sunken)]">
+      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full bg-[var(--rc-sunken)]">
         <span
           className={cn(
             'h-3 w-3 rounded-full transition-colors',
-            selected ? 'bg-brand shadow-[0_0_10px_2px_rgba(129,64,226,0.55)]' : 'bg-transparent',
+            selected ? 'bg-brand shadow-[var(--rc-theme-btn-shadow)]' : 'bg-transparent',
           )}
         />
       </span>
@@ -466,13 +418,13 @@ function ToggleRow({
         disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
       )}
     >
-      <span className="shrink-0 text-[var(--pref-muted)]">{icon}</span>
+      <span className="shrink-0 text-[var(--rc-muted)]">{icon}</span>
       <span className="flex-1 text-sm font-semibold">{label}</span>
       <span
         aria-hidden="true"
         className={cn(
           'flex h-[26px] w-[46px] shrink-0 items-center rounded-full p-[3px] transition-colors',
-          checked ? 'bg-brand' : 'bg-[var(--pref-sunken)]',
+          checked ? 'bg-brand' : 'bg-[var(--rc-sunken)]',
         )}
       >
         <span

@@ -19,7 +19,10 @@ export default {
         // / bg-surface, never raw hex. Backed by --rc-* vars in index.css.
         success: 'hsl(var(--rc-success))',
         play: 'hsl(var(--rc-play))',
-        surface: 'hsl(var(--rc-surface))',
+        // --rc-surface is a raw hex custom property (not an HSL triple) as of issue #472 — it
+        // now carries a real, distinct light-theme value (index.css's `[data-theme="light"]`
+        // block), unlike --rc-success/--rc-play above which are unchanged by this ticket.
+        surface: 'var(--rc-surface)',
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         card: {
