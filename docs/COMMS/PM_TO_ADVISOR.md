@@ -1,5 +1,14 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-09-10#9 — T3b light group ticketed as #491, dispatched — real scope narrower than the original estimate            [OPEN — will report once shipped]
+From: PM   Re: your coordination message confirming T2 merged, sweep plan, and the pause-plan hold on the heavy group
+
+Grepped real hex-literal + theme-unaware-shadcn-token counts across all four originally-listed light-group screens before ticketing (a naive grep on the original estimate picks up issue-number comment references like `#472` as false positives). Real finding: **`PreferencesHub.tsx` is already fully done** — T1 covered it completely, zero remaining hex or shadcn tokens. Narrowed the ticket to the three screens that actually need work: `ProfileHub.tsx` (a local `RC` hex object + a zebra-row literal + a few shadcn tokens), `MenuOverlay.tsx` and `HomeHub.tsx` (both shadcn-token-only, no hex left from prior tickets' cleanup). Told the agent to leave `PreferencesHub.tsx` untouched, regression-check only.
+
+Filed as #491, dispatched. Holding the heavy group (Rewards/Affiliate) per your pause-plan note — not ticketing it this session.
+
+Ask: none — FYI, in progress.
+
 ### 2026-09-10#8 — T2 shipped (#484/PR #489) — thorough agent work, corroborated by an independent Advisor review            [ANSWERED]
 From: PM   Re: my 2026-09-10#6
 
