@@ -14,6 +14,10 @@ function ref(theme: Theme, id: string): string {
 function cap(theme: Theme, id: string): string {
   return join(CAPTURES_DIR, theme, `${id}.png`);
 }
+/** `capturesNav` screens get a second `<id>.nav.png` for the bottom-nav strip, diffed separately. */
+function navName(id: string): string {
+  return `${id}.nav`;
+}
 
 /** Regenerate the committed prototype reference set (references/{dark,light}/*.png). */
 async function capturePrototype(only?: string): Promise<void> {
@@ -26,9 +30,10 @@ async function capturePrototype(only?: string): Promise<void> {
       for (const screen of screens) {
         try {
           await resetPrototype(page);
-          const png = await captureScreen(page, screen);
-          writeFileSync(ref(theme, screen.id), png);
-          console.log(`  ✓ ${theme.padEnd(5)} ${screen.id}`);
+          const shot = await captureScreen(page, screen);
+          writeFileSync(ref(theme, screen.id), shot.body);
+          if (shot.nav) writeFileSync(ref(theme, navName(screen.id)), shot.nav);
+          console.log(`  ✓ ${theme.padEnd(5)} ${screen.id}${shot.nav ? ' (+nav)' : ''}`);
         } catch (e) {
           console.warn(`  ✗ ${theme.padEnd(5)} ${screen.id} — ${(e as Error).message.split('\n')[0]}`);
         }
@@ -55,10 +60,11 @@ async function captureApp(url: string | undefined, only?: string): Promise<void>
       for (const screen of screens) {
         try {
           const page = await openApp(browser, base, theme);
-          const png = await captureAppScreen(page, screen);
-          writeFileSync(cap(theme, screen.id), png);
+          const shot = await captureAppScreen(page, screen);
+          writeFileSync(cap(theme, screen.id), shot.body);
+          if (shot.nav) writeFileSync(cap(theme, navName(screen.id)), shot.nav);
           await page.close();
-          console.log(`  ✓ ${theme.padEnd(5)} ${screen.id}`);
+          console.log(`  ✓ ${theme.padEnd(5)} ${screen.id}${shot.nav ? ' (+nav)' : ''}`);
         } catch (e) {
           console.warn(`  ✗ ${theme.padEnd(5)} ${screen.id} — ${(e as Error).message.split('\n')[0]}`);
         }
@@ -77,28 +83,33 @@ function runDiff(only?: string): void {
   type Row = { screen: string; theme: string; fidelity: number | null; pass: boolean | null; note: string };
   const rows: Row[] = [];
 
+  const one = (theme: Theme, id: string, masks: typeof SCREENS[number]['masks']): void => {
+    let a: Buffer;
+    let b: Buffer;
+    try {
+      a = readFileSync(ref(theme, id));
+    } catch {
+      rows.push({ screen: id, theme, fidelity: null, pass: null, note: 'no reference — run capture-prototype' });
+      return;
+    }
+    try {
+      b = readFileSync(cap(theme, id));
+    } catch {
+      rows.push({ screen: id, theme, fidelity: null, pass: null, note: 'no app capture — run capture-app' });
+      return;
+    }
+    const d = diffPng(a, b, masks);
+    writeFileSync(join(DIFFS_DIR, `${theme}-${id}.png`), d.diffImage);
+    const parts = [`${d.diffPixels} px differ`];
+    if (d.maskedPixels) parts.push(`${masks?.length ?? 0} region(s) masked`);
+    if (d.sizeMismatch) parts.push(`compared ${d.sizeMismatch.comparedRegion} (ref ${d.sizeMismatch.ref}, app ${d.sizeMismatch.app})`);
+    rows.push({ screen: id, theme, fidelity: d.fidelity, pass: d.pass, note: parts.join(' · ') });
+  };
+
   for (const theme of THEMES) {
     for (const screen of screens) {
-      let a: Buffer;
-      let b: Buffer;
-      try {
-        a = readFileSync(ref(theme, screen.id));
-      } catch {
-        rows.push({ screen: screen.id, theme, fidelity: null, pass: null, note: 'no reference — run capture-prototype' });
-        continue;
-      }
-      try {
-        b = readFileSync(cap(theme, screen.id));
-      } catch {
-        rows.push({ screen: screen.id, theme, fidelity: null, pass: null, note: 'no app capture — run capture-app' });
-        continue;
-      }
-      const d = diffPng(a, b, screen.masks);
-      writeFileSync(join(DIFFS_DIR, `${theme}-${screen.id}.png`), d.diffImage);
-      const parts = [`${d.diffPixels} px differ`];
-      if (d.maskedPixels) parts.push(`${screen.masks?.length ?? 0} region(s) masked`);
-      if (d.sizeMismatch) parts.push(`compared ${d.sizeMismatch.comparedRegion} (ref ${d.sizeMismatch.ref}, app ${d.sizeMismatch.app})`);
-      rows.push({ screen: screen.id, theme, fidelity: d.fidelity, pass: d.pass, note: parts.join(' · ') });
+      one(theme, screen.id, screen.masks);
+      if (screen.capturesNav) one(theme, navName(screen.id), undefined);
     }
   }
 

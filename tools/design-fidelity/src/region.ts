@@ -101,3 +101,32 @@ export async function contentRegion(page: Page, kind: 'prototype' | 'app', ancho
   }
   return box;
 }
+
+/**
+ * The bottom-nav strip, clipped to just the nav itself, x=0. The nav is a fixed overlay that sits
+ * at a different absolute y in the prototype's phone mockup vs the app's real viewport, so it's
+ * compared in isolation (aligned on its own top) rather than folded into a top-anchored region.
+ */
+export async function navRegion(page: Page, kind: 'prototype' | 'app'): Promise<Clip> {
+  const box = await page.evaluate(
+    ({ k, VIEWPORT_W }: { k: string; VIEWPORT_W: number }) => {
+      let nav: DOMRect | null = null;
+      if (k === 'app') {
+        nav = document.querySelector('nav[aria-label="Primary"]')?.getBoundingClientRect() ?? null;
+      } else {
+        const el = Array.from(document.querySelectorAll<HTMLElement>('div, nav')).find((e) => {
+          const t = (e.textContent || '').replace(/\s+/g, ' ').trim();
+          return /Menu ?Games ?Account ?Rewards ?Chat/.test(t) && t.length < 60 && e.getBoundingClientRect().width >= 280;
+        });
+        nav = el?.getBoundingClientRect() ?? null;
+      }
+      if (!nav) return { missing: true };
+      return { x: 0, y: Math.max(0, Math.round(nav.top)), width: VIEWPORT_W, height: Math.round(nav.height) };
+    },
+    { k: kind, VIEWPORT_W: VIEWPORT.width },
+  );
+  if ('missing' in box) {
+    throw new Error(`design-fidelity: could not find the ${kind} bottom-nav`);
+  }
+  return box;
+}

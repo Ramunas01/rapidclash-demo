@@ -11,7 +11,7 @@ import {
   VIEWPORT,
 } from './paths.js';
 import { armFreeze, settleFrozen } from './freeze.js';
-import { contentRegion } from './region.js';
+import { contentRegion, navRegion } from './region.js';
 import type { ScreenDef, Theme } from './screens.js';
 
 export type { Theme };
@@ -118,8 +118,17 @@ export async function resetPrototype(page: Page): Promise<void> {
   await page.waitForTimeout(600);
 }
 
-export async function captureScreen(page: Page, screen: ScreenDef): Promise<Buffer> {
+export interface Capture {
+  body: Buffer;
+  /** The bottom-nav strip, when `screen.capturesNav` is set. */
+  nav?: Buffer;
+}
+
+export async function captureScreen(page: Page, screen: ScreenDef): Promise<Capture> {
   await screen.driveProto(page);
   await page.waitForTimeout(250);
-  return page.screenshot({ clip: await contentRegion(page, 'prototype', screen.anchor), animations: 'disabled', caret: 'hide' });
+  const opts = { animations: 'disabled', caret: 'hide' } as const;
+  const body = await page.screenshot({ clip: await contentRegion(page, 'prototype', screen.anchor), ...opts });
+  const nav = screen.capturesNav ? await page.screenshot({ clip: await navRegion(page, 'prototype'), ...opts }) : undefined;
+  return { body, nav };
 }

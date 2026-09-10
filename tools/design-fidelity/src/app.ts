@@ -1,7 +1,8 @@
 import type { Browser, Page } from 'playwright-core';
 import { chromium } from 'playwright-core';
 import { armFreeze, settleFrozen } from './freeze.js';
-import { contentRegion } from './region.js';
+import type { Capture } from './prototype.js';
+import { contentRegion, navRegion } from './region.js';
 import { chromeExecutable, DEVICE_SCALE_FACTOR, VIEWPORT } from './paths.js';
 import type { ScreenDef, Theme } from './screens.js';
 
@@ -63,11 +64,14 @@ export async function openApp(browser: Browser, baseUrl: string, theme: Theme): 
  * (mirroring `driveProto` but for our own testid-based DOM); screens without one yet are skipped
  * with a clear message rather than producing a misleading capture.
  */
-export async function captureAppScreen(page: Page, screen: ScreenDef): Promise<Buffer> {
+export async function captureAppScreen(page: Page, screen: ScreenDef): Promise<Capture> {
   if (!screen.driveApp) {
     throw new Error(`no driveApp for "${screen.id}" yet — add one to src/screens.ts as that screen is rebuilt`);
   }
   await screen.driveApp(page);
   await page.waitForTimeout(300);
-  return page.screenshot({ clip: await contentRegion(page, 'app', screen.anchor), animations: 'disabled', caret: 'hide' });
+  const opts = { animations: 'disabled', caret: 'hide' } as const;
+  const body = await page.screenshot({ clip: await contentRegion(page, 'app', screen.anchor), ...opts });
+  const nav = screen.capturesNav ? await page.screenshot({ clip: await navRegion(page, 'app'), ...opts }) : undefined;
+  return { body, nav };
 }
