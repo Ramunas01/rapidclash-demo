@@ -198,10 +198,11 @@ Supersedes the loose "sizing candidates" list. Phases 1→3 are sequential; Phas
 - **#466** (`8795f59`): Designer's harness spec — fidelity gate **≤ 0.5% differing pixels** + a human look at any drift (`diff` prints PASS/FAIL); **freeze layer** (`src/freeze.ts`) pins `Math.random`/`Date.now` and strips all transitions/animations, both sides; **region masking** (`MaskRect`) — `BANNER_MASK` excludes the carried-over carousel from the 4 games screens; viewport **390 × 840**.
 - **Still to do — 3rd harness PR (Advisor):** whole-page comparison in **viewport-sized scroll frames** (Designer Q3) — not blocking Games-hero (above the fold); needed before Rewards / Account rebuilds. Also: CI `playwright install chromium` if the harness is ever run in CI.
 
-### Phase 3 — Games page hero rebuild — **IN PROGRESS: issue #465, coder dispatched (2026-09-10)**
-- Coder working in an isolated agent worktree; implementation diffs across `HomeHub.tsx` / `MenuOverlay.tsx` / `categories.ts` / `gameSort.ts` / `match-history.ts`; not yet at fidelity-measurement or a PR. PM supervising, will pick up wherever it lands. Full spec: `ADVISOR_TO_PM.md` 2026-09-09#3.
-- **PM review focus** when the PR lands: (1) the `match-history.ts` / core change is a *generic* aggregate query, no `if (gameId === …)` (invariant #5); (2) the banner is genuinely left untouched; (3) categories are a client-side tag *set* per game, not a single value.
-- Scope: category rail, filter pills (SEARCH / SORT / RANDOM), section title. **NOT the banner** — see below.
+### Phase 3 — Games page hero rebuild — **MERGED (#468, `15253fe`)**
+- Category rail (5 tabs, many-to-many `CATEGORY_GAMES`), SEARCH (cross-category substring), SORT (Popularity / Newest / Alphabetical), RANDOM (1560 ms spin → random among the 6 playable games), section title. Banner untouched. `getPopularity()` added to `match-history.ts` (generic `GROUP BY game_id` aggregate — invariant #5 clean) + `GET /games/popularity`.
+- **Merged at fidelity FAIL** on the PM's diff-image review — every failing region is out of scope (shared header/nav chrome, tile art, no light theme, harness alignment). That's *why* shared-chrome + light-theme is next (below), not rps/mines/dice.
+- **One follow-up the harness surfaced** (small — fold into a #465 cleanup): default tile order when Popularity is all-tied should be the prototype's `GRID` order, not the current tie-break (capture showed Baccarat first). *(A "tile art" flag was retracted — the "100"/"1K" are chips in the Baccarat art; the app's webp tiles match the prototype's PNGs. The diff red there was alignment + sort order.)*
+- Scope was: category rail, filter pills (SEARCH / SORT / RANDOM), section title. NOT the banner.
 - **Category rail** — `CAT_GAMES` mapping (many-to-many tags, see the category table above). `MenuOverlay.tsx`'s placeholder "Card games / Chance games / Skill games" rows get wired here.
 - **Search / Sort** — behaviour RESOLVED (see "Two UI elements"): name substring across all 12, ignore tab; Popularity = all-time settled-match count; Newest = fixed intro-order ordinal; Alphabetical = display name.
 - **RANDOM button** — defined intent, not ours (Designer Q4): `spinRandom` (line 3991) spins the die 1560 ms, then opens a random game's hub. Prototype only picks mines/rps/dice because those are its only views — **real behaviour: random among the six *playable* games (rps, dice, mines, coinflip, blackjack, chess)**, never the six unbuilt ones (dead hub is worse than a smaller pool). Spin keyframe is 1500 ms, nav fires 60 ms after it settles.
@@ -217,19 +218,26 @@ Supersedes the loose "sizing candidates" list. Phases 1→3 are sequential; Phas
 These are scoped in their own sections/comms docs and sequence *after* the harness exists:
 - **rps / mines / dice** full screen rebuilds — the only 3 games needing new screens. **Designer-confirmed final, not sketches (Q6): build them fully, gameplay included.** Each has a real phase machine (mines: idle → match → run → done, with a matchmaking phase), clocks, opponent state, seeded history, outcome logic (`rpsOutcome` win/lose/draw; mines gems/bombs/bust; dice belt animation + roll history) — ~25 state keys across the three. Reference screenshots come from the harness.
 - **Currency skin + fixed stake ladder** — `$`/multi-currency wallet skin (cosmetic) + the 6-rung `$1–$100` `STAKE_LADDER` replacing free-typed stake entry. See "Currency presentation" above. The stake-ladder half touches the core/matchmaking, size it separately from the skin.
-- **Shared chrome + light theme rollout** platform-wide (`light-theme-rollout.md`) — the single biggest item; likely its own iteration. Carries the 6 chrome-only hubs and the interim Coinflip/Blackjack/Chess dark-region override with it.
+- **Shared chrome + light theme rollout** platform-wide — **NEXT workstream** (Owner-agreed 2026-09-10: before rps/mines/dice, because it's what fails fidelity on every screen). Sequenced tickets in `ADVISOR_TO_PM.md` 2026-09-10#1:
+  - **T1 — Theme foundation**: `dark | light | system` model (`system` → `matchMedia`), app-wide theme provider replacing `PreferencesHub`'s subtree-only one, 3rd Preferences radio, token additions (sort-sheet bg, theme-button shadow, carousel inactive-dot light value). Gates T2–T4.
+  - **T2 — Shared chrome**: rebuild `HubRibbon` (header) + `HubToolbar` (bottom nav) to the prototype + light. Highest-leverage lift (renders on every screen). Harness adds the bottom-nav to its compared region here.
+  - **T3 — Per-screen light threading**: Account / Preferences / Menu / Rewards / Affiliate + HomeHub — replace each screen's local `RC = {hex}` object with the shared token set. Parallelable with T2.
+  - **T4 — Interim dark-override** for Coinflip/Blackjack/Chess: one scoped `--rc-*` override wrapper per hub around the play surface; do not fork components; audit hardcoded hex inside first.
+  - **T5 — PARKED**: proper light treatment for those 3, after rps/mines/dice.
+  - Carries the 6 chrome-only hubs (crash/roulette/hilo/keno/baccarat/limbo) as a side effect of T2.
 - **Chat** — full UI + `ChatTransport` local impl + server-checked kill switch (`chat-local-transport.md`).
 - **Auth modal** replacement — `referral` field stays cosmetic/session-local (resolved).
 - **Races (24h / Weekly) + Leaderboards tab** — genuine new feature work (time-windowed leaderboard logic), sized separately from the lobby/stake-entry/play/result → single-screen-with-phases collapse.
 - **lobby / stake-entry / play / result → one screen, internal phases** — real architectural simplification (`App.tsx:1292-1317` today).
 
-## Status snapshot — 2026-09-10, end of day (paused)
+## Status snapshot — 2026-09-10
 
-- **`main` = `8795f59`.** Merged: #456–#464 (setup + tracker + PM brief + currency-skin note), **#459 + #466 (Phase 2 harness — complete)**.
-- **Phase 1 — DONE.** All decisions (Search/Sort, content corrections, currency skin, 6 Designer harness/hero answers) — RESOLVED.
-- **Phase 2 — DONE** (#459 + #466 merged). Follow-up: scroll-frame capture (Advisor, not blocking).
-- **Phase 3 — Games hero — IN PROGRESS.** Issue **#465**, coder dispatched, working in an isolated agent worktree. Not yet at a PR. PM supervising, safe to run unsupervised (isolated, can't merge/collide); PM picks it up next session. Review-focus notes under Phase 3 above.
-- **No open PRs. Nothing Owner-gated.**
-- **Process:** Advisor works in worktree `worktree-advisor-migration`; PM keeps the primary checkout; the Games-hero coder is in its own agent worktree. No shared-checkout risk.
-- **Next up after Games hero:** rps/mines/dice full rebuilds; then shared-chrome + light-theme rollout (biggest item); currency skin + stake ladder; chat; races/leaderboards; lobby-collapse.
+- **`main` = `57483a3`.** Merged: #456–#464 setup; **#459 + #466 Phase 2 harness**; **#468 Phase 3 Games hero**; #467/#469 records.
+- **Phases 1, 2, 3 — DONE.** All decisions RESOLVED.
+- **Open PRs:** **#470** (Advisor — harness alignment v1: anchors captures on a shared landmark; PM merges, same bar as #459/#466).
+- **NEXT: Shared chrome + light-theme rollout** — sequenced T1–T5 in `ADVISOR_TO_PM.md` 2026-09-10#1 + the Phase-3-follow-up section above. Owner-agreed to do this *before* rps/mines/dice. **PM: ticket T1.**
+- **Blocked on Designer:** nothing.
+- **Advisor next:** the scroll-frame harness PR (Designer Q3, whole-page capture) — needed before Rewards/Account get rebuilt in T3.
+- **After shared-chrome:** rps/mines/dice; currency skin + stake ladder; chat; races/leaderboards; lobby-collapse.
+- **Process:** Advisor → worktree `worktree-advisor-migration`; PM → primary checkout; each coder → its own agent worktree.
 - **Pending mechanical:** prototype asset triage (~61 unreferenced PNGs).

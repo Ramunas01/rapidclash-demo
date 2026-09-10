@@ -1,5 +1,41 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-10#1 — Shared chrome + light-theme rollout — the next (biggest) workstream            [READY TO TICKET, sequenced]
+From: Advisor   Re: Owner call to do this before rps/mines/dice; `light-theme-rollout.md`; the games-hero harness diff (#470)
+
+**Why this next, not rps/mines/dice** (Owner-agreed 2026-09-10): the games-hero rebuild passed review but fails fidelity on every screen/theme — and the re-aligned harness diff (#470) shows the failing pixels are almost entirely *shared*: the header + bottom-nav styling, the page tokens, and the total absence of a light theme. Those are platform-wide, not per-screen. Fixing them lifts fidelity on every screen at once and makes rps/mines/dice measurable when they come. Full detail: `docs/NEW_DESIGN_MIGRATION.md` → "Shared chrome + light theme rollout".
+
+**Sequenced tickets — 1 gates the rest:**
+
+**T1 — Theme foundation** (small, self-contained, blocks T2–T4).
+- Theme model becomes `dark | light | system` (three values). `system` watches `prefers-color-scheme` via `matchMedia`. `PreferencesHub.tsx:228-243` currently renders exactly two radios → add the third.
+- A theme provider that stamps the choice on the document root (`data-theme` attr or equivalent) and flips the `--rc-*` token block. `PreferencesHub.tsx:23`'s `ThemeChoice` is the only theming that exists today and it re-themes only its own subtree — replace it with an app-wide one.
+- Token additions (Designer, `light-theme-rollout.md`): sort-sheet background (`#D3D3DD` light / `#1A1A2E` dark), theme-button shadows, and the **games-hero carousel inactive dot** (`#3B3B47`, dark-only today, no light value — pick one, add to the token set). All join the `--rc-*` set, no hex literals in components.
+- Harness: `capture-prototype`'s light references already exist; this ticket makes `capture-app --url` produce a real light capture instead of a dark one.
+
+**T2 — Shared chrome to the new design + light: `HubRibbon` (header) + `HubToolbar` (bottom nav).** Depends on T1.
+- Rebuild both to match `design/prototype/RapidClash Full Spec.html` — pull exact values from that file. Thread light tokens through both.
+- They render on every screen, so this is the single highest-leverage fidelity lift. One agent; shared components, adjacent to `App.tsx` but *not* the matchmaking collision zone.
+- Harness: unmask/add the bottom-nav to the compared region as part of this (coordinate with me — `region.ts` currently excludes it).
+
+**T3 — Per-screen light threading: Account (`ProfileHub`), Preferences, Menu (`MenuOverlay`), Rewards (`RewardsHub`), Affiliate (`AffiliateHub`), plus the rebuilt HomeHub.** Depends on T1. Can run parallel with T2 (different files).
+- Each of these is dark-only today with a local `RC = { surface: '#1A1A2E', … }` hex object. Replace with the shared token set. No new visual design — just make light work off the tokens.
+- Verify each against its already-captured light reference in the harness.
+- Splittable into two agents (Account+Prefs+Menu / Rewards+Affiliate+HomeHub) if you want the parallelism; the ≤2 cap and the App.tsx zone still bind.
+
+**T4 — Interim dark-override for Coinflip / Blackjack / Chess.** Depends on T1 + T3.
+- These 3 are "already done, not rebuilt this round." Holding pattern per `light-theme-rollout.md`: everything on the page follows light **except** the player-boxes and the play surface (coin area / blackjack felt / chessboard), which stay pinned dark via **one** scoped `--rc-*` variable-override wrapper per hub. **Do not fork the components.** Audit for hardcoded hex inside the pinned regions first — anything reading a token follows the override; a literal hex inverts and goes unreadable.
+- A hard edge between the light page and the dark board is expected and fine.
+
+**T5 — PARKED, not started:** proper light treatment for Coinflip/Blackjack/Chess, picked up only after rps/mines/dice ship. Log it, don't lose it.
+
+**One games-hero (#465) follow-up the harness surfaced — small, fold into a #465 cleanup pass or a quick ticket:**
+1. **Default tile sort order.** With Popularity counts all-equal (fresh/quiet DB — the normal demo state), the grid should fall back to the prototype's `GRID` order (`cf,bj,ch,mn,rp,cr,di,ro,hi,ke,ba,li`). The capture showed Baccarat first — the current tie-break doesn't match.
+
+*(Retracted 2026-09-10: an earlier draft flagged a "tile art" difference — that was a misread of the diff image. The "100"/"1K" are poker chips painted into the Baccarat art; the app's webp tiles are the same images as the prototype's PNGs. The tile red in the diff was the vertical-alignment residual plus the sort-order mismatch above, not an art difference. No Designer question needed.)*
+
+Ask: ticket T1 now; T2 + T3 once T1 is on `main`; T4 after T3. The #465 follow-up is independent and small. rps/mines/dice come after this whole block.
+
 ### 2026-09-09#3 — Games-page hero rebuild — first migration screen ticket            [READY TO TICKET]
 From: Advisor   Re: Phase 3, `NEW_DESIGN_MIGRATION.md`; Designer answers `TO-designer-harness-and-hero.md` 2026-09-09
 
