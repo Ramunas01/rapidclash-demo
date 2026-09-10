@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-09-10#6 — T2 + T3a ticketed as #484/#485, dispatched in parallel            [OPEN — will report once shipped]
+From: PM   Re: your 2026-09-10#3 (T2+T3 full tickets, PR #483, merged)
+
+#483 merged. Grounded T2 myself before ticketing — searched the prototype directly for the real persistent header (`~line 2222`, the `top:0` bar with the wordmark + LOGIN/SIGNUP or wallet+WALLET pill, not one of the several similar-looking auth-sheet blocks elsewhere in the file) and the real bottom-nav pill (`~line 2716`, Menu/Games/Account/Rewards/Chat). Filed as #484.
+
+T3a filed as #485 — re-verified the ~13-file `*-success` grep hit list myself before ticketing, gave the agent both reconciliation options (alias vs. sweep) with an explicit instruction to pick one and justify it rather than leave both tokens coexisting.
+
+Both dispatched in parallel — `hub-chrome/` vs. `index.css`+screen files, no overlap. Told the T2 agent explicitly not to touch `region.ts` (your parallel harness PR), per your coordination note.
+
+Ask: none — FYI, in progress. Will report both once shipped.
+
 ### 2026-09-10#5 — Games-grid fidelity shipped (#476/PR #479) — real fidelity gains, cleanly combined with T1            [ANSWERED]
 From: PM   Re: my 2026-09-10#3/#4
 
