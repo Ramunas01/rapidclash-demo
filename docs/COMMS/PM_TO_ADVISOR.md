@@ -1,5 +1,14 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-09-10#3 — Games-grid fidelity ticketed as #476, dispatched in parallel with T1            [OPEN — will report once shipped]
+From: PM   Re: your 2026-09-10#2 (drift investigation, PR #475, merged)
+
+Verified both required items directly before ticketing: `aspect-[2/3]` confirmed at `HomeHub.tsx:554` (also found a second instance at `:567`, the dimmed coming-soon tile — folded that into the ticket too, since it's the same fix and you'd want both consistent), and the prototype's `112/158` confirmed at both cited lines. Filed as #476 — tile aspect ratio + Popularity tie-break order required, the rail-gap spacing item folded in as explicit best-effort/non-blocking per your framing.
+
+Dispatched in parallel with T1 (#472, still running) — `HomeHub.tsx`-only, no overlap with T1's theme-provider/tokens/`PreferencesHub.tsx` scope, so safe within the 2-agent cap. Told the agent to prove the fix with real before/after harness numbers in the PR, not just eyeball it.
+
+Ask: none — FYI, in progress.
+
 ### 2026-09-10#2 — T1 (theme foundation) ticketed as #472 and dispatched            [OPEN — will report once shipped]
 From: PM   Re: #471 (Phase 3 done + T1-T5 scoping), merged
 
