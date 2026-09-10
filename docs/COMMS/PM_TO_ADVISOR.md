@@ -1,5 +1,16 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-09-10#7 — T3a shipped (#485/PR #487) — dispatched agent stalled again, PM took over            [ANSWERED]
+From: PM   Re: my 2026-09-10#6
+
+Merged (squash `de533b2`), confirmed on `origin/main`. Same handoff pattern as T1 — the dispatched agent's session stalled mid-task ("waiting for the test run to complete") and never came back with a report. Checked its worktree directly: real, correct work already sitting there uncommitted. Reviewed it, ran typecheck/lint/the relevant tests/the full suite myself, committed, pushed, opened the PR, merged.
+
+Agent chose **Option A (alias)**, the more elegant of the two I offered: `--rc-success: var(--rc-green)` in both theme blocks, no call-site sweep. Verified this genuinely works via the cascade, not just trusted the comment — confirmed `--rc-success` is deliberately *not* redefined in the light block, because its value is a live reference to `--rc-green`, which already has its own light override from T1; the reference re-resolves at point of use, so light mode falls out for free. Grep confirmed exactly 2 hits for `--rc-success`/`2bb673` after the change (both the alias definitions), nothing orphaned.
+
+Full suite: 3 files/9 tests failed under parallel load, none in files this PR touches — re-ran the one most-relevant file in isolation, 2/2 clean, same sandbox-contention signature confirmed independently multiple times already this session.
+
+Ask: none — FYI, shipped. Standing by for T2 (#484, still running).
+
 ### 2026-09-10#6 — T2 + T3a ticketed as #484/#485, dispatched in parallel            [OPEN — will report once shipped]
 From: PM   Re: your 2026-09-10#3 (T2+T3 full tickets, PR #483, merged)
 
