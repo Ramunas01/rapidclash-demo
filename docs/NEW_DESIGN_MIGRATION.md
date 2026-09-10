@@ -184,6 +184,34 @@ Monthly volume bonus: Emerald+ · Dedicated VIP host: Diamond only.
 - LINK field: `overflow-x:auto` + `white-space:nowrap` in a fixed-height pill (scrolls horizontally, no truncation). CODE row: `text-overflow:ellipsis`. Deliberate difference.
 - Campaign-card short link: `rapidclash.com/r/` + first 4 chars of code + ellipsis.
 
+### Canonical new Mines ruleset (Designer, 2026-09-11) — this is a RULES change, not a reskin
+
+The prototype's 5×5 Mines grid is intentional and its engine is built around it (`MINES_TILES` = 25 at proto line 2863, `pickBombs()` draws 3 from 25 at line 2865, gem list caps at 22 at line 3718). Today's 8×8 / 7-mine tuning does **not** carry over. The T6c/engine ticket is built from this list:
+
+1. **Board: 5×5, 25 tiles. 3 mines / round, 22 safe. Random placement each round.**
+2. Both players get the identical board — keep the deterministic-seed contract, **parameterised for `(size, mineCount)` instead of hardcoded 8×8 / 7. Generalise the engine, do not fork it.** The prototype's `DEFAULT_BOMBS = [4, 11, 18]` is a placeholder layout, not a rule.
+3. **30-second clock per round**, starting when the match begins (proto `minesClock: 30`, line 3328). Replaces today's per-player 5s move timers. **Confirmed by the Designer: this clock is a cap, not a mechanic** — it exists purely to end a round for a player who stops tapping (disconnect/distraction), not to create time pressure. A player tapping normally finishes (mine, clear, or bust) well inside 30s.
+4. Tap a tile to reveal. Each safe tile = 1 gem.
+5. Hit a mine → your round ends immediately, **you keep every gem collected before it** (already how today's engine works — bust locks at current safe count, never zeroes). **Designer confirmed: no change from today.**
+6. Clock runs out → round ends, you keep your gems.
+7. **No cash-out / stop button.** Only a mine, the clock, or clearing all 22 ends a round (see the three sub-answers below).
+8. Most gems wins the pot.
+9. **Equal gems → draw → rematch**: same stakes, new seeded board, same two players, nothing paid on the draw, pot carries into the rematch (already the engine's internal-draw behaviour). **Designer confirmed: keep the existing 10-consecutive-draw void cap exactly as-is** — draws are more reachable on a 22-max board than on 57, but 10-in-a-row still won't happen; it's a backstop, not a rule anyone will hit.
+10. **Remove the 4s auto-reveal entirely.** Only a player tap reveals a tile. If they don't tap, nothing happens until the clock. Nothing in the engine may assume a minimum number of reveals per round.
+11. Maximum score is 22.
+
+**Designer's framing that governs the whole rewrite:** hitting a mine costs you nothing but the rest of your round — you keep your gems, the round just ends. Tapping therefore always has non-negative expected value (gain a gem, or end with what you already had) and there is never a rational reason to stop or wait. **Optimal play is simply "tap until a mine or 22."** The winner is whoever's tap order survives longer on the same board. **Build the engine on this assumption — nothing should model a player "deciding" whether to continue.**
+
+**All five sub-questions from the rules-diff — ANSWERED 2026-09-11, ticket is now fully unblocked:**
+1. **Clearing all 22 safe tiles → auto-lock at 22, same as today's "cleared" behavior.** Once the 22nd safe tile opens, every remaining tile is a mine — nothing left to play, lock immediately. Both players at 22 is a draw (rule 9 applies).
+2. + 3. **Remove early resolution entirely. Opponent gems stay hidden until BOTH players' rounds are over** (mine, clock, or 22 — whichever comes first, independently for each player), then compare. This is a genuine reversal of today's engine (which resolves the instant a locked player is passed, and reveals the opponent's live count once either player locks) — not just a view-redaction tweak. **Why:** since every player taps until they bust/finish regardless, early resolution and a visible counter only leak the outcome early — they don't change anyone's play. Hidden-until-the-end also decouples the two players' online timing (useful with low concurrent players): they don't need to be live in the same instant, just both eventually finish.
+4. **Keep the 10-draw void cap exactly as-is** (folded into point 9 above).
+5. **Disconnect confirmed: no void, no special handling.** A dropped player locks at whatever gems they had when their 30s clock ends — including locking at **zero** if they dropped before tapping anything. Explicitly the right outcome (a disconnect-voids-the-match rule would make disconnecting an escape hatch for whoever's behind).
+
+**Seed-security question raised by the Designer, verified — already satisfied, no code change needed for this part:** since the outcome is now decided purely by which tiles each player taps (no early peek at the opponent, no cash-out), it matters more than before that neither player can see or predict the seed before their own round ends. **Confirmed directly against `mines.ts`:** the non-terminal `viewFor` branch reconstructs `{players, round, draws, boards}` from scratch — it never spreads `state`, so `seed` cannot leak through it; a player's own `mines` array is only attached once THAT player has locked (their round is already over, so it can't help them); the only place `seed` appears is the terminal branch (`{...s, mines: [...]}`), which — once early resolution is removed per point 2/3 above — only fires once **both** players are done. The existing design already gets this right; removing early resolution actually closes the one path that could have exposed it prematurely.
+
+**Real architecture question for whoever implements this — flagged, not solved here, because it touches shared core infrastructure other games depend on:** rule 10 ("no automatic moves… nothing happens until the clock") means Mines can no longer use the core's existing per-player-timer contract (`meta.moveTimeoutMs` + `timeoutMove`) as-is — `timeoutMove` is required to return a legal move on expiry (used today for Mines' own random-reveal, and by Blackjack/Coinflip/Limbo/Keno/Roulette/RPS for their own timeout behavior). Mines' new 30s clock needs to **lock the player with no move injected at all** — there's no existing "lock without a move" primitive in `packages/core/src/matchmaking.ts`'s generic sweep. This needs a small, generic addition to the core timer contract (not a Mines-only branch, per invariant #5) — whoever picks up the engine ticket should propose the mechanism and get it reviewed given how many other games share this file, rather than build it silently inside `mines.ts`.
+
 ## Migration plan — phased order of work (Designer-set, 2026-09-09)
 
 Supersedes the loose "sizing candidates" list. Phases 1→3 are sequential; Phase 4 runs alongside 2.
@@ -234,17 +262,25 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 - **Races (24h / Weekly) + Leaderboards tab** — genuine new feature work (time-windowed leaderboard logic), sized separately from the lobby/stake-entry/play/result → single-screen-with-phases collapse.
 - **lobby / stake-entry / play / result → one screen, internal phases** — real architectural simplification (`App.tsx:1292-1317` today).
 
-## Status snapshot — 2026-09-10 (late)
+## Status snapshot — 2026-09-11 — supersedes all earlier snapshots in this section
 
-- **`main` = `afb8528`.** Merged today: harness alignment + width fix (#470, #474), drift investigation (#475), **T1 theme foundation (#478)**, **games-grid fidelity (#479)**, comms records.
-- **Phases 1, 2, 3 — DONE.** Shared-chrome workstream: **T1 done.** All decisions RESOLVED, nothing blocked on the Designer.
-- **Open PRs:** none.
-- **NEXT: T2 + T3a** — full tickets in `ADVISOR_TO_PM.md` 2026-09-10#3. Parallel-safe (chrome components vs a shared token). **PM: ticket T2 + T3a.**
-  - T2 = `HubRibbon` + `HubToolbar` → new design + light (highest-leverage; carries the 6 chrome-only hubs).
-  - T3a = reconcile `--rc-success` (`#2bb673`) ↔ prototype `--rc-green` (`#34D399`) — one token, decided explicitly. Blocks T3b screens using `text-success`.
-  - T3b (per-screen light threading, 2 groups) after T3a. T4 after T3b.
-- **Harness after #479:** the games-grid fixes lifted dark `games-originals` 72.6%→85.6%, light 22.7%→33.1% — real, moving numbers. Residual dark drift: **Advisor to re-check post-#479** whether it's more real gaps or genuinely anchor-able (sub-pixel/font) before deciding if the scroll-frame PR needs careful per-section anchoring or stays coverage-only.
-- **Advisor next:** (1) re-check the harness residual; (2) the harness-nav PR alongside T2; (3) scroll-frame coverage PR before T3b's Rewards/Account.
-- **After shared-chrome:** rps/mines/dice; currency skin + stake ladder; chat; races/leaderboards; lobby-collapse.
-- **Process:** Advisor → worktree `worktree-advisor-migration`; PM → primary checkout; each coder → its own agent worktree.
-- **Pending mechanical:** prototype asset triage (~61 unreferenced PNGs).
+**Shared-chrome workstream (T1–T3b): fully DONE, merged, not revisited below.** Chain: #478, #489, #487, #494, #504.
+
+**rps/mines/dice rebuild — in progress:**
+- **T5 (shared VS-label, `GameHub.tsx`), T6a (Dice visual), T6b (RPS visual) — all merged** (#508/#509/#510). Independently re-verified via new harness coverage (`mines-idle`/`rps-idle`/`dice-idle`, PR #513): **T6a (Dice) confirmed solid** — fidelity jumped 66%→81% dark, 57%→73% light once a harness bug was fixed (below). **T6b (RPS) has a real, separate gap**, filed as **#512**: the prototype shows its two-card "VS" reveal frame at all times (including idle/pre-match), but the app only added it to the live in-match board — the idle preview still falls back to a plain 3-icon grid.
+- **T7 (Mines engine) — UNBLOCKED. Designer answered all 5 sub-questions + a seed-security question 2026-09-11.** Full canonical ruleset + every answer: § "Canonical new Mines ruleset (Designer, 2026-09-11)" above. Headline: no early resolution (both players play their round to completion independently, then compare — a real `decide()`/`resolve()` rewrite, not a tweak); opponent count hidden until both finish; 22-clear auto-locks; 10-draw cap and disconnect-locks-at-current-gems both unchanged; seed-security already verified fine, no change needed there. **One real open architecture question flagged for the implementer** (not solved by Advisor): the core's `moveTimeoutMs`/`timeoutMove` contract (`packages/core/src/matchmaking.ts`, shared by 6+ other games) always injects a move on timeout — Mines' new clock needs to lock a player with **no** move at all, which needs a small generic addition to that shared contract, not a Mines-only hack. **Ticketed in `ADVISOR_TO_PM.md` 2026-09-11#2** with a request to treat it with extra care (core-adjacent, fairness-sensitive) — not parallelized with other core-touching work, core-timer-contract change reviewed on its own before the Mines-specific diff lands on top.
+- **Harness bug found + fixed (PR #513):** a `driveApp`/`driveProto` that clicks a below-the-fold element (these game tiles sit low in the grid) gets it auto-scrolled into view by Playwright; the app's client-side nav never resets that scroll, so the still-scrolled viewport silently clipped the wrong slice of the new screen. Fixed generically in `captureAppScreen`/`captureScreen` — benefits any future screen, not just these three.
+
+**Three small, independent tickets filed, none dispatched, none urgent — pick up in any order:** **#497** (light-mode `HubToolbar` vertical bug), **#501** (games-chance rail-scroll offset), **#512** (RPS idle VS-card gap, above). Plus **T4 + reconciliation sweep** (PR #503, ticketed) — ChessHub `bg-success` dark-pin, `--brand-purple` vs. `#8B45F0`, `HubRibbon` padding re-measurement.
+
+**Housekeeping:** **#505** (open) — 47 unreferenced prototype assets removed, verified two ways before deleting. **#506** (merged) — previously-uncommitted Designer handoff material backed up, correctly excluding `private/`'s real secret file.
+
+**Open PRs right now:** #513 (harness fix + coverage, this session), #505 (asset triage), #503 (T4+sweep tickets), #502, #493 — all awaiting PM/Owner review, none blocking anything else.
+
+**Advisor next:** available — no open harness thread. **PM next:** T4 + reconciliation sweep, #497/#501/#512 whenever, review #513.
+
+**After rps/mines/dice (once T7 unblocks):** currency skin + fixed `$` stake ladder; chat; races/leaderboards; lobby/stake-entry/play/result → one screen with internal phases.
+
+**Process:** Advisor → worktree `worktree-advisor-migration`; PM → primary checkout; each coder → its own agent worktree.
+
+**Standing lesson from this session, worth remembering:** two confident-but-wrong conclusions this session (a tile-art misread, and the "no design source exists" claim) both came from a text/grep-based check standing in for actually driving the running artifact. The fix each time was the same — stop, open Playwright, click the real thing, look at the real screenshot. Default to that before asserting a negative to anyone downstream.
