@@ -1,4 +1,5 @@
 import type { Page } from 'playwright-core';
+import { VIEWPORT } from './paths.js';
 
 export interface Clip {
   x: number;
@@ -30,7 +31,7 @@ export type Anchor = 'header' | 'catrail';
  */
 export async function contentRegion(page: Page, kind: 'prototype' | 'app', anchor: Anchor = 'header'): Promise<Clip> {
   const box = await page.evaluate(
-    ({ k, a }: { k: string; a: string }) => {
+    ({ k, a, VIEWPORT_W }: { k: string; a: string; VIEWPORT_W: number }) => {
     const rect = (el: Element | null | undefined) => (el ? el.getBoundingClientRect() : null);
 
     let header: DOMRect | null = null;
@@ -82,15 +83,17 @@ export async function contentRegion(page: Page, kind: 'prototype' | 'app', ancho
     }
 
     if (!header || !nav) return { missing: true, header: !!header, nav: !!nav };
-    const left = Math.min(header.left, nav.left);
+    // Fixed full-width column, x=0 — deriving width from element bounds gave different widths on
+    // the two sides (the prototype's nav pill is more inset than the app's), which left the app
+    // capture's right edge comparing against nothing.
     return {
-      x: Math.max(0, Math.round(left)),
+      x: 0,
       y: Math.max(0, Math.round(header.top)),
-      width: Math.round(Math.max(header.right, nav.right) - left),
+      width: VIEWPORT_W,
       height: Math.round(nav.top - header.top),
     };
     },
-    { k: kind, a: anchor },
+    { k: kind, a: anchor, VIEWPORT_W: VIEWPORT.width },
   );
 
   if ('missing' in box) {
