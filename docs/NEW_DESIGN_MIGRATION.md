@@ -201,7 +201,7 @@ Supersedes the loose "sizing candidates" list. Phases 1→3 are sequential; Phas
 ### Phase 3 — Games page hero rebuild — **MERGED (#468, `15253fe`)**
 - Category rail (5 tabs, many-to-many `CATEGORY_GAMES`), SEARCH (cross-category substring), SORT (Popularity / Newest / Alphabetical), RANDOM (1560 ms spin → random among the 6 playable games), section title. Banner untouched. `getPopularity()` added to `match-history.ts` (generic `GROUP BY game_id` aggregate — invariant #5 clean) + `GET /games/popularity`.
 - **Merged at fidelity FAIL** on the PM's diff-image review — every failing region is out of scope (shared header/nav chrome, tile art, no light theme, harness alignment). That's *why* shared-chrome + light-theme is next (below), not rps/mines/dice.
-- **Two follow-ups the harness surfaced** (small — fold into a #465 cleanup): (1) default tile order when Popularity is all-tied should be the prototype's `GRID` order, not the current tie-break (capture showed Baccarat first); (2) tile art — the app's tiles carry stake-chip overlays the prototype's flat art doesn't — **Designer question pending**.
+- **One follow-up the harness surfaced** (small — fold into a #465 cleanup): default tile order when Popularity is all-tied should be the prototype's `GRID` order, not the current tie-break (capture showed Baccarat first). *(A "tile art" flag was retracted — the "100"/"1K" are chips in the Baccarat art; the app's webp tiles match the prototype's PNGs. The diff red there was alignment + sort order.)*
 - Scope was: category rail, filter pills (SEARCH / SORT / RANDOM), section title. NOT the banner.
 - **Category rail** — `CAT_GAMES` mapping (many-to-many tags, see the category table above). `MenuOverlay.tsx`'s placeholder "Card games / Chance games / Skill games" rows get wired here.
 - **Search / Sort** — behaviour RESOLVED (see "Two UI elements"): name substring across all 12, ignore tab; Popularity = all-time settled-match count; Newest = fixed intro-order ordinal; Alphabetical = display name.
@@ -236,7 +236,7 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 - **Phases 1, 2, 3 — DONE.** All decisions RESOLVED.
 - **Open PRs:** **#470** (Advisor — harness alignment v1: anchors captures on a shared landmark; PM merges, same bar as #459/#466).
 - **NEXT: Shared chrome + light-theme rollout** — sequenced T1–T5 in `ADVISOR_TO_PM.md` 2026-09-10#1 + the Phase-3-follow-up section above. Owner-agreed to do this *before* rps/mines/dice. **PM: ticket T1.**
-- **Blocked on Designer:** the tile-art question (stake-chip overlays vs the prototype's flat art) — Advisor routing it.
+- **Blocked on Designer:** nothing.
 - **Advisor next:** the scroll-frame harness PR (Designer Q3, whole-page capture) — needed before Rewards/Account get rebuilt in T3.
 - **After shared-chrome:** rps/mines/dice; currency skin + stake ladder; chat; races/leaderboards; lobby-collapse.
 - **Process:** Advisor → worktree `worktree-advisor-migration`; PM → primary checkout; each coder → its own agent worktree.

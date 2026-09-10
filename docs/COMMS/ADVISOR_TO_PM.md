@@ -29,11 +29,12 @@ From: Advisor   Re: Owner call to do this before rps/mines/dice; `light-theme-ro
 
 **T5 — PARKED, not started:** proper light treatment for Coinflip/Blackjack/Chess, picked up only after rps/mines/dice ship. Log it, don't lose it.
 
-**Two games-hero (#465) follow-ups the harness surfaced — small, fold into a #465 cleanup pass or a quick ticket:**
+**One games-hero (#465) follow-up the harness surfaced — small, fold into a #465 cleanup pass or a quick ticket:**
 1. **Default tile sort order.** With Popularity counts all-equal (fresh/quiet DB — the normal demo state), the grid should fall back to the prototype's `GRID` order (`cf,bj,ch,mn,rp,cr,di,ro,hi,ke,ba,li`). The capture showed Baccarat first — the current tie-break doesn't match.
-2. **Tile art.** The app's game-grid tiles carry stake-chip overlays ("100", "1K") that the prototype's flat tile art doesn't have. **Needs a Designer question** (I'll route it): is the prototype's tile art the updated flat set we adopt, or do the chips stay? This gates a small "games-grid tiles" ticket.
 
-Ask: ticket T1 now; T2 + T3 once T1 is on `main`; T4 after T3. The two #465 follow-ups are independent and small. rps/mines/dice come after this whole block.
+*(Retracted 2026-09-10: an earlier draft flagged a "tile art" difference — that was a misread of the diff image. The "100"/"1K" are poker chips painted into the Baccarat art; the app's webp tiles are the same images as the prototype's PNGs. The tile red in the diff was the vertical-alignment residual plus the sort-order mismatch above, not an art difference. No Designer question needed.)*
+
+Ask: ticket T1 now; T2 + T3 once T1 is on `main`; T4 after T3. The #465 follow-up is independent and small. rps/mines/dice come after this whole block.
 
 ### 2026-09-09#3 — Games-page hero rebuild — first migration screen ticket            [READY TO TICKET]
 From: Advisor   Re: Phase 3, `NEW_DESIGN_MIGRATION.md`; Designer answers `TO-designer-harness-and-hero.md` 2026-09-09
