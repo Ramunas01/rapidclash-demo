@@ -234,14 +234,17 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 - **Races (24h / Weekly) + Leaderboards tab** — genuine new feature work (time-windowed leaderboard logic), sized separately from the lobby/stake-entry/play/result → single-screen-with-phases collapse.
 - **lobby / stake-entry / play / result → one screen, internal phases** — real architectural simplification (`App.tsx:1292-1317` today).
 
-## Status snapshot — 2026-09-10
+## Status snapshot — 2026-09-10 (late)
 
-- **`main` = `57483a3`.** Merged: #456–#464 setup; **#459 + #466 Phase 2 harness**; **#468 Phase 3 Games hero**; #467/#469 records.
-- **Phases 1, 2, 3 — DONE.** All decisions RESOLVED.
-- **Open PRs:** **#470** (Advisor — harness alignment v1: anchors captures on a shared landmark; PM merges, same bar as #459/#466).
-- **NEXT: Shared chrome + light-theme rollout** — sequenced T1–T5 in `ADVISOR_TO_PM.md` 2026-09-10#1 + the Phase-3-follow-up section above. Owner-agreed to do this *before* rps/mines/dice. **PM: ticket T1.**
-- **Blocked on Designer:** nothing.
-- **Advisor next:** the scroll-frame harness PR — now scoped as **below-the-fold *coverage* only** (Designer Q3), NOT per-section anchoring. The games-screen vertical drift was measured to be 3 real fidelity gaps (see the games-grid ticket above), so anchoring per-section would hide real problems. Harness stays "read the diff image" for vertical rhythm; that's correct.
+- **`main` = `afb8528`.** Merged today: harness alignment + width fix (#470, #474), drift investigation (#475), **T1 theme foundation (#478)**, **games-grid fidelity (#479)**, comms records.
+- **Phases 1, 2, 3 — DONE.** Shared-chrome workstream: **T1 done.** All decisions RESOLVED, nothing blocked on the Designer.
+- **Open PRs:** none.
+- **NEXT: T2 + T3a** — full tickets in `ADVISOR_TO_PM.md` 2026-09-10#3. Parallel-safe (chrome components vs a shared token). **PM: ticket T2 + T3a.**
+  - T2 = `HubRibbon` + `HubToolbar` → new design + light (highest-leverage; carries the 6 chrome-only hubs).
+  - T3a = reconcile `--rc-success` (`#2bb673`) ↔ prototype `--rc-green` (`#34D399`) — one token, decided explicitly. Blocks T3b screens using `text-success`.
+  - T3b (per-screen light threading, 2 groups) after T3a. T4 after T3b.
+- **Harness after #479:** the games-grid fixes lifted dark `games-originals` 72.6%→85.6%, light 22.7%→33.1% — real, moving numbers. Residual dark drift: **Advisor to re-check post-#479** whether it's more real gaps or genuinely anchor-able (sub-pixel/font) before deciding if the scroll-frame PR needs careful per-section anchoring or stays coverage-only.
+- **Advisor next:** (1) re-check the harness residual; (2) the harness-nav PR alongside T2; (3) scroll-frame coverage PR before T3b's Rewards/Account.
 - **After shared-chrome:** rps/mines/dice; currency skin + stake ladder; chat; races/leaderboards; lobby-collapse.
 - **Process:** Advisor → worktree `worktree-advisor-migration`; PM → primary checkout; each coder → its own agent worktree.
 - **Pending mechanical:** prototype asset triage (~61 unreferenced PNGs).
