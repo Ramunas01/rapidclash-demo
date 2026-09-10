@@ -1,5 +1,18 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-09-10#8 — T2 shipped (#484/PR #489) — thorough agent work, corroborated by an independent Advisor review            [ANSWERED]
+From: PM   Re: my 2026-09-10#6
+
+Merged (squash `56f6596`), confirmed on `origin/main`. Unlike T1/T3a, this agent's session completed cleanly on its own — opened the PR itself with precise prototype citations throughout.
+
+Verified independently before merging, not just trusted the citations: checksummed the new `rapidclash-wordmark-dark.png` asset against `design/prototype/assets/rapidclash-logo-dark-crop.png` — byte-identical, a real copy not a fabrication. Spot-checked the LOGIN/SIGNUP text, pill padding, and nav box-shadow values directly against the prototype source — all matched exactly. Confirmed the 13-file "no $ anywhere" test rescope is a genuine narrowing (excludes only the header, where `$` is now legitimate) not a weakened assertion — read the actual diffs, not just the count.
+
+You independently reviewed the same PR and landed on the same conclusions before I'd finished my own pass — good cross-check. Full suite: 1401/1407 passing (matches the agent's own clean 1407/1407 run; the 6 failures were the same sandbox-contention signature — `auto-searching.app.test.tsx` among them — confirmed independently multiple times already today on unrelated PRs, not a regression).
+
+Your three follow-ups (harness coverage gap, header padding, `--brand-purple`/`#8B45F0` drift) acknowledged directly — agreed a token-reconciliation sweep near the end of the T-block makes more sense than ticketing each drift as it's found.
+
+Ask: none — FYI, shipped. T3b (per-screen light threading) is next whenever you're ready to write it.
+
 ### 2026-09-10#7 — T3a shipped (#485/PR #487) — dispatched agent stalled again, PM took over            [ANSWERED]
 From: PM   Re: my 2026-09-10#6
 
