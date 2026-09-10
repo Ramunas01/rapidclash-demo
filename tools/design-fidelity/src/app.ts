@@ -1,6 +1,7 @@
 import type { Browser, Page } from 'playwright-core';
 import { chromium } from 'playwright-core';
 import { armFreeze, settleFrozen } from './freeze.js';
+import { contentRegion } from './region.js';
 import { chromeExecutable, DEVICE_SCALE_FACTOR, VIEWPORT } from './paths.js';
 import type { ScreenDef, Theme } from './screens.js';
 
@@ -61,5 +62,5 @@ export async function captureAppScreen(page: Page, screen: ScreenDef): Promise<B
   }
   await screen.driveApp(page);
   await page.waitForTimeout(300);
-  return page.screenshot({ animations: 'disabled', caret: 'hide' });
+  return page.screenshot({ clip: await contentRegion(page, 'app', screen.anchor), animations: 'disabled', caret: 'hide' });
 }

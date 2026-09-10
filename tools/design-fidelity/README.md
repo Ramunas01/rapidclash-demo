@@ -68,23 +68,31 @@ or set `DESIGN_FIDELITY_APP_URL` to a deployed preview.
   route. The prototype's "System" option is cosmetic and the value isn't persisted.
 - **The committed `design/prototype/screenshots/*` are 924×540 canvas thumbnails** — unusable as
   pixel references. The harness self-captures the real set from the running prototype.
-- **Prototype captures are clipped** to the phone-screen element minus the fake iOS status bar
-  (top 44px) and the fake in-app-browser URL bar (bottom 64px) — `CAPTURE_INSET` in
-  `src/prototype.ts`. The real app renders neither.
-- **Size mismatch** (reference is chrome-clipped, app capture is the full viewport): `diff`
-  compares the shared top-left region — the above-the-fold area. **Whole-page comparison in
-  viewport-sized scroll frames (Designer Q3) is a follow-up** — needed before the long screens
-  (Rewards, Account) are rebuilt; the games-hero screens are above the fold.
+- **Both captures are anchored on a shared landmark, then clipped to that band** (`src/region.ts`):
+  - default `anchor: 'header'` — RapidClash wordmark / LOGIN row → top of the bottom-nav. Drops
+    the prototype's fake iOS status bar and fake URL bar (the real app has neither).
+  - `anchor: 'catrail'` (the games screens) — the category rail's ORIGINALS tab → top of the
+    bottom-nav. The carried-over banner between the header and the rail renders taller in the
+    real app than in the prototype, so anchoring above it would push everything below out of
+    line; anchoring on the rail sidesteps that.
+- **The bottom-nav is excluded** — it sits at different heights (prototype's squeezed mockup vs
+  the app's full viewport) and it's shared chrome the per-screen rebuilds don't own. It gets
+  compared when the shared-chrome workstream lands.
+- **Size mismatch** — the two regions still differ in height; `diff` compares the shared top-left
+  window and flags it.
+
+### Known limitations (v1 alignment)
+
+- **~20–30px residual vertical drift that grows down the page** on the games screens — either a
+  real rail/spacing fidelity gap the rebuild owns, or per-element rendering differences. The
+  full fix is per-fixed-region anchoring (part of the scroll-frame work).
+- **No below-the-fold coverage** — Designer Q3's "whole page in viewport-sized scroll frames" is
+  the next harness PR; needed before Rewards / Account get rebuilt.
+- The number is **not yet a trustworthy gate** — read the diff image. It will settle once the
+  shared chrome + light theme land (they're failing on every screen right now).
 
 ## Adding a screen to the app side
 
-`src/screens.ts` has all 8 states with a `driveProto` (prototype nav) and, so far, `driveApp`
-for `games-originals` only. As each screen is rebuilt, add its `driveApp` (testid-based, mirrors
-`driveProto`). Screens without one are skipped by `capture-app` with a clear message.
-
-## Status
-
-Foundation done: 16 prototype references committed, `capture-app` + `diff` proven end-to-end
-(`games-originals` scores ~80% dark / ~40% light against the current pre-redesign HomeHub — the
-number the Games-hero rebuild will drive up). Open: per-screen `driveApp` funcs (added as screens
-are rebuilt); the size-mismatch handling above; a fidelity **bar** (Designer Q1).
+`src/screens.ts` has all 8 states with a `driveProto`; `driveApp` is wired for the four games
+screens. As each other screen is rebuilt, add its `driveApp` (testid-based, mirrors `driveProto`)
+and pick an `anchor`.
