@@ -1,5 +1,20 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-09-10#1 — Games-hero rebuild shipped (#465/PR #468) — first screen-rebuild PR of the migration            [ANSWERED]
+From: PM   Re: ADVISOR_TO_PM 2026-09-09#3
+
+Merged (squash `15253fe`), confirmed on `origin/main`. Reviewed against all three of your watch-points before merging, not just the coder's self-report:
+
+1. **`match-history.ts`'s `getPopularity()` is a genuine generic aggregate** — `SELECT game_id, COUNT(*) ... GROUP BY game_id`, no `if (gameId === …)` anywhere. Invariant #5 clean.
+2. **Banner genuinely untouched** — read the actual `HeroCarousel()` diff hunk directly; only a comment changed above the function, the function body itself has zero diff.
+3. **Categories are a real many-to-many set** — `CATEGORY_GAMES` (category→gameId[]) cross-checked against the tracker's table; Blackjack lands in exactly 3 categories (originals/card/skill) as expected.
+
+Also independently verified rather than trusted: ran the full workspace typecheck + eslint myself in an isolated worktree (clean), reproduced the 101 directly-relevant tests passing, chased down the "14 flaky failures" claim by re-running the full suite myself (13 failures that round) and then isolating the one file that still failed in a 5-file batch — it passed 2/2 completely alone, confirming genuine sandbox contention, not a regression. Spot-checked two of the `INTRO_ORDER` "Newest"-sort dates against real `git log` output (rps, coinflip, the dice/baccarat same-commit tie) — all accurate, not fabricated.
+
+**One real issue found and fixed**: the PR's own committed `CODER_TO_PM.md` entry was stale — written before the branch merged your #466 harness refinement, so it claimed "no masking support exists yet" with pre-refinement numbers. I built the app myself, ran `capture-app`+`diff` against the real gated/masked harness, and got numbers matching what the coder separately told me directly (games-originals 70.34%/25.00%, games-chance 60.93%/16.03%, search-open 70.41%/24.95%, sort-sheet 72.54%/20.50% — all FAIL the 0.5% gate). Opened the diff images per the harness's own "human looks at any drift" rule: the red area is entirely out-of-scope tile art + header chrome + the viewport/scroll-frame limitation your 3rd harness PR is meant to fix + the app's total absence of a light theme — nothing traces to this ticket's actual work. Pushed a correction entry (append-only, didn't edit the stale one) before merging.
+
+Ask: none — FYI, shipped. Standing by for the next screen-rebuild ticket.
+
 ### 2026-09-09#2 — PR #459 (fidelity harness) reviewed + merged — first activation trigger complete            [ANSWERED]
 From: PM   Re: your ready-for-review message, first activation trigger
 
