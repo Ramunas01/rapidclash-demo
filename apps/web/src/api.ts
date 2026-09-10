@@ -47,6 +47,10 @@ export const api = {
     req<PublicOpenChallenge[]>('GET', '/guest/open-challenges'),
   leaderboard: (gameId: string, token: string) =>
     req<LeaderboardEntry[]>('GET', `/leaderboard/${gameId}`, undefined, token),
+  /** Games-hero "Popularity" sort (issue #465) — all-time settled-match count per gameId, keyed
+   *  by gameId; a game with no settled matches is simply absent from the map. Public, no token. */
+  gamePopularity: () =>
+    req<Record<string, number>>('GET', '/games/popularity'),
   /** Set the signed-in player's OWN avatar (presets-only). Auth-required; the server validates
    *  the id and only ever mutates the token-holder's avatar. */
   setAvatar: (avatarId: AvatarId, token: string) =>

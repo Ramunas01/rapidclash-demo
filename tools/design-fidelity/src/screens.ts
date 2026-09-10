@@ -92,6 +92,12 @@ export const SCREENS: ScreenDef[] = [
       await page.getByText(/^CHANCE GAMES$/i).first().click();
       await page.waitForTimeout(300);
     },
+    // Issue #465: the rebuilt HomeHub's 5-tab category rail (`home-cat-chance`).
+    driveApp: async (page) => {
+      await page.waitForSelector('[data-testid="home-hub"]', { timeout: 10_000 });
+      await page.getByTestId('home-cat-chance').click();
+      await page.waitForTimeout(300);
+    },
     masks: [BANNER_MASK],
   },
   {
@@ -104,6 +110,12 @@ export const SCREENS: ScreenDef[] = [
       await page.locator('div:has(> [data-rc-search]) > svg').first().click();
       await page.waitForTimeout(600); // expand animation
     },
+    // Issue #465: the rebuilt HomeHub's SEARCH pill (`home-search-toggle`).
+    driveApp: async (page) => {
+      await page.waitForSelector('[data-testid="home-hub"]', { timeout: 10_000 });
+      await page.getByTestId('home-search-toggle').click();
+      await page.waitForTimeout(600); // expand transition (380ms in the app's own CSS)
+    },
     masks: [BANNER_MASK],
   },
   {
@@ -113,6 +125,12 @@ export const SCREENS: ScreenDef[] = [
     masks: [BANNER_MASK],
     driveProto: async (page) => {
       await page.getByText(/^SORT$/i).first().click();
+      await page.waitForTimeout(400);
+    },
+    // Issue #465: the rebuilt HomeHub's SORT sheet (`home-sort-toggle` → `home-sort-sheet`).
+    driveApp: async (page) => {
+      await page.waitForSelector('[data-testid="home-hub"]', { timeout: 10_000 });
+      await page.getByTestId('home-sort-toggle').click();
       await page.waitForTimeout(400);
     },
   },

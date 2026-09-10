@@ -40,6 +40,7 @@ describe('HomeHubScreen', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);
+      if (u.includes('/games/popularity')) return { ok: true, json: async () => ({}) } as Response;
       if (u.includes('/games')) return { ok: true, json: async () => GAMES } as Response;
       if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
       return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
@@ -171,6 +172,7 @@ describe('HomeHubScreen — Bring a Rival banner (#301)', () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);
       if (u.includes('/open-challenges')) return { ok: true, json: async () => [] } as Response;
+      if (u.includes('/games/popularity')) return { ok: true, json: async () => ({}) } as Response;
       if (u.includes('/games')) return { ok: true, json: async () => GAMES } as Response;
       if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
       return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
@@ -245,6 +247,7 @@ describe('HomeHubScreen — no-art game handling (#148)', () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);
       if (u.includes('/open-challenges')) return { ok: true, json: async () => [] } as Response;
+      if (u.includes('/games/popularity')) return { ok: true, json: async () => ({}) } as Response;
       if (u.includes('/games')) return { ok: true, json: async () => GAMES_148 } as Response;
       if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
       return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
@@ -282,6 +285,7 @@ describe('HomeHubScreen (logged out)', () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);
       if (u.includes('/open-challenges')) return { ok: true, json: async () => openChallenges } as Response;
+      if (u.includes('/games/popularity')) return { ok: true, json: async () => ({}) } as Response;
       if (u.includes('/games')) return { ok: true, json: async () => GAMES } as Response;
       if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
       return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
@@ -351,103 +355,245 @@ describe('HomeHubScreen (logged out)', () => {
   });
 });
 
-describe('HomeHubScreen — grid taxonomy + controls (design frame)', () => {
-  beforeEach(() => {
+// Full 12-game roster (issue #465) — used by the category/search/sort/random tests below, which
+// need the real many-to-many membership to exercise properly (a 3-game roster can't show a game
+// appearing in more than one non-ORIGINALS category).
+const ALL_12: GameMeta[] = [
+  META('coinflip', 'Coinflip'), META('blackjack', 'Blackjack'), META('chess', 'Chess'),
+  META('mines', 'Mines'), META('rps', 'Rock Paper Scissors'), META('crash', 'Crash'),
+  META('dice', 'Dice'), META('roulette', 'Roulette'), META('hilo', 'Hilo'),
+  META('keno', 'Keno'), META('baccarat', 'Baccarat'), META('limbo', 'Limbo'),
+];
+
+function tileOrder(): string[] {
+  return Array.from(document.querySelectorAll('[data-testid^="home-tile-"]'))
+    .map((el) => el.getAttribute('data-testid')!.replace('home-tile-', ''));
+}
+
+describe('HomeHubScreen — category rail, SEARCH, SORT, RANDOM (issue #465)', () => {
+  function stubFetch(popularity: Record<string, number> = {}) {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);
       if (u.includes('/open-challenges')) return { ok: true, json: async () => [] } as Response;
-      if (u.includes('/games')) return { ok: true, json: async () => GAMES } as Response;
+      if (u.includes('/games/popularity')) return { ok: true, json: async () => popularity } as Response;
+      if (u.includes('/games')) return { ok: true, json: async () => ALL_12 } as Response;
       if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
       return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
     }));
-  });
+  }
+  beforeEach(() => stubFetch());
   afterEach(() => vi.unstubAllGlobals());
 
-  it('Advisor #3: the category heading collapses its line box (leading-none) so caps center vs the bolt icon', async () => {
-    render(<HomeHubScreen {...baseProps()} />);
-    // Default category is "All Games"; the h2 renders CAT_TITLE for every category via one element.
-    const heading = await screen.findByRole('heading', { name: 'All Games' });
-    expect(heading.className).toContain('leading-none');
-    expect(heading.className).toContain('uppercase');
-    // Advisor #9: the bolt icon (aria-hidden img sibling in the heading row) is nudged up
-    // ~3px to sit on the caps' optical centre rather than the row centre.
-    const bolt = heading.parentElement?.querySelector('img[aria-hidden="true"]');
-    expect(bolt?.className).toContain('-translate-y-[3px]');
-  });
-
-  it('Originals excludes chess; Classics shows only chess', async () => {
+  it('renders exactly 5 category tabs, ORIGINALS selected by default', async () => {
     render(<HomeHubScreen {...baseProps()} />);
     await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByTestId('home-cat-originals'));
-    expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument();
-    expect(screen.getByTestId('home-tile-mines')).toBeInTheDocument();
-    expect(screen.queryByTestId('home-tile-chess')).toBeNull(); // chess is a Classic, not an Original
-
-    fireEvent.click(screen.getByTestId('home-cat-classics'));
-    expect(screen.getByTestId('home-tile-chess')).toBeInTheDocument();
-    expect(screen.queryByTestId('home-tile-coinflip')).toBeNull();
-    expect(screen.queryByTestId('home-tile-mines')).toBeNull();
+    // Scoped by testid prefix, not role="tab" — GamesCarousel's own OPEN GAMES/24H RACE/… rail
+    // further down the page also uses role="tab", so a bare getAllByRole would over-match.
+    const tabs = document.querySelectorAll('[data-testid^="home-cat-"]');
+    expect(tabs).toHaveLength(5);
+    expect(screen.getByTestId('home-cat-originals').getAttribute('aria-selected')).toBe('true');
+    for (const id of ['card', 'chance', 'skill', 'events']) {
+      expect(screen.getByTestId(`home-cat-${id}`).getAttribute('aria-selected')).toBe('false');
+    }
   });
 
-  it('Events shows the Dice Rush tournament card image — no $ / prize copy', async () => {
-    const { container } = render(<HomeHubScreen {...baseProps()} />);
+  it('section title shows RAPIDCLASH ORIGINALS by default and switches per active category', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
     await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    expect(screen.getByTestId('home-section-title').textContent).toBe('RAPIDCLASH ORIGINALS');
+
+    fireEvent.click(screen.getByTestId('home-cat-card'));
+    expect(screen.getByTestId('home-section-title').textContent).toBe('CARD GAMES');
+
+    fireEvent.click(screen.getByTestId('home-cat-chance'));
+    expect(screen.getByTestId('home-section-title').textContent).toBe('CHANCE GAMES');
+
+    fireEvent.click(screen.getByTestId('home-cat-skill'));
+    expect(screen.getByTestId('home-section-title').textContent).toBe('SKILL GAMES');
 
     fireEvent.click(screen.getByTestId('home-cat-events'));
-    const events = screen.getByTestId('home-events');
-    // The announcement copy is baked into the image — the Events card is now a single <img>.
-    expect(events.tagName).toBe('IMG');
-    const src = events.getAttribute('src');
-    expect(src).toBeTruthy();
-    // Vite resolves the asset import to a URL that carries the filename; if a
-    // future transform stubs it out, the alt below still pins it to Dice Rush.
-    if (src && /dice-rush/i.test(src)) expect(src).toMatch(/dice-rush/i);
-    expect(events.getAttribute('alt')).toMatch(/Dice Rush/i);
-    // Hero-matching corner radius (same rounded-[18px] the HeroCarousel cards use).
-    expect(events.className).toContain('rounded-[18px]');
-    // The grid of tiles is replaced by the announcement.
-    expect(screen.queryByTestId('home-tile-coinflip')).toBeNull();
-    // Play-money only — no real-money / prize-pool copy (trivially true now; kept as a guard).
-    expect(container.textContent ?? '').not.toMatch(/\$/);
-    expect(events.textContent ?? '').not.toMatch(/prize pool/i);
+    expect(screen.getByTestId('home-section-title').textContent).toBe('EVENTS');
   });
 
-  it('Find filters tiles by substring', async () => {
+  it('ORIGINALS shows all 12 games', async () => {
     render(<HomeHubScreen {...baseProps()} />);
     await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByTestId('home-find-toggle'));
-    fireEvent.change(screen.getByTestId('home-find-input'), { target: { value: 'che' } });
-    expect(screen.getByTestId('home-tile-chess')).toBeInTheDocument();
-    expect(screen.queryByTestId('home-tile-coinflip')).toBeNull();
-    expect(screen.queryByTestId('home-tile-mines')).toBeNull();
+    for (const g of ALL_12) expect(screen.getByTestId(`home-tile-${g.id}`)).toBeInTheDocument();
   });
 
-  it('Filter by game kind narrows the grid (Logic = chess + mines, not coinflip)', async () => {
+  it('CARD GAMES = blackjack, hilo, baccarat only', async () => {
     render(<HomeHubScreen {...baseProps()} />);
     await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByTestId('home-filter'));
-    fireEvent.click(screen.getByTestId('home-filter-opt-logic'));
-    expect(screen.getByTestId('home-tile-chess')).toBeInTheDocument();
-    expect(screen.getByTestId('home-tile-mines')).toBeInTheDocument();
-    expect(screen.queryByTestId('home-tile-coinflip')).toBeNull(); // coinflip is a Table game
-  });
-
-  it('Designer #6: shorter ~2.8:1 hero + navy Filter/Sort pills matching the search row', async () => {
-    render(<HomeHubScreen {...baseProps()} />);
-    // Hero: both slides constrained to ~2.8:1 (2120/754), still object-cover; dots/carousel unchanged.
-    const heroImgs = within(screen.getByTestId('home-hero')).getAllByRole('img');
-    expect(heroImgs.length).toBeGreaterThanOrEqual(2);
-    for (const img of heroImgs) {
-      expect(img.className).toContain('aspect-[2120/754]');
-      expect(img.className).toContain('object-cover');
+    fireEvent.click(screen.getByTestId('home-cat-card'));
+    for (const id of ['blackjack', 'hilo', 'baccarat']) expect(screen.getByTestId(`home-tile-${id}`)).toBeInTheDocument();
+    for (const id of ['coinflip', 'chess', 'mines', 'rps', 'crash', 'dice', 'roulette', 'keno', 'limbo']) {
+      expect(screen.queryByTestId(`home-tile-${id}`)).toBeNull();
     }
-    // Filter + Sort each sit on a bg-surface navy pill (matching the search control) — one consistent row.
-    await waitFor(() => expect(screen.getByTestId('home-filter')).toBeInTheDocument());
-    expect(screen.getByTestId('home-filter').className).toContain('bg-surface');
-    expect(screen.getByTestId('home-sort').className).toContain('bg-surface');
+  });
+
+  it('CHANCE GAMES = coinflip, dice, roulette, keno, limbo, mines, crash, baccarat', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('home-cat-chance'));
+    for (const id of ['coinflip', 'dice', 'roulette', 'keno', 'limbo', 'mines', 'crash', 'baccarat']) {
+      expect(screen.getByTestId(`home-tile-${id}`)).toBeInTheDocument();
+    }
+    for (const id of ['blackjack', 'chess', 'rps', 'hilo']) expect(screen.queryByTestId(`home-tile-${id}`)).toBeNull();
+  });
+
+  it('SKILL GAMES = chess, blackjack, hilo, rps', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('home-cat-skill'));
+    for (const id of ['chess', 'blackjack', 'hilo', 'rps']) expect(screen.getByTestId(`home-tile-${id}`)).toBeInTheDocument();
+    for (const id of ['coinflip', 'mines', 'crash', 'dice', 'roulette', 'keno', 'baccarat', 'limbo']) {
+      expect(screen.queryByTestId(`home-tile-${id}`)).toBeNull();
+    }
+  });
+
+  it('membership is many-to-many: Blackjack appears in ORIGINALS, CARD GAMES, and SKILL GAMES', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-blackjack')).toBeInTheDocument()); // ORIGINALS
+    fireEvent.click(screen.getByTestId('home-cat-card'));
+    expect(screen.getByTestId('home-tile-blackjack')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('home-cat-skill'));
+    expect(screen.getByTestId('home-tile-blackjack')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('home-cat-chance'));
+    expect(screen.queryByTestId('home-tile-blackjack')).toBeNull(); // NOT a chance game
+  });
+
+  it('EVENTS is empty by design — shows "No events running", not the grid', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('home-cat-events'));
+    expect(screen.getByTestId('home-events-empty')).toHaveTextContent('No events running');
+    expect(screen.queryByTestId('home-grid')?.querySelector('[data-testid^="home-tile-"]')).toBeNull();
+  });
+
+  it('SEARCH: case-insensitive substring on display name, across ALL games, ignoring the active tab', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+
+    // Switch to CARD GAMES (chess is not a member) — search must still find it, since search
+    // ignores whichever tab is active (Owner-resolved 2026-09-09).
+    fireEvent.click(screen.getByTestId('home-cat-card'));
+    expect(screen.queryByTestId('home-tile-chess')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('home-search-toggle'));
+    fireEvent.change(screen.getByTestId('home-search-input'), { target: { value: 'CHE' } }); // uppercase
+    expect(screen.getByTestId('home-tile-chess')).toBeInTheDocument();
+    expect(screen.queryByTestId('home-tile-coinflip')).toBeNull();
+    expect(screen.queryByTestId('home-tile-blackjack')).toBeNull();
+  });
+
+  it('SEARCH: an empty query falls back to the normal category-filtered view', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('home-cat-card'));
+
+    fireEvent.click(screen.getByTestId('home-search-toggle'));
+    fireEvent.change(screen.getByTestId('home-search-input'), { target: { value: 'chess' } });
+    expect(screen.getByTestId('home-tile-chess')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId('home-search-input'), { target: { value: '' } });
+    expect(screen.queryByTestId('home-tile-chess')).toBeNull(); // back to CARD GAMES (no chess)
+    expect(screen.getByTestId('home-tile-blackjack')).toBeInTheDocument();
+  });
+
+  it('SEARCH: Cancel closes the search and clears the query', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('home-search-toggle'));
+    fireEvent.change(screen.getByTestId('home-search-input'), { target: { value: 'chess' } });
+    fireEvent.click(screen.getByTestId('home-search-cancel'));
+    expect(screen.queryByTestId('home-search-cancel')).toBeNull();
+    expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument(); // ORIGINALS view restored
+  });
+
+  it('SORT: Popularity (default) orders by all-time settled-match count, descending', async () => {
+    stubFetch({ chess: 5, coinflip: 50, mines: 1 });
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('home-cat-skill')); // chess, blackjack, hilo, rps — only chess has a count
+    await waitFor(() => {
+      const order = tileOrder();
+      expect(order[0]).toBe('chess'); // popularity 5, the highest among skill games
+    });
+  });
+
+  it('SORT: Newest orders by fixed introduction-order ordinal, most-recently-added first', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('home-cat-skill')); // chess, blackjack, hilo, rps
+    fireEvent.click(screen.getByTestId('home-sort-toggle'));
+    fireEvent.click(screen.getByTestId('home-sort-opt-newest'));
+    // Fixed ordinals (gameSort.ts): rps=0, chess=2, blackjack=3, hilo=11 — newest-first is
+    // descending, so hilo (11, the most recently added of these 4) leads, rps (0, oldest) trails.
+    expect(tileOrder()).toEqual(['hilo', 'blackjack', 'chess', 'rps']);
+  });
+
+  it('SORT: Alphabetical orders by display name, ascending', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('home-cat-card')); // Blackjack, Baccarat, Hilo
+    fireEvent.click(screen.getByTestId('home-sort-toggle'));
+    fireEvent.click(screen.getByTestId('home-sort-opt-alphabetical'));
+    expect(tileOrder()).toEqual(['baccarat', 'blackjack', 'hilo']); // Baccarat, Blackjack, Hilo
+  });
+
+  it('SORT sheet shows a checkmark on the active option and closes on selection', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('home-sort-toggle'));
+    expect(screen.getByTestId('home-sort-sheet')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('home-sort-opt-alphabetical'));
+    expect(screen.queryByTestId('home-sort-sheet')).toBeNull(); // closes on pick
+  });
+
+  it('RANDOM never picks one of the six non-playable games, across many trials', async () => {
+    vi.useFakeTimers();
+    const onSelectGame = vi.fn();
+    render(<HomeHubScreen {...baseProps({ onSelectGame })} />);
+    await vi.waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+
+    const PLAYABLE = new Set(['rps', 'dice', 'mines', 'coinflip', 'blackjack', 'chess']);
+    const TRIALS = 30;
+    for (let i = 0; i < TRIALS; i++) {
+      fireEvent.click(screen.getByTestId('home-random'));
+      await vi.advanceTimersByTimeAsync(1560); // RANDOM_TOTAL_MS — spin keyframe + post-settle delay
+    }
+
+    expect(onSelectGame).toHaveBeenCalledTimes(TRIALS);
+    for (const call of onSelectGame.mock.calls) {
+      expect(PLAYABLE.has((call[0] as GameMeta).id)).toBe(true);
+    }
+    // Sanity: over 30 trials, more than one distinct game should have come up (not a stuck pick).
+    const distinct = new Set(onSelectGame.mock.calls.map((c) => (c[0] as GameMeta).id));
+    expect(distinct.size).toBeGreaterThan(1);
+    vi.useRealTimers();
+  }, 20_000);
+
+  it('RANDOM ignores a second tap while already spinning (re-entrancy guard)', async () => {
+    vi.useFakeTimers();
+    const onSelectGame = vi.fn();
+    render(<HomeHubScreen {...baseProps({ onSelectGame })} />);
+    await vi.waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('home-random'));
+    fireEvent.click(screen.getByTestId('home-random')); // ignored — a spin is already in flight
+    await vi.advanceTimersByTimeAsync(1560);
+    expect(onSelectGame).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it('MENU: tapping "Card games" opens the games view pre-filtered to CARD GAMES (issue #465)', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('hub-nav-menu'));
+    fireEvent.click(screen.getByTestId('menu-row-card-games'));
+    expect(screen.getByTestId('home-section-title').textContent).toBe('CARD GAMES');
+    expect(screen.getByTestId('home-cat-card').getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByTestId('menu-overlay').getAttribute('aria-hidden')).toBe('true'); // menu closed
   });
 
   it('Advisor #2: hero carousel renders separate rounded cards with a gap + distinct alt text', async () => {
