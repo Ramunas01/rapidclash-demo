@@ -54,7 +54,56 @@
      * avoid colliding with the legacy styles.css :root vars (--surface/--accent/…). */
     --rc-success: 151 62% 44%; /* #2bb673 — win / success green */
     --rc-play: 147 69% 55%; /* #3ddc84 — PLAY-button green */
-    --rc-surface: 240 28% 14%; /* #1a1a2e — elevated surface */
+
+    /*
+     * Theme foundation (issue #472, T1 of the shared-chrome + light-theme rollout —
+     * docs/NEW_DESIGN_MIGRATION.md). Real dark/light pair, driven by `lib/theme.ts` stamping
+     * `data-theme` on <html> (see `[data-theme="light"]` override below) — NOT scoped to one
+     * screen the way PreferencesHub's old local `--pref-*` clone was.
+     *
+     * Values are the prototype's own computed light/dark pairs, `design/prototype/RapidClash
+     * Full Spec.html` lines 4319-4328 (`rcBg`/`rcSurface`/`rcSunken`/`rcText`/`rcMuted`/
+     * `rcIsland`/`rcGreen`/`rcDanger`). `--rc-surface` existed before this ticket (as an HSL
+     * triple, only ever used at its dark value); it's converted to raw hex here so it can carry
+     * a real, distinct light value like the rest of this set — see tailwind.config.js's
+     * `surface` color, updated from `hsl(var(--rc-surface))` to `var(--rc-surface)` to match.
+     *
+     * `--rc-success` (#2bb673, above) is a PRE-EXISTING, separately-named "win/success green"
+     * that predates this ticket and is NOT touched here — see the PR description for why it is
+     * left alone rather than aliased to `--rc-green` (it drifted to a different hex than the
+     * design source of truth, but `text-success`/`bg-success` already have wide call-site reach
+     * across the app; reconciling that shade is a visual-reskin decision for a screen-threading
+     * ticket, not this foundation one).
+     */
+    --rc-bg: #0b0b0b;
+    --rc-surface: #1a1a2e; /* elevated surface — was `240 28% 14%` (HSL), same color, raw hex now */
+    --rc-sunken: #0b0b0b;
+    --rc-text: #ffffff;
+    --rc-muted: #83838f;
+    --rc-island: #1a1930;
+    --rc-green: #34d399;
+    --rc-danger: #f0556b;
+
+    /* Sort sheet background (games-hub SORT modal) — prototype's own dedicated `sortSheetBg`
+     * computed prop (line 4005), NOT the same value as either --rc-surface or --rc-sunken in
+     * both themes, so it's its own token rather than an alias. */
+    --rc-sort-sheet-bg: #1a1a2e;
+
+    /* Theme-picker radio's selected-state glow (PreferencesHub's Appearance section). The
+     * prototype's *rendered* Appearance markup (lines 2627-2634) uses a different pill-button
+     * visual (`themeDarkShadow`/`themeLightShadow`, real light/dark-distinct offset shadows)
+     * that this app's dot-style RadioRow doesn't share, so that pair isn't a drop-in match; the
+     * prototype's `darkGlow`/`lightGlow`/`systemGlow` state hooks (line 4331-4336) — same blur
+     * shape as this app's existing selected-dot glow — ARE unused by any markup in the
+     * prototype (a dead hook, same pattern as the stale `affiliateTiers`/`TIERS` arrays flagged
+     * elsewhere in this migration) and are keyed off *selection*, not theme — one value serves
+     * both light and dark. This token just names the literal that already lived inline in
+     * PreferencesHub.tsx's RadioRow (`rgba(129,64,226,…)` is this app's own brand purple,
+     * matching the file's existing precedent of using the app's own palette over the handoff's
+     * literal hex — see the comment above `DARK_TOKENS` before this ticket).
+     */
+    --rc-theme-btn-shadow: 0 0 10px 2px rgba(129, 64, 226, 0.55);
+
     /* Shared card back (SVG/CSS component) — one source of truth (raw hex, used directly). */
     --card-back: #5956f6; /* flat blue-violet inset panel */
     --card-back-mark: #5351e2; /* the bolt watermark — tone-on-tone, a few shades darker */
@@ -107,7 +156,16 @@
     --sidebar-ring: 264 74% 57%;
     --rc-success: 151 62% 44%;
     --rc-play: 147 69% 55%;
-    --rc-surface: 240 28% 14%;
+    --rc-bg: #0b0b0b;
+    --rc-surface: #1a1a2e;
+    --rc-sunken: #0b0b0b;
+    --rc-text: #ffffff;
+    --rc-muted: #83838f;
+    --rc-island: #1a1930;
+    --rc-green: #34d399;
+    --rc-danger: #f0556b;
+    --rc-sort-sheet-bg: #1a1a2e;
+    --rc-theme-btn-shadow: 0 0 10px 2px rgba(129, 64, 226, 0.55);
     --card-back: #5956f6;
     --card-back-mark: #5351e2;
     --coin-heads-face: #f2a63b;
@@ -115,6 +173,30 @@
     --coin-tails-face: #556ef6;
     --coin-tails-mark: #3f52d6;
     --coin-edge: #ed742f;
+  }
+
+  /*
+   * Light-theme override (issue #472). `lib/theme.ts` stamps `data-theme="light"` on <html>
+   * once the resolved theme is light (`dark`/`system`→OS-dark leave this block unmatched, so
+   * :root's dark values above keep applying — no separate "dark" selector needed).
+   *
+   * Deliberately narrow: only the tokens this ticket's design source (prototype lines
+   * 4319-4328, `sortSheetBg` line 4005) actually defines a light value for. The base shadcn
+   * tokens (--background/--foreground/--card/… above) are untouched — threading light mode
+   * through the screens that read THOSE is T2 (shared chrome) / T3 (per-screen), not this
+   * foundation ticket. `--rc-success`, `--rc-play`, and `--rc-theme-btn-shadow` are also
+   * unchanged here — see the notes above `--rc-bg` and `--rc-theme-btn-shadow` for why.
+   */
+  :root[data-theme='light'] {
+    --rc-bg: #ffffff;
+    --rc-surface: #e9e9f0;
+    --rc-sunken: #d3d3dd;
+    --rc-text: #0b0b0b;
+    --rc-muted: #6e6e7a;
+    --rc-island: #e4e4ee;
+    --rc-green: #0b8f5a;
+    --rc-danger: #c42b41;
+    --rc-sort-sheet-bg: #d3d3dd;
   }
 }
 

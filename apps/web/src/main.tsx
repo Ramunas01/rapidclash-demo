@@ -2,6 +2,11 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import { App } from './App.js';
+// Theme engine (issue #472) — imported for its module-load side effect: it reads the persisted
+// theme choice and stamps <html data-theme> immediately, BEFORE the first paint, so there is no
+// flash of the wrong theme. Must be imported ahead of createRoot().render() below; index.css's
+// --rc-* token block keys off the attribute it sets, app-wide.
+import './lib/theme.js';
 // Inter — the v2 app font (self-hosted variable font, bundled by Vite; no runtime CDN).
 import '@fontsource-variable/inter';
 // Space Grotesk — headings/XP/stake numerals (RewardsHub, GamesCarousel, RcIcon already
