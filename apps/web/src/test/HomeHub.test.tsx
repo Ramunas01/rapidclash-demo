@@ -521,6 +521,18 @@ describe('HomeHubScreen — category rail, SEARCH, SORT, RANDOM (issue #465)', (
     });
   });
 
+  it('SORT: Popularity tie-break (issue #476) falls back to the design GRID order, not alphabetical, when all counts are equal', async () => {
+    stubFetch({}); // every count 0 — the normal fresh/quiet-database state
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    // ORIGINALS (all 12, all tied at 0) — must be the design's own GRID sequence, Coinflip first,
+    // NOT alphabetical (which would put Baccarat first).
+    expect(tileOrder()).toEqual([
+      'coinflip', 'blackjack', 'chess', 'mines', 'rps', 'crash',
+      'dice', 'roulette', 'hilo', 'keno', 'baccarat', 'limbo',
+    ]);
+  });
+
   it('SORT: Newest orders by fixed introduction-order ordinal, most-recently-added first', async () => {
     render(<HomeHubScreen {...baseProps()} />);
     await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());

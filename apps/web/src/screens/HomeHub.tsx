@@ -18,7 +18,7 @@ import {
   OriginalsIcon, CardGamesIcon, ChanceGamesIcon, SkillGamesIcon, EventsIcon,
 } from '../components/hub-shared/categoryIcons.js';
 import {
-  SORT_MODES, SORT_LABEL, INTRO_ORDER, RANDOM_PLAYABLE_GAME_IDS, RANDOM_TOTAL_MS, type SortMode,
+  SORT_MODES, SORT_LABEL, INTRO_ORDER, GRID_ORDER, RANDOM_PLAYABLE_GAME_IDS, RANDOM_TOTAL_MS, type SortMode,
 } from '../components/hub-shared/gameSort.js';
 import hero1 from '../assets/banners/hero-1.webp';
 import hero2 from '../assets/banners/hero-2.webp';
@@ -134,7 +134,10 @@ export function HomeHubScreen({
     } else {
       sorted.sort((a, b) => {
         const diff = (popularity[b.id] ?? 0) - (popularity[a.id] ?? 0);
-        return diff !== 0 ? diff : a.name.localeCompare(b.name);
+        if (diff !== 0) return diff;
+        // Tie-break (issue #476): the design's own GRID order (Coinflip first), not alphabetical —
+        // alphabetical would put Baccarat first on a fresh/quiet DB where every count is 0.
+        return (GRID_ORDER[a.id] ?? Infinity) - (GRID_ORDER[b.id] ?? Infinity);
       });
     }
     return sorted;
@@ -315,7 +318,7 @@ const CATEGORY_ICON: Record<CategoryId, (props: { className?: string }) => React
 
 function CategoryTabs({ cat, onChange }: { cat: CategoryId; onChange(c: CategoryId): void }) {
   return (
-    <div className="no-scrollbar flex gap-2.5 overflow-x-auto px-4 pt-1" role="tablist" aria-label="Game categories">
+    <div className="no-scrollbar flex gap-2.5 overflow-x-auto px-4 pt-1 pb-[9px]" role="tablist" aria-label="Game categories">
       {CATEGORY_IDS.map((id) => {
         const active = cat === id;
         const Icon = CATEGORY_ICON[id];
@@ -551,7 +554,7 @@ function PlayableTile({ meta, onSelect }: { meta: GameMeta; onSelect(m: GameMeta
       onClick={() => onSelect(meta)}
       aria-label={`Play ${meta.displayName}`}
       data-testid={`home-tile-${meta.id}`}
-      className="group relative aspect-[2/3] overflow-hidden rounded-xl border border-border transition-transform duration-300 hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+      className="group relative aspect-[112/158] overflow-hidden rounded-xl border border-border transition-transform duration-300 hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
     >
       <TileArt art={TILE_ART[meta.id]} name={meta.displayName} />
     </button>
@@ -564,7 +567,7 @@ function ComingSoonTile({ id }: { id: string }) {
       aria-disabled="true"
       aria-label={`${titleCase(id)} — coming soon`}
       data-testid={`home-coming-soon-${id}`}
-      className="relative aspect-[2/3] overflow-hidden rounded-xl border border-border opacity-50"
+      className="relative aspect-[112/158] overflow-hidden rounded-xl border border-border opacity-50"
     >
       <TileArt art={TILE_ART[id]} name={titleCase(id)} />
       <span className="absolute right-1.5 top-1.5 rounded-full bg-black/55 px-1.5 py-0.5 text-[7px] font-bold uppercase tracking-wide text-white/80">
