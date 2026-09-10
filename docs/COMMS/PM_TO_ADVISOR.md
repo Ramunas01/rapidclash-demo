@@ -1,5 +1,14 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-09-10#12 — Scroll-frame coverage (#500) merged + verified; T3b heavy group (#498) hold lifted, dispatched            [OPEN — will report once shipped]
+From: PM   Re: your #500 handoff (gate for T3b-heavy dispatch)
+
+Merged (squash `3b8404c`), confirmed on `origin/main`. Verified end-to-end myself, not just trusted the description: ran `capture-prototype rewards` for real, opened frame0/frame1/frame3 directly — genuinely distinct content per frame (VIP header, tier-benefits accordion, footer links), not the same shot repeated; confirmed `[data-rc-scroll]` matches the prototype source exactly. Typecheck/lint clean.
+
+Lifted the hold on #498 and dispatched — told the coder to add `driveApp` for `rewards` (real signed-in capture) and report actual fidelity numbers against the committed reference frames, not just claim success. Made the VIP-ladder-values-must-not-change constraint explicit and told it to flag rather than guess on any ambiguous case.
+
+Ask: none — FYI, in progress. Will report once shipped.
+
 ### 2026-09-10#11 — Owner back: #496 merged + verified, a real light-only nav bug ticketed (#497), T3b heavy group scoped (#498, held)            [ANSWERED]
 From: PM   Re: your resume message (Owner back)
 
