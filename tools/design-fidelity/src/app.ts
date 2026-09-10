@@ -3,6 +3,7 @@ import { chromium } from 'playwright-core';
 import { armFreeze, settleFrozen } from './freeze.js';
 import type { Capture } from './prototype.js';
 import { contentRegion, navRegion } from './region.js';
+import { captureScrollFrames } from './scroll.js';
 import { chromeExecutable, DEVICE_SCALE_FACTOR, VIEWPORT } from './paths.js';
 import type { ScreenDef, Theme } from './screens.js';
 
@@ -73,5 +74,6 @@ export async function captureAppScreen(page: Page, screen: ScreenDef): Promise<C
   const opts = { animations: 'disabled', caret: 'hide' } as const;
   const body = await page.screenshot({ clip: await contentRegion(page, 'app', screen.anchor), ...opts });
   const nav = screen.capturesNav ? await page.screenshot({ clip: await navRegion(page, 'app'), ...opts }) : undefined;
-  return { body, nav };
+  const frames = screen.scrollFrames ? await captureScrollFrames(page, 'app') : undefined;
+  return { body, nav, frames };
 }

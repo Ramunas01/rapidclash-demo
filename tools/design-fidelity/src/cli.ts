@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CAPTURES_DIR, DIFFS_DIR, REFERENCES_DIR } from './paths.js';
 import { appBaseUrl, captureAppScreen, launchApp, openApp } from './app.js';
@@ -18,6 +18,10 @@ function cap(theme: Theme, id: string): string {
 function navName(id: string): string {
   return `${id}.nav`;
 }
+/** `scrollFrames` screens get `<id>.frame0.png`, `.frame1.png`, … — one per viewport-tall slice. */
+function frameName(id: string, i: number): string {
+  return `${id}.frame${i}`;
+}
 
 /** Regenerate the committed prototype reference set (references/{dark,light}/*.png). */
 async function capturePrototype(only?: string): Promise<void> {
@@ -33,7 +37,9 @@ async function capturePrototype(only?: string): Promise<void> {
           const shot = await captureScreen(page, screen);
           writeFileSync(ref(theme, screen.id), shot.body);
           if (shot.nav) writeFileSync(ref(theme, navName(screen.id)), shot.nav);
-          console.log(`  ✓ ${theme.padEnd(5)} ${screen.id}${shot.nav ? ' (+nav)' : ''}`);
+          shot.frames?.forEach((f, i) => writeFileSync(ref(theme, frameName(screen.id, i)), f));
+          const suffix = [shot.nav && '+nav', shot.frames && `+${shot.frames.length} frames`].filter(Boolean).join(' ');
+          console.log(`  ✓ ${theme.padEnd(5)} ${screen.id}${suffix ? ` (${suffix})` : ''}`);
         } catch (e) {
           console.warn(`  ✗ ${theme.padEnd(5)} ${screen.id} — ${(e as Error).message.split('\n')[0]}`);
         }
@@ -63,8 +69,10 @@ async function captureApp(url: string | undefined, only?: string): Promise<void>
           const shot = await captureAppScreen(page, screen);
           writeFileSync(cap(theme, screen.id), shot.body);
           if (shot.nav) writeFileSync(cap(theme, navName(screen.id)), shot.nav);
+          shot.frames?.forEach((f, i) => writeFileSync(cap(theme, frameName(screen.id, i)), f));
           await page.close();
-          console.log(`  ✓ ${theme.padEnd(5)} ${screen.id}${shot.nav ? ' (+nav)' : ''}`);
+          const suffix = [shot.nav && '+nav', shot.frames && `+${shot.frames.length} frames`].filter(Boolean).join(' ');
+          console.log(`  ✓ ${theme.padEnd(5)} ${screen.id}${suffix ? ` (${suffix})` : ''}`);
         } catch (e) {
           console.warn(`  ✗ ${theme.padEnd(5)} ${screen.id} — ${(e as Error).message.split('\n')[0]}`);
         }
@@ -110,6 +118,13 @@ function runDiff(only?: string): void {
     for (const screen of screens) {
       one(theme, screen.id, screen.masks);
       if (screen.capturesNav) one(theme, navName(screen.id), undefined);
+      if (screen.scrollFrames) {
+        // Frame count isn't known statically — walk forward while either side has that index,
+        // so a screen whose content grows/shrinks doesn't need a hardcoded count anywhere.
+        for (let i = 0; existsSync(ref(theme, frameName(screen.id, i))) || existsSync(cap(theme, frameName(screen.id, i))); i++) {
+          one(theme, frameName(screen.id, i), undefined);
+        }
+      }
     }
   }
 
