@@ -52,7 +52,10 @@
     /* Brand-accent extension tokens the hubs consume (the export carries these as inline
      * consts; named here so hubs reference tokens, never raw hex). Prefixed `--rc-` to
      * avoid colliding with the legacy styles.css :root vars (--surface/--accent/…). */
-    --rc-success: 151 62% 44%; /* #2bb673 — win / success green */
+    --rc-success: var(--rc-green); /* alias (issue #485) — was its own drifted #2bb673, now
+     * reconciled to the design source of truth's --rc-green so text-success/bg-success/
+     * border-success (wide call-site reach across the hub screens) resolve to the correct
+     * color in both themes without touching any call site. See the note above --rc-bg. */
     --rc-play: 147 69% 55%; /* #3ddc84 — PLAY-button green */
 
     /*
@@ -68,12 +71,12 @@
      * a real, distinct light value like the rest of this set — see tailwind.config.js's
      * `surface` color, updated from `hsl(var(--rc-surface))` to `var(--rc-surface)` to match.
      *
-     * `--rc-success` (#2bb673, above) is a PRE-EXISTING, separately-named "win/success green"
-     * that predates this ticket and is NOT touched here — see the PR description for why it is
-     * left alone rather than aliased to `--rc-green` (it drifted to a different hex than the
-     * design source of truth, but `text-success`/`bg-success` already have wide call-site reach
-     * across the app; reconciling that shade is a visual-reskin decision for a screen-threading
-     * ticket, not this foundation one).
+     * `--rc-success` was a PRE-EXISTING, separately-named "win/success green" (#2bb673) that
+     * predated this ticket and drifted from the design source of truth. Reconciled in issue
+     * #485 (T3a): `--rc-success` is now a straight alias of `--rc-green` (both theme blocks,
+     * below and in `.dark`/the `data-theme="light"` override), so it always tracks --rc-green's
+     * canonical value instead of carrying its own hex. `text-success`/`bg-success`/`border-success` call
+     * sites across the hub screens were left unchanged — only the color they resolve to moved.
      */
     --rc-bg: #0b0b0b;
     --rc-surface: #1a1a2e; /* elevated surface — was `240 28% 14%` (HSL), same color, raw hex now */
@@ -154,7 +157,7 @@
     --sidebar-accent-foreground: 240 5% 96%;
     --sidebar-border: 0 0% 15%;
     --sidebar-ring: 264 74% 57%;
-    --rc-success: 151 62% 44%;
+    --rc-success: var(--rc-green); /* alias (issue #485) — see :root */
     --rc-play: 147 69% 55%;
     --rc-bg: #0b0b0b;
     --rc-surface: #1a1a2e;
@@ -184,8 +187,11 @@
    * 4319-4328, `sortSheetBg` line 4005) actually defines a light value for. The base shadcn
    * tokens (--background/--foreground/--card/… above) are untouched — threading light mode
    * through the screens that read THOSE is T2 (shared chrome) / T3 (per-screen), not this
-   * foundation ticket. `--rc-success`, `--rc-play`, and `--rc-theme-btn-shadow` are also
-   * unchanged here — see the notes above `--rc-bg` and `--rc-theme-btn-shadow` for why.
+   * foundation ticket. `--rc-play` and `--rc-theme-btn-shadow` are also unchanged here — see
+   * the notes above `--rc-bg` and `--rc-theme-btn-shadow` for why. `--rc-success` DOES get a
+   * light value here as of issue #485 (T3a) — it's aliased to `--rc-green` in every theme
+   * block, so it just inherits whatever `--rc-green` resolves to; no separate line was needed
+   * before because the alias itself is defined once, above, in `:root`/`.dark`.
    */
   :root[data-theme='light'] {
     --rc-bg: #ffffff;
