@@ -401,6 +401,16 @@ importers:
       '@rapidclash/shared':
         specifier: workspace:*
         version: link:../../shared
+    devDependencies:
+      '@rapidclash/core':
+        specifier: workspace:*
+        version: link:../../core
+      better-sqlite3:
+        specifier: ^11.9.1
+        version: 11.9.1
+      vitest:
+        specifier: ^2.1.1
+        version: 2.1.9(@types/node@25.9.3)(jsdom@25.0.1)(terser@5.48.0)
 
   packages/games/roulette:
     dependencies:

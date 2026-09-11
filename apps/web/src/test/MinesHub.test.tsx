@@ -21,7 +21,7 @@ function baseProps(over: Partial<Props> = {}): Props {
   };
 }
 
-const allCovered = Array.from({ length: 64 }, (_, i) => i);
+const allCovered = Array.from({ length: 25 }, (_, i) => i);
 const kind = (i: number) => screen.getByTestId(`cell-${i}`).getAttribute('data-kind');
 
 function view(me: Partial<MinesBoardView>, opp: Partial<MinesBoardView> = {}, extra: Partial<MinesView> = {}): MinesView {
@@ -77,12 +77,12 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     expect(onPlay).not.toHaveBeenCalled(); // …with NO auto-play
   });
 
-  it('In-match: the 8×8 board activates, and clicks are gated to server legalMoves → onMove(index)', () => {
+  it('In-match: the 5×5 board activates, and clicks are gated to server legalMoves → onMove(index)', () => {
     const onMakeMove = vi.fn();
     // Server says only square 5 is covered+legal right now.
     render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [] }), legalMoves: asLegal([5]), onMakeMove })} />);
     expect(screen.getByTestId('mines-board')).toBeInTheDocument();
-    expect(screen.getAllByRole('gridcell')).toHaveLength(64);
+    expect(screen.getAllByRole('gridcell')).toHaveLength(25);
 
     expect(screen.getByTestId('cell-5')).not.toBeDisabled();
     fireEvent.click(screen.getByTestId('cell-5'));
@@ -96,7 +96,7 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
   });
 
   it('In-match: renders own safe / busted / mine cells once locked', () => {
-    render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [0, 1], locked: true, bustedOn: 10, mines: [10, 20, 30] }), legalMoves: asLegal([]) })} />);
+    render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [0, 1], locked: true, bustedOn: 10, mines: [10, 20, 22] }), legalMoves: asLegal([]) })} />);
     expect(kind(0)).toBe('safe');
     expect(kind(10)).toBe('bustedOn'); // the detonated mine wins over plain 'mine'
     expect(kind(20)).toBe('mine');     // layout revealed once locked
@@ -109,11 +109,11 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     const oppCount = screen.getByTestId('opponent-count');
     expect(oppCount.textContent).not.toMatch(/\d+ safe/); // no number leaked
     expect(oppCount.querySelector('[aria-label="hidden"]')).toBeInTheDocument();
-    // Only the player's own 64 cells exist — the opponent's board is never in the DOM.
-    expect(screen.getAllByRole('gridcell')).toHaveLength(64);
+    // Only the player's own 25 cells exist — the opponent's board is never in the DOM.
+    expect(screen.getAllByRole('gridcell')).toHaveLength(25);
   });
 
-  it('Chase: reveals the opponent count once it is provided (server-gated on lock)', () => {
+  it('Reveals the opponent count once it is provided (server-gated on BOTH players locking)', () => {
     render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [2] }, { locked: true, score: 7 }), legalMoves: asLegal(allCovered) })} />);
     expect(screen.getByTestId('opponent-count').textContent).toContain('7 safe');
   });

@@ -59,7 +59,7 @@ describe('GET /games — registered platform games (go-live)', () => {
     expect(chess!.ranking.kind).toBe('elo');
   });
 
-  it('includes mines as a playable GameMeta (net_winnings, 2.5% rake, 5s per-player timer)', async () => {
+  it('includes mines as a playable GameMeta (net_winnings, 2.5% rake, no per-move timer — ADR-012 scheduled deadlines instead)', async () => {
     const res = await app.inject({ method: 'GET', url: '/games' });
     expect(res.statusCode).toBe(200);
     const games = res.json<
@@ -70,6 +70,9 @@ describe('GET /games — registered platform games (go-live)', () => {
     expect(mines!.displayName).toBe('Mines');
     expect(mines!.ranking.kind).toBe('net_winnings');
     expect(mines!.rakeRate).toBe(0.025);
-    expect(mines!.moveTimeoutMs).toBe(5000);
+    // Rule 10 (2026-09-11 ruleset rewrite): the old per-move 5s timer is gone, replaced by a
+    // single 30s round clock via scheduledDeadlines + lockOnTimeout (ADR-012) — not exposed
+    // via GameMeta the way moveTimeoutMs was.
+    expect(mines!.moveTimeoutMs).toBeUndefined();
   });
 });

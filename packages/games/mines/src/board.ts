@@ -9,18 +9,25 @@
 // Both players play the SAME layout (an identical board each) — `minesFor` deliberately
 // does NOT depend on the player, so the contest is a pure, equal-chance race.
 //
+// PARAMETERISED, not forked (Designer ruleset, 2026-09-11): `minesFor` takes `boardSize` +
+// `mineCount` as explicit arguments rather than hardcoding them, so the shuffle itself is
+// board-shape-agnostic. `mines.ts` is the sole source of truth for the CURRENT ruleset's
+// shape (5×5 / 3 mines) via the constants below, and always passes them in explicitly.
+//
 // (v1 ships on this seeded RNG. The spec's commit-reveal — publish a board-seed hash
 // before the deal, reveal the seed after — is the roadmap "provably fair by design"
 // direction layered on top of this same deterministic shuffle; not built here.)
 
-/** 8×8 grid. */
-export const BOARD_SIZE = 64;
-/** Mines randomly placed among the 64 squares. */
-export const MINE_COUNT = 7;
+/** 5×5 grid = 25 tiles (Designer-approved ruleset, 2026-09-11 — see
+ *  docs/NEW_DESIGN_MIGRATION.md § "Canonical new Mines ruleset"). */
+export const BOARD_SIZE = 25;
+/** Mines randomly placed among the 25 squares, 3 per round. */
+export const MINE_COUNT = 3;
 /** Safe squares a player must uncover for a perfect (max-score) clear. */
-export const SAFE_COUNT = BOARD_SIZE - MINE_COUNT; // 57
-/** Per-player move timeout (ms) — see minesModule.moveTimeoutMs. */
-export const MOVE_TIMEOUT_MS = 5000;
+export const SAFE_COUNT = BOARD_SIZE - MINE_COUNT; // 22
+/** The single round clock (ms), from round start — a cap, not a mechanic (rule 3). See
+ *  minesModule.scheduledDeadlines / lockOnTimeout (ADR-012). */
+export const ROUND_TIMEOUT_MS = 30_000;
 
 /** mulberry32 — a small, fast, well-distributed 32-bit PRNG. Deterministic per seed. */
 function mulberry32(seed: number): () => number {
@@ -43,12 +50,15 @@ function mixSeed(base: number, round: number): number {
 }
 
 /**
- * The set of mined square indices (0..63) for a given (base seed, round). Identical for
- * both players. Derived by a Fisher–Yates shuffle of all 64 indices, taking the first
- * MINE_COUNT — uniform over all layouts and fully deterministic.
+ * The set of mined square indices (0..boardSize-1) for a given (base seed, round),
+ * over a board of `boardSize` tiles with `mineCount` mines. Identical for both players.
+ * Derived by a Fisher–Yates shuffle of all `boardSize` indices, taking the first
+ * `mineCount` — uniform over all layouts and fully deterministic. Generalised over shape
+ * (not hardcoded to any one board's dimensions) — `mines.ts` supplies the current
+ * ruleset's `BOARD_SIZE`/`MINE_COUNT` at every call site.
  */
-export function minesFor(seed: number, round: number): Set<number> {
-  const idx = Array.from({ length: BOARD_SIZE }, (_, i) => i);
+export function minesFor(seed: number, round: number, boardSize: number, mineCount: number): Set<number> {
+  const idx = Array.from({ length: boardSize }, (_, i) => i);
   const rand = mulberry32(mixSeed(seed, round));
   for (let i = idx.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
@@ -56,5 +66,5 @@ export function minesFor(seed: number, round: number): Set<number> {
     idx[i] = idx[j];
     idx[j] = tmp;
   }
-  return new Set(idx.slice(0, MINE_COUNT));
+  return new Set(idx.slice(0, mineCount));
 }

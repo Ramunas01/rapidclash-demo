@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Bomb, Gem } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -16,8 +16,11 @@ interface Props {
   onForfeit(): void;
 }
 
-const BOARD_SIZE = 64; // 8×8
-const MOVE_TIMEOUT_MS = 5000;
+// 5×5 / 3-mine ruleset (Designer, 2026-09-11 — see docs/NEW_DESIGN_MIGRATION.md § "Canonical
+// new Mines ruleset"). NOTE: this file is the MINIMUM fix to keep the screen functional against
+// the new engine (right dimensions, right copy) — it is NOT the full visual rebuild to the new
+// 5×5 prototype design, which is out of scope here and tracked as a follow-up (see the T7 PR body).
+const BOARD_SIZE = 25; // 5×5
 
 type CellKind = 'covered' | 'safe' | 'mine' | 'bustedOn';
 
@@ -39,27 +42,17 @@ export function MinesPlayScreen({ playerId, username, opponentId, gameState, leg
   const legalSet = useMemo(() => new Set(legalMoves), [legalMoves]);
   const canMove = !myLocked && legalMoves.length > 0;
 
-  // Opponent's safe-count is server-redacted: undefined while both are active, a number once
-  // either player has locked (the target you race / the chase). We NEVER see their board.
+  // Opponent's safe-count is server-redacted: hidden for the WHOLE round, revealed only once
+  // BOTH players have locked (2026-09-11 ruleset — no early resolution, no mid-round chase).
+  // We NEVER see their board, in-play or otherwise.
   const oppScore = opp?.score;
   const oppLocked = opp?.locked ?? false;
 
-  // ── Per-player 5s move countdown ──────────────────────────────────────────
-  // The server runs the authoritative per-player clock and auto-reveals on expiry (#91);
-  // this is the matching visual. Reset whenever MY board advances (a reveal, a lock, or a
-  // fresh replay round) — NOT on the opponent's moves, which never touch my board.
-  const [secondsLeft, setSecondsLeft] = useState(MOVE_TIMEOUT_MS / 1000);
-  const resetKey = `${round}:${myScore}:${myLocked}`;
-  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  useEffect(() => {
-    setSecondsLeft(MOVE_TIMEOUT_MS / 1000);
-    if (tickRef.current) clearInterval(tickRef.current);
-    if (myLocked) return; // locked → no clock (waiting on the opponent / the chase)
-    tickRef.current = setInterval(() => setSecondsLeft((s) => Math.max(0, s - 1)), 1000);
-    return () => {
-      if (tickRef.current) clearInterval(tickRef.current);
-    };
-  }, [resetKey, myLocked]);
+  // NOTE: the old per-move 5s countdown is removed along with the mechanic it displayed (rule
+  // 10 — no per-move timer any more). The engine now runs a single 30s round clock from match
+  // start (ADR-012's scheduledDeadlines/lockOnTimeout), which is not yet surfaced through
+  // viewFor to the client — showing an accurate live countdown here is follow-up UI work, not
+  // this ticket (T7 is the engine rewrite; see the PR body).
 
   function cellKind(i: number): CellKind {
     if (bustedOn === i) return 'bustedOn';
@@ -104,7 +97,7 @@ export function MinesPlayScreen({ playerId, username, opponentId, gameState, leg
           </span>
         </div>
 
-        {/* Status + per-move countdown */}
+        {/* Status */}
         <div className="mb-3 flex items-center justify-between">
           <span
             data-testid="my-status"
@@ -115,26 +108,14 @@ export function MinesPlayScreen({ playerId, username, opponentId, gameState, leg
           >
             {myStatus}
           </span>
-          {!myLocked && (
-            <span
-              data-testid="move-timer"
-              className={cn(
-                'flex h-7 min-w-7 items-center justify-center rounded-full border px-2 text-xs font-bold tabular-nums',
-                secondsLeft <= 2 ? 'border-red-500/50 bg-red-500/10 text-red-300' : 'border-white/15 bg-white/5 text-white/70',
-              )}
-              aria-label={`${secondsLeft} seconds to auto-reveal`}
-            >
-              {secondsLeft}s
-            </span>
-          )}
         </div>
 
-        {/* Own 8×8 board. The opponent's board is NEVER rendered (server hides it). */}
+        {/* Own 5×5 board. The opponent's board is NEVER rendered (server hides it). */}
         <div
           data-testid="mines-board"
           role="grid"
           aria-label="Your minefield"
-          className="grid grid-cols-8 gap-1 rounded-xl border border-white/5 bg-white/[0.02] p-2"
+          className="grid grid-cols-5 gap-1 rounded-xl border border-white/5 bg-white/[0.02] p-2"
         >
           {Array.from({ length: BOARD_SIZE }, (_, i) => {
             const kind = cellKind(i);
@@ -173,8 +154,8 @@ export function MinesPlayScreen({ playerId, username, opponentId, gameState, leg
           {myLocked
             ? oppLocked
               ? 'Resolving…'
-              : 'Locked in — watch your opponent race your score.'
-            : 'Tap a tile. Avoid the mines — most safe tiles wins. 5s per move.'}
+              : 'Locked in — waiting for your opponent to finish their round.'
+            : 'Tap a tile. Avoid the mines — most safe tiles wins. A mine, 22 safe tiles, or the clock ends your round.'}
         </p>
 
         {!myLocked && (
