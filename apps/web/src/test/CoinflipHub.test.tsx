@@ -121,11 +121,15 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
   // (tools/bot-crowd's HUMAN_RESERVED_STAKES) — reserved for human-only testing. `2` is never its
   // own preset button; it's only reachable through hub-bet-1's own toggling state.
   describe('#381: tap-again on the 1¢ preset arms the reserved stake 2', () => {
+    // T9: registered users (baseProps() default, isGuest unset → false) see the Owner-approved $
+    // skin in the bet panel, not the play-money RC glyph — these assertions flip from 'RC1'/'RC2'
+    // to '$1'/'$2' accordingly (GameHub.tsx PlayPanel, CHARTER.md #4). The gesture/highlight
+    // behaviour under test here is otherwise unchanged.
     it('a single tap arms 1 (regression guard)', () => {
       render(<CoinflipHubScreen {...baseProps()} />);
       fireEvent.click(screen.getByTestId('hub-bet-1'));
       const preset = screen.getByTestId('hub-bet-1');
-      expect(preset.textContent).toBe('RC1');
+      expect(preset.textContent).toBe('$1');
       expect(preset.className).toContain('bg-brand');
     });
 
@@ -134,7 +138,7 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
       fireEvent.click(screen.getByTestId('hub-bet-1'));
       fireEvent.click(screen.getByTestId('hub-bet-1'));
       const preset = screen.getByTestId('hub-bet-1');
-      expect(preset.textContent).toBe('RC2');
+      expect(preset.textContent).toBe('$2');
       expect(preset.className).toContain('bg-brand');
     });
 
@@ -144,7 +148,7 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
       fireEvent.click(screen.getByTestId('hub-bet-1'));
       fireEvent.click(screen.getByTestId('hub-bet-1'));
       const preset = screen.getByTestId('hub-bet-1');
-      expect(preset.textContent).toBe('RC1');
+      expect(preset.textContent).toBe('$1');
       expect(preset.className).toContain('bg-brand');
     });
 
@@ -155,7 +159,7 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
       fireEvent.click(screen.getByTestId('hub-bet-10')); // a different preset resets the gesture
       fireEvent.click(screen.getByTestId('hub-bet-1')); // fresh tap on 1
       const preset = screen.getByTestId('hub-bet-1');
-      expect(preset.textContent).toBe('RC1');
+      expect(preset.textContent).toBe('$1');
       expect(preset.className).toContain('bg-brand');
       expect(screen.getByTestId('hub-bet-10').className).not.toContain('bg-brand');
     });
@@ -168,7 +172,7 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
       expect(screen.queryByTestId('hub-bet-2')).toBeNull(); // still no separate grid entry
       // The "Bet amount" readout reflects the armed 2, and it's the hub-bet-1 slot doing the display.
       const betSection = screen.getByTestId('hub-section-bet');
-      expect(within(betSection).getAllByText('2', { exact: true }).length).toBeGreaterThan(0);
+      expect(within(betSection).getAllByText('$2', { exact: true }).length).toBeGreaterThan(0);
     });
   });
 
@@ -522,9 +526,18 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     expect(onOpenWallet).toHaveBeenCalled();
   });
 
-  it('is sanitized: no $ leaks into the game body (the header wallet chip legitimately shows the Owner-approved $ skin — CHARTER.md #4, issue #484)', () => {
+  it('T9: registered users see the Owner-approved $ skin in the bet panel too, not just the header wallet chip (GameHub.tsx PlayPanel, CHARTER.md #4)', () => {
     const { container } = render(
       <CoinflipHubScreen {...baseProps({ challengesByGame: { coinflip: [CHALLENGE] } })} />
+    );
+    const header = container.querySelector('header');
+    const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');
+    expect(bodyText).toMatch(/\$/);
+  });
+
+  it('T9: guest mode keeps the play-money RcIcon bet display — no $ leaks into the game body', () => {
+    const { container } = render(
+      <CoinflipHubScreen {...baseProps({ challengesByGame: { coinflip: [CHALLENGE] }, isGuest: true })} />
     );
     const header = container.querySelector('header');
     const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');

@@ -141,14 +141,25 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     expect(screen.getByTestId('hub-result-rps')).toBeInTheDocument();
   });
 
-  it('JOIN balance-check + chrome + no $ leaking into the game body (shared GameHub behaviour holds for RPS; the header wallet chip legitimately shows the Owner-approved $ skin — CHARTER.md #4, issue #484)', () => {
+  it('JOIN balance-check + chrome (shared GameHub behaviour holds for RPS)', () => {
     const onTakeChallenge = vi.fn();
-    const { container } = render(<RpsHubScreen {...baseProps({ balance: 5, challengesByGame: { rps: [CHALLENGE] }, onTakeChallenge })} />);
+    render(<RpsHubScreen {...baseProps({ balance: 5, challengesByGame: { rps: [CHALLENGE] }, onTakeChallenge })} />);
     const row = document.querySelector('[data-match-id="c1"]') as HTMLElement;
     expect(within(row).getByTestId(/^games-carousel-stake-/).textContent).toBe('50');
     fireEvent.click(within(row).getByTestId(/^games-carousel-join-/));
     expect(onTakeChallenge).not.toHaveBeenCalled();
     expect(screen.getByTestId('games-carousel-notice').textContent).toMatch(/not enough/i);
+  });
+
+  it('T9: registered users see the Owner-approved $ skin in the bet panel too, not just the header wallet chip (GameHub.tsx PlayPanel, CHARTER.md #4)', () => {
+    const { container } = render(<RpsHubScreen {...baseProps({ balance: 5 })} />);
+    const header = container.querySelector('header');
+    const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');
+    expect(bodyText).toMatch(/\$/);
+  });
+
+  it('T9: guest mode keeps the play-money RcIcon bet display — no $ leaks into the game body', () => {
+    const { container } = render(<RpsHubScreen {...baseProps({ balance: 5, isGuest: true })} />);
     const header = container.querySelector('header');
     const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');
     expect(bodyText).not.toMatch(/\$/);

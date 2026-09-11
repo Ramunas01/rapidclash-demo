@@ -650,6 +650,7 @@ export function GameHub(props: GameHubProps) {
               selectedControl={selectedControl}
               onSelectControl={setSelectedControl}
               excludedStakes={isGuest ? GUEST_EXCLUDED_STAKES : undefined}
+              isGuest={isGuest}
             />
           </div>
 
@@ -856,7 +857,7 @@ function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdi
  *  Play-a-Friend becomes the active Cancel, while the bet row freezes with the SAME visuals — but
  *  NO "Playing…" label); `noOpponent` shows the polite "No opponent found" note after expiry. */
 function PlayPanel({
-  playing, searching, noOpponent, armedStake, onArm, onPlay, onCancel, actionSlot, secondaryActionSlot, timeControl, selectedControl, onSelectControl, excludedStakes,
+  playing, searching, noOpponent, armedStake, onArm, onPlay, onCancel, actionSlot, secondaryActionSlot, timeControl, selectedControl, onSelectControl, excludedStakes, isGuest,
 }: {
   playing: boolean;
   /** Pure search: freeze the bet row (no "Playing…") and turn Play-a-Friend into the active Cancel. */
@@ -885,6 +886,12 @@ function PlayPanel({
   timeControl?: GameMeta['timeControl'];
   selectedControl?: string;
   onSelectControl(id: string): void;
+  /** T9: registered users see a cosmetic `$`-formatted bet amount instead of the play-money
+   *  `<Credits>`/RC-coin glyph — same precedent `HubRibbon.tsx`'s wallet chip already set for the
+   *  header balance (Owner-approved `$` skin, `CHARTER.md` #4). Bypasses `<Credits>` entirely for
+   *  this one call site rather than touching its "never $" contract. Guests keep `<Credits>`
+   *  unchanged. Default false (guest) so existing non-GameHub callers — none today — stay safe. */
+  isGuest?: boolean;
 }) {
   // Both a live match and a pure search freeze the bet controls with the identical greyed/inert
   // treatment — the ONLY difference is the primary label (search shows the waiting slot, not
@@ -973,7 +980,7 @@ function PlayPanel({
         <div className="mb-2.5 flex items-center justify-between">
           <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Bet amount</span>
           <span className="text-sm font-extrabold tabular-nums text-foreground">
-            {armedStake == null ? '—' : <Credits amount={armedStake} />}
+            {armedStake == null ? '—' : isGuest ? <Credits amount={armedStake} /> : `$${armedStake.toLocaleString('en-US')}`}
           </span>
         </div>
         {/* grid-cols matches the OFFERED preset count, not BET_PRESETS.length — a withheld preset
@@ -981,28 +988,31 @@ function PlayPanel({
             counts exist in practice (6 full, 5 with one withheld), so a plain ternary is simpler
             than a dynamic Tailwind class. */}
         <div className={cn('grid gap-2', presets.length === BET_PRESETS.length ? 'grid-cols-6' : 'grid-cols-5')}>
-          {presets.map((v) => (
-            <button
-              key={v}
-              type="button"
-              disabled={frozen}
-              data-testid={`hub-bet-${v}`}
-              // #381: the 1¢ preset is special-cased to reach the undocumented, bot-excluded
-              // stake of 2 (tools/bot-crowd's HUMAN_RESERVED_STAKES) via a tap-again gesture —
-              // tapping again while 1 is armed arms 2; tapping again while 2 is armed toggles
-              // back to 1. Every other preset keeps its plain onArm(v). 2 is never its own
-              // BET_PRESETS entry / grid button — only reachable through this one button's state.
-              onClick={v === 1 ? () => onArm(armedStake === 1 ? 2 : 1) : () => onArm(v)}
-              className={cn(
-                'rounded-lg py-2.5 text-center text-[13px] font-bold tabular-nums transition-colors',
-                armedStake === v || (v === 1 && armedStake === 2)
-                  ? 'bg-brand text-white'
-                  : 'bg-background text-muted-foreground hover:text-foreground',
-              )}
-            >
-              <Credits amount={v === 1 && armedStake === 2 ? 2 : v} />
-            </button>
-          ))}
+          {presets.map((v) => {
+            const displayValue = v === 1 && armedStake === 2 ? 2 : v;
+            return (
+              <button
+                key={v}
+                type="button"
+                disabled={frozen}
+                data-testid={`hub-bet-${v}`}
+                // #381: the 1¢ preset is special-cased to reach the undocumented, bot-excluded
+                // stake of 2 (tools/bot-crowd's HUMAN_RESERVED_STAKES) via a tap-again gesture —
+                // tapping again while 1 is armed arms 2; tapping again while 2 is armed toggles
+                // back to 1. Every other preset keeps its plain onArm(v). 2 is never its own
+                // BET_PRESETS entry / grid button — only reachable through this one button's state.
+                onClick={v === 1 ? () => onArm(armedStake === 1 ? 2 : 1) : () => onArm(v)}
+                className={cn(
+                  'rounded-lg py-2.5 text-center text-[13px] font-bold tabular-nums transition-colors',
+                  armedStake === v || (v === 1 && armedStake === 2)
+                    ? 'bg-brand text-white'
+                    : 'bg-background text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {isGuest ? <Credits amount={displayValue} /> : `$${displayValue.toLocaleString('en-US')}`}
+              </button>
+            );
+          })}
         </div>
 
         {/* Not colour-alone (#143): a short text hint paired with a polite live region for
