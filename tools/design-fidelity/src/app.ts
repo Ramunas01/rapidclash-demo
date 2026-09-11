@@ -70,6 +70,13 @@ export async function captureAppScreen(page: Page, screen: ScreenDef): Promise<C
     throw new Error(`no driveApp for "${screen.id}" yet — add one to src/screens.ts as that screen is rebuilt`);
   }
   await screen.driveApp(page);
+  // A `driveApp` that clicks a below-the-fold element (e.g. a game tile deep in the grid) has
+  // Playwright auto-scroll it into view first; the app's own client-side navigation does not
+  // reset that scroll position, so the still-scrolled viewport can silently clip the wrong slice
+  // of the new screen (confirmed while adding mines/rps/dice-idle — the capture skipped straight
+  // past the opponent bar into content that only exists ~450px down the page). Reset here, once,
+  // for every screen, rather than trusting each driveApp to remember to do it itself.
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(300);
   const opts = { animations: 'disabled', caret: 'hide' } as const;
   const body = await page.screenshot({ clip: await contentRegion(page, 'app', screen.anchor), ...opts });

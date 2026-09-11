@@ -131,6 +131,11 @@ export interface Capture {
 
 export async function captureScreen(page: Page, screen: ScreenDef): Promise<Capture> {
   await screen.driveProto(page);
+  // Mirrors the same reset on the app side (app.ts) — a driveProto that clicks a below-the-fold
+  // tile gets it auto-scrolled into view first; reset the prototype's own scroll container so a
+  // leftover scroll position can't clip the captured region. The outer viewport itself never
+  // scrolls (see scroll.ts), only [data-rc-scroll] does.
+  await page.evaluate(() => document.querySelector('[data-rc-scroll]')?.scrollTo(0, 0));
   await page.waitForTimeout(250);
   const opts = { animations: 'disabled', caret: 'hide' } as const;
   const body = await page.screenshot({ clip: await contentRegion(page, 'prototype', screen.anchor), ...opts });

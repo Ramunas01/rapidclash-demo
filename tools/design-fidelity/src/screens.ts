@@ -62,6 +62,32 @@ export async function navTo(page: Page, label: 'Games' | 'Rewards' | 'Account' |
 }
 
 /**
+ * Open one of the prototype's three not-yet-finished-until-T5/T6 games (Mines/RPS/Dice) by
+ * clicking its actual grid tile — `openGame(k)` (the prototype's real view-transition handler,
+ * `Full Spec.html`'s `IMGS` map) fires on `onClick="{{ g.open }}"`, not on any text match: the
+ * tiles are plain `background-image` divs with no text content, so a text-based selector finds
+ * nothing (this is exactly what caused the "no design source exists" false alarm — investigate
+ * by driving the actual click, not by grepping for text). `needle` is the `IMGS[k]` filename
+ * fragment (`game-mines` / `game-rps` / `game-dice`).
+ */
+export async function openGameTile(page: Page, needle: string): Promise<void> {
+  const clicked = await page.evaluate((n: string) => {
+    const tiles = Array.from(document.querySelectorAll<HTMLElement>('[data-rc-grid] > div'));
+    const tile = tiles.find((t) => (t.style.backgroundImage || '').includes(n));
+    if (tile) {
+      tile.click();
+      return true;
+    }
+    return false;
+  }, needle);
+  if (!clicked) throw new Error(`design-fidelity: prototype grid tile matching "${needle}" not found`);
+  // openGame(k) itself just flips `view` to the idle pre-match state (bet ladder + PLAY, dimmed
+  // board) — no match search starts until PLAY is pressed (that's what fires `startDice`/etc.'s
+  // searching→found→split sequence). No long wait needed here, just the render.
+  await page.waitForTimeout(400);
+}
+
+/**
  * Sign in through the auth sheet. `submitAuth` in the prototype just sets `loggedIn: true`
  * unconditionally and closes the sheet — no validation — so we fill the fields for realism
  * then submit via the button next to the password input.
@@ -214,6 +240,56 @@ export const SCREENS: ScreenDef[] = [
     driveProto: async (page) => {
       await signIn(page);
       await navTo(page, 'Account');
+    },
+  },
+  {
+    id: 'mines-idle',
+    title: 'Mines — idle (pre-match), signed out',
+    // T7 (the Mines *engine* — board size, mechanic changes) is still blocked on the Designer's
+    // answers (see NEW_DESIGN_MIGRATION.md). This screen only verifies the T6-family *visual*
+    // work already shipped (the shared VS-label + per-game idle-preview boards); it will need
+    // re-capturing once T7 lands and the board itself changes shape.
+    driveProto: async (page) => {
+      await openGameTile(page, 'game-mines');
+    },
+    // Wait on `hub-play` (GameHub's own PLAY button, GameHub.tsx:641/937), not `hub-board` —
+    // that testid is only on each game's LIVE in-match component (MinesBoard/RpsBoard); the
+    // idle-preview component (MinesIdle/RpsIdle) carries no testid of its own. `hub-play` is
+    // shared GameHub chrome present in idle/waiting for every game, Mines/RPS/Dice included.
+    driveApp: async (page) => {
+      await page.waitForSelector('[data-testid="home-hub"]', { timeout: 10_000 });
+      await page.getByTestId('home-tile-mines').click();
+      await page.waitForSelector('[data-testid="hub-play"]', { timeout: 10_000 });
+      await page.waitForTimeout(400);
+    },
+  },
+  {
+    id: 'rps-idle',
+    title: 'RPS — idle (pre-match), signed out',
+    driveProto: async (page) => {
+      await openGameTile(page, 'game-rps');
+    },
+    // Issue T6b: RpsHub's idle preview now shows the real dimmed picker tiles (was a placeholder).
+    // `hub-play`, not `hub-board` — see the mines-idle comment above for why.
+    driveApp: async (page) => {
+      await page.waitForSelector('[data-testid="home-hub"]', { timeout: 10_000 });
+      await page.getByTestId('home-tile-rps').click();
+      await page.waitForSelector('[data-testid="hub-play"]', { timeout: 10_000 });
+      await page.waitForTimeout(400);
+    },
+  },
+  {
+    id: 'dice-idle',
+    title: 'Dice — idle (pre-match), signed out',
+    driveProto: async (page) => {
+      await openGameTile(page, 'game-dice');
+    },
+    // Issue T6a: DiceHub's idle preview now shows dimmed roll-gauge tracks (was a plain 🎲 + caption).
+    driveApp: async (page) => {
+      await page.waitForSelector('[data-testid="home-hub"]', { timeout: 10_000 });
+      await page.getByTestId('home-tile-dice').click();
+      await page.waitForSelector('[data-testid="hub-board"]', { timeout: 10_000 });
+      await page.waitForTimeout(400);
     },
   },
 ];
