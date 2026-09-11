@@ -61,7 +61,9 @@ import { RcIcon } from './RcIcon.js';
  * 5. **Stake/prize/XP numerals show a plain numeral beside a green "RC" coin glyph** (`RcIcon`,
  *    now the shared `hub-shared/RcIcon.tsx` component — issue #324 generalized this component's
  *    original transcribed glyph into the sitewide credits display, so every visible credits
- *    figure in the app now reads this way, not just this carousel).
+ *    figure in the app now reads this way, not just this carousel) — for a *logged-out* viewer.
+ *    A registered (`loggedIn`) viewer instead sees the Owner-approved `$` skin (`CHARTER.md` #4)
+ *    at all three spots, via the `AmountFigure` helper below (2026-09-11#8 item B.2).
  * 6. **Interactive elements are real `<button>`s**, not the design's plain `<div>`/`<span>` with
  *    `onClick` — matching this codebase's existing precedent for every other design-transcribed
  *    interactive control (`HomeHub.tsx`'s `CategoryTabs`/`GridControls`, etc.). Unlike the
@@ -211,7 +213,17 @@ function buildBoardRows(src: BoardTuple[], kind: 'race' | 'rank'): BoardRow[] {
 }
 
 /** One rolling row in the OPEN GAMES carousel — the design's synthetic `make()` return shape
- *  (decoded lines 1305-1317), with real data substituted for `POOL`/`STAKES` per issue #305. */
+ *  (decoded lines 1305-1317), with real data substituted for `POOL`/`STAKES` per issue #305.
+ *
+ *  No tier field (2026-09-11#8 item B.3, VIP-tier badge next to the username — confirmed
+ *  genuinely unimplemented, not a partial feature): `OpenChallenge`/`PublicOpenChallenge`
+ *  (`packages/shared/src/protocol.ts:96-112`) carry no tier data over the wire for this feed, so
+ *  there's nothing to read client-side. Chat's `resolveTier`/`tierForXp` (`apps/server/src/ws/
+ *  gateway.ts`) and `#441`'s `opponentTier` (`RecentMatchEntry`, protocol.ts:385-391) both add
+ *  tier as a small, purpose-built addition to an existing payload rather than a new round-trip —
+ *  the open-challenges feed would need the same treatment (`OpenChallenge` gaining an
+ *  `ownerTier`, resolved server-side same as `resolveTier`). Left as a follow-up per the ticket's
+ *  own instruction not to scope-creep a server change into this PR; not implemented here. */
 interface CarouselRow {
   uid: number;
   matchId: string;
@@ -255,6 +267,35 @@ function useOpenChallengesPool(challengesByGame: Record<string, OpenChallenge[]>
  * calls #1-#3 in the file header for the real-data adaptations (empty state, eager seed, real
  * LIVE count) the design's always-full synthetic POOL never had to handle.
  */
+/**
+ * Docs/COMMS/ADVISOR_TO_PM.md 2026-09-11#8 item B.1: fixes the doubled-`@` display bug. Bot-crowd's
+ * own display names already embed an `@` by construction (`BOT_PREFIX = '🤖'`,
+ * `tools/bot-crowd/src/config.ts:226-233` builds names as `` `${BOT_PREFIX}@sweeper` ``, i.e. the
+ * stored `ownerName` is literally `"🤖@sweeper"`), while a real human's stored username
+ * (`packages/core/src/identity.ts`'s `register`) never contains an `@` anywhere. Unconditionally
+ * prepending `@` produced `"@🤖@sweeper"` for bots — two `@` in the string, the Owner's reported
+ * bug — while `"@alice"` (a plain human handle) was already correct.
+ *
+ * The ticket's own suggested one-liner — strip a *leading* `@` before prepending (`ownerName.
+ * replace(/^@/, '')`) — does NOT actually fix the bot case: the bot's embedded `@` sits AFTER the
+ * leading 🤖 emoji, not at the start of the string, so `/^@/` never matches and the output is
+ * unchanged (`"@🤖@sweeper"`, still two `@`). Re-derived here instead: `ownerName` containing an
+ * `@` *anywhere* is itself the "this is already a fully-formed display name" signal (true for
+ * every bot name, true for no real human username today) — so only prepend `@` when there isn't
+ * one already. This collapses to exactly one `@` for both shapes:
+ *   - bot:   "🤖@sweeper" → already has one → displayed as-is → "🤖@sweeper" (🤖 disclosure intact)
+ *   - human: "alice"      → has none       → prepend one     → "@alice"
+ *
+ * Deliberately NOT a reuse of `ProfileHub.tsx`'s `normalizeOpponentName` (`:190-198`, issue #441)
+ * — that helper also strips the leading 🤖 emoji itself, which is correct for its own personal
+ * match-history context (its doc comment says so explicitly) but wrong here: ADR-010's
+ * informed-consent labeling requires the 🤖 disclosure to stay visible specifically on this
+ * open-challenges/live-activity feed, where a human is choosing whether to JOIN.
+ */
+function displayHostName(ownerName: string): string {
+  return ownerName.includes('@') ? ownerName : `@${ownerName}`;
+}
+
 function useOpenGamesCarousel(pool: FeedRow[], nameByGame: Map<string, string>) {
   const poolRef = useRef(pool);
   poolRef.current = pool;
@@ -272,7 +313,7 @@ function useOpenGamesCarousel(pool: FeedRow[], nameByGame: Map<string, string>) 
       matchId: row.c.matchId,
       gameId: row.gameId,
       gameName: nameByGameRef.current.get(row.gameId) ?? titleCase(row.gameId),
-      host: `@${row.c.ownerName}`,
+      host: displayHostName(row.c.ownerName),
       stake: row.c.stake,
       zebra: uid % 2 === 0,
     };
@@ -337,6 +378,39 @@ function useOpenGamesCarousel(pool: FeedRow[], nameByGame: Map<string, string>) 
   return { items, offset, dur };
 }
 
+/**
+ * Docs/COMMS/ADVISOR_TO_PM.md 2026-09-11#8 item B.2: the Owner-approved `$` skin (`CHARTER.md`
+ * #4) for registered users, applied to this carousel's three `RcIcon size={15}` numeral spots
+ * (OPEN GAMES stake, and the static RANK/RACE board's XP and PRIZE figures) — none of which T9
+ * (`GameHub.tsx`'s bet panel, issue #522) touched, since T9 only covered the bet-preset buttons.
+ * Same fix shape: bypass `<Credits>`/`RcIcon` with an inline `$`-formatted string for a registered
+ * viewer, unchanged (still the play-money RC-coin glyph) otherwise.
+ *
+ * T9 gated on a `isGuest` prop threaded through `GameHub.tsx`'s own `PlayPanel`. This component
+ * has no such prop, and doesn't need a new one: it already receives an equivalent "is this a
+ * registered viewer" signal via `loggedIn` (both real callers — `GameHub.tsx` and `HomeHub.tsx` —
+ * already pass it). The two concepts aren't the same thing (`GameHub.tsx`'s curated `isGuest`
+ * demo persona never even renders this component — it renders `GuestBotWaiters` instead per that
+ * file's own `isGuest ? <GuestBotWaiters/> : <GamesCarousel loggedIn={loggedIn}/>` branch), but
+ * `loggedIn` is the right registered-vs-not signal for a component that (unlike `GameHub.tsx`)
+ * also has a real, live logged-out audience (the public/anonymous poll, `useOpenChallengesPool`).
+ * This mirrors `HubRibbon.tsx`'s own `loggedIn`-gated wallet chip precedent (T2, issue #489/#530):
+ * `loggedIn` true → `$`; `loggedIn` false → no `$` at all (there, no balance; here, the play-money
+ * glyph), never the guest-mode `isGuest` branch, which this component structurally can't reach.
+ */
+function AmountFigure({ value, loggedIn, testId }: { value: string; loggedIn: boolean; testId?: string }) {
+  const numeralStyle = { fontFamily: "'Space Grotesk', Arial, Helvetica, sans-serif", fontSize: '16px', fontWeight: 700, color: '#34D399', whiteSpace: 'nowrap' as const };
+  if (loggedIn) {
+    return <span data-testid={testId} style={numeralStyle}>${value}</span>;
+  }
+  return (
+    <>
+      <RcIcon size={15} />
+      <span data-testid={testId} style={numeralStyle}>{value}</span>
+    </>
+  );
+}
+
 export interface GamesCarouselProps {
   /** Cross-game open challenges, keyed by gameId — every hub passes this same shape. */
   challengesByGame: Record<string, OpenChallenge[]>;
@@ -346,6 +420,8 @@ export interface GamesCarouselProps {
   /** Logged-out JOIN: captures the row's game+stake so the caller's auth wall can resume the
    *  take after sign-in. */
   onTakePublicChallenge?(c: { matchId: string; gameId: string; stake: number }): void;
+  /** Also doubles as the registered-vs-not signal for the `$`-skin numerals (`AmountFigure`
+   *  above, 2026-09-11#8 item B.2). */
   loggedIn: boolean;
   /** Grey out every row's JOIN while the viewer is already mid-commitment (issue #316) — a real
    *  guard, not decorative: `GameHub.tsx` passes `phase === 'in-match' || phase === 'waiting'` so a
@@ -564,10 +640,7 @@ export function GamesCarousel({ challengesByGame, nameByGame, balance, onTake, o
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', flex: '0 0 auto' }}>
                       <span style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '9px', fontWeight: 'bold', letterSpacing: '1.2px', color: '#FFFFFF' }}>STAKE:</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <RcIcon size={15} />
-                        <span data-testid={`games-carousel-stake-${g.uid}`} style={{ fontFamily: "'Space Grotesk', Arial, Helvetica, sans-serif", fontSize: '16px', fontWeight: 700, color: '#34D399' }}>
-                          {g.stake.toLocaleString('en-US')}
-                        </span>
+                        <AmountFigure value={g.stake.toLocaleString('en-US')} loggedIn={loggedIn} testId={`games-carousel-stake-${g.uid}`} />
                       </div>
                     </div>
                     <button
@@ -613,8 +686,7 @@ export function GamesCarousel({ challengesByGame, nameByGame, balance, onTake, o
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', flex: '0 0 auto' }}>
                       <span style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '9px', fontWeight: 'bold', letterSpacing: '1.2px', color: '#FFFFFF' }}>{b.label}</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <RcIcon size={15} />
-                        <span style={{ fontFamily: "'Space Grotesk', Arial, Helvetica, sans-serif", fontSize: '16px', fontWeight: 700, color: '#34D399' }}>{b.value}</span>
+                        <AmountFigure value={b.value} loggedIn={loggedIn} />
                       </div>
                     </div>
                   )}
@@ -622,8 +694,7 @@ export function GamesCarousel({ challengesByGame, nameByGame, balance, onTake, o
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', flex: '0 0 auto' }}>
                       <span style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '9px', fontWeight: 'bold', letterSpacing: '1.2px', color: '#FFFFFF' }}>PRIZE</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <RcIcon size={15} />
-                        <span style={{ fontFamily: "'Space Grotesk', Arial, Helvetica, sans-serif", fontSize: '16px', fontWeight: 700, color: '#34D399', whiteSpace: 'nowrap' }}>{b.pill}</span>
+                        <AmountFigure value={b.pill} loggedIn={loggedIn} />
                       </div>
                     </div>
                   )}

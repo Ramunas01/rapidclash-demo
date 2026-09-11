@@ -513,7 +513,8 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     );
     // The row shows the owner's stake so the tap is informed consent.
     const row = document.querySelector('[data-match-id="c1"]') as HTMLElement;
-    expect(within(row).getByTestId(/^games-carousel-stake-/).textContent).toBe('50');
+    // registered (default loggedIn: true) → the Owner-approved $ skin, 2026-09-11#8 item B.2
+    expect(within(row).getByTestId(/^games-carousel-stake-/).textContent).toBe('$50');
     fireEvent.click(within(row).getByTestId(/^games-carousel-join-/));
     expect(onTakeChallenge).toHaveBeenCalledWith('c1');
   });

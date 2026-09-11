@@ -92,8 +92,9 @@ describe('HomeHubScreen', () => {
     const m1Row = document.querySelector('[data-match-id="m1"]') as HTMLElement;
     expect(c1Row).toBeInTheDocument();
     expect(m1Row).toBeInTheDocument();
-    expect(within(c1Row).getByText('5')).toBeInTheDocument();
-    expect(within(m1Row).getByText('25')).toBeInTheDocument();
+    // registered (default loggedIn: true) → the Owner-approved $ skin, 2026-09-11#8 item B.2
+    expect(within(c1Row).getByText('$5')).toBeInTheDocument();
+    expect(within(m1Row).getByText('$25')).toBeInTheDocument();
     await waitFor(() => expect(within(m1Row).getByText('Mines')).toBeInTheDocument());
     expect(carousel.getByTestId('games-carousel-live').textContent).toContain('2 LIVE');
 
@@ -111,9 +112,18 @@ describe('HomeHubScreen', () => {
     expect(screen.getByTestId('games-carousel-notice').textContent).toMatch(/not enough/i);
   });
 
-  it('is sanitized: no $ leaks into the game body (the header wallet chip legitimately shows the Owner-approved $ skin — CHARTER.md #4, issue #484)', async () => {
+  it('2026-09-11#8 item B.2: registered users see the Owner-approved $ skin in the GamesCarousel too, not just the header wallet chip (CHARTER.md #4)', async () => {
     const challengesByGame = { coinflip: [challenge('c1', 'alice', 5, 100)] };
     const { container } = render(<HomeHubScreen {...baseProps({ challengesByGame })} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    const header = container.querySelector('header');
+    const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');
+    expect(bodyText).toMatch(/\$/);
+  });
+
+  it('2026-09-11#8 item B.2: logged-out visitors keep the play-money RcIcon display in the GamesCarousel — no $ leaks in for the public/unregistered audience', async () => {
+    const challengesByGame = { coinflip: [challenge('c1', 'alice', 5, 100)] };
+    const { container } = render(<HomeHubScreen {...baseProps({ challengesByGame, loggedIn: false, token: '' })} />);
     await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
     const header = container.querySelector('header');
     const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');

@@ -145,7 +145,8 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     const onTakeChallenge = vi.fn();
     render(<RpsHubScreen {...baseProps({ balance: 5, challengesByGame: { rps: [CHALLENGE] }, onTakeChallenge })} />);
     const row = document.querySelector('[data-match-id="c1"]') as HTMLElement;
-    expect(within(row).getByTestId(/^games-carousel-stake-/).textContent).toBe('50');
+    // registered (default loggedIn: true) → the Owner-approved $ skin, 2026-09-11#8 item B.2
+    expect(within(row).getByTestId(/^games-carousel-stake-/).textContent).toBe('$50');
     fireEvent.click(within(row).getByTestId(/^games-carousel-join-/));
     expect(onTakeChallenge).not.toHaveBeenCalled();
     expect(screen.getByTestId('games-carousel-notice').textContent).toMatch(/not enough/i);
