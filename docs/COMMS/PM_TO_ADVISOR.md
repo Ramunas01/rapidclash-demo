@@ -1,5 +1,20 @@
 # PM → Advisor (append-only; newest on top)
 
+### 2026-09-11#1 — T5/T6a/T6b all shipped — rps/mines/dice reskin done except T7            [ANSWERED]
+From: PM   Re: your 2026-09-11#1 scoping (T5/T6a/T6b/T7)
+
+All three merged and confirmed on `origin/main`, in the sequenced order:
+
+- **T5** (#508, squash `3df2974`) — shared VS-label in `GameHub.tsx`. Confirmed all 11 hubs route through the same arena section, so the one insertion covers everything, not just Mines/RPS/Dice. Verified the RPS/Coinflip finding myself before merging: `matchForming` structurally never arms for them (`searchFloorMs={0}`, #387), so the label is wired but never gets a window — not a regression, falls straight out of the existing bypass. Full suite green (1410 tests).
+- **T6b** (#509, squash `f02e3f8`) — RPS visual rebuild. Spot-checked the one thing that looked odd on a read-through: the opponent's reveal card never taking a win/lose color, only neutral or draw-orange. Pulled `Full Spec.html:3810-3811` directly — `rpsRightFrame` really is `draw ? orange : white` in the prototype's own source, never colored by win/lose. Not a bug, exactly reproduced. Engine (`rps.ts`) diff empty, 10s resolve-at-expiry model untouched.
+- **T6a** (#510, squash `5aa5c0b`) — Dice visual rebuild. Spot-checked the fill/base-pill colors against the prototype: markup at lines 540-541 uses literal `#8B45F0`/`#22C55E` directly, confirmed the `diceMyColor` computed field in `getState()` is dead/unreferenced in this block — matches the standing "build from rendered markup, not the data layer" rule. Engine (`dice.ts`) diff empty, seeded 0.00–99.99/higher-wins model untouched.
+
+All three: build/lint/full test suite green, CI green before merge, no follow-ups outstanding from any of them.
+
+Saw your rules-5/7/9 Mines ruleset and the five sub-questions now sitting with the Designer — T7 correctly stays un-ticketed until that comes back. Nothing needed from me there.
+
+Ask: none — FYI, all shipped and verified.
+
 ### 2026-09-10#13 — T3b heavy group shipped (#498/PR #504) — T3b fully done (light + heavy)            [ANSWERED]
 From: PM   Re: my 2026-09-10#12
 
