@@ -11,6 +11,8 @@ import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
 import { MenuOverlay } from '../components/hub-chrome/MenuOverlay.js';
 import { useMenuOverlay } from '../components/hub-chrome/useMenuOverlay.js';
+import { ChatSheet } from '../components/hub-chrome/ChatSheet.js';
+import { useChat } from '../components/hub-chrome/useChat.js';
 import { hubShellClass } from '../components/hub-chrome/layout.js';
 import { TILE_ART, COMING_SOON, titleCase } from '../components/hub-shared/tiles.js';
 import { GamesCarousel } from '../components/hub-shared/GamesCarousel.js';
@@ -293,6 +295,15 @@ export function GameHub(props: GameHubProps) {
   // Issue #414: the Menu overlay's own open/close/reveal-origin state — never opened for a guest
   // (its HubToolbar, the only way to reach it, is already hidden below via `!isGuest &&`).
   const menu = useMenuOverlay();
+  // Ticket 2026-09-11#7b: the chat sheet's own state — same guest gating as Menu above.
+  const chat = useChat();
+  function navTo(fn: () => void) {
+    return () => { chat.close(); menu.wrap(fn)(); };
+  }
+  function openChat() {
+    menu.close();
+    chat.openChat();
+  }
   useEffect(() => {
     // Wallet is auth-only (logged out shows the "Sign in" chip); a guest's balance lives in the
     // server's ephemeral ledger, never the real `/wallet` — the `balance` prop (updated from the
@@ -712,11 +723,12 @@ export function GameHub(props: GameHubProps) {
           surfaces a guest session doesn't have. Omitted for guest mode. */}
       {!isGuest && (
         <HubToolbar
-          onGames={menu.wrap(onOpenGameList)}
-          onAccount={menu.wrap(onOpenWallet)}
-          onRewards={menu.wrap(onOpenRewards)}
-          onMenu={menu.onMenu}
-          active={menu.open ? 'menu' : 'games'}
+          onGames={navTo(onOpenGameList)}
+          onAccount={navTo(onOpenWallet)}
+          onRewards={navTo(onOpenRewards)}
+          onMenu={(rect) => { chat.close(); menu.onMenu(rect); }}
+          onChat={openChat}
+          active={chat.open ? 'chat' : menu.open ? 'menu' : 'games'}
         />
       )}
       {!isGuest && (
@@ -727,6 +739,16 @@ export function GameHub(props: GameHubProps) {
           onOpenGames={onOpenGameList}
           onOpenRewards={onOpenRewards}
           onOpenAffiliate={onOpenAffiliate}
+        />
+      )}
+      {!isGuest && (
+        <ChatSheet
+          open={chat.open}
+          expanded={chat.expanded}
+          messages={chat.messages}
+          onClose={chat.close}
+          onToggleExpanded={chat.toggleExpanded}
+          onSend={chat.send}
         />
       )}
 

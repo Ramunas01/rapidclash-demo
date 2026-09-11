@@ -1,4 +1,4 @@
-import type { Envelope, Move, QueueJoinPayload, QueueLeavePayload, MoveMakePayload, MatchResumePayload, MatchStartPayload, MatchStatePayload, MatchYourTurnPayload, MatchEndPayload, QueueWaitingPayload, ErrorPayload, ChallengeSubscribePayload, ChallengeTakePayload, ChallengesListPayload, ChallengesUpdatePayload, ChallengeExpiredPayload } from '@rapidclash/shared';
+import type { Envelope, Move, QueueJoinPayload, QueueLeavePayload, MoveMakePayload, MatchResumePayload, MatchStartPayload, MatchStatePayload, MatchYourTurnPayload, MatchEndPayload, QueueWaitingPayload, ErrorPayload, ChallengeSubscribePayload, ChallengeTakePayload, ChallengesListPayload, ChallengesUpdatePayload, ChallengeExpiredPayload, ChatSendPayload, ChatMessagePayload, ChatHistoryPayload } from '@rapidclash/shared';
 import { UNTIMED_TIME_CONTROL } from '@rapidclash/shared';
 
 const WS_BASE = import.meta.env.VITE_WS_URL ?? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
@@ -68,10 +68,22 @@ export type WsMsgHandler = {
   onError?(payload: ErrorPayload): void;
 };
 
+/** Chat's own handler slot (ticket 2026-09-11#7b) — deliberately NOT folded into `WsMsgHandler`
+ *  above. `App.tsx` owns exactly one call to `setHandlers({...})` with every match/challenge
+ *  handler wired in one place; chat, by contrast, is opened lazily from deep inside whichever hub
+ *  screen is mounted (`useChat.ts`, called locally per-screen, same shape as `useMenuOverlay.ts`)
+ *  and must be able to register its own handlers on the ALREADY-CONNECTED client without
+ *  clobbering that one `setHandlers` call or requiring App.tsx to know chat exists. */
+export type ChatMsgHandler = {
+  onChatHistory?(payload: ChatHistoryPayload): void;
+  onChatMessage?(payload: ChatMessagePayload): void;
+};
+
 export class WsClient {
   private ws: WebSocket | null = null;
   private token: string;
   private handlers: WsMsgHandler;
+  private chatHandlers: ChatMsgHandler = {};
   private currentMatchId: string | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
@@ -88,10 +100,19 @@ export class WsClient {
     // Restore a match persisted across a full page reload so onopen auto-resumes
     // and onclose keeps reconnecting.
     this.currentMatchId = readStoredMatchId();
+    // Register as the one app-wide "active" client (see `getActiveWsClient` below) — always the
+    // most-recently-constructed instance, matching App.tsx's own `wsRef.current = ws` handoff on
+    // every (re)login/guest-auth/resume path.
+    setActiveClient(this);
   }
 
   setHandlers(handlers: WsMsgHandler): void {
     this.handlers = handlers;
+  }
+
+  /** Chat's own, independent handler slot — see the `ChatMsgHandler` doc comment above. */
+  setChatHandlers(handlers: ChatMsgHandler): void {
+    this.chatHandlers = handlers;
   }
 
   getStatus(): WsStatus {
@@ -188,6 +209,12 @@ export class WsClient {
       case 'error':
         this.handlers.onError?.(msg.payload as ErrorPayload);
         break;
+      case 'chat.history':
+        this.chatHandlers.onChatHistory?.(msg.payload as ChatHistoryPayload);
+        break;
+      case 'chat.message':
+        this.chatHandlers.onChatMessage?.(msg.payload as ChatMessagePayload);
+        break;
     }
   }
 
@@ -261,6 +288,19 @@ export class WsClient {
     return this.send('match.resume', { matchId } as MatchResumePayload);
   }
 
+  /** Subscribe to the (only, general) chat room — no payload needed. Triggers an immediate
+   *  `chat.history` reply, then adds this socket to the server's broadcast set. */
+  subscribeChat(): boolean {
+    return this.send('chat.subscribe', {});
+  }
+
+  /** Post one message to the chat room. Server-side validation (non-empty, ≤160 chars, kill
+   *  switch) is authoritative — this is just the wire send; callers validate client-side first
+   *  for UX (see `useChat.ts`). */
+  sendChat(text: string): boolean {
+    return this.send('chat.send', { text } as ChatSendPayload);
+  }
+
   disconnect(): void {
     this.closed = true;
     if (this.reconnectTimer !== null) {
@@ -270,5 +310,28 @@ export class WsClient {
     this.ws?.close();
     this.ws = null;
     this.setStatus('disconnected');
+    if (activeClient === this) setActiveClient(null);
   }
+}
+
+// ─── Active-client singleton (ticket 2026-09-11#7b) ──────────────────────────────
+// App.tsx is the sole owner of the app's one WsClient instance/WebSocket connection (constructed
+// on login/guest-auth/resume, held in a local `useRef`, never exposed via props or context to the
+// hub screens it renders). Chat's `useChat.ts` hook, however, is instantiated locally inside each
+// hub screen — same shape as `useMenuOverlay.ts` — and needs to reuse that ONE live connection
+// rather than opening a second WebSocket. Exposing the current instance as a module-level getter
+// (set from the constructor/cleared from `disconnect()` above) lets it do that without any
+// prop-threading or React context, mirroring how `api.ts` is already imported directly as a
+// singleton by every screen instead of being passed down as a prop.
+let activeClient: WsClient | null = null;
+
+function setActiveClient(client: WsClient | null): void {
+  activeClient = client;
+}
+
+/** The current app-wide `WsClient`, or `null` if nothing is connected yet (logged out, or a
+ *  fresh app load before login/guest-auth resolves). Always the most recently constructed
+ *  instance — see the constructor's own `setActiveClient(this)` above. */
+export function getActiveWsClient(): WsClient | null {
+  return activeClient;
 }

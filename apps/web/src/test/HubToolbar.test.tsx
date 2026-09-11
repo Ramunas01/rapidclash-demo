@@ -5,7 +5,7 @@ import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
 
 describe('HubToolbar — solid #0B0B0B base fill behind the bottom nav', () => {
   it('renders a full-viewport-width fill behind the nav, using the bg token (no hardcoded hex), below the pill', () => {
-    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} />);
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} />);
     const fill = screen.getByTestId('hub-nav-fill');
     const cls = fill.className;
 
@@ -29,7 +29,7 @@ describe('HubToolbar — solid #0B0B0B base fill behind the bottom nav', () => {
   });
 
   it('covers the home-indicator safe-area inset (reaches bottom:0 including the safe zone)', () => {
-    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} />);
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} />);
     const cls = screen.getByTestId('hub-nav-fill').className;
     expect(cls).toContain('bottom-0');
     expect(cls).toContain('env(safe-area-inset-bottom)'); // its height includes the safe area
@@ -39,7 +39,7 @@ describe('HubToolbar — solid #0B0B0B base fill behind the bottom nav', () => {
     const onGames = vi.fn();
     const onAccount = vi.fn();
     const onRewards = vi.fn();
-    render(<HubToolbar onGames={onGames} onAccount={onAccount} onRewards={onRewards} onMenu={vi.fn()} />);
+    render(<HubToolbar onGames={onGames} onAccount={onAccount} onRewards={onRewards} onMenu={vi.fn()} onChat={vi.fn()} />);
     expect(screen.getByTestId('hub-nav-fill').className).toContain('pointer-events-none');
     fireEvent.click(screen.getByTestId('hub-nav-games'));
     expect(onGames).toHaveBeenCalled();
@@ -49,22 +49,25 @@ describe('HubToolbar — solid #0B0B0B base fill behind the bottom nav', () => {
     expect(onRewards).toHaveBeenCalled();
   });
 
-  it('Chat is reserved — greyed / aria-disabled / not an actionable button', () => {
-    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} />);
+  it('Chat is live (ticket 2026-09-11#7b: flipped from coming-soon, same treatment issue #414 gave Menu)', () => {
+    const onChat = vi.fn();
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={onChat} />);
     const item = screen.getByTestId('hub-nav-chat');
-    // Reserved items render as a non-button div, visibly inactive & aria-disabled.
-    expect(item.tagName).toBe('DIV');
-    expect(item.getAttribute('aria-disabled')).toBe('true');
-    expect(item.className).toContain('opacity-40');
+    expect(item.tagName).toBe('BUTTON');
+    expect(item.getAttribute('aria-disabled')).toBeNull();
+    expect(item.className).not.toContain('opacity-40');
+    fireEvent.click(item);
+    expect(onChat).toHaveBeenCalledTimes(1);
   });
 
-  it('Games, Account, Rewards & Menu are all live buttons that fire their handlers (issue #414: Menu flipped from coming-soon)', () => {
+  it('Games, Account, Rewards, Menu & Chat are all live buttons that fire their handlers (issue #414: Menu flipped from coming-soon; ticket 2026-09-11#7b: Chat too)', () => {
     const onGames = vi.fn();
     const onAccount = vi.fn();
     const onRewards = vi.fn();
     const onMenu = vi.fn();
-    render(<HubToolbar onGames={onGames} onAccount={onAccount} onRewards={onRewards} onMenu={onMenu} />);
-    for (const label of ['games', 'account', 'rewards', 'menu']) {
+    const onChat = vi.fn();
+    render(<HubToolbar onGames={onGames} onAccount={onAccount} onRewards={onRewards} onMenu={onMenu} onChat={onChat} />);
+    for (const label of ['games', 'account', 'rewards', 'menu', 'chat']) {
       const item = screen.getByTestId(`hub-nav-${label}`);
       expect(item.tagName).toBe('BUTTON');
       expect(item.getAttribute('aria-disabled')).toBeNull();
@@ -75,6 +78,8 @@ describe('HubToolbar — solid #0B0B0B base fill behind the bottom nav', () => {
     expect(onAccount).toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('hub-nav-rewards'));
     expect(onRewards).toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('hub-nav-chat'));
+    expect(onChat).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByTestId('hub-nav-menu'));
     expect(onMenu).toHaveBeenCalledTimes(1);
     // Called with the tapped button's own live rect (jsdom returns all-zero rects, but the
@@ -84,8 +89,16 @@ describe('HubToolbar — solid #0B0B0B base fill behind the bottom nav', () => {
     );
   });
 
+  it('active="chat" highlights the Chat item (aria-current + brand colour), matching Games/Account/Rewards/Menu', () => {
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} active="chat" />);
+    const chat = screen.getByTestId('hub-nav-chat');
+    expect(chat.getAttribute('aria-current')).toBe('page');
+    expect(chat.className).toContain('text-brand');
+    expect(screen.getByTestId('hub-nav-games').getAttribute('aria-current')).toBeNull();
+  });
+
   it('active="menu" highlights the Menu item (aria-current + brand colour), matching Games/Account/Rewards', () => {
-    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} active="menu" />);
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} active="menu" />);
     const menu = screen.getByTestId('hub-nav-menu');
     expect(menu.getAttribute('aria-current')).toBe('page');
     expect(menu.className).toContain('text-brand');
@@ -93,7 +106,7 @@ describe('HubToolbar — solid #0B0B0B base fill behind the bottom nav', () => {
   });
 
   it('active="rewards" highlights the Rewards item (aria-current + brand colour), matching Games/Account', () => {
-    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} active="rewards" />);
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} active="rewards" />);
     const rewards = screen.getByTestId('hub-nav-rewards');
     expect(rewards.getAttribute('aria-current')).toBe('page');
     expect(rewards.className).toContain('text-brand');
@@ -104,7 +117,7 @@ describe('HubToolbar — solid #0B0B0B base fill behind the bottom nav', () => {
 
 describe('HubToolbar — scroll-fade layer + label size (issue #407, navbar polish Part B)', () => {
   it('renders a gradient scroll-fade above the solid fill, using the bg token (no hardcoded hex)', () => {
-    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} />);
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} />);
     const fade = screen.getByTestId('hub-nav-fade');
     const cls = fade.className;
 
@@ -134,14 +147,14 @@ describe('HubToolbar — scroll-fade layer + label size (issue #407, navbar poli
 
   it('the fade does not block taps on the pill buttons', () => {
     const onGames = vi.fn();
-    render(<HubToolbar onGames={onGames} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} />);
+    render(<HubToolbar onGames={onGames} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} />);
     expect(screen.getByTestId('hub-nav-fade').className).toContain('pointer-events-none');
     fireEvent.click(screen.getByTestId('hub-nav-games'));
     expect(onGames).toHaveBeenCalled();
   });
 
   it('item labels render at 12px (bumped from the old 10.5px)', () => {
-    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} />);
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} />);
     for (const label of ['menu', 'games', 'account', 'rewards', 'chat']) {
       const span = screen.getByTestId(`hub-nav-${label}`).querySelector('span');
       expect(span?.className).toContain('text-[12px]');
@@ -149,12 +162,13 @@ describe('HubToolbar — scroll-fade layer + label size (issue #407, navbar poli
     }
   });
 
-  it('regression guard: Chat stays inert/aria-disabled, Menu is live but inactive, and Games active styling is unchanged', () => {
-    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} active="games" />);
+  it('regression guard: Chat is live but inactive (ticket 2026-09-11#7b), Menu is live but inactive, and Games active styling is unchanged', () => {
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} active="games" />);
     const chat = screen.getByTestId('hub-nav-chat');
-    expect(chat.tagName).toBe('DIV');
-    expect(chat.getAttribute('aria-disabled')).toBe('true');
-    expect(chat.className).toContain('opacity-40');
+    expect(chat.tagName).toBe('BUTTON');
+    expect(chat.getAttribute('aria-disabled')).toBeNull();
+    expect(chat.getAttribute('aria-current')).toBeNull();
+    expect(chat.className).not.toContain('text-brand');
 
     const menu = screen.getByTestId('hub-nav-menu');
     expect(menu.tagName).toBe('BUTTON');
@@ -175,7 +189,7 @@ describe('HubToolbar — backdrop z-index bump to z-20 (issue #446)', () => {
   // anything observable about them: same elements, same order, same tap-through behavior. This
   // reproduces exactly what those screens render (plain HubToolbar, standalone) to prove that.
   it('both backdrop layers are z-20 (matching the pill), with no z-[15] left anywhere', () => {
-    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} />);
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} />);
     expect(screen.getByTestId('hub-nav-fade').className).toContain('z-20');
     expect(screen.getByTestId('hub-nav-fill').className).toContain('z-20');
     expect(screen.getByTestId('hub-nav-fade').className).not.toContain('z-[15]');
@@ -187,7 +201,7 @@ describe('HubToolbar — backdrop z-index bump to z-20 (issue #446)', () => {
     const onAccount = vi.fn();
     const onRewards = vi.fn();
     const { container } = render(
-      <HubToolbar onGames={onGames} onAccount={onAccount} onRewards={onRewards} onMenu={vi.fn()} />,
+      <HubToolbar onGames={onGames} onAccount={onAccount} onRewards={onRewards} onMenu={vi.fn()} onChat={vi.fn()} />,
     );
     // Same tier (z-20) as the pill on all three siblings — order among equal-z-index siblings
     // falls back to document order, so the pill (rendered last) still paints on top, same as
@@ -214,7 +228,7 @@ describe('HubToolbar — backdrop z-index bump to z-20 (issue #446)', () => {
 
 describe('HubToolbar — icon geometry & sizing (issue #328, matching design-ref/navbar/RapidClash Navbar.html)', () => {
   it('all 5 icons render at 24x24 (h-6 w-6, up from the old 23px)', () => {
-    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} />);
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} />);
     for (const label of ['menu', 'games', 'account', 'rewards', 'chat']) {
       const svg = screen.getByTestId(`hub-nav-${label}`).querySelector('svg');
       expect(svg?.getAttribute('class')).toContain('h-6');
@@ -225,7 +239,7 @@ describe('HubToolbar — icon geometry & sizing (issue #328, matching design-ref
   });
 
   it('the bar pill uses 12px vertical padding (py-3), horizontal (px-1.5) unchanged', () => {
-    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} />);
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} />);
     const pill = screen.getByTestId('hub-nav-games').parentElement;
     expect(pill?.className).toContain('py-3');
     expect(pill?.className).not.toContain('py-2.5');
@@ -233,7 +247,7 @@ describe('HubToolbar — icon geometry & sizing (issue #328, matching design-ref
   });
 
   it('Menu uses the refined 3-bar geometry (x=3.5, width=17, rx=1.55)', () => {
-    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} />);
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} />);
     const rects = screen.getByTestId('hub-nav-menu').querySelectorAll('rect');
     expect(rects).toHaveLength(3);
     const ys = Array.from(rects).map((r) => r.getAttribute('y'));
@@ -247,7 +261,7 @@ describe('HubToolbar — icon geometry & sizing (issue #328, matching design-ref
   });
 
   it('Games is the bolt mark with its own non-standard viewBox, not the old spade in 0 0 24 24', () => {
-    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} />);
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} />);
     const svg = screen.getByTestId('hub-nav-games').querySelector('svg');
     expect(svg?.getAttribute('viewBox')).toBe('0 0 351 374');
     const path = svg?.querySelector('path');
@@ -255,14 +269,14 @@ describe('HubToolbar — icon geometry & sizing (issue #328, matching design-ref
   });
 
   it('Account uses the refined silhouette (cy=7.5, tightened shoulders path)', () => {
-    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} />);
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} />);
     const svg = screen.getByTestId('hub-nav-account').querySelector('svg');
     expect(svg?.querySelector('circle')?.getAttribute('cy')).toBe('7.5');
     expect(svg?.querySelector('path')?.getAttribute('d')).toBe('M4.5 21c0-4.1 3.4-7 7.5-7s7.5 2.9 7.5 7z');
   });
 
   it('Rewards is a two-part bow+box composition — a rotated <g> bow plus a separate unrotated box path', () => {
-    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} />);
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} />);
     const svg = screen.getByTestId('hub-nav-rewards').querySelector('svg');
     const g = svg?.querySelector('g');
     expect(g?.getAttribute('transform')).toBe('rotate(-9 12 8)');
@@ -273,7 +287,7 @@ describe('HubToolbar — icon geometry & sizing (issue #328, matching design-ref
   });
 
   it('Chat uses the refined speech-bubble bounds (corner radius 2.4)', () => {
-    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} />);
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} />);
     const svg = screen.getByTestId('hub-nav-chat').querySelector('svg');
     expect(svg?.querySelector('path')?.getAttribute('d')).toBe(
       'M5.4 4h13.2A2.4 2.4 0 0 1 21 6.4v7.8a2.4 2.4 0 0 1-2.4 2.4H9.8L5.2 20.4A.7.7 0 0 1 4 19.8V6.4A2.4 2.4 0 0 1 5.4 4z',
@@ -283,7 +297,7 @@ describe('HubToolbar — icon geometry & sizing (issue #328, matching design-ref
 
 describe('HubToolbar — T2 rebuild (issue #484): prototype pill styling + light-theme tokens', () => {
   it('the pill carries the prototype box-shadow (line ~2724: 0 -6px 18px rgba(0,0,0,.45), 0 -1px 0 rgba(255,255,255,.06))', () => {
-    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} />);
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} />);
     const pill = screen.getByTestId('hub-nav-games').parentElement;
     expect(pill?.className).toContain('shadow-[0_-6px_18px_rgba(0,0,0,0.45),0_-1px_0_rgba(255,255,255,0.06)]');
     // bg-surface maps straight to var(--rc-surface) (tailwind.config.js) — theme-aware already,
@@ -292,15 +306,15 @@ describe('HubToolbar — T2 rebuild (issue #484): prototype pill styling + light
   });
 
   it('item labels use the prototype letter-spacing (0.6px), not an approximate em value', () => {
-    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} />);
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} />);
     for (const label of ['menu', 'games', 'account', 'rewards', 'chat']) {
       const span = screen.getByTestId(`hub-nav-${label}`).querySelector('span');
       expect(span?.className).toContain('tracking-[0.6px]');
     }
   });
 
-  it('inactive items and the reserved Chat item use the --rc-muted token, not the theme-unaware muted-foreground shadcn token', () => {
-    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} active="games" />);
+  it('inactive items (incl. inactive Chat, now live) use the --rc-muted token, not the theme-unaware muted-foreground shadcn token', () => {
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} active="games" />);
     expect(screen.getByTestId('hub-nav-account').className).toContain('text-[var(--rc-muted)]');
     expect(screen.getByTestId('hub-nav-chat').className).toContain('text-[var(--rc-muted)]');
     expect(screen.getByTestId('hub-nav-account').className).not.toContain('text-muted-foreground');
@@ -308,7 +322,7 @@ describe('HubToolbar — T2 rebuild (issue #484): prototype pill styling + light
   });
 
   it('the backdrop fade/fill layers use --rc-bg, not the theme-unaware background/hsl tokens', () => {
-    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} />);
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} />);
     expect(screen.getByTestId('hub-nav-fade').className).not.toContain('hsl(var(--background))');
     expect(screen.getByTestId('hub-nav-fill').className).not.toContain('bg-background');
   });

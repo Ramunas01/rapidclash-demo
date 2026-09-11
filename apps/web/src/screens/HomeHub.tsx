@@ -6,6 +6,8 @@ import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
 import { MenuOverlay } from '../components/hub-chrome/MenuOverlay.js';
 import { useMenuOverlay } from '../components/hub-chrome/useMenuOverlay.js';
+import { ChatSheet } from '../components/hub-chrome/ChatSheet.js';
+import { useChat } from '../components/hub-chrome/useChat.js';
 import { HUB_SHELL } from '../components/hub-chrome/layout.js';
 import { TILE_ART, COMING_SOON, titleCase } from '../components/hub-shared/tiles.js';
 import { GamesCarousel } from '../components/hub-shared/GamesCarousel.js';
@@ -78,6 +80,17 @@ export function HomeHubScreen({
   const [popularity, setPopularity] = useState<Record<string, number>>({});
   // Issue #414: the Menu overlay's own open/close/reveal-origin state.
   const menu = useMenuOverlay();
+  // Ticket 2026-09-11#7b: the chat sheet's own subscribe/open/close/message-list state.
+  const chat = useChat();
+  // Menu and Chat are mutually exclusive overlays, same as every other pair of nav items —
+  // tapping one closes the other. `navTo` wraps every OTHER nav callback so it closes both.
+  function navTo(fn: () => void) {
+    return () => { chat.close(); menu.wrap(fn)(); };
+  }
+  function openChat() {
+    menu.close();
+    chat.openChat();
+  }
   useEffect(() => { setLiveBalance(balance); }, [balance]);
   useEffect(() => {
     let alive = true;
@@ -241,11 +254,12 @@ export function HomeHubScreen({
       </main>
 
       <HubToolbar
-        onGames={menu.wrap(onHome)}
-        onAccount={menu.wrap(onOpenWallet)}
-        onRewards={menu.wrap(onOpenRewards)}
-        onMenu={menu.onMenu}
-        active={menu.open ? 'menu' : 'games'}
+        onGames={navTo(onHome)}
+        onAccount={navTo(onOpenWallet)}
+        onRewards={navTo(onOpenRewards)}
+        onMenu={(rect) => { chat.close(); menu.onMenu(rect); }}
+        onChat={openChat}
+        active={chat.open ? 'chat' : menu.open ? 'menu' : 'games'}
       />
       <MenuOverlay
         open={menu.open}
@@ -259,6 +273,14 @@ export function HomeHubScreen({
         // view pre-filtered to the tapped category. Menu is rendered by HomeHub itself, so this
         // is a direct, local state update: no round-trip through App-level routing needed.
         onOpenGamesCategory={setCat}
+      />
+      <ChatSheet
+        open={chat.open}
+        expanded={chat.expanded}
+        messages={chat.messages}
+        onClose={chat.close}
+        onToggleExpanded={chat.toggleExpanded}
+        onSend={chat.send}
       />
     </div>
   );
