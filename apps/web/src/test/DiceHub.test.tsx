@@ -115,4 +115,40 @@ describe('DiceHubScreen', () => {
       vi.useRealTimers();
     }
   });
+
+  // Ticket 2026-09-11#10 item 1: Dice (unlike RPS's flat ±123px) live-measures the real bar
+  // positions via `getBoundingClientRect()` at the moment the slide first arms, reproducing the
+  // prototype's own `startDice()` (`Full Spec.html:3396-3403`) exactly — never a hardcoded number.
+  it('ticket 2026-09-11#10 item 1: measures the real bar positions live and slides the bars toward center while matchForming holds, then back to 0 once in-match', async () => {
+    vi.useFakeTimers();
+    const rect = (top: number, height: number): DOMRect =>
+      ({ top, height, bottom: top + height, left: 0, right: 0, width: 0, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.hasAttribute('data-rc-gamewrap')) return rect(0, 0);
+      if (this.hasAttribute('data-rc-oppbar')) return rect(80, 48);
+      if (this.hasAttribute('data-rc-playerbar')) return rect(260, 48);
+      return rect(0, 0);
+    });
+    try {
+      const { rerender } = render(<DiceHubScreen {...baseProps({ initialStake: 10 })} />);
+      expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(0px)');
+      expect(screen.getByTestId('hub-slot-own').style.transform).toBe('translateY(0px)');
+
+      fireEvent.click(screen.getByTestId('hub-play'));
+      rerender(<DiceHubScreen {...baseProps({ initialStake: 10, currentMatchId: 'm1', gameState: preRoll(), legalMoves: ['reveal'] })} />);
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      // oTop=80, pTop=260, pr.height=48 → mid=(80+260+48)/2=194 (Full Spec.html:3403's own formula)
+      // → o = mid-71-oTop = 194-71-80 = 43, p = mid+23-pTop = 194+23-260 = -43.
+      expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(43px)');
+      expect(screen.getByTestId('hub-slot-own').style.transform).toBe('translateY(-43px)');
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(1450); });
+      expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(0px)');
+      expect(screen.getByTestId('hub-slot-own').style.transform).toBe('translateY(0px)');
+    } finally {
+      rectSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
 });

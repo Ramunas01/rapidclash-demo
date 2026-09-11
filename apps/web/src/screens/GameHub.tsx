@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { Trophy, X } from 'lucide-react';
@@ -279,6 +279,23 @@ interface GameHubProps extends GameHubScreenProps {
    *  input. Every other hub game omits this (undefined → the existing 2400ms default), so their dwell
    *  is byte-identical to before this prop existed. */
   searchFloorMs?: number;
+  /** Ticket 2026-09-11#10 item 1 (ADVISOR_TO_PM.md): opts a hub into the shared "bar slide toward
+   *  the VS label, hold, slide back" motion that runs alongside `matchForming` above — confirmed
+   *  shared across RPS/Mines/Dice in the prototype (`Full Spec.html:3517-3530`'s `rpsMatching =
+   *  (view==='rps'||view==='mines'||view==='dice') && (rpsMatch==='searching'||rpsMatch==='found')`,
+   *  which drives BOTH the VS-label opacity T5 already ported AND `rpsOppBarY`/`rpsPlayerBarY`
+   *  (`:3753-3754`), which T5 missed entirely). Undefined (the default) → every hub except
+   *  RpsHub/MinesHub/DiceHub never renders the data attributes or inline transform below, so this
+   *  is a byte-identical no-op for the other 9 games.
+   *  - A plain `number` (RPS passes `123`, `Full Spec.html:3754`'s `!gameV` fallback — the
+   *    prototype's own `startRps()` never measures the DOM at all, so this flat magnitude is
+   *    faithful, not a shortcut) → the opponent bar shifts down by that many px, the player bar up
+   *    by the same magnitude.
+   *  - `'measured'` (Mines/Dice pass this) → the real magnitude is measured live via
+   *    `getBoundingClientRect()` on `[data-rc-gamewrap]`/`[data-rc-oppbar]`/`[data-rc-playerbar]` at
+   *    the moment the slide first arms, reproducing `startDice()`/`startMines()`'s own measurement
+   *    (`:3396-3403`/`:3341-3348`) — never a hardcoded ±123px, per the ticket's explicit warning. */
+  matchBarSlide?: number | 'measured';
   /** T4 (issue #489, interim until a real light design lands): pins everything this hub renders
    *  EXCEPT `HubRibbon` — the shared main body, bottom nav, menu overlay, and result overlay — to
    *  `.dark`'s token values regardless of the app-wide theme. See the doc comment above where this
@@ -309,7 +326,7 @@ function useNow(active: boolean): number {
  */
 export function GameHub(props: GameHubProps) {
   const {
-    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar, searchFloorMs = 2400, pinDark = false,
+    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar, searchFloorMs = 2400, matchBarSlide, pinDark = false,
     token, playerId, username, avatarId = 'default', opponentId, opponentName, serverClockOffset = 0, balance, currentMatchId, gameState, events,
     legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
@@ -557,6 +574,54 @@ export function GameHub(props: GameHubProps) {
   const searchNow = useNow(searching);
   const waitingRemaining = waitingExpiresAt != null ? waitingExpiresAt - searchNow : 0;
 
+  // ── Matching bar-slide-to-center-and-back (ticket 2026-09-11#10 item 1) ──────
+  // The prototype's `rpsMatching` flag (`Full Spec.html:3517-3530`) is true across BOTH its
+  // `searching` and `found` sub-states and false again once the phase moves into `split`/active
+  // play — exactly this hub's own `searching` OR `matchForming` (both already gated `!lobbyExpired`,
+  // both collapse to `phase === 'waiting'`, and `matchForming`→false lands on the exact same beat
+  // `phase` flips to `in-match`, matching the prototype's `found`→`split` transition point). Reuse
+  // them rather than invent a third flag.
+  const barSlideActive = matchForming || searching;
+  const barSlideEnabled = matchBarSlide != null;
+
+  // 'measured' mode (Mines/Dice): live-measure the real bar positions the moment the slide first
+  // arms, reproducing `startDice()`/`startMines()` (`Full Spec.html:3396-3403`/`:3341-3348`) exactly
+  // — read `[data-rc-gamewrap]`/`[data-rc-oppbar]`/`[data-rc-playerbar]` via `getBoundingClientRect`,
+  // take the vertical midpoint between the two bars, then derive each bar's own shift toward it.
+  // The `71`/`23` px offsets are the prototype's own literal constants; `{o:123,p:-123}` (used
+  // before the first measurement lands, or if either element isn't found) is the prototype's own
+  // fallback for `mShift` (`:3520`) — not coincidentally the same magnitude as RPS's flat number
+  // below, since that IS the prototype's designated "no live measurement yet" value.
+  const gameWrapRef = useRef<HTMLDivElement | null>(null);
+  const [measuredShift, setMeasuredShift] = useState<{ o: number; p: number } | null>(null);
+  const wasBarSlideActive = useRef(false);
+  useLayoutEffect(() => {
+    if (matchBarSlide === 'measured' && barSlideActive && !wasBarSlideActive.current) {
+      const wrap = gameWrapRef.current;
+      const ob = wrap?.querySelector<HTMLElement>('[data-rc-oppbar]');
+      const pb = wrap?.querySelector<HTMLElement>('[data-rc-playerbar]');
+      if (wrap && ob && pb) {
+        const wr = wrap.getBoundingClientRect();
+        const or_ = ob.getBoundingClientRect();
+        const pr = pb.getBoundingClientRect();
+        const oTop = or_.top - wr.top;
+        const pTop = pr.top - wr.top;
+        const mid = (oTop + pTop + pr.height) / 2;
+        setMeasuredShift({ o: mid - 71 - oTop, p: mid + 23 - pTop });
+      }
+    }
+    wasBarSlideActive.current = barSlideActive;
+  }, [barSlideActive, matchBarSlide]);
+
+  // Flat mode (RPS): the prototype's own `startRps()` never measures the DOM at all — only
+  // `startDice()`/`startMines()` do — so a plain hardcoded magnitude here mirrors that exact
+  // asymmetry (`Full Spec.html:3754`'s `!gameV` branch: `123px`/`-123px`) rather than inventing one.
+  const barShift = !barSlideEnabled ? null
+    : matchBarSlide === 'measured' ? (measuredShift ?? { o: 123, p: -123 })
+    : { o: matchBarSlide, p: -matchBarSlide };
+  const oppBarShiftY = barSlideEnabled ? (barSlideActive && barShift ? barShift.o : 0) : undefined;
+  const ownBarShiftY = barSlideEnabled ? (barSlideActive && barShift ? barShift.p : 0) : undefined;
+
   // ── Draw→rematch beat (#161) — shared across every tie-replay game ───────────
   // The universal tie rule already re-deals a fresh round in the SAME escrow server-side (the module
   // bumps `replays`/`round` and returns a NON-terminal state; it settles once when decisive, and at
@@ -621,7 +686,13 @@ export function GameHub(props: GameHubProps) {
           {/* 1 — Arena: opponent slot pill, the per-game board, the player's own slot pill.
               No grey card frame here — each panel owns its surface (Blackjack's greyish table
               fills the section; the other arenas wrap themselves in a card). */}
-          <section data-testid="hub-section-game" aria-label={gameName} className="relative flex flex-col gap-3 px-4">
+          <section
+            data-testid="hub-section-game"
+            aria-label={gameName}
+            className="relative flex flex-col gap-3 px-4"
+            ref={gameWrapRef}
+            data-rc-gamewrap={barSlideEnabled ? '1' : undefined}
+          >
             {/* T5: the shared "VS" match-found beat (Full Spec.html:430-433's `matchVsLabel` /
                 `rpsMatchVsOp` / `rpsMatchVsScale` / `matchVsColor`) — the reveal between "Searching…"
                 and the frozen pre-match state, the instant a match is assigned but play hasn't
@@ -654,7 +725,7 @@ export function GameHub(props: GameHubProps) {
                 VS
               </span>
             </div>
-            <OpponentSlot phase={phase} opponentName={opponentName} scanNames={scanNames} aside={renderSlotAside?.(areaArgs, 'opponent')} drawBeat={barDrawBeat} />
+            <OpponentSlot phase={phase} opponentName={opponentName} scanNames={scanNames} aside={renderSlotAside?.(areaArgs, 'opponent')} drawBeat={barDrawBeat} barShiftY={oppBarShiftY} />
             {renderGameArea(areaArgs)}
             <OwnSlot
               label={loggedIn ? (username || 'You') : 'Sign in'}
@@ -664,6 +735,7 @@ export function GameHub(props: GameHubProps) {
               aside={renderSlotAside?.(areaArgs, 'own')}
               barVerdict={ownBarVerdict}
               drawBeat={barDrawBeat}
+              barShiftY={ownBarShiftY}
             />
           </section>
 
@@ -836,18 +908,23 @@ function useNameScan(active: boolean, names: string[]): string | null {
  *  "Searching…" beat with a decorative online-name scan; In-match/Result → the REAL opponent's
  *  name in bright white (or a neutral "Opponent" when the joiner's name never reached the client).
  *  Never an opponentId, never a fabricated/cycled name (Charter #2 + DEMO_PRESENTATION honesty). */
-function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat }: { phase: Phase; opponentName?: string | null; scanNames: string[]; aside?: ReactNode; drawBeat?: boolean }) {
+function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShiftY }: { phase: Phase; opponentName?: string | null; scanNames: string[]; aside?: ReactNode; drawBeat?: boolean; barShiftY?: number }) {
   const searching = phase === 'waiting';
   const inMatch = phase === 'in-match' || phase === 'result';
   const scan = useNameScan(searching, scanNames);
   return (
     <div
       data-testid="hub-slot-opponent"
+      // Ticket 2026-09-11#10 item 1: `data-rc-oppbar` + the translateY below are only ever present
+      // for hubs that opt into `matchBarSlide` (RpsHub/MinesHub/DiceHub) — `barShiftY` is undefined
+      // for every other hub, so neither the attribute nor the inline style render there at all.
+      data-rc-oppbar={barShiftY != null ? '1' : undefined}
       className={cn(
         'flex items-center gap-2.5 rounded-full bg-surface px-3.5 py-2.5 transition-all duration-300',
         // Shared draw→rematch beat (#161): both bars flash the orange push outline for ~2 s.
         drawBeat && outlineClasses('draw'),
       )}
+      style={barShiftY != null ? { transform: `translateY(${barShiftY}px)`, transition: 'transform 620ms cubic-bezier(0.3,0.9,0.32,1)' } : undefined}
     >
       {/* NEUTRAL avatar — the in-match opponent stays redacted: never their name/avatar (Charter #2). */}
       <Avatar avatarId="default" />
@@ -879,13 +956,17 @@ function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat }: { pha
  *  plays the SHARED win animation (`useWinReveal`): a green fill + "You Win" kept ALONGSIDE the
  *  username (never swapped out), the green a background layer — 0.5 s fill-in → 2 s hold → 0.5 s
  *  fade-out → the persistent green outline. Loss/draw are outline-only (no fill/text). */
-function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdict, drawBeat }: { label: string; username?: string | null; avatarId?: AvatarId; isOwn: boolean; aside?: ReactNode; barVerdict?: Verdict | null; drawBeat?: boolean }) {
+function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdict, drawBeat, barShiftY }: { label: string; username?: string | null; avatarId?: AvatarId; isOwn: boolean; aside?: ReactNode; barVerdict?: Verdict | null; drawBeat?: boolean; barShiftY?: number }) {
   const win = barVerdict === 'win';
   const { contentVisible, fillShown, settled } = useWinReveal(win);
 
   return (
     <div
       data-testid="hub-slot-own"
+      // Ticket 2026-09-11#10 item 1: see OpponentSlot's matching comment above — `data-rc-playerbar`
+      // + the inline transform are opt-in via `barShiftY`, undefined (byte-identical no-op) for
+      // every hub that doesn't pass `matchBarSlide`.
+      data-rc-playerbar={barShiftY != null ? '1' : undefined}
       className={cn(
         'relative flex items-center gap-2.5 rounded-full bg-surface px-3.5 py-2.5 transition-all duration-300',
         // All three settle to the shared ring; the win ring only lands once the fill has run.
@@ -895,6 +976,7 @@ function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdi
         // In-match draw→rematch beat (#161): the same orange push outline as the opponent bar.
         drawBeat && outlineClasses('draw'),
       )}
+      style={barShiftY != null ? { transform: `translateY(${barShiftY}px)`, transition: 'transform 620ms cubic-bezier(0.3,0.9,0.32,1)' } : undefined}
     >
       {/* Green celebration fill — a background LAYER behind the content (never replaces the username).
           Fades in over 0.5 s, holds 2 s, fades out over 0.5 s (same duration both ways), then unmounts. */}

@@ -302,6 +302,11 @@ describe('RpsHubScreen — search dwell floor restored (2026-09-11#9)', () => {
       // T5: `matchForming` (phase 'waiting' with a currentMatchId already assigned) is exactly the
       // window the restored floor now holds open — the shared VS label arms for RPS again.
       expect(screen.getByTestId('hub-match-vs').style.opacity).toBe('1');
+      // Ticket 2026-09-11#10 item 1: the same `matchForming` window now also slides the bars toward
+      // the VS label — RPS uses the prototype's own flat fallback magnitude (`Full Spec.html:3754`'s
+      // `!gameV` branch), opponent bar +123px, player bar -123px.
+      expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(123px)');
+      expect(screen.getByTestId('hub-slot-own').style.transform).toBe('translateY(-123px)');
 
       // Advance past the restored ~3.8s floor — the hold clears and the throw buttons render.
       act(() => { vi.advanceTimersByTime(3800); });
@@ -310,6 +315,22 @@ describe('RpsHubScreen — search dwell floor restored (2026-09-11#9)', () => {
       expect(screen.getByTestId('hub-move-paper')).toBeInTheDocument();
       expect(screen.getByTestId('hub-move-scissors')).toBeInTheDocument();
       expect(screen.getByTestId('hub-match-vs').style.opacity).toBe('0');
+      // Slides back to 0 the same beat `in-match` takes over (prototype's `found`→`split` beat).
+      expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(0px)');
+      expect(screen.getByTestId('hub-slot-own').style.transform).toBe('translateY(0px)');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('ticket 2026-09-11#10 item 1: the bar-slide also arms during pure searching (no match yet), matching the prototype\'s rpsMatching flag covering BOTH its searching and found sub-states', () => {
+    vi.useFakeTimers();
+    try {
+      render(<RpsHubScreen {...baseProps({ initialStake: 10, waitingExpiresAt: Date.now() + 10_000 })} />);
+      // No currentMatchId at all — this is the prototype's `rpsMatch === 'searching'` sub-state, not
+      // `found`, yet `rpsMatching` (Full Spec.html:3517-3530) is true for both, so the slide is armed.
+      expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(123px)');
+      expect(screen.getByTestId('hub-slot-own').style.transform).toBe('translateY(-123px)');
     } finally {
       vi.useRealTimers();
     }

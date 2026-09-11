@@ -492,6 +492,10 @@ export function RpsHubScreen(props: GameHubScreenProps) {
       // visible time), only the player's own reaction window within it. Do not "fix" this back to 0
       // without Owner sign-off; see the mailbox entry for the full rationale.
       searchFloorMs={3800}
+      // Ticket 2026-09-11#10 item 1: the flat-magnitude fallback the prototype's own `startRps()`
+      // uses (it never measures the DOM, unlike `startMines()`/`startDice()`) — `Full Spec.html:3754`
+      // (`!gameV` branch), `123`/`-123` for the opponent/player bar.
+      matchBarSlide={123}
       {...props}
     />
   );
