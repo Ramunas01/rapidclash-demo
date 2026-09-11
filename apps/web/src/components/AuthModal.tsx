@@ -73,7 +73,26 @@ export function AuthModal({ onSuccess, onGuestSuccess, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm"
+      // z-10, BELOW HubToolbar's persistent nav (z-20, hub-chrome/HubToolbar.tsx) and HubRibbon's
+      // header (z-20) — issue #497. This used to be z-40 (above both), which let this backdrop's
+      // `bg-black/70 backdrop-blur-sm` paint over the fixed bottom nav whenever the auth sheet was
+      // open. The prototype's own auth-sheet scrim (`RapidClash Full Spec.html` ~line 2452,
+      // `z-index:7`) is the SAME z-index as its nav bar (~line 2724, also `z-index:7`) but is
+      // declared EARLIER in the markup, so same-z DOM order puts the nav on top, undimmed — the
+      // persistent tab bar stays legible/tappable while the login sheet is up. The design-fidelity
+      // harness's `account-login-sheet.nav` diff (`tools/design-fidelity/`) caught the app
+      // diverging from that: with this backdrop above the nav, the nav pill was rendering
+      // dimmed+blurred behind it, which barely shows in dark theme (dark-on-near-black is a tiny
+      // delta) but reads as a severe mismatch in light theme (light-on-near-black is a huge delta)
+      // — a pixel-identical HubToolbar in both themes (verified directly: capturing the nav with no
+      // modal open gives matching layouts in both themes) was being misread as a light-only
+      // "vertical rhythm"/doubling bug in the diff image, when the actual cause was this stacking
+      // order, not HubToolbar's own layout or any `--rc-*` token. Dropping below the nav/header
+      // (rather than raising the nav above every current z-40+ overlay, which would also — wrongly
+      // — uncover it from sheets that SHOULD stay on top, like HomeHub's sort sheet) matches the
+      // prototype's specific choice for just this sheet without touching any other overlay's stack
+      // position.
+      className="fixed inset-0 z-10 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-label="Sign in"
