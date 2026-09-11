@@ -37,7 +37,7 @@ describe('theme tokens (issue #472)', () => {
     // already used for every other --rc-* token), but never inside the light override block.
     const occurrences = css.match(/--rc-theme-btn-shadow:/g) ?? [];
     expect(occurrences.length).toBe(2);
-    expect(css).toMatch(/--rc-theme-btn-shadow:\s*0 0 10px 2px rgba\(129, 64, 226, 0\.55\);/);
+    expect(css).toMatch(/--rc-theme-btn-shadow:\s*0 0 10px 2px rgba\(139, 69, 240, 0\.55\);/);
 
     const lightBlock = css.slice(css.indexOf("[data-theme='light']"));
     expect(lightBlock).not.toMatch(/--rc-theme-btn-shadow/);

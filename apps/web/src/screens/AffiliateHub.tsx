@@ -779,7 +779,10 @@ function CampaignsTab({
         type="button"
         data-testid="affiliate-create-campaign"
         onClick={onCreateOpen}
-        className="flex h-12 items-center justify-center rounded-full bg-brand text-[13px] font-bold uppercase tracking-[1px] text-white shadow-[0_0_14px_2px_rgba(129,64,226,0.35)]"
+        // Glow recomputed alongside the reconciliation sweep's --brand-purple update
+        // (0x8140e2 → 0x8B45F0 = rgb(139,69,240)) — same glow-around-brand-purple pattern as
+        // index.css's --rc-theme-btn-shadow/--rc-nav-active-glow.
+        className="flex h-12 items-center justify-center rounded-full bg-brand text-[13px] font-bold uppercase tracking-[1px] text-white shadow-[0_0_14px_2px_rgba(139,69,240,0.35)]"
       >
         Create campaign
       </button>

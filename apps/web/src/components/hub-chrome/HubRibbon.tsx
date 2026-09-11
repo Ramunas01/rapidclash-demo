@@ -36,10 +36,11 @@ interface Props {
  *
  * Structural note: the outer `<header>` is full-width (not `max-w-md`) so the solid fill spans
  * the whole viewport on wide screens — only the inner row is `max-w-md`-constrained. The inner
- * row also carries `pb-4`, restoring a resting-state gap below the header (Advisor #7) — this
- * predates #484 and is deliberately left untouched: `layout.ts`'s `HUB_FIXED_TOP` hardcodes
- * HubRibbon's real rendered height (60px, measured live via Playwright) and a padding change here
- * would silently invalidate it without being able to re-measure in this pass.
+ * row also carries a bottom padding, restoring a resting-state gap below the header (Advisor #7).
+ * Reconciliation sweep (2026-09-11): re-measured live via Playwright against the prototype's
+ * real header spacing (`padding:64px 16px 14px 16px`) and found the app's `pb-4` (16px) was 2px
+ * over — changed to `pb-3.5` (14px) to match exactly. `layout.ts`'s `HUB_FIXED_TOP` was
+ * re-measured and updated in the same change — see its own comment for the full before/after.
  *
  * Light-mode threading (#484's actual point — every color below used to read a shadcn token with
  * no light override, so the header stayed black-on-dark even once the rest of the app switched to
@@ -70,7 +71,7 @@ export function HubRibbon({ balance, onLogo, onWallet, loggedIn = true, isGuest 
   const logoUrl = resolved === 'light' ? logoDarkBgUrl : logoLightBgUrl;
   return (
     <header className="sticky top-0 z-20 w-full bg-[var(--rc-bg)] pt-[env(safe-area-inset-top)]">
-      <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 pb-4">
+      <div className="mx-auto flex w-full max-w-md items-center justify-between px-4 pb-3.5">
         {isGuest ? (
           // #283: guest mode has no game list / home hub to return to — every OTHER piece of
           // chrome that would leave the curated surface (related-games rail, footer, bottom nav,
