@@ -125,12 +125,18 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     // skin in the bet panel, not the play-money RC glyph — these assertions flip from 'RC1'/'RC2'
     // to '$1'/'$2' accordingly (GameHub.tsx PlayPanel, CHARTER.md #4). The gesture/highlight
     // behaviour under test here is otherwise unchanged.
+    //
+    // Ticket 2026-09-11#8/A item 2: the bet presets no longer carry a per-button `bg-brand`
+    // background — selection is now a shared sliding indicator behind plain colored text
+    // (GameHub.tsx's `PlayPanel`). `aria-pressed` is the new selection signal (same convention the
+    // adjacent time-control buttons already used), so these assertions check that instead of the
+    // no-longer-present class.
     it('a single tap arms 1 (regression guard)', () => {
       render(<CoinflipHubScreen {...baseProps()} />);
       fireEvent.click(screen.getByTestId('hub-bet-1'));
       const preset = screen.getByTestId('hub-bet-1');
       expect(preset.textContent).toBe('$1');
-      expect(preset.className).toContain('bg-brand');
+      expect(preset.getAttribute('aria-pressed')).toBe('true');
     });
 
     it('a second consecutive tap arms 2 (button now shows 2, highlighted)', () => {
@@ -139,7 +145,7 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
       fireEvent.click(screen.getByTestId('hub-bet-1'));
       const preset = screen.getByTestId('hub-bet-1');
       expect(preset.textContent).toBe('$2');
-      expect(preset.className).toContain('bg-brand');
+      expect(preset.getAttribute('aria-pressed')).toBe('true');
     });
 
     it('a third tap (while at 2) toggles back to 1', () => {
@@ -149,7 +155,7 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
       fireEvent.click(screen.getByTestId('hub-bet-1'));
       const preset = screen.getByTestId('hub-bet-1');
       expect(preset.textContent).toBe('$1');
-      expect(preset.className).toContain('bg-brand');
+      expect(preset.getAttribute('aria-pressed')).toBe('true');
     });
 
     it('tapping a different preset then tapping hub-bet-1 again arms 1 fresh (does not jump to 2)', () => {
@@ -160,8 +166,8 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
       fireEvent.click(screen.getByTestId('hub-bet-1')); // fresh tap on 1
       const preset = screen.getByTestId('hub-bet-1');
       expect(preset.textContent).toBe('$1');
-      expect(preset.className).toContain('bg-brand');
-      expect(screen.getByTestId('hub-bet-10').className).not.toContain('bg-brand');
+      expect(preset.getAttribute('aria-pressed')).toBe('true');
+      expect(screen.getByTestId('hub-bet-10').getAttribute('aria-pressed')).toBe('false');
     });
 
     it('2 never appears as its own preset button in the grid', () => {
@@ -739,7 +745,7 @@ describe('CoinflipHubScreen — waiting transforms in place (#154)', () => {
     expect(note.textContent).toMatch(/no opponent found/i);
     expect(note.textContent).not.toMatch(/refund/i); // must NOT claim a second refund
     // The armed stake is retained (10 still selected) so pressing PLAY simply re-posts.
-    expect(screen.getByTestId('hub-bet-10').className).toMatch(/bg-brand/);
+    expect(screen.getByTestId('hub-bet-10').getAttribute('aria-pressed')).toBe('true');
   });
 
   it('structural stability: the play panel + bet row are the SAME nodes across idle→waiting→in-match (no remount)', async () => {

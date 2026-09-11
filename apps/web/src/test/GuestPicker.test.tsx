@@ -123,8 +123,10 @@ describe('App — guest game picker (issue #279)', () => {
     await waitFor(() => expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument());
 
     // Re-arm away from the GUEST_COINFLIP_STAKE (100) default onto a different offered preset.
+    // Ticket 2026-09-11#8/A item 2: selection is now the shared sliding indicator, not a
+    // per-button `bg-brand` class — `aria-pressed` is the selection signal post-restructure.
     fireEvent.click(screen.getByTestId('hub-bet-25'));
-    expect(screen.getByTestId('hub-bet-25')).toHaveClass('bg-brand');
+    expect(screen.getByTestId('hub-bet-25')).toHaveAttribute('aria-pressed', 'true');
 
     openSocket(sockets[0]);
     fireEvent.click(screen.getByTestId('hub-play'));

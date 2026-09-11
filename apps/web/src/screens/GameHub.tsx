@@ -20,7 +20,9 @@ import { GuestBotWaiters } from '../guest/GuestBotWaiters.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
 import { Avatar } from '../components/hub-shared/Avatar.js';
-import { Credits } from '../components/hub-shared/RcIcon.js';
+import { Credits, RcIcon } from '../components/hub-shared/RcIcon.js';
+import { CurrencyIcon } from '../components/hub-chrome/CurrencyPicker.js';
+import { useTheme } from '../lib/theme.js';
 import { outlineClasses, outlineForOutcome, replaysOf, useDelayedFlag, useWinReveal, WIN_FILL_IN_MS, type Verdict } from './hub-shared/slotReveal.js';
 
 /** How long after the result phase starts before the own-bar verdict lights (ms). */
@@ -39,6 +41,24 @@ const BET_PRESETS = [1, 5, 10, 25, 50, 100];
  *  (`Full Spec.html:433`), not the app's default sans, matching the same idiom other migrated
  *  screens use for prototype-exact text (AffiliateHub.tsx / ProfileHub.tsx's own `ARIAL` consts). */
 const ARIAL = 'Arial, Helvetica, sans-serif';
+
+/** Ticket 2026-09-11#8/A: the bet-panel value row + preset-track labels use the prototype's
+ *  second font stack (`Full Spec.html:706,709,721` all set `font-family:'Space Grotesk', Arial,
+ *  Helvetica, sans-serif`) — same const-extraction idiom as `AffiliateHub.tsx`/`DiceHub.tsx`'s own
+ *  `SPACE_GROTESK`. */
+const SPACE_GROTESK = "'Space Grotesk', Arial, Helvetica, sans-serif";
+
+/** Ticket 2026-09-11#8/A — bet-panel colors cited 1:1 from `Full Spec.html`'s `getState()`
+ *  (`:3734` `betTrackBg`, `:3607` `provablyFg`), same `{light, dark}` pair + `useTheme()` idiom
+ *  `MinesHub.tsx`'s `MINES_BOARD_BG` etc. already establish for this exact situation (a
+ *  prototype-literal hex pair with no matching `--rc-*` token). */
+const BET_TRACK_BG = { light: '#D7D7E2', dark: '#12121A' }; // Full Spec.html:3734 (`betTrackBg`)
+const PROVABLY_FG = { light: '#0B0B0B', dark: '#FFFFFF' }; // Full Spec.html:3607 (`provablyFg`)
+/** The sliding bet-indicator pill + PLAY/Play-a-Friend's pressable-ledge shadow: fixed in both
+ *  themes (`Full Spec.html:716`'s indicator `background:#8B45F0`; `:3823`'s `playBtnShadow`
+ *  baseline `'0 5px 0 #5F27B8'`). */
+const BET_INDICATOR_BG = '#8B45F0';
+const PLAY_BTN_SHADOW = '0 5px 0 #5F27B8'; // Full Spec.html:3823 (`playBtnShadow`, non-fundsWarn case)
 
 /** Presets withheld from a guest's bet grid (issue #353): `GUEST_HUMAN_RESERVED_STAKE` (1) is
  *  reserved for human-to-human testing inside the isolated guest world
@@ -953,6 +973,24 @@ function PlayPanel({
   // The offered presets, minus anything withheld (issue #353) — computed once per render rather
   // than filtered inline in the JSX below so the grid-column count (right below) can agree with it.
   const presets = excludedStakes?.length ? BET_PRESETS.filter((v) => !excludedStakes.includes(v)) : BET_PRESETS;
+
+  // Ticket 2026-09-11#8/A: bet-panel light/dark colors + the sliding-indicator track math.
+  const { resolved } = useTheme();
+  const light = resolved === 'light';
+  // The armed preset's index within the OFFERED grid (accounts for the #381 tap-again gesture:
+  // stake 2 lights the `v === 1` slot, same slot 1 renders in). -1 (no bet armed, or an armed
+  // value outside the offered grid) hides the indicator entirely, same as the prototype's own
+  // `betValueOp` gate on both the value row and the indicator (`Full Spec.html:708,716`).
+  const armedIndex = presets.findIndex((v) => armedStake === v || (v === 1 && armedStake === 2));
+  // Track math ported 1:1 from `Full Spec.html:3739` (`betIndLeft`) / `:716` (indicator width),
+  // generalized from the prototype's hardcoded 6-column case to whatever count is actually
+  // offered (5 when a guest's reserved stake is withheld, issue #353) — same 5px padding / 2px
+  // inter-chip gap either way (`:715`'s track `padding:5px` + `gap:2px`).
+  const BET_TRACK_PAD_PX = 5;
+  const BET_TRACK_GAP_PX = 2;
+  const betTrackNonContentPx = BET_TRACK_PAD_PX * 2 + (presets.length - 1) * BET_TRACK_GAP_PX;
+  const betIndicatorWidth = `calc((100% - ${betTrackNonContentPx}px) / ${presets.length})`;
+  const betIndicatorLeft = `calc(${BET_TRACK_PAD_PX}px + ${Math.max(0, armedIndex)} * (${betIndicatorWidth} + ${BET_TRACK_GAP_PX}px))`;
   // "PLAY needs a bet" guided affordance (#143). PLAY stays enabled with no stake armed; pressing
   // it then GUIDES the user to the bet panel (smooth-scroll + red frame + a11y hint) instead of
   // dead-ending — it never starts a match. The cue clears the instant a bet is armed (no auto-play).
@@ -996,9 +1034,15 @@ function PlayPanel({
           onClick={handlePlayPress}
           data-testid="hub-play"
           className={cn(
-            'w-full rounded-xl bg-brand py-4 text-base font-black uppercase tracking-wider text-white transition-colors',
+            'w-full rounded-xl bg-brand py-4 text-base font-black uppercase tracking-wider text-white active:translate-y-[3px]',
             playing ? 'opacity-70' : 'hover:brightness-110',
           )}
+          // Ticket 2026-09-11#8/A item 3: the chunky "pressable ledge" (`Full Spec.html:695`'s
+          // `box-shadow:{{ playBtnShadow }}`, `PLAY_BTN_SHADOW` above) released via
+          // `translateY(3px)` on press (`:695`'s own `style-active`). Per-property durations cited
+          // verbatim from the same line's `transition` value — box-shadow/opacity survive the
+          // Tailwind `transition-colors` this button already had; only transform is added new.
+          style={{ boxShadow: PLAY_BTN_SHADOW, transition: 'box-shadow 260ms ease, transform 120ms ease, opacity 220ms ease, filter 150ms ease' }}
         >
           {playing ? 'Playing…' : 'Play'}
         </button>
@@ -1030,37 +1074,78 @@ function PlayPanel({
           frozen && 'pointer-events-none opacity-50',
         )}
       >
-        <div className="mb-2.5 flex items-center justify-between">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Bet amount</span>
-          <span className="text-sm font-extrabold tabular-nums text-foreground">
-            {armedStake == null ? '—' : isGuest ? <Credits amount={armedStake} /> : `$${armedStake.toLocaleString('en-US')}`}
-          </span>
+        {/* Ticket 2026-09-11#8/A item 1: the currency-name + live-bet-value row, missing entirely
+            before this — the old "Bet amount" plain caption is replaced by the prototype's actual
+            two-sided row (`Full Spec.html:703-709`). Left: currency icon + `{{curSym}} (democash)`
+            (`:705-706`). Right: a second (smaller) icon + the armed stake in green (`:709-710`),
+            faded out via `betValueOp` (`:708`) until a bet is armed — kept mounted (not
+            conditionally rendered) so the 200ms opacity transition can run, matching the
+            prototype's own always-bound style prop. `role="group"` carries the accessible label
+            the old visible caption used to (the prototype itself has no separate text label here). */}
+        <div role="group" aria-label="Bet amount" className="mb-3 flex items-center justify-between">
+          <div className="flex min-w-0 items-center gap-[7px]">
+            {isGuest ? <RcIcon size={17} /> : <CurrencyIcon sym="USD" size={17} />}
+            <span className="text-foreground" style={{ fontFamily: ARIAL, fontSize: '12px', fontWeight: 700, letterSpacing: '1.2px' }}>
+              {isGuest ? 'RC' : 'USD'} <span style={{ fontSize: '10px', letterSpacing: '0.6px' }}>(democash)</span>
+            </span>
+          </div>
+          <div
+            className="flex shrink-0 items-center gap-[5px]"
+            style={{ opacity: armedStake == null ? 0 : 1, transition: 'opacity 200ms ease' }}
+          >
+            {isGuest ? <RcIcon size={15} /> : <CurrencyIcon sym="USD" size={15} />}
+            <span className="text-success tabular-nums" style={{ fontFamily: SPACE_GROTESK, fontSize: '14px', fontWeight: 700 }}>
+              {isGuest ? (armedStake ?? 0).toLocaleString('en-US') : `$${(armedStake ?? 0).toLocaleString('en-US')}`}
+            </span>
+          </div>
         </div>
-        {/* grid-cols matches the OFFERED preset count, not BET_PRESETS.length — a withheld preset
-            (issue #353) reflows the remaining ones evenly rather than leaving a gap. Only two
-            counts exist in practice (6 full, 5 with one withheld), so a plain ternary is simpler
-            than a dynamic Tailwind class. */}
-        <div className={cn('grid gap-2', presets.length === BET_PRESETS.length ? 'grid-cols-6' : 'grid-cols-5')}>
+        {/* Ticket 2026-09-11#8/A item 2: one shared pill/ribbon track with a sliding purple
+            indicator (`Full Spec.html:715-716`), replacing the previous per-button boxed
+            bg-brand/bg-background treatment — a real restructuring, not a recolor. Track:
+            `border-radius:999px`, `padding:5px`, `gap:2px`, background `BET_TRACK_BG` (`:715`,
+            `:3734`). The indicator is an `absolute` sibling (`:716`) — NOT per-button background —
+            sized/positioned by the `betIndicatorWidth`/`betIndicatorLeft` calc() ported from
+            `:3739` above (generalized from the prototype's fixed 6-column case to however many
+            presets are actually offered, issue #353's guest exclusion). grid-template-columns
+            replaces the old grid-cols-6/grid-cols-5 ternary with the same repeat(n, 1fr) the
+            prototype itself uses (`:715`), agreeing with `presets.length` by construction instead
+            of a hardcoded two-count ternary. */}
+        <div
+          data-rc-bettrack="1"
+          className="relative grid rounded-full p-[5px]"
+          style={{ background: light ? BET_TRACK_BG.light : BET_TRACK_BG.dark, gridTemplateColumns: `repeat(${presets.length}, 1fr)`, gap: `${BET_TRACK_GAP_PX}px` }}
+        >
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute top-[5px] bottom-[5px] rounded-full"
+            style={{
+              width: betIndicatorWidth,
+              left: betIndicatorLeft,
+              background: BET_INDICATOR_BG,
+              opacity: armedIndex < 0 ? 0 : 1,
+              transition: 'left 420ms cubic-bezier(0.34,1.32,0.44,1), opacity 220ms ease',
+            }}
+          />
           {presets.map((v) => {
             const displayValue = v === 1 && armedStake === 2 ? 2 : v;
+            // Plain colored text sitting on top of the track (`c.color`, `:3741` — white when
+            // selected, `var(--rc-green)` otherwise) — no per-button border/background anymore.
+            const selected = armedStake === v || (v === 1 && armedStake === 2);
             return (
               <button
                 key={v}
                 type="button"
                 disabled={frozen}
                 data-testid={`hub-bet-${v}`}
+                aria-pressed={selected}
                 // #381: the 1¢ preset is special-cased to reach the undocumented, bot-excluded
                 // stake of 2 (tools/bot-crowd's HUMAN_RESERVED_STAKES) via a tap-again gesture —
                 // tapping again while 1 is armed arms 2; tapping again while 2 is armed toggles
                 // back to 1. Every other preset keeps its plain onArm(v). 2 is never its own
                 // BET_PRESETS entry / grid button — only reachable through this one button's state.
                 onClick={v === 1 ? () => onArm(armedStake === 1 ? 2 : 1) : () => onArm(v)}
-                className={cn(
-                  'rounded-lg py-2.5 text-center text-[13px] font-bold tabular-nums transition-colors',
-                  armedStake === v || (v === 1 && armedStake === 2)
-                    ? 'bg-brand text-white'
-                    : 'bg-background text-muted-foreground hover:text-foreground',
-                )}
+                className="relative z-10 min-w-0 rounded-full py-2.5 text-center text-[13px] font-bold tabular-nums"
+                style={{ fontFamily: SPACE_GROTESK, color: selected ? '#FFFFFF' : 'var(--rc-green)' }}
               >
                 {isGuest ? <Credits amount={displayValue} /> : `$${displayValue.toLocaleString('en-US')}`}
               </button>
@@ -1129,14 +1214,62 @@ function PlayPanel({
           onClick={searching ? onCancel : handlePlayFriend}
           className={cn(
             'w-full rounded-xl py-3.5 text-[15px] font-bold transition-colors',
-            searching ? 'bg-surface text-foreground hover:brightness-110' : 'cursor-default bg-brand text-white',
+            searching ? 'bg-surface text-foreground hover:brightness-110' : 'cursor-default bg-brand text-white active:translate-y-[3px]',
             playing && 'opacity-50',
           )}
+          // Ticket 2026-09-11#8/A item 3: same pressable-ledge shadow as PLAY. The prototype's own
+          // "Play a Friend" div (`Full Spec.html:729`) doesn't literally carry `box-shadow` at that
+          // citation — this applies the ticket's own instruction to add the site's universal purple-
+          // CTA shadow (`playBtnShadow`'s base value, also seen e.g. `:1356`,`:2474`,`:3823`) here
+          // too, for visual consistency with PLAY. Only the Play-a-Friend state gets it — the
+          // transformed "Cancel" state (`bg-surface`, not a purple CTA) is untouched, matching the
+          // ticket's scope (PLAY + Play a Friend only).
+          style={searching ? undefined : { boxShadow: PLAY_BTN_SHADOW, transition: 'box-shadow 260ms ease, transform 120ms ease, opacity 220ms ease, filter 150ms ease' }}
         >
           {searching ? 'Cancel' : 'Play a Friend'}
         </button>
       )}
+
+      {/* Ticket 2026-09-11#8/A item 4: "PROVABLY FAIR BY DESIGN" + shield-check icon, confirmed via
+          grep to not exist anywhere in apps/web/src before this — ported verbatim from
+          `Full Spec.html:729-745` (`data-rc-betpanel="1"` sibling directly below Play a Friend,
+          unconditional — no `searching` gate in the source, so this always renders). Caption:
+          11px bold, `letter-spacing:0.9px`, color `PROVABLY_FG` (`:733`, `:3607`). Icon: the same
+          shield outline/shading `AffiliateHub.tsx`'s `ShieldIcon` already ports (base `#8B45F0` +
+          `#A870F0` shade + `#BFB8D6` shine, clipped to the shield outline) with THIS badge's own
+          checkmark glyph (`:738`, white stroke) instead of that one's lightning bolt, plus the two
+          `var(--rc-text)` sparkle accents (`:739-740`), all traced 1:1 from the cited lines. */}
+      <div data-rc-betpanel="1" className="-mt-1 flex items-center justify-center gap-2">
+        <span style={{ fontFamily: ARIAL, fontSize: '11px', fontWeight: 'bold', letterSpacing: '0.9px', color: light ? PROVABLY_FG.light : PROVABLY_FG.dark }}>
+          PROVABLY FAIR BY DESIGN
+        </span>
+        <ProvablyFairShieldIcon />
+      </div>
     </div>
+  );
+}
+
+/** Full Spec.html:734-744 — the shield-check icon beside "PROVABLY FAIR BY DESIGN" (ticket
+ *  2026-09-11#8/A item 4). Same shield outline/clip-path convention as `AffiliateHub.tsx`'s
+ *  `ShieldIcon`, own clip id (`pfShieldClip`) to avoid colliding with that component's
+ *  `affShieldClip` if both ever render on the same page. */
+function ProvablyFairShieldIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" className="block flex-none overflow-visible" aria-hidden="true">
+      <defs>
+        <clipPath id="pfShieldClip">
+          <path d="M12 2.2 20.4 5v6.6c0 5-3.5 8.6-8.4 10.2C7.1 20.2 3.6 16.6 3.6 11.6V5z" />
+        </clipPath>
+      </defs>
+      <g clipPath="url(#pfShieldClip)">
+        <path d="M12 2.2 20.4 5v6.6c0 5-3.5 8.6-8.4 10.2C7.1 20.2 3.6 16.6 3.6 11.6V5z" fill="#8B45F0" />
+        <path d="M12 2.2 3.6 5v6.6c0 5 3.5 8.6 8.4 10.2z" fill="#A870F0" />
+        <path d="M12 2.2 20.4 5 3.6 21.8z" fill="#BFB8D6" opacity="0.28" />
+      </g>
+      <path d="M8.1 12.2 10.9 15 16 9.4" fill="none" stroke="#FFFFFF" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M22.4 3.6l.75 2 2 .75-2 .75-.75 2-.75-2-2-.75 2-.75z" fill="var(--rc-text)" />
+      <path d="M2 15.9l.55 1.5 1.5.55-1.5.55-.55 1.5-.55-1.5-1.5-.55 1.5-.55z" fill="var(--rc-text)" />
+    </svg>
   );
 }
 
