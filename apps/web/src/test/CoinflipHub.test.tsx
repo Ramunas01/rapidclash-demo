@@ -639,13 +639,17 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
   });
 });
 
-// Issue #387: Coinflip's entire round IS the server's fixed 10s pick window (PICK_WINDOW_MS,
-// resolves ONLY at expiry — never early). GameHub's ~2.4s "Searching…" dwell floor, applied by
-// default to every hub game, was burning a chunk of that window before the pick buttons even
-// rendered — in the worst case the window could elapse with the player never seeing them. Coinflip
-// now passes `searchFloorMs={0}` so `phase` reaches 'in-match' (and the pick buttons render) the
-// instant `currentMatchId` is set, with no artificial hold at all.
-describe('CoinflipHubScreen — search dwell floor bypassed (#387)', () => {
+// Ticket 2026-09-11#9 (ADVISOR_TO_PM.md): a deliberate Owner-directed REVERSAL of #387's
+// `searchFloorMs={0}` (Owner confirmed this applies to Coinflip too, same reasoning as RPS).
+// Coinflip's entire round IS the server's fixed 10s pick window (PICK_WINDOW_MS, resolves ONLY at
+// expiry — never early); restoring the ~3.8s "Searching…"/"found"/"split" dwell floor now
+// deliberately holds `phase` at 'waiting' for that beat even when `currentMatchId` is already set,
+// matching the prototype's timing (RPS's `startRps()`, `Full Spec.html:3291-3313` — Coinflip shares
+// the identical GameHub mechanism) — accepting that this eats into the player's SEEN share of the
+// already-ticking server window (see the code comment at CoinflipHub.tsx's `searchFloorMs` prop for
+// the full rationale). This replaces the old "bypassed (#387)" behavior the tests below used to
+// assert.
+describe('CoinflipHubScreen — search dwell floor restored (2026-09-11#9)', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);
@@ -655,26 +659,34 @@ describe('CoinflipHubScreen — search dwell floor bypassed (#387)', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it('phase reaches in-match (pick buttons visible) the INSTANT currentMatchId is set — no 2.4s dwell', () => {
-    const onPlay = vi.fn();
-    const { rerender } = render(<CoinflipHubScreen {...baseProps({ initialStake: 10, onPlay })} />);
-    fireEvent.click(screen.getByTestId('hub-play')); // arms the search dwell start (searchStartRef)
-    expect(onPlay).toHaveBeenCalledWith(10);
+  it('holds at waiting (pick buttons hidden, VS label shown) through the ~3.8s dwell floor even when currentMatchId is already set, then reveals the pick buttons once the floor elapses', () => {
+    vi.useFakeTimers();
+    try {
+      const onPlay = vi.fn();
+      const { rerender } = render(<CoinflipHubScreen {...baseProps({ initialStake: 10, onPlay })} />);
+      fireEvent.click(screen.getByTestId('hub-play')); // arms the search dwell start (searchStartRef)
+      expect(onPlay).toHaveBeenCalledWith(10);
 
-    // The server pairs the match immediately (as can genuinely happen) — rerender with a live match
-    // and NO fake-timer advance at all. Under the default 2400ms floor this would still read
-    // 'waiting' (no pick buttons); with searchFloorMs=0 the hold never arms.
-    const gameState: CoinflipView = { players: ['pid', 'bob'], choices: {} };
-    rerender(<CoinflipHubScreen {...baseProps({ initialStake: 10, onPlay, currentMatchId: 'm1', gameState })} />);
+      // The server pairs the match immediately (as can genuinely happen) — rerender with a live match
+      // and NO time elapsed. The restored ~3.8s dwell floor holds `phase` at 'waiting' regardless.
+      const gameState: CoinflipView = { players: ['pid', 'bob'], choices: {} };
+      rerender(<CoinflipHubScreen {...baseProps({ initialStake: 10, onPlay, currentMatchId: 'm1', gameState })} />);
 
-    expect(screen.getByTestId('hub-move-heads')).toBeInTheDocument();
-    expect(screen.getByTestId('hub-move-tails')).toBeInTheDocument();
-    // T5: `matchForming` (phase 'waiting' with a currentMatchId already assigned) can only ever be
-    // true while `holdSearch` is holding the dwell floor open — and with searchFloorMs=0 that hold
-    // never arms (see the file-level comment above). So the shared VS label never gets a window to
-    // show for Coinflip at all — it stays at its resting opacity 0, same as idle, by construction of
-    // this same #387 bypass (not a separate carve-out).
-    expect(screen.getByTestId('hub-match-vs').style.opacity).toBe('0');
+      expect(screen.queryByTestId('hub-move-heads')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('hub-move-tails')).not.toBeInTheDocument();
+      // T5: `matchForming` (phase 'waiting' with a currentMatchId already assigned) is exactly the
+      // window the restored floor now holds open — the shared VS label arms for Coinflip again.
+      expect(screen.getByTestId('hub-match-vs').style.opacity).toBe('1');
+
+      // Advance past the restored ~3.8s floor — the hold clears and the pick buttons render.
+      act(() => { vi.advanceTimersByTime(3800); });
+
+      expect(screen.getByTestId('hub-move-heads')).toBeInTheDocument();
+      expect(screen.getByTestId('hub-move-tails')).toBeInTheDocument();
+      expect(screen.getByTestId('hub-match-vs').style.opacity).toBe('0');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

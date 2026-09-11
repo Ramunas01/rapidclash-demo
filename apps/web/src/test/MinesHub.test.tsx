@@ -195,8 +195,9 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
 
   // T5: the shared "VS" match-found overlay (GameHub.tsx, gated on `matchForming` = phase 'waiting'
   // with a currentMatchId already assigned). Mines keeps the default 2400ms search-dwell floor
-  // (unlike RPS/Coinflip's `searchFloorMs={0}`, issue #387), so a match paired immediately after
-  // PLAY still holds `matchForming` open for that floor — the VS beat's real window.
+  // (RPS/Coinflip pass their own explicit ~3800ms floor as of ticket 2026-09-11#9, reversing #387's
+  // `searchFloorMs={0}` — see RpsHub.test.tsx/CoinflipHub.test.tsx), so a match paired immediately
+  // after PLAY still holds `matchForming` open for that floor — the VS beat's real window.
   it('T5: the shared VS label fades in while matchForming holds, then fades back out once in-match', async () => {
     vi.useFakeTimers();
     try {
