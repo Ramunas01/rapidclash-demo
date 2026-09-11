@@ -216,10 +216,17 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
   });
 
   // 2026-09-11#10 item 2 (ADVISOR_TO_PM.md): the prototype has no separate result modal for this
-  // game — RPS now wires `suppressResultOverlay`/`ownBarResult` (mirroring CoinflipHub.tsx) so the
-  // outcome presents IN PLACE on the persistent board instead, matching the pre-existing Coinflip
-  // pattern this replaces the old `hub-result-overlay` assertions with.
-  it('Result: ending a match reveals the outcome in place on the board — no overlay, opponent throw flips, own bar shows the win', async () => {
+  // game — RPS wires `suppressResultOverlay` so the outcome presents IN PLACE on the persistent
+  // board instead, matching the pre-existing Coinflip pattern this replaces the old
+  // `hub-result-overlay` assertions with.
+  //
+  // 2026-09-12#1 item 3 (ADVISOR_TO_PM.md): `ownBarResult` was REMOVED from this hub's `<GameHub>`
+  // call (a real correction to 2026-09-11#10 item 2 — the prototype's own `mOutcome` is gated on
+  // `gameV = view === 'mines' || isDice`, `Full Spec.html:3519`, so RPS structurally never gets the
+  // bar-level "You Win" fill). This test now asserts the ABSENCE of that bar-level verdict and, per
+  // item 2 above, the real win indication instead: the own card's frame turning green
+  // (`rpsLeftFrame`, `:3810`) combined with both cards growing to the `rpsExpanded()` big geometry.
+  it('Result: ending a match reveals the outcome in place on the board — no overlay, opponent throw flips, own card frame turns green + both cards enlarge, no bar-level verdict', async () => {
     const gameState: RpsView = { players: ['pid', 'bob'], choices: { pid: 'rock', bob: 'scissors' } };
     const { rerender } = render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
@@ -238,9 +245,49 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
       expect(screen.getByTestId('hub-opponent-pick-revealed').querySelector('[data-rc-rps-icon="scissors"]')).toBeInTheDocument();
       // The pick grid locks at terminal — no round left to pick into.
       expect(screen.getByTestId('hub-move-rock')).toBeDisabled();
-      // Bar-level "You Win" — generic GameHub `ownBarResult` machinery, same as CoinflipHub.
-      expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you win/i);
+      // Item 3: no bar-level "You Win" — `ownBarResult` is gone, RPS never lights the shared bar verdict.
+      expect(screen.queryByTestId('hub-slot-own-verdict')).toBeNull();
+      // Item 2: the own card's frame turns win-green (`#34D399`, `rpsLeftFrame`) instead.
+      expect(screen.getByTestId('hub-my-pick-frame').style.background).toMatch(/#34d399|52, 211, 153/i);
+      // Item 2: both cards grow to the expanded (`rpsExpanded()`) geometry — 124×176, not 92×130.
+      expect(screen.getByTestId('hub-my-pick-frame').style.width).toBe('124px');
+      expect(screen.getByTestId('hub-my-pick-frame').style.height).toBe('176px');
+      expect(screen.getByTestId('hub-opponent-pick-revealed').style.width).toBe('124px');
+      expect(screen.getByTestId('hub-opponent-pick-revealed').style.height).toBe('176px');
+      // Item 2: the picker row has genuinely collapsed (height + opacity → 0), not just dimmed.
+      const pickerWrapper = screen.getByTestId('hub-move-rock').closest('[role="group"]')?.parentElement as HTMLElement;
+      expect(pickerWrapper.style.opacity).toBe('0');
+      // jsdom's CSSOM normalizes a zero length to unitless '0' regardless of the '0px' React set.
+      expect(pickerWrapper.style.maxHeight).toMatch(/^0(px)?$/);
     });
+  });
+
+  // 2026-09-12#1 item 2 (ADVISOR_TO_PM.md): the card-enlargement logic is keyed strictly off
+  // `terminal` (match end) — it must NOT fire during the separate, non-terminal tied-round reveal
+  // beat (2026-09-11#9 item 2), which stays at the small geometry throughout.
+  it("2026-09-12#1 item 2: the tied-round reveal beat stays at the SMALL card geometry — enlargement is terminal-only, not shared with the tie-reveal", () => {
+    vi.useFakeTimers();
+    try {
+      const gameState: RpsView = { players: ['pid', 'bob'], choices: {}, round: 1 };
+      const events = [
+        { type: 'new_round', payload: { round: 1, replays: 1, revealedChoices: { pid: 'rock', bob: 'scissors' } } },
+      ];
+      render(
+        <RpsHubScreen
+          {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock', 'paper', 'scissors'], events })}
+        />,
+      );
+      // The tie-reveal is armed (real opponent throw visible), but the card stays at the SMALL
+      // 92×130 geometry — not the 124×176 `rpsExpanded()` size item 2 introduces for terminal only.
+      expect(screen.getByTestId('hub-opponent-pick-revealed').style.width).toBe('92px');
+      expect(screen.getByTestId('hub-opponent-pick-revealed').style.height).toBe('130px');
+      expect(screen.getByTestId('hub-my-pick-frame').style.width).toBe('92px');
+      expect(screen.getByTestId('hub-my-pick-frame').style.height).toBe('130px');
+      // The picker row is still live (not collapsed) — the match isn't over, just this round tied.
+      expect(screen.getByTestId('hub-move-rock')).not.toBeDisabled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('JOIN balance-check + chrome (shared GameHub behaviour holds for RPS)', () => {
@@ -372,6 +419,14 @@ describe('RpsHubScreen — search dwell floor restored (2026-09-11#9)', () => {
       // `!gameV` branch), opponent bar +123px, player bar -123px.
       expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(123px)');
       expect(screen.getByTestId('hub-slot-own').style.transform).toBe('translateY(-123px)');
+      // Ticket 2026-09-12#1 item 1 (ADVISOR_TO_PM.md): explicit z-[3] on both sliding bars — above
+      // the VS label's z-[2] and the un-indexed RPS card block — so the slide-to-center motion paints
+      // in front of the board instead of behind it (Full Spec.html:436/:660).
+      expect(screen.getByTestId('hub-slot-opponent').className).toContain('z-[3]');
+      expect(screen.getByTestId('hub-slot-own').className).toContain('z-[3]');
+      // Item 1's second half: the RPS card block itself fades to 28% opacity while the bars slide
+      // (`rpsBoardOp`, Full Spec.html:3795) — the table recedes so the bars stand out against it.
+      expect(screen.getByTestId('hub-rps-panel').style.opacity).toBe('0.28');
 
       // Advance past the restored ~3.8s floor — the hold clears and the throw buttons render.
       act(() => { vi.advanceTimersByTime(3800); });
@@ -383,6 +438,8 @@ describe('RpsHubScreen — search dwell floor restored (2026-09-11#9)', () => {
       // Slides back to 0 the same beat `in-match` takes over (prototype's `found`→`split` beat).
       expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(0px)');
       expect(screen.getByTestId('hub-slot-own').style.transform).toBe('translateY(0px)');
+      // The table un-dims the same beat the slide-back happens (`barSlideActive` is false in-match).
+      expect(screen.getByTestId('hub-rps-panel').style.opacity).toBe('1');
     } finally {
       vi.useRealTimers();
     }
@@ -396,6 +453,7 @@ describe('RpsHubScreen — search dwell floor restored (2026-09-11#9)', () => {
       // `found`, yet `rpsMatching` (Full Spec.html:3517-3530) is true for both, so the slide is armed.
       expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(123px)');
       expect(screen.getByTestId('hub-slot-own').style.transform).toBe('translateY(-123px)');
+      expect(screen.getByTestId('hub-rps-panel').style.opacity).toBe('0.28');
     } finally {
       vi.useRealTimers();
     }

@@ -130,6 +130,15 @@ export interface GameAreaArgs {
    *  result bar (and, when the balance-hold is enabled, applies the settled balance) in lockstep
    *  with the on-board reveal instead of on a fixed beat. Undefined for games that don't gate. */
   onRevealComplete?(): void;
+  /** Ticket 2026-09-12#1 item 1 (ADVISOR_TO_PM.md): mirrors this hub's own `barSlideActive` (the
+   *  same flag driving `matchBarSlide`'s bar-slide-to-center-and-back, opt-in via `matchBarSlide`) —
+   *  true across the "searching"/"found" matching beat, false once `in-match` takes over. Lets a
+   *  game area dim its own board to match the prototype's `rpsBoardOp` (`Full Spec.html:3795`:
+   *  `rpsMatching ? 0.28 : 1`) while the opponent/own bars slide toward the VS label, so the sliding
+   *  bars read against a receded table instead of a same-toned board. Always present (not gated on
+   *  `matchBarSlide` — a game area that never reads it is an inert `false`/`undefined` the rest of
+   *  the time, same no-op shape as the other opt-in fields above). */
+  barSlideActive?: boolean;
 }
 
 /** The generic, per-game-agnostic props the App feeds every Game hub (Coinflip, RPS, …). */
@@ -652,7 +661,7 @@ export function GameHub(props: GameHubProps) {
 
   // Built once and fed to the game area, the per-game slot asides (chess clocks) and the play action.
   const timeControlBaseMs = timeControl?.options.find((o) => o.id === selectedControl)?.baseMs;
-  const areaArgs: GameAreaArgs = { phase, gameState, events, legalMoves, onMove: onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, playerId, opponentId, username, opponentName, serverClockOffset, timeControlBaseMs, outcome: overlay?.outcome ?? null, drawBeat, onRevealComplete: handleRevealComplete };
+  const areaArgs: GameAreaArgs = { phase, gameState, events, legalMoves, onMove: onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, playerId, opponentId, username, opponentName, serverClockOffset, timeControlBaseMs, outcome: overlay?.outcome ?? null, drawBeat, onRevealComplete: handleRevealComplete, barSlideActive };
   // The bar-level draw outline: on for every game EXCEPT the ones that carry the draw on their own
   // surface (Blackjack → cards + "Push" label). The board still gets the full `drawBeat` via areaArgs.
   const barDrawBeat = suppressDrawBar ? false : drawBeat;
@@ -921,6 +930,15 @@ function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShif
       data-rc-oppbar={barShiftY != null ? '1' : undefined}
       className={cn(
         'flex items-center gap-2.5 rounded-full bg-surface px-3.5 py-2.5 transition-all duration-300',
+        // Ticket 2026-09-12#1 item 1 (ADVISOR_TO_PM.md): the prototype's `data-rc-oppbar`/
+        // `data-rc-playerbar` carry an explicit `z-index:3` (`Full Spec.html:436`/`:660`) — above the
+        // VS label's `z-index:2` (`:432`, this hub's own `hub-match-vs` above) and the un-indexed
+        // game-area card block. Without it, `barShiftY`'s `transform` creates a stacking context with
+        // the default `z-index:auto`, so paint order falls back to DOM order — this pill mounts BEFORE
+        // `renderGameArea` below, so the slide-to-center motion painted it BEHIND the RPS card. Only
+        // ever applied for hubs that opt into the bar-slide mechanism (`barShiftY != null`); every
+        // other hub's stacking is untouched.
+        barShiftY != null && 'z-[3]',
         // Shared draw→rematch beat (#161): both bars flash the orange push outline for ~2 s.
         drawBeat && outlineClasses('draw'),
       )}
@@ -969,6 +987,9 @@ function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdi
       data-rc-playerbar={barShiftY != null ? '1' : undefined}
       className={cn(
         'relative flex items-center gap-2.5 rounded-full bg-surface px-3.5 py-2.5 transition-all duration-300',
+        // Ticket 2026-09-12#1 item 1 (ADVISOR_TO_PM.md): see `OpponentSlot`'s matching comment above —
+        // explicit `z-[3]` (`Full Spec.html:436`/`:660`), opt-in via `barShiftY != null` only.
+        barShiftY != null && 'z-[3]',
         // All three settle to the shared ring; the win ring only lands once the fill has run.
         barVerdict === 'lose' && 'ring-[3px] ring-destructive',
         barVerdict === 'draw' && 'ring-[3px] ring-amber-400',
