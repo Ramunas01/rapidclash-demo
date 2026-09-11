@@ -230,6 +230,7 @@ export const minesModule: GameModule = {
       },
     };
     const me = next.boards[playerId];
+    const opponentId = next.players.find((p) => p !== playerId)!;
     const mines = minesFor(next.seed, next.round, BOARD_SIZE, MINE_COUNT);
 
     const events: GameEvent[] = [];
@@ -239,11 +240,16 @@ export const minesModule: GameModule = {
       // keeps your gems, unchanged from before).
       me.locked = true;
       me.bustedOn = move;
-      // Broadcast-safe: a lock reveals this player's now-final score — safe to announce
-      // regardless of the opponent's status, since NEITHER early resolution nor a live
-      // opponent-count leak follows from it (viewFor still gates the opponent's count on
-      // BOTH players being locked).
-      events.push({ type: 'player_locked', payload: { playerId, reason: 'bust', score: score(me) } });
+      // The event is broadcast UNREDACTED to both players (GAME_MODULE_INTERFACE.md's
+      // redaction rule) — `score` may only ride along if `viewFor` ALSO reveals it to the
+      // opponent at this exact instant, i.e. this lock is the one that makes the opponent's
+      // side already-locked too (revealOppCount's own `opp.locked && me.locked` gate,
+      // mirrored here). Otherwise the still-active opponent would learn the exact target the
+      // instant it's set — defeating the whole point of hiding it until both are done.
+      events.push({
+        type: 'player_locked',
+        payload: { playerId, reason: 'bust', ...(next.boards[opponentId].locked ? { score: score(me) } : {}) },
+      });
     } else {
       me.uncovered.push(move);
       // No per-safe-reveal event: broadcasting it would let the opponent tally an active
@@ -252,7 +258,10 @@ export const minesModule: GameModule = {
       if (me.uncovered.length === SAFE_COUNT) {
         me.locked = true; // perfect run (all 22 safe tiles) → lock at max score, rule 1 of the
         // rules-diff answers: auto-lock at 22, same mechanism as a bust-lock but no mine.
-        events.push({ type: 'player_locked', payload: { playerId, reason: 'cleared', score: SAFE_COUNT } });
+        events.push({
+          type: 'player_locked',
+          payload: { playerId, reason: 'cleared', ...(next.boards[opponentId].locked ? { score: SAFE_COUNT } : {}) },
+        });
       }
     }
 
@@ -368,16 +377,22 @@ export const minesModule: GameModule = {
    *  move is synthesized (rule 10: nothing happens until the clock; there is no auto-reveal
    *  any more). Mirrors the bust/clear lock exactly, just reached from the clock instead of a
    *  tap: sets `locked = true` and pushes the same `player_locked` event shape, `reason:
-   *  'timeout'`. Then re-evaluates resolution exactly like a normal move would. */
+   *  'timeout'`. `score` is included only if the opponent is already locked too (same
+   *  broadcast-redaction gate as the bust/clear sites in `applyMove` — see there for why).
+   *  Then re-evaluates resolution exactly like a normal move would. */
   lockOnTimeout(state: GameState, playerId: PlayerId, now: number): ApplyResult {
     const s = cast(state);
     const board = s.boards[playerId];
+    const opponentId = s.players.find((p) => p !== playerId)!;
     const next: MinesState = {
       ...s,
       boards: { ...s.boards, [playerId]: { ...board, locked: true } },
     };
     const events: GameEvent[] = [
-      { type: 'player_locked', payload: { playerId, reason: 'timeout', score: score(board) } },
+      {
+        type: 'player_locked',
+        payload: { playerId, reason: 'timeout', ...(next.boards[opponentId].locked ? { score: score(board) } : {}) },
+      },
     ];
     events.push(...resolve(next, now));
     return { state: next, events };

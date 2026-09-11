@@ -194,20 +194,54 @@ describe('minesModule.applyMove — reveal, bust, auto-lock at 22', () => {
     expect(() => mines.applyMove(res.state, safe[1], ctx(A))).toThrow(IllegalMove); // locked → no moves
   });
 
+  it('a bust event carries NO score while the opponent is still active (broadcast redaction — GAME_MODULE_INTERFACE.md)', () => {
+    // B is untouched (active) when A busts. The event is broadcast UNREDACTED to both players,
+    // so it must not leak what viewFor still hides (revealOppCount = opp.locked && me.locked).
+    const s = mines.init([A, B], rngWith(SEED));
+    const res = mines.applyMove(s, aMine(0), ctx(A));
+    expect(res.events).toEqual([{ type: 'player_locked', payload: { playerId: A, reason: 'bust' } }]);
+    expect((res.events[0].payload as { score?: number }).score).toBeUndefined();
+  });
+
+  it('a bust event DOES carry score once it is the lock that makes the opponent already-locked too', () => {
+    const safe = safeSquares(0);
+    // B busts first (locked). A then busts too — at that instant B (the opponent) is already
+    // locked, so viewFor would reveal A's score to B regardless; the event may carry it too.
+    let s = mines.init([A, B], rngWith(SEED));
+    s = mines.applyMove(s, aMine(0), ctx(B)).state; // B locked (bust) at 0
+    s = mines.applyMove(s, safe[0], ctx(A)).state; // A: 1 gem
+    const res = mines.applyMove(s, aMine(0), ctx(A)); // A busts at 1, opponent (B) already locked
+    expect(res.events[0]).toEqual({ type: 'player_locked', payload: { playerId: A, reason: 'bust', score: 1 } });
+  });
+
   it('clearing all 22 safe squares AUTO-LOCKS at max score (rule: auto-lock at 22, same mechanism as a bust-lock)', () => {
     const safe = safeSquares(0);
     // A clears the first 21, then the 22nd triggers the auto-lock — assert the event fires
-    // exactly on that final reveal.
+    // exactly on that final reveal. B is untouched (still active), so the event must NOT
+    // carry `score` — viewFor still hides it (revealOppCount = opp.locked && me.locked).
     const almost = play(mines.init([A, B], rngWith(SEED)), safe.slice(0, -1).map((sq) => [A, sq] as [PlayerId, number]));
     const res = mines.applyMove(almost, safe[safe.length - 1], ctx(A));
     const me = as(res.state).boards[A];
     expect(me.locked).toBe(true);
     expect(me.uncovered).toHaveLength(SAFE_COUNT);
     expect(me.bustedOn).toBeUndefined();
-    expect(res.events).toEqual([{ type: 'player_locked', payload: { playerId: A, reason: 'cleared', score: SAFE_COUNT } }]);
+    expect(res.events).toEqual([{ type: 'player_locked', payload: { playerId: A, reason: 'cleared' } }]);
     // B hasn't locked, and — no early resolution — A being mathematically unbeatable at the
     // max score doesn't end it either.
     expect(mines.isTerminal(res.state)).toBe(false);
+  });
+
+  it('a clear event DOES carry score once the opponent is already locked (this lock resolves the match)', () => {
+    const safe = safeSquares(0);
+    let s = mines.init([A, B], rngWith(SEED));
+    s = mines.applyMove(s, aMine(0), ctx(B)).state; // B locked (bust) at 0 first
+    const almost = play(s, safe.slice(0, -1).map((sq) => [A, sq] as [PlayerId, number]));
+    const res = mines.applyMove(almost, safe[safe.length - 1], ctx(A)); // A clears 22, B already locked
+    expect(res.events.find((e) => e.type === 'player_locked')).toEqual({
+      type: 'player_locked',
+      payload: { playerId: A, reason: 'cleared', score: SAFE_COUNT },
+    });
+    expect(mines.isTerminal(res.state)).toBe(true); // both locked now
   });
 
   it('rejects a non-square, an out-of-range index, a repeat, and acting when locked/terminal', () => {
@@ -451,7 +485,7 @@ describe('minesModule.scheduledDeadlines / lockOnTimeout (ADR-012 — the new 30
     expect(mines.scheduledDeadlines!(s)).toEqual({});
   });
 
-  it('lockOnTimeout locks the player at their CURRENT score, no move injected, reason "timeout"', () => {
+  it('lockOnTimeout locks the player at their CURRENT score, no move injected, reason "timeout" — NO score in the event while the opponent is still active', () => {
     let s = mines.init([A, B], rngWith(SEED));
     s = mines.launch!(s, 0);
     s = mines.applyMove(s, safeSquares(0)[0], ctx(A, 100)).state; // A: 1 gem
@@ -459,16 +493,28 @@ describe('minesModule.scheduledDeadlines / lockOnTimeout (ADR-012 — the new 30
     const me = as(res.state).boards[A];
     expect(me.locked).toBe(true);
     expect(me.uncovered).toEqual([safeSquares(0)[0]]); // unchanged — no synthesized tap
-    expect(res.events[0]).toEqual({ type: 'player_locked', payload: { playerId: A, reason: 'timeout', score: 1 } });
+    // B is still active (untouched) at this point — the event must NOT carry A's score, or the
+    // still-active B would learn the exact target the instant it's set (viewFor still hides it).
+    expect(res.events[0]).toEqual({ type: 'player_locked', payload: { playerId: A, reason: 'timeout' } });
     expect(mines.legalMoves(res.state, A)).toEqual([]); // no re-fire on the sweep
   });
 
-  it('lockOnTimeout at ZERO gems is valid (a disconnect before any tap locks at 0 — Designer-confirmed)', () => {
+  it('lockOnTimeout at ZERO gems is valid (a disconnect before any tap locks at 0 — Designer-confirmed), still no score leak', () => {
     let s = mines.init([A, B], rngWith(SEED));
     s = mines.launch!(s, 0);
     const res = mines.lockOnTimeout!(s, A, ROUND_TIMEOUT_MS);
     expect(as(res.state).boards[A]).toMatchObject({ locked: true, uncovered: [] });
-    expect(res.events[0]).toMatchObject({ payload: { reason: 'timeout', score: 0 } });
+    expect(res.events[0]).toEqual({ type: 'player_locked', payload: { playerId: A, reason: 'timeout' } });
+  });
+
+  it('lockOnTimeout DOES carry score once the opponent is already locked (this lock resolves the match)', () => {
+    let s = mines.init([A, B], rngWith(SEED));
+    s = mines.launch!(s, 0);
+    s = mines.applyMove(s, aMine(0), ctx(B, 50)).state; // B locked (bust) at 0 first
+    s = mines.applyMove(s, safeSquares(0)[0], ctx(A, 100)).state; // A: 1 gem
+    const res = mines.lockOnTimeout!(s, A, ROUND_TIMEOUT_MS); // A times out, opponent (B) already locked
+    expect(res.events[0]).toEqual({ type: 'player_locked', payload: { playerId: A, reason: 'timeout', score: 1 } });
+    expect(mines.isTerminal(res.state)).toBe(true);
   });
 
   it('lockOnTimeout re-evaluates resolution exactly like a normal move (both timing out → draw/replay)', () => {
@@ -528,7 +574,16 @@ describe('minesModule via the real core matchmaking sweep (ADR-012 end-to-end, n
     advance(ROUND_TIMEOUT_MS + 100);
     const res = mm.sweepTimedOutMoves(now());
     expect(res.map((r) => r.playerId)).toEqual(['alice', 'bob']);
-    expect(res[0].events).toEqual([{ type: 'player_locked', payload: { playerId: 'alice', reason: 'timeout', score: 0 } }]);
+    // alice locks FIRST — bob is still active at that instant, so the broadcast event must NOT
+    // carry alice's score (GAME_MODULE_INTERFACE.md's redaction rule: nothing an event carries
+    // may be something viewFor still conceals — and viewFor hides it until bob locks too).
+    expect(res[0].events).toEqual([{ type: 'player_locked', payload: { playerId: 'alice', reason: 'timeout' } }]);
+    // bob locks SECOND — alice is already locked, so this is the lock that resolves the match;
+    // viewFor would reveal bob's score to alice regardless, so the event may carry it too.
+    expect(res[1].events).toEqual([
+      { type: 'player_locked', payload: { playerId: 'bob', reason: 'timeout', score: 0 } },
+      { type: 'new_round', payload: { round: 1, draws: 1 } },
+    ]);
     // Both at 0 → an internal draw → replay, NOT a settled match (still active).
     expect(res[1].terminal).toBe(false);
     expect(mm.getActiveMatch(matchId)).toBeDefined();
