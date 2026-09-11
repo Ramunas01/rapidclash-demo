@@ -77,8 +77,9 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     const gameState: RpsView = { players: ['pid', 'bob'], choices: {} };
     render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock', 'paper', 'scissors'], onMakeMove })} />);
     expect(screen.getByTestId('hub-board')).toBeInTheDocument();
-    // Redaction: the opponent's pick is never shown before match.end.
-    expect(screen.getByTestId('hub-opponent-pick').textContent).toBe('🤫');
+    // Redaction: the opponent's pick is never shown before match.end — 2026-09-11#8/C's real
+    // blue-bolt icon (not the ✊/✋/✌️ hand icons), replacing the old 🤫 emoji stand-in.
+    expect(screen.getByTestId('hub-opponent-pick').querySelector('[data-rc-rps-icon="redacted"]')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('hub-move-rock'));
     expect(onMakeMove).toHaveBeenCalledWith('rock');
   });
@@ -99,15 +100,16 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
           {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock', 'paper', 'scissors'], events })}
         />,
       );
-      // Flipped: the redacted 🤫 tile is gone; the opponent's real (scissors) throw is now in the DOM
-      // (both flip faces are always present — backface-visibility is a visual-only 3D property jsdom
-      // doesn't lay out — so this asserts the revealed face was added, not that the hidden face left).
+      // Flipped: the redacted blue-bolt tile is gone; the opponent's real (scissors) throw is now in
+      // the DOM (both flip faces are always present — backface-visibility is a visual-only 3D property
+      // jsdom doesn't lay out — so this asserts the revealed face was added, not that the hidden face
+      // left).
       expect(screen.queryByTestId('hub-opponent-pick')).toBeNull();
-      expect(screen.getByTestId('hub-opponent-pick-revealed').textContent).toContain('✌️');
+      expect(screen.getByTestId('hub-opponent-pick-revealed').querySelector('[data-rc-rps-icon="scissors"]')).toBeInTheDocument();
 
       // After the flip (820ms) + hold (~1.5s), it falls back to the redacted tile.
       act(() => { vi.advanceTimersByTime(820 + 1500); });
-      expect(screen.getByTestId('hub-opponent-pick').textContent).toBe('🤫');
+      expect(screen.getByTestId('hub-opponent-pick').querySelector('[data-rc-rps-icon="redacted"]')).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }
@@ -131,7 +133,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
         />,
       );
       // The tie-reveal is armed, showing the opponent's just-tied scissors throw.
-      expect(screen.getByTestId('hub-opponent-pick-revealed').textContent).toContain('✌️');
+      expect(screen.getByTestId('hub-opponent-pick-revealed').querySelector('[data-rc-rps-icon="scissors"]')).toBeInTheDocument();
 
       // Before its ~2.3s hold elapses, the match actually ends decisively — the terminal outcome
       // must win immediately, not queue behind the tie-reveal's own timer.
@@ -152,12 +154,12 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
       // Exactly one revealed opponent card, showing the TERMINAL throw (rock) — not the stale tie's
       // (scissors), and no duplicate/competing flip nodes.
       expect(screen.getAllByTestId('hub-opponent-pick-revealed')).toHaveLength(1);
-      expect(screen.getByTestId('hub-opponent-pick-revealed').textContent).toContain('✊');
+      expect(screen.getByTestId('hub-opponent-pick-revealed').querySelector('[data-rc-rps-icon="rock"]')).toBeInTheDocument();
 
       // Advancing past the tie-reveal's own (now-cleared) timer must not glitch anything back to
       // redacted — the terminal reveal persists (it never resets, unlike the tie beat).
       act(() => { vi.advanceTimersByTime(820 + 1500); });
-      expect(screen.getByTestId('hub-opponent-pick-revealed').textContent).toContain('✊');
+      expect(screen.getByTestId('hub-opponent-pick-revealed').querySelector('[data-rc-rps-icon="rock"]')).toBeInTheDocument();
       expect(screen.queryByTestId('hub-opponent-pick')).toBeNull();
     } finally {
       vi.useRealTimers();
@@ -168,7 +170,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     const gameState: RpsView = { players: ['pid', 'bob'], choices: {} };
     // No `events` at all — the common case (a provisional pick's broadcast carries none either).
     render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock', 'paper', 'scissors'] })} />);
-    expect(screen.getByTestId('hub-opponent-pick').textContent).toBe('🤫');
+    expect(screen.getByTestId('hub-opponent-pick').querySelector('[data-rc-rps-icon="redacted"]')).toBeInTheDocument();
   });
 
   it('own slot renders the player\'s chosen avatar preset (avatarId threaded into the own bar)', () => {
@@ -233,7 +235,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
       // The opponent's real throw (scissors) is revealed in place — the redacted tile is gone,
       // replaced by the SAME flip-card component the tied-round reveal uses (2026-09-11#9 item 2).
       expect(screen.queryByTestId('hub-opponent-pick')).toBeNull();
-      expect(screen.getByTestId('hub-opponent-pick-revealed').textContent).toContain('✌️');
+      expect(screen.getByTestId('hub-opponent-pick-revealed').querySelector('[data-rc-rps-icon="scissors"]')).toBeInTheDocument();
       // The pick grid locks at terminal — no round left to pick into.
       expect(screen.getByTestId('hub-move-rock')).toBeDisabled();
       // Bar-level "You Win" — generic GameHub `ownBarResult` machinery, same as CoinflipHub.
