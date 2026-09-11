@@ -174,12 +174,24 @@ export interface GameModule {
     accept(state: GameState, playerId: PlayerId): GameState;
   };
 
-  /** OPT-IN absolute per-player deadlines (paired with `timeoutMove`). For games whose timer is
-   *  neither a per-move budget (`meta.moveTimeoutMs`) nor a cumulative clock (`meta.timeControl`)
-   *  but an ABSOLUTE scheduled event derived from the state — e.g. Crash's shared crash time.
-   *  Returns, per still-active player, the wall-clock `now` (ms) at which `timeoutMove` should
-   *  auto-fire; omit a player with nothing scheduled. The core reads it to drive the SAME generic
-   *  move-timer sweep Blackjack/Mines use, injecting `timeoutMove` on expiry — never a game-id
-   *  branch (invariant #5). Modules that don't schedule absolute deadlines omit this. */
+  /** OPT-IN absolute per-player deadlines (paired with `timeoutMove` OR `lockOnTimeout`). For
+   *  games whose timer is neither a per-move budget (`meta.moveTimeoutMs`) nor a cumulative clock
+   *  (`meta.timeControl`) but an ABSOLUTE scheduled event derived from the state — e.g. Crash's
+   *  shared crash time. Returns, per still-active player, the wall-clock `now` (ms) at which
+   *  `timeoutMove`/`lockOnTimeout` should auto-fire; omit a player with nothing scheduled. The
+   *  core reads it to drive the SAME generic move-timer sweep Blackjack/Mines use, injecting
+   *  `timeoutMove` (or calling `lockOnTimeout`) on expiry — never a game-id branch (invariant #5).
+   *  Modules that don't schedule absolute deadlines omit this. */
   scheduledDeadlines?(state: GameState): Record<PlayerId, number>;
+
+  /** Alternative to `timeoutMove` for modules using `scheduledDeadlines` (ADR-012): when a
+   *  player's declared deadline passes and the module implements this, the core calls it
+   *  INSTEAD of timeoutMove+applyMove — no Move is synthesized or validated against
+   *  legalMoves. Use when a timeout should silently end a player's turn/round with no action
+   *  taken (as opposed to auto-acting for them). Must produce a state where this player's
+   *  legalMoves is empty (so the sweep doesn't re-fire on them), and behaves exactly like
+   *  applyMove otherwise: emits its own events (subject to the same redaction rule — see
+   *  GAME_MODULE_INTERFACE.md's "nothing secret in an event"), and the core checks
+   *  isTerminal/settles on the returned state same as any other apply. */
+  lockOnTimeout?(state: GameState, playerId: PlayerId, now: number): ApplyResult;
 }
