@@ -1,20 +1,162 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Bomb, Gem } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { MinesView } from '../App.js';
+import { useTheme } from '../lib/theme.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
 
 // 5×5 / 3-mine ruleset (Designer, 2026-09-11 — see docs/NEW_DESIGN_MIGRATION.md § "Canonical
-// new Mines ruleset"). NOTE: this file is the MINIMUM fix to keep the screen functional against
-// the new engine (right dimensions, right copy) — it is NOT the full visual rebuild to the new
-// 5×5 prototype design, which is out of scope here and tracked as a follow-up (see the T7 PR body).
+// new Mines ruleset"). T7 (#437-ish) rewrote the engine to this shape; T8 (this file) is the
+// full visual rebuild to the prototype's `isMines` block (`design/prototype/RapidClash Full
+// Spec.html:470-529`) — hand-drawn gem/mine SVGs, the real card/board radii + colors, and the
+// 30s round clock. The covered/safe/mine/busted cell LOGIC (`cellKind` below) is UNCHANGED from
+// T7's minimum fix — only what renders inside each state changed.
 const BOARD_SIZE = 25; // 5×5
+
+// The round clock is a fixed 30s cap from `roundStartedAt` (packages/games/mines/src/board.ts's
+// `ROUND_TIMEOUT_MS`). Kept as a local constant so the web app stays decoupled from the game
+// packages — the same rule CoinflipHub.tsx's `PICK_SECONDS` and RpsHub.tsx's `PICK_SECONDS`
+// already follow for their own server-side timer constants.
+const ROUND_SECONDS = 30;
 
 type CellKind = 'covered' | 'safe' | 'mine' | 'bustedOn';
 
+// ── Prototype-literal colors, Full Spec.html:470-529 (`isMines` block) + :3720-3722/:3792 (the
+// `getState()` values feeding it). None of these match an existing --rc-* token pair (checked
+// directly against index.css) except `minesCardBg`, which IS exactly `--rc-surface` in both
+// themes (RpsHub.tsx:333's own note) — reused as `var(--rc-surface)` below rather than
+// duplicated. The rest stay local, switched via `useTheme()` — DiceHub.tsx's `DICE_TRACK`/
+// `DICE_GROOVE` precedent for the same situation. ──
+const MINES_BOARD_BG = { light: '#DEDEE8', dark: '#12121F' }; // line 3721 (`minesBoardBg`) — also
+// reused for the timer track (line 3792 `minesTimerTrack`): identical light/dark pair.
+const MINES_TILE_COVERED = { light: '#CBCBD8', dark: '#232338' }; // line 3722 (`minesTileBg`) —
+// line 3694's `t.bg` else-branch (not open).
+const MINES_TILE_OPEN = { light: '#F2F2F7', dark: '#0E0E18' }; // line 3694's `open` branch — a
+// revealed safe tile, or the exact mine that busted you.
+const MINES_TILE_AUTO = { light: '#E2E2EA', dark: '#0A0A12' }; // line 3694's `auto` branch — a
+// mine revealed by locking, but not the one you actually hit (dimmer than the hit tile).
+const MINES_TIMER_FILL = '#8B45F0'; // line 524 — the progress-track fill, fixed in both themes.
+
+function tileBg(kind: CellKind, light: boolean): string {
+  switch (kind) {
+    case 'covered':
+      return light ? MINES_TILE_COVERED.light : MINES_TILE_COVERED.dark;
+    case 'mine':
+      return light ? MINES_TILE_AUTO.light : MINES_TILE_AUTO.dark;
+    case 'safe':
+    case 'bustedOn':
+      return light ? MINES_TILE_OPEN.light : MINES_TILE_OPEN.dark;
+  }
+}
+
+/** The faceted gem, lines 508-516 — a revealed safe tile. Exact path data, not approximated. */
+function GemIcon() {
+  return (
+    <svg viewBox="0 0 48 44" width="62%" className="block">
+      <path d="M24 43 L2 16 L11 3 L37 3 L46 16 Z" fill="#16C447" />
+      <path d="M24 43 L2 16 L17 16 Z" fill="#22DD55" />
+      <path d="M24 43 L17 16 L31 16 Z" fill="#3BF06B" />
+      <path d="M24 43 L31 16 L46 16 Z" fill="#1BCE4C" />
+      <path d="M2 16 L11 3 L17 16 Z" fill="#4CF97A" />
+      <path d="M17 16 L11 3 L24 3 L31 16 Z" fill="#2AE95E" />
+      <path d="M31 16 L24 3 L37 3 L46 16 Z" fill="#5DFB88" />
+    </svg>
+  );
+}
+
+/** The gem's glow halo, lines 505-507 — shown at 0.55 opacity behind the solid gem (line 3697,
+ *  `gemHaloOp: picked && !bomb ? 0.55 : 0`; every safe tile we render here IS one this player
+ *  tapped, so it always gets the halo). */
+function GemHalo() {
+  return (
+    <svg viewBox="0 0 48 44" width="62%" className="block" style={{ filter: 'blur(3.5px)' }}>
+      <path d="M24 43 L2 16 L11 3 L37 3 L46 16 Z" fill="#3CF06E" />
+    </svg>
+  );
+}
+
+/** The spiky mine, lines 489-503 — a revealed mine (either the one that busted you, or one of
+ *  the other two exposed once you're locked). `opacity` mirrors line 3700's `bombOp`: 1 for the
+ *  hit tile, 0.26 for the others. */
+function MineIcon({ opacity }: { opacity: number }) {
+  return (
+    <svg viewBox="0 0 48 48" width="66%" className="block" style={{ opacity }}>
+      <g fill="#3A3E46">
+        <rect x="21.5" y="2" width="5" height="9" rx="2.5" />
+        <rect x="21.5" y="37" width="5" height="9" rx="2.5" />
+        <rect x="2" y="21.5" width="9" height="5" rx="2.5" />
+        <rect x="37" y="21.5" width="9" height="5" rx="2.5" />
+        <rect x="8" y="8.6" width="5" height="9" rx="2.5" transform="rotate(-45 10.5 13.1)" />
+        <rect x="35" y="8.6" width="5" height="9" rx="2.5" transform="rotate(45 37.5 13.1)" />
+        <rect x="8" y="30.4" width="5" height="9" rx="2.5" transform="rotate(45 10.5 34.9)" />
+        <rect x="35" y="30.4" width="5" height="9" rx="2.5" transform="rotate(-45 37.5 34.9)" />
+      </g>
+      <circle cx="24" cy="24" r="15" fill="#41454E" />
+      <path d="M24 9 a15 15 0 0 1 0 30 a15 15 0 0 0 0 -30" fill="#33363E" />
+      <circle cx="18.5" cy="18" r="4.6" fill="#4E525C" opacity="0.75" />
+      <path d="M27 11 L21.5 22 L26.5 23 L20 37 L27 24.5 L22.5 23.5 Z" fill="#FF8A1E" />
+      <path d="M26 13.5 L22.8 22.4 L26.2 23.2 L22 33 L26 24.6 L23.3 23.9 Z" fill="#FFD23D" />
+    </svg>
+  );
+}
+
+/** The mine's glow halo, lines 475-487 — shown only on the tile that actually busted you (line
+ *  3699, `bombHaloOp: hit ? 1 : 0`). */
+function MineHalo() {
+  return (
+    <svg
+      viewBox="0 0 48 48"
+      width="66%"
+      className="block"
+      style={{ filter: 'blur(3.5px) drop-shadow(0 0 3px rgba(255,60,85,0.85))' }}
+    >
+      <g fill="#FF3E5E">
+        <rect x="21.5" y="2" width="5" height="9" rx="2.5" />
+        <rect x="21.5" y="37" width="5" height="9" rx="2.5" />
+        <rect x="2" y="21.5" width="9" height="5" rx="2.5" />
+        <rect x="37" y="21.5" width="9" height="5" rx="2.5" />
+        <rect x="8" y="8.6" width="5" height="9" rx="2.5" transform="rotate(-45 10.5 13.1)" />
+        <rect x="35" y="8.6" width="5" height="9" rx="2.5" transform="rotate(45 37.5 13.1)" />
+        <rect x="8" y="30.4" width="5" height="9" rx="2.5" transform="rotate(45 10.5 34.9)" />
+        <rect x="35" y="30.4" width="5" height="9" rx="2.5" transform="rotate(-45 37.5 34.9)" />
+        <circle cx="24" cy="24" r="15.5" />
+      </g>
+    </svg>
+  );
+}
+
+/** What renders inside one tile, by `cellKind` — the ONLY thing T8 changes about a cell; the
+ *  covered/safe/mine/bustedOn classification itself (`cellKind()` below) is untouched. */
+function MineTileContent({ kind }: { kind: CellKind }) {
+  if (kind === 'safe') {
+    return (
+      <>
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <GemHalo />
+        </div>
+        <GemIcon />
+      </>
+    );
+  }
+  if (kind === 'mine') {
+    return <MineIcon opacity={0.26} />;
+  }
+  if (kind === 'bustedOn') {
+    return (
+      <>
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <MineHalo />
+        </div>
+        <MineIcon opacity={1} />
+      </>
+    );
+  }
+  return null;
+}
+
 /** Greyed preview shown in Idle/Waiting — a dimmed 5×5 grid, the visual anchor before a
- *  match activates it (mirrors RpsIdle / CoinflipIdle). */
+ *  match activates it (mirrors RpsIdle / CoinflipIdle). Out of scope for T8 (Advisor ticket,
+ *  2026-09-11#3): stays generic gray squares, same as T6a/T6b's idle states initially. */
 function MinesIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
   return (
     <div className="flex flex-col items-center gap-4 py-1">
@@ -33,6 +175,58 @@ function MinesIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
   );
 }
 
+/** The 30s round-clock label + progress track, lines 520-527. `{{minesClock}}s` (13px, Space
+ *  Grotesk bold) above a 5px rounded track (`minesTimerTrack`, line 523 — the same light/dark
+ *  pair as `minesBoardBg`) filled purple (line 524, `#8B45F0`) to `(clock/30)*100%`, animating
+ *  via `transition:width 1000ms linear` — copied verbatim, not approximated.
+ *
+ * Driven by the server-authoritative `roundStartedAt` (T8's one `viewFor` field addition,
+ * packages/games/mines/src/mines.ts), NOT a client-guessed/reset-on-render value: deadline is
+ * `roundStartedAt + ROUND_SECONDS * 1000`, exactly mirroring `scheduledDeadlines`' own math
+ * (packages/games/mines/src/mines.ts). Same cosmetic-countdown idiom as CoinflipHub.tsx's
+ * `CountdownRing` / RpsHub.tsx's `RpsCountdown` (`windowEndsAt` there vs `roundStartedAt` here —
+ * Mines' clock is a per-ROUND cap shared by both players, not a per-player pick window, so it
+ * keeps counting even after THIS player has locked, reflecting the opponent's remaining time).
+ */
+function RoundClock({ roundStartedAt, serverClockOffset, light }: { roundStartedAt: number | undefined; serverClockOffset: number; light: boolean }) {
+  const [secondsLeft, setSecondsLeft] = useState(ROUND_SECONDS);
+
+  useEffect(() => {
+    if (!roundStartedAt) {
+      setSecondsLeft(ROUND_SECONDS);
+      return;
+    }
+    const deadline = roundStartedAt + ROUND_SECONDS * 1000;
+    const tick = () => {
+      const remaining = (deadline - (Date.now() + serverClockOffset)) / 1000;
+      setSecondsLeft(Math.max(0, Math.min(ROUND_SECONDS, Math.ceil(remaining))));
+    };
+    tick();
+    const id = setInterval(tick, 250);
+    return () => clearInterval(id);
+  }, [roundStartedAt, serverClockOffset]);
+
+  const trackBg = light ? MINES_BOARD_BG.light : MINES_BOARD_BG.dark;
+  const widthPct = Math.max(0, Math.min(100, (secondsLeft / ROUND_SECONDS) * 100));
+
+  return (
+    <div className="flex flex-col items-end gap-[5px] pt-3" data-testid="mines-round-clock">
+      <span
+        className="font-bold leading-none text-[var(--rc-text)]"
+        style={{ fontFamily: "'Space Grotesk', Arial, Helvetica, sans-serif", fontSize: 13 }}
+      >
+        {secondsLeft}s
+      </span>
+      <div className="h-[5px] w-full overflow-hidden rounded-full" style={{ background: trackBg }}>
+        <div
+          className="mr-auto h-full rounded-full"
+          style={{ width: `${widthPct}%`, background: MINES_TIMER_FILL, transition: 'width 1000ms linear' }}
+        />
+      </div>
+    </div>
+  );
+}
+
 /**
  * The live in-match board — MinesPlay's own 5×5 grid lifted into the GameHub slot, v2-tokenised.
  * Covered tiles fire onMove(index), gated by the server-issued legalMoves (this player's still-
@@ -43,7 +237,9 @@ function MinesIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
  * gameState, so a new round (round bumps, uncovered resets) re-covers the board on its own; only
  * the decisive match.end surfaces the GameHub result overlay.
  */
-function MinesBoard({ playerId, opponentId, username, gameState, legalMoves, onMove, onForfeit }: GameAreaArgs) {
+function MinesBoard({ playerId, opponentId, username, gameState, legalMoves, onMove, onForfeit, serverClockOffset = 0 }: GameAreaArgs) {
+  const { resolved: themeResolved } = useTheme();
+  const light = themeResolved === 'light';
   const view = gameState as MinesView | null;
   // Mines moves are square indices: legalMoves/onMove are number-valued here (the GameHub slot
   // types them as string for the generic games — narrow them back for Mines).
@@ -72,12 +268,6 @@ function MinesBoard({ playerId, opponentId, username, gameState, legalMoves, onM
   // We NEVER see their board, in-play or otherwise.
   const oppScore = opp?.score;
   const oppLocked = opp?.locked ?? false;
-
-  // NOTE: the old per-move 5s countdown is removed along with the mechanic it displayed (rule
-  // 10 — no per-move timer any more). The engine now runs a single 30s round clock from match
-  // start (ADR-012's scheduledDeadlines/lockOnTimeout), which is not yet surfaced through
-  // viewFor to the client — showing an accurate live countdown here is follow-up UI work, not
-  // this ticket (T7 is the engine rewrite; see the PR body).
 
   function cellKind(i: number): CellKind {
     if (bustedOn === i) return 'bustedOn';
@@ -125,12 +315,15 @@ function MinesBoard({ playerId, opponentId, username, gameState, legalMoves, onM
         </span>
       </div>
 
-      {/* Own 5×5 board. The opponent's board is NEVER rendered (server hides it). */}
+      {/* Own 5×5 board, lines 470-518 — inner board radius 16px, bg `minesBoardBg`, 10px padding,
+       *  a 5-col grid with 8px gaps; each tile radius 9px. The opponent's board is NEVER rendered
+       *  (server hides it). */}
       <div
         data-testid="mines-board"
         role="grid"
         aria-label="Your minefield"
-        className="grid grid-cols-5 gap-1 rounded-xl border border-border bg-surface/40 p-2"
+        className="grid grid-cols-5 gap-2 rounded-2xl p-2.5"
+        style={{ background: light ? MINES_BOARD_BG.light : MINES_BOARD_BG.dark }}
       >
         {Array.from({ length: BOARD_SIZE }, (_, i) => {
           const kind = cellKind(i);
@@ -148,22 +341,18 @@ function MinesBoard({ playerId, opponentId, username, gameState, legalMoves, onM
               whileHover={clickable ? { scale: 1.08 } : undefined}
               whileTap={clickable ? { scale: 0.92 } : undefined}
               className={cn(
-                'flex aspect-square items-center justify-center rounded-md text-[10px] transition-colors',
-                kind === 'covered' &&
-                  (clickable
-                    ? 'cursor-pointer border border-brand/30 bg-gradient-to-b from-brand/40 to-indigo-700/40 hover:from-brand/60 hover:to-indigo-700/60'
-                    : 'cursor-not-allowed border border-border bg-background'),
-                kind === 'safe' && 'border border-success/30 bg-success/10 text-success',
-                kind === 'mine' && 'border border-border bg-surface text-muted-foreground',
-                kind === 'bustedOn' && 'border border-destructive/50 bg-destructive/20 text-destructive',
+                'relative flex aspect-square items-center justify-center rounded-[9px] transition-colors',
+                clickable ? 'cursor-pointer' : kind === 'covered' ? 'cursor-not-allowed opacity-70' : 'cursor-default',
               )}
+              style={{ background: tileBg(kind, light) }}
             >
-              {kind === 'safe' && <Gem className="h-3 w-3" />}
-              {(kind === 'mine' || kind === 'bustedOn') && <Bomb className="h-3 w-3" />}
+              <MineTileContent kind={kind} />
             </motion.button>
           );
         })}
       </div>
+
+      <RoundClock roundStartedAt={view?.roundStartedAt} serverClockOffset={serverClockOffset} light={light} />
 
       <p className="text-center text-xs text-muted-foreground">
         {myLocked
@@ -186,11 +375,13 @@ function MinesBoard({ playerId, opponentId, username, gameState, legalMoves, onM
   );
 }
 
-/** The Mines game-area slot: greyed idle preview, or the live board in-match. */
+/** The Mines game-area slot: greyed idle preview, or the live board in-match. Full Spec.html:471
+ *  — border-radius:22px, background `minesCardBg`, padding 12px 12px 16px 12px. `minesCardBg` IS
+ *  exactly `--rc-surface` in both themes (RpsHub.tsx:333's own note) — read via the token rather
+ *  than re-deriving the same value. */
 function MinesPanel(args: GameAreaArgs) {
-  // The arena owns its surface now (GameHub no longer wraps it in a grey card).
   return (
-    <div className="rounded-2xl border border-border bg-card p-4">
+    <div className="rounded-[22px] bg-[var(--rc-surface)] px-3 pb-4 pt-3">
       {args.phase === 'in-match' ? <MinesBoard {...args} /> : <MinesIdle phase={args.phase} />}
     </div>
   );

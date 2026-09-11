@@ -324,6 +324,10 @@ export const minesModule: GameModule = {
       players: s.players,
       round: s.round,
       draws: s.draws,
+      // Public per-round timing metadata (T8): when the CURRENT round's 30s clock started.
+      // Reveals no mine position or opponent score — the client derives a local countdown
+      // as `roundStartedAt + ROUND_TIMEOUT_MS`, mirroring scheduledDeadlines' own math.
+      roundStartedAt: s.roundStartedAt,
       boards: { [playerId]: myView, [opponentId]: oppView },
     } as GameState;
   },

@@ -154,6 +154,11 @@ export interface MinesView {
   round: number;
   draws: number;
   boards: Record<string, MinesBoardView>;
+  /** When the CURRENT round's 30s clock started (ms) — T8: drives the client-side round-clock
+   *  countdown (`roundStartedAt + 30_000`, mirroring the server's own `scheduledDeadlines` math
+   *  in packages/games/mines/src/mines.ts). Public per-round timing metadata; reveals no mine
+   *  position or opponent score. */
+  roundStartedAt?: number;
   winner?: string;
   forcedOutcome?: { type: string; winner?: string };
   /** Full mine layout — present only at terminal (full reveal). */
