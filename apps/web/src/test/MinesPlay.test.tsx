@@ -6,7 +6,7 @@ import type { MinesView, MinesBoardView } from '../App.js';
 
 const aliceProps = { playerId: 'alice', username: 'alice', opponentId: 'bob', onMove: vi.fn(), onForfeit: vi.fn() };
 
-const allCovered = Array.from({ length: 64 }, (_, i) => i);
+const allCovered = Array.from({ length: 25 }, (_, i) => i);
 
 function view(me: Partial<MinesBoardView>, opp: Partial<MinesBoardView> = {}, extra: Partial<MinesView> = {}): MinesView {
   return {
@@ -24,10 +24,10 @@ function view(me: Partial<MinesBoardView>, opp: Partial<MinesBoardView> = {}, ex
 const kind = (i: number) => screen.getByTestId(`cell-${i}`).getAttribute('data-kind');
 
 describe('MinesPlayScreen', () => {
-  it('renders the own 8×8 board (64 cells) and the player’s safe count', () => {
+  it('renders the own 5×5 board (25 cells) and the player’s safe count', () => {
     render(<MinesPlayScreen {...aliceProps} gameState={view({ uncovered: [] })} legalMoves={allCovered} />);
     expect(screen.getByTestId('mines-board')).toBeInTheDocument();
-    expect(screen.getAllByRole('gridcell')).toHaveLength(64);
+    expect(screen.getAllByRole('gridcell')).toHaveLength(25);
     expect(screen.getByTestId('play-you').textContent).toContain('0 safe');
     expect(screen.getByTestId('my-status').textContent).toBe('Your move');
   });
@@ -54,7 +54,7 @@ describe('MinesPlayScreen', () => {
       <MinesPlayScreen
         {...aliceProps}
         onMove={onMove}
-        gameState={view({ uncovered: [0, 1], locked: true, bustedOn: 10, mines: [10, 20, 30] })}
+        gameState={view({ uncovered: [0, 1], locked: true, bustedOn: 10, mines: [10, 20, 22] })}
         legalMoves={[]}
       />,
     );
@@ -62,7 +62,7 @@ describe('MinesPlayScreen', () => {
     expect(kind(1)).toBe('safe');
     expect(kind(10)).toBe('bustedOn'); // the detonated mine wins over plain 'mine'
     expect(kind(20)).toBe('mine'); // layout revealed once locked
-    expect(kind(30)).toBe('mine');
+    expect(kind(22)).toBe('mine');
     expect(kind(2)).toBe('covered');
 
     // Locked → board frozen: an uncovered (or any) cell is not clickable.
@@ -82,8 +82,8 @@ describe('MinesPlayScreen', () => {
     const oppCount = screen.getByTestId('opponent-count');
     expect(oppCount.textContent).not.toMatch(/\d+ safe/); // no number leaked
     expect(oppCount.querySelector('[aria-label="hidden"]')).toBeInTheDocument();
-    // Only the player's own 64 cells exist — the opponent's board is never in the DOM.
-    expect(screen.getAllByRole('gridcell')).toHaveLength(64);
+    // Only the player's own 25 cells exist — the opponent's board is never in the DOM.
+    expect(screen.getAllByRole('gridcell')).toHaveLength(25);
   });
 
   it('REVEALS the opponent count once it is provided (target / chase, server-gated on lock)', () => {
@@ -104,14 +104,6 @@ describe('MinesPlayScreen', () => {
     expect(kind(0)).toBe('covered'); // the previously-safe square is covered again
     expect(screen.getByTestId('cell-0')).not.toBeDisabled();
     expect(screen.getByTestId('round-indicator').textContent).toContain('Round 2');
-  });
-
-  it('shows a per-move countdown while active and hides it once locked', () => {
-    const { rerender } = render(<MinesPlayScreen {...aliceProps} gameState={view({ uncovered: [] })} legalMoves={allCovered} />);
-    expect(screen.getByTestId('move-timer').textContent).toBe('5s');
-
-    rerender(<MinesPlayScreen {...aliceProps} gameState={view({ uncovered: [], locked: true })} legalMoves={[]} />);
-    expect(screen.queryByTestId('move-timer')).not.toBeInTheDocument();
   });
 
   it('resign calls onForfeit (and is hidden once locked)', () => {

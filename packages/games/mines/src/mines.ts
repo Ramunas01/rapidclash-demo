@@ -4,19 +4,18 @@ import type {
   GameMeta,
   GameModule,
   GameState,
-  Move,
   MoveContext,
   Outcome,
   PlayerId,
   Rng,
 } from '@rapidclash/shared';
 import { IllegalMove } from '@rapidclash/shared';
-import { BOARD_SIZE, MINE_COUNT, SAFE_COUNT, MOVE_TIMEOUT_MS, minesFor } from './board.js';
+import { BOARD_SIZE, MINE_COUNT, SAFE_COUNT, ROUND_TIMEOUT_MS, minesFor } from './board.js';
 
 /** After this many CONSECUTIVE drawn rounds the match voids (refund both, no rake). */
 const DRAW_CAP = 10;
 
-/** A move is the index (0..63) of the square a player uncovers. */
+/** A move is the index (0..BOARD_SIZE-1) of the square a player uncovers. */
 type MinesMove = number;
 
 /** One player's instance of the shared board. */
@@ -24,7 +23,7 @@ interface PlayerBoard {
   /** Indices of the SAFE squares this player has uncovered, in reveal order. Its length
    *  is the player's score. A mine is never added here — uncovering one sets `bustedOn`. */
   uncovered: number[];
-  /** Busted (hit a mine) or cleared (all 48 safe) → no more moves. */
+  /** Busted (hit a mine), cleared (all SAFE_COUNT safe), or timed out → no more moves. */
   locked: boolean;
   /** The mine square that busted this player. Present only once busted. */
   bustedOn?: number;
@@ -33,7 +32,12 @@ interface PlayerBoard {
 /**
  * JSON-serializable Mines state.
  *
- * Concurrent (not turn-based): both players race their own instance of the SAME board.
+ * Concurrent (not turn-based): both players race their own instance of the SAME board,
+ * each running to their OWN completion independently (a mine, the 30s round clock, or a
+ * perfect 22-tile clear — whichever comes first for them). There is no early resolution:
+ * the match only resolves once BOTH players have locked (Designer ruleset, 2026-09-11,
+ * rules 2/3 of the rules-diff answers) — see `decide`.
+ *
  * The mine layout is NOT stored — it is re-derived from `seed` + `round` on demand
  * (see board.ts) so a redacted view can never leak it. `seed` itself is stripped from
  * in-play views (it would let a player compute the mines) and revealed only at terminal.
@@ -51,6 +55,12 @@ interface MinesState {
   /** Consecutive drawn rounds so far. */
   draws: number;
   boards: Record<PlayerId, PlayerBoard>;
+  /** The `now` (ms) at which the CURRENT round's 30s clock started — stamped by `launch` for
+   *  round 0, and re-stamped on every draw-replay redeal. 0 until `launch` runs (the core
+   *  calls it once, right after `init`, with the match-formation time). Drives
+   *  `scheduledDeadlines`: a player's absolute lock time is `roundStartedAt + ROUND_TIMEOUT_MS`,
+   *  a fixed cap from round start — never reset by tapping (rule 3). */
+  roundStartedAt: number;
   /** Set when a round produced a decisive winner → the match is terminal. */
   winner?: PlayerId;
   /** Set on void (draw cap, or a disconnect resolve that drew) → the match is terminal. */
@@ -89,48 +99,44 @@ function isSquareIndex(v: unknown): v is MinesMove {
 }
 
 /**
- * Is the match decided, and if so, what is the result? A player's score is final only
- * once they LOCK (bust or clear), so resolution can come well before either board is
- * exhausted:
- *   - both locked            → higher score wins; equal → 'draw'.
- *   - one locked at S, other active at S' → decided ONLY when S' > S (the active player
- *                              has irreversibly overtaken and wins); otherwise undecided.
- *   - neither locked         → undecided (no fixed target yet).
+ * Is the match decided, and if so, what is the result? NO EARLY RESOLUTION (Designer ruleset,
+ * 2026-09-11): both players play their own round to completion — independently, via a mine, the
+ * clock, or a perfect 22-tile clear — and only once BOTH have locked is a result compared. A
+ * locked player being mathematically passed by a still-active opponent is NOT itself a
+ * conclusion; the match stays undecided until the opponent's own round also ends. This is a
+ * deliberate reversal of the old engine's instant-overtake resolution.
  */
 function decide(s: MinesState): { done: boolean; result?: PlayerId | 'draw' } {
   const [p1, p2] = s.players;
   const b1 = s.boards[p1];
   const b2 = s.boards[p2];
+  if (!b1.locked || !b2.locked) return { done: false };
+
   const s1 = score(b1);
   const s2 = score(b2);
-
-  if (b1.locked && b2.locked) {
-    if (s1 === s2) return { done: true, result: 'draw' };
-    return { done: true, result: s1 > s2 ? p1 : p2 };
-  }
-  if (b1.locked && !b2.locked) {
-    return s2 > s1 ? { done: true, result: p2 } : { done: false };
-  }
-  if (b2.locked && !b1.locked) {
-    return s1 > s2 ? { done: true, result: p1 } : { done: false };
-  }
-  return { done: false };
+  if (s1 === s2) return { done: true, result: 'draw' };
+  return { done: true, result: s1 > s2 ? p1 : p2 };
 }
 
-/** Re-deal a fresh board to both players for the next round. Mutates `s`. */
-function redeal(s: MinesState): void {
+/** Re-deal a fresh board to both players for the next round, restarting the round clock from
+ *  `now` (each round gets its own full 30s cap — rule 3). Mutates `s`. */
+function redeal(s: MinesState, now: number): void {
   s.boards = { [s.players[0]]: freshBoard(), [s.players[1]]: freshBoard() } as Record<PlayerId, PlayerBoard>;
+  s.roundStartedAt = now;
 }
 
 /**
- * After a move has been applied to `s`, resolve the match if the outcome is now decided:
+ * After a player has locked (bust, clear, or timeout) in `s`, resolve the match if the outcome
+ * is now decided (i.e. both players are locked):
  *   - decisive → set `winner` (terminal);
  *   - draw     → increment `draws`; at the cap set `forcedOutcome: void`, else re-deal a
- *                fresh round in the same match/escrow.
+ *                fresh round (own clock) in the same match/escrow.
  * Returns the broadcast-safe events for this transition (a tie can only occur with BOTH
- * players locked, so revealing scores here leaks nothing — both are final).
+ * players locked, so revealing scores here leaks nothing — both are final). `now` threads
+ * through to `redeal` so a replay round's clock starts from the moment resolution happened,
+ * not some stale value.
  */
-function resolve(s: MinesState): GameEvent[] {
+function resolve(s: MinesState, now: number): GameEvent[] {
   const d = decide(s);
   if (!d.done) return [];
 
@@ -146,7 +152,7 @@ function resolve(s: MinesState): GameEvent[] {
     return [{ type: 'match_voided', payload: { reason: 'draw_cap', draws: s.draws } }];
   }
   s.round += 1;
-  redeal(s);
+  redeal(s, now);
   return [{ type: 'new_round', payload: { round: s.round, draws: s.draws } }];
 }
 
@@ -158,15 +164,14 @@ const meta: GameMeta = {
   // net_winnings — a chance game, like Coinflip (spec: owner to confirm).
   ranking: { kind: 'net_winnings' },
   bet: { minStake: 1, maxStake: 100, symmetricStake: true },
-  averageDurationSec: 45,
+  averageDurationSec: 30,
   // Mines rake: 2.5% of the pot (chance game, like Coinflip/RPS), taken once on the
   // decisive result — declared per-game so the core never hard-codes it (invariant #5).
   rakeRate: 0.025,
-  // Opt into the core's generic per-player move timer (#91): each player gets an
-  // independent 5s clock; on expiry the core injects `timeoutMove` for them. This is
-  // what makes the concurrent race work and the spec's disconnect behaviour fall out
-  // (a dropped player is just one whose every move times out → auto-revealed to a lock).
-  moveTimeoutMs: MOVE_TIMEOUT_MS,
+  // NOTE: no `moveTimeoutMs` — the per-move timer/auto-reveal mechanism is gone entirely
+  // (Designer ruleset rule 10). Mines now opts into the core's scheduled-deadline mode
+  // (`scheduledDeadlines` + `lockOnTimeout`, ADR-012) instead: one absolute 30s round clock
+  // per player, not a per-move budget.
 };
 
 export const minesModule: GameModule = {
@@ -182,8 +187,15 @@ export const minesModule: GameModule = {
       round: 0,
       draws: 0,
       boards: { [players[0]]: freshBoard(), [players[1]]: freshBoard() } as Record<PlayerId, PlayerBoard>,
+      roundStartedAt: 0, // stamped by `launch` at match formation
     };
     return state;
+  },
+
+  /** Stamp the round-0 clock start from the match's formation time (the core calls this once,
+   *  right after `init`). Every subsequent round (draw replay) re-stamps it in `redeal`. */
+  launch(state: GameState, now: number): GameState {
+    return { ...cast(state), roundStartedAt: now };
   },
 
   legalMoves(state: GameState, playerId: PlayerId): MinesMove[] {
@@ -218,31 +230,36 @@ export const minesModule: GameModule = {
       },
     };
     const me = next.boards[playerId];
-    const mines = minesFor(next.seed, next.round);
+    const mines = minesFor(next.seed, next.round, BOARD_SIZE, MINE_COUNT);
 
     const events: GameEvent[] = [];
     if (mines.has(move)) {
       // Hit a mine → bust: lock the board at its current score. NOTE the uncovered SAFE
-      // count does not include this square — a bust does not raise the score.
+      // count does not include this square — a bust does not raise the score (rule 5: bust
+      // keeps your gems, unchanged from before).
       me.locked = true;
       me.bustedOn = move;
-      // Broadcast-safe: a lock reveals this player's now-final score (the opponent is
-      // allowed to know the target once a player locks — see viewFor).
+      // Broadcast-safe: a lock reveals this player's now-final score — safe to announce
+      // regardless of the opponent's status, since NEITHER early resolution nor a live
+      // opponent-count leak follows from it (viewFor still gates the opponent's count on
+      // BOTH players being locked).
       events.push({ type: 'player_locked', payload: { playerId, reason: 'bust', score: score(me) } });
     } else {
       me.uncovered.push(move);
       // No per-safe-reveal event: broadcasting it would let the opponent tally an active
-      // player's score, which must stay hidden until they lock. The actor learns their own
+      // player's score, which must stay hidden until BOTH lock. The actor learns their own
       // progress via viewFor. Only a CLEAR (a lock) is announced.
       if (me.uncovered.length === SAFE_COUNT) {
-        me.locked = true; // perfect run → lock at max score, NOT a bust
+        me.locked = true; // perfect run (all 22 safe tiles) → lock at max score, rule 1 of the
+        // rules-diff answers: auto-lock at 22, same mechanism as a bust-lock but no mine.
         events.push({ type: 'player_locked', payload: { playerId, reason: 'cleared', score: SAFE_COUNT } });
       }
     }
 
-    // Re-evaluate resolution after every move — `match_decided`/`new_round`/`match_voided`
-    // may fire the instant the line is crossed, mid-play.
-    events.push(...resolve(next));
+    // Re-evaluate resolution after every move — this only actually resolves once BOTH players
+    // are locked (see `decide`); `match_decided`/`new_round`/`match_voided` never fire from one
+    // side alone.
+    events.push(...resolve(next, ctx.now));
 
     return { state: next, events };
   },
@@ -265,25 +282,30 @@ export const minesModule: GameModule = {
     const opponentId = s.players.find((p) => p !== playerId)!;
     const opp = s.boards[opponentId];
 
-    // Terminal → full reveal (both boards + the mine layout + seed, for verifiability).
+    // Terminal → full reveal (both boards + the mine layout + seed, for verifiability). Since
+    // early resolution is removed, this branch can only ever fire once BOTH players are done —
+    // the one path that could once have exposed the seed prematurely no longer exists.
     if (terminal(s)) {
-      return { ...s, mines: [...minesFor(s.seed, s.round)].sort((a, b) => a - b) } as GameState;
+      return { ...s, mines: [...minesFor(s.seed, s.round, BOARD_SIZE, MINE_COUNT)].sort((a, b) => a - b) } as GameState;
     }
 
     // Own board: full. The mine layout is revealed ONLY once this player has locked
-    // (busted/cleared) — a locked player has no move left, so it leaks nothing exploitable.
+    // (busted/cleared/timed out) — a locked player has no move left, so it leaks nothing
+    // exploitable.
     const myView: PlayerBoard & { mines?: number[] } = {
       uncovered: [...me.uncovered],
       locked: me.locked,
       ...(me.bustedOn !== undefined ? { bustedOn: me.bustedOn } : {}),
-      ...(me.locked ? { mines: [...minesFor(s.seed, s.round)].sort((a, b) => a - b) } : {}),
+      ...(me.locked ? { mines: [...minesFor(s.seed, s.round, BOARD_SIZE, MINE_COUNT)].sort((a, b) => a - b) } : {}),
     };
 
-    // Opponent's BOARD is always hidden. Their running safe-count is revealed only when
-    // EITHER player is locked: once the opponent locks it is the fixed target you race;
-    // once YOU lock you watch their live count climb (the chase). While both are active,
-    // the count stays hidden. The seed is never in an in-play view (it reveals the mines).
-    const revealOppCount = opp.locked || me.locked;
+    // Opponent's BOARD is always hidden, and — Designer ruleset rules 2+3 of the rules-diff
+    // answers — their running safe-count now stays hidden for the WHOLE round, revealed ONLY
+    // once BOTH players are locked (i.e. only ever alongside the terminal branch above in
+    // practice, since a match resolves the instant both lock). While either player is still
+    // active, the opponent's count is never shown — no visible target, no chase. The seed is
+    // never in an in-play view (it reveals the mines).
+    const revealOppCount = opp.locked && me.locked;
     const oppView: { locked: boolean; score?: number } = {
       locked: opp.locked,
       ...(revealOppCount ? { score: score(opp) } : {}),
@@ -307,10 +329,10 @@ export const minesModule: GameModule = {
     // → void. The single-call forfeit contract must return a terminal state, so this
     // stands both where they are.
     //
-    // NOTE: a mere DISCONNECT does not route here for Mines — opting into the per-player
-    // timer (meta.moveTimeoutMs + timeoutMove) means the core keeps auto-revealing random
-    // squares for the absent player until they lock (the spec's "no void" disconnect),
-    // resolving via the normal applyMove path. forfeit covers a genuine give-up.
+    // NOTE: a mere DISCONNECT does not route here for Mines — the 30s round clock
+    // (scheduledDeadlines + lockOnTimeout, ADR-012) locks an absent player at whatever gems
+    // they had (including zero) once it expires; no void, no special handling (Designer
+    // ruleset, disconnect confirmation). forfeit covers a genuine explicit give-up.
     const next: MinesState = {
       ...s,
       boards: Object.fromEntries(
@@ -327,22 +349,40 @@ export const minesModule: GameModule = {
     return next;
   },
 
-  /**
-   * The auto-move the core injects when `playerId`'s per-player clock expires (paired with
-   * `meta.moveTimeoutMs`, #91): a random still-covered square — which may itself be a mine,
-   * exactly like a manual pick. Returns a move in `legalMoves(state, playerId)`; the core
-   * supplies the match's seeded rng so the whole match stays deterministic/replayable.
-   */
-  timeoutMove(state: GameState, playerId: PlayerId, rng: Rng): Move {
+  /** OPT-IN absolute per-player deadline (ADR-012): each still-active player's round ends at
+   *  `roundStartedAt + ROUND_TIMEOUT_MS` — a single 30s clock from the CURRENT round's start,
+   *  never reset by tapping (rule 3: a cap on an idle/disconnected player, not a mechanic). A
+   *  locked player has nothing scheduled (the core re-checks `legalMoves` too, but omitting
+   *  them here keeps this function's own contract self-evident). */
+  scheduledDeadlines(state: GameState): Record<PlayerId, number> {
+    const s = cast(state);
+    if (s.roundStartedAt === 0 || terminal(s)) return {};
+    const out: Record<PlayerId, number> = {};
+    for (const p of s.players) {
+      if (!s.boards[p].locked) out[p] = s.roundStartedAt + ROUND_TIMEOUT_MS;
+    }
+    return out;
+  },
+
+  /** ADR-012: when `playerId`'s round clock expires, lock them at their CURRENT score — no
+   *  move is synthesized (rule 10: nothing happens until the clock; there is no auto-reveal
+   *  any more). Mirrors the bust/clear lock exactly, just reached from the clock instead of a
+   *  tap: sets `locked = true` and pushes the same `player_locked` event shape, `reason:
+   *  'timeout'`. Then re-evaluates resolution exactly like a normal move would. */
+  lockOnTimeout(state: GameState, playerId: PlayerId, now: number): ApplyResult {
     const s = cast(state);
     const board = s.boards[playerId];
-    const covered = board ? coveredSquares(board) : [];
-    if (covered.length === 0) {
-      throw new IllegalMove(`${playerId} has no covered square to auto-reveal`);
-    }
-    return covered[rng.int(0, covered.length - 1)];
+    const next: MinesState = {
+      ...s,
+      boards: { ...s.boards, [playerId]: { ...board, locked: true } },
+    };
+    const events: GameEvent[] = [
+      { type: 'player_locked', payload: { playerId, reason: 'timeout', score: score(board) } },
+    ];
+    events.push(...resolve(next, now));
+    return { state: next, events };
   },
 };
 
 // Re-export the board constants for clients/tests that need them.
-export { BOARD_SIZE, MINE_COUNT, SAFE_COUNT, MOVE_TIMEOUT_MS, minesFor };
+export { BOARD_SIZE, MINE_COUNT, SAFE_COUNT, ROUND_TIMEOUT_MS, minesFor };

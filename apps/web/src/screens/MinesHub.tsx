@@ -1,23 +1,26 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Bomb, Gem } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { MinesView } from '../App.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
 
-const BOARD_SIZE = 64; // 8×8
-const MOVE_TIMEOUT_MS = 5000;
+// 5×5 / 3-mine ruleset (Designer, 2026-09-11 — see docs/NEW_DESIGN_MIGRATION.md § "Canonical
+// new Mines ruleset"). NOTE: this file is the MINIMUM fix to keep the screen functional against
+// the new engine (right dimensions, right copy) — it is NOT the full visual rebuild to the new
+// 5×5 prototype design, which is out of scope here and tracked as a follow-up (see the T7 PR body).
+const BOARD_SIZE = 25; // 5×5
 
 type CellKind = 'covered' | 'safe' | 'mine' | 'bustedOn';
 
-/** Greyed preview shown in Idle/Waiting — a dimmed 8×8 grid, the visual anchor before a
+/** Greyed preview shown in Idle/Waiting — a dimmed 5×5 grid, the visual anchor before a
  *  match activates it (mirrors RpsIdle / CoinflipIdle). */
 function MinesIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
   return (
     <div className="flex flex-col items-center gap-4 py-1">
       <div
         aria-hidden
-        className="grid w-full grid-cols-8 gap-1 rounded-xl border border-border bg-surface/40 p-2 opacity-50"
+        className="grid w-full grid-cols-5 gap-1 rounded-xl border border-border bg-surface/40 p-2 opacity-50"
       >
         {Array.from({ length: BOARD_SIZE }, (_, i) => (
           <div key={i} className="aspect-square rounded-md border border-border/60 bg-background" />
@@ -31,13 +34,14 @@ function MinesIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
 }
 
 /**
- * The live in-match board — MinesPlay's own 8×8 grid lifted into the GameHub slot, v2-tokenised.
+ * The live in-match board — MinesPlay's own 5×5 grid lifted into the GameHub slot, v2-tokenised.
  * Covered tiles fire onMove(index), gated by the server-issued legalMoves (this player's still-
  * covered squares). Own uncovered-safe / busted / mine cells render once known; the opponent's
- * board is NEVER rendered (viewFor redaction), and their safe-count appears only once someone
- * locks (the chase). An internal draw-replay re-deals the board within the same match — the cells
- * derive straight from gameState, so a new round (round bumps, uncovered resets) re-covers the
- * board on its own; only the decisive match.end surfaces the GameHub result overlay.
+ * board is NEVER rendered (viewFor redaction), and their safe-count stays hidden until BOTH
+ * players' rounds are over (no early resolution, no mid-round chase — 2026-09-11 ruleset). An
+ * internal draw-replay re-deals the board within the same match — the cells derive straight from
+ * gameState, so a new round (round bumps, uncovered resets) re-covers the board on its own; only
+ * the decisive match.end surfaces the GameHub result overlay.
  */
 function MinesBoard({ playerId, opponentId, username, gameState, legalMoves, onMove, onForfeit }: GameAreaArgs) {
   const view = gameState as MinesView | null;
@@ -63,27 +67,17 @@ function MinesBoard({ playerId, opponentId, username, gameState, legalMoves, onM
   const legalSet = useMemo(() => new Set(legalIdx), [legalIdx]);
   const canMove = !myLocked && legalIdx.length > 0;
 
-  // Opponent's safe-count is server-redacted: undefined while both are active, a number once
-  // either player has locked (the target you race / the chase). We NEVER see their board.
+  // Opponent's safe-count is server-redacted: hidden for the WHOLE round, revealed only once
+  // BOTH players have locked (2026-09-11 ruleset — no early resolution, no mid-round chase).
+  // We NEVER see their board, in-play or otherwise.
   const oppScore = opp?.score;
   const oppLocked = opp?.locked ?? false;
 
-  // ── Per-player 5s move countdown ──────────────────────────────────────────
-  // The server runs the authoritative per-player clock and auto-reveals on expiry (#91); this is
-  // the matching visual. Reset whenever MY board advances (a reveal, a lock, or a fresh replay
-  // round) — NOT on the opponent's moves, which never touch my board.
-  const [secondsLeft, setSecondsLeft] = useState(MOVE_TIMEOUT_MS / 1000);
-  const resetKey = `${round}:${myScore}:${myLocked}`;
-  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  useEffect(() => {
-    setSecondsLeft(MOVE_TIMEOUT_MS / 1000);
-    if (tickRef.current) clearInterval(tickRef.current);
-    if (myLocked) return; // locked → no clock (waiting on the opponent / the chase)
-    tickRef.current = setInterval(() => setSecondsLeft((s) => Math.max(0, s - 1)), 1000);
-    return () => {
-      if (tickRef.current) clearInterval(tickRef.current);
-    };
-  }, [resetKey, myLocked]);
+  // NOTE: the old per-move 5s countdown is removed along with the mechanic it displayed (rule
+  // 10 — no per-move timer any more). The engine now runs a single 30s round clock from match
+  // start (ADR-012's scheduledDeadlines/lockOnTimeout), which is not yet surfaced through
+  // viewFor to the client — showing an accurate live countdown here is follow-up UI work, not
+  // this ticket (T7 is the engine rewrite; see the PR body).
 
   function cellKind(i: number): CellKind {
     if (bustedOn === i) return 'bustedOn';
@@ -118,7 +112,7 @@ function MinesBoard({ playerId, opponentId, username, gameState, legalMoves, onM
         </span>
       </div>
 
-      {/* Status + per-move countdown */}
+      {/* Status */}
       <div className="flex items-center justify-between">
         <span
           data-testid="my-status"
@@ -129,28 +123,14 @@ function MinesBoard({ playerId, opponentId, username, gameState, legalMoves, onM
         >
           {myStatus}
         </span>
-        {!myLocked && (
-          <span
-            data-testid="move-timer"
-            className={cn(
-              'flex h-7 min-w-7 items-center justify-center rounded-full border px-2 text-xs font-bold tabular-nums',
-              secondsLeft <= 2
-                ? 'border-destructive/50 bg-destructive/10 text-destructive'
-                : 'border-border bg-surface text-muted-foreground',
-            )}
-            aria-label={`${secondsLeft} seconds to auto-reveal`}
-          >
-            {secondsLeft}s
-          </span>
-        )}
       </div>
 
-      {/* Own 8×8 board. The opponent's board is NEVER rendered (server hides it). */}
+      {/* Own 5×5 board. The opponent's board is NEVER rendered (server hides it). */}
       <div
         data-testid="mines-board"
         role="grid"
         aria-label="Your minefield"
-        className="grid grid-cols-8 gap-1 rounded-xl border border-border bg-surface/40 p-2"
+        className="grid grid-cols-5 gap-1 rounded-xl border border-border bg-surface/40 p-2"
       >
         {Array.from({ length: BOARD_SIZE }, (_, i) => {
           const kind = cellKind(i);
@@ -189,8 +169,8 @@ function MinesBoard({ playerId, opponentId, username, gameState, legalMoves, onM
         {myLocked
           ? oppLocked
             ? 'Resolving…'
-            : 'Locked in — watch your opponent race your score.'
-          : 'Tap a tile. Avoid the mines — most safe tiles wins. 5s per move.'}
+            : 'Locked in — waiting for your opponent to finish their round.'
+          : 'Tap a tile. Avoid the mines — most safe tiles wins. A mine, 22 safe tiles, or the clock ends your round.'}
       </p>
 
       {!myLocked && (
@@ -217,10 +197,9 @@ function MinesPanel(args: GameAreaArgs) {
 }
 
 /**
- * Mines Hub = the shared GameHub + a Mines play-panel (own 8×8 board, per-move countdown,
- * opponent-count chase, viewFor redaction). The mechanic, WS flow, per-player timers, internal
- * draw-replay and server-authoritative redaction are unchanged — this is a presentation slot.
- * See docs/MINES.md.
+ * Mines Hub = the shared GameHub + a Mines play-panel (own 5×5 board, hidden opponent count
+ * until both round, viewFor redaction). The WS flow and server-authoritative redaction are
+ * unchanged — this is a presentation slot. See docs/MINES.md.
  */
 export function MinesHubScreen(props: GameHubScreenProps) {
   return <GameHub gameId="mines" gameName="Mines" renderGameArea={MinesPanel} {...props} />;

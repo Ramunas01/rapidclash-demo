@@ -16,5 +16,10 @@
   },
   "dependencies": {
     "@rapidclash/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@rapidclash/core": "workspace:*",
+    "better-sqlite3": "^11.9.1",
+    "vitest": "^2.1.1"
   }
 }
