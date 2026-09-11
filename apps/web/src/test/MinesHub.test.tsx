@@ -222,4 +222,42 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
       vi.useRealTimers();
     }
   });
+
+  // Ticket 2026-09-11#10 item 1: Mines (unlike RPS's flat ±123px) live-measures the real bar
+  // positions via `getBoundingClientRect()` at the moment the slide first arms, reproducing the
+  // prototype's own `startMines()` (`Full Spec.html:3341-3348`) exactly — never a hardcoded number.
+  it('ticket 2026-09-11#10 item 1: measures the real bar positions live and slides the bars toward center while matchForming holds, then back to 0 once in-match', async () => {
+    vi.useFakeTimers();
+    const rect = (top: number, height: number): DOMRect =>
+      ({ top, height, bottom: top + height, left: 0, right: 0, width: 0, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.hasAttribute('data-rc-gamewrap')) return rect(0, 0);
+      if (this.hasAttribute('data-rc-oppbar')) return rect(100, 48);
+      if (this.hasAttribute('data-rc-playerbar')) return rect(300, 48);
+      return rect(0, 0);
+    });
+    try {
+      const { rerender } = render(<MinesHubScreen {...baseProps({ initialStake: 10 })} />);
+      // Idle: the slide hasn't armed yet — no shift, even though `matchBarSlide="measured"` is set.
+      expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(0px)');
+      expect(screen.getByTestId('hub-slot-own').style.transform).toBe('translateY(0px)');
+
+      fireEvent.click(screen.getByTestId('hub-play'));
+      rerender(<MinesHubScreen {...baseProps({ initialStake: 10, currentMatchId: 'm1', gameState: view({ uncovered: [] }), legalMoves: asLegal(allCovered) })} />);
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      // oTop=100, pTop=300, pr.height=48 → mid=(100+300+48)/2=224 (Full Spec.html:3348's own formula)
+      // → o = mid-71-oTop = 224-71-100 = 53, p = mid+23-pTop = 224+23-300 = -53.
+      expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(53px)');
+      expect(screen.getByTestId('hub-slot-own').style.transform).toBe('translateY(-53px)');
+
+      // Just past the floor: phase flips to in-match — the bars slide back to 0.
+      await act(async () => { await vi.advanceTimersByTimeAsync(1450); });
+      expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(0px)');
+      expect(screen.getByTestId('hub-slot-own').style.transform).toBe('translateY(0px)');
+    } finally {
+      rectSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
 });

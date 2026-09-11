@@ -404,5 +404,15 @@ function MinesPanel(args: GameAreaArgs) {
  * unchanged — this is a presentation slot. See docs/MINES.md.
  */
 export function MinesHubScreen(props: GameHubScreenProps) {
-  return <GameHub gameId="mines" gameName="Mines" renderGameArea={MinesPanel} {...props} />;
+  return (
+    <GameHub
+      gameId="mines"
+      gameName="Mines"
+      renderGameArea={MinesPanel}
+      // Ticket 2026-09-11#10 item 1: Mines measures the real bar-slide magnitude live, matching the
+      // prototype's own `startMines()` (`Full Spec.html:3341-3348`) — never the flat ±123px RPS uses.
+      matchBarSlide="measured"
+      {...props}
+    />
+  );
 }

@@ -332,5 +332,17 @@ export function DiceHubScreen(props: GameHubScreenProps) {
 
   const renderGameArea = useCallback((args: GameAreaArgs) => <DicePanel {...args} history={history} />, [history]);
 
-  return <GameHub gameId="dice" gameName="Dice" renderGameArea={renderGameArea} renderResultReveal={DiceReveal} holdResultMs={HOLD_MS} {...props} />;
+  return (
+    <GameHub
+      gameId="dice"
+      gameName="Dice"
+      renderGameArea={renderGameArea}
+      renderResultReveal={DiceReveal}
+      holdResultMs={HOLD_MS}
+      // Ticket 2026-09-11#10 item 1: Dice measures the real bar-slide magnitude live, matching the
+      // prototype's own `startDice()` (`Full Spec.html:3396-3403`) — never the flat ±123px RPS uses.
+      matchBarSlide="measured"
+      {...props}
+    />
+  );
 }

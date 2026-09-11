@@ -677,6 +677,14 @@ describe('CoinflipHubScreen — search dwell floor restored (2026-09-11#9)', () 
       // T5: `matchForming` (phase 'waiting' with a currentMatchId already assigned) is exactly the
       // window the restored floor now holds open — the shared VS label arms for Coinflip again.
       expect(screen.getByTestId('hub-match-vs').style.opacity).toBe('1');
+      // Ticket 2026-09-11#10 item 1 regression check: the new bar-slide mechanism is opt-in
+      // (`matchBarSlide`, RpsHub/MinesHub/DiceHub only) — Coinflip never passes it, so even during
+      // this exact matchForming window the bars carry no transform/data-rc-* attribute at all, a
+      // byte-identical no-op to before this ticket.
+      expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('');
+      expect(screen.getByTestId('hub-slot-own').style.transform).toBe('');
+      expect(screen.getByTestId('hub-slot-opponent').hasAttribute('data-rc-oppbar')).toBe(false);
+      expect(screen.getByTestId('hub-slot-own').hasAttribute('data-rc-playerbar')).toBe(false);
 
       // Advance past the restored ~3.8s floor — the hold clears and the pick buttons render.
       act(() => { vi.advanceTimersByTime(3800); });
