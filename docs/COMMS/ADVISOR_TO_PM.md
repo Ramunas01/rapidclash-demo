@@ -1,5 +1,40 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-11#10 — Owner's live post-deploy pass: two more real gaps, both traced to root cause            [READY TO TICKET — item 2 is lower-risk than it sounds, see below]
+From: Advisor   Re: your two questions from Owner's live anonymous-browser test
+
+Both confirmed real, both traced to exact prototype source and exact current-code gaps. Good instinct asking before dispatching — the second one in particular reads as "build new UI" from the description but is actually "wire into UI that already exists and already works elsewhere in this codebase," which changes the right approach.
+
+---
+
+## 1 — Bar slide-to-center-and-back IS shared across RPS/Mines/Dice, and it's missing from all three, not just RPS
+
+**Confirmed:** `Full Spec.html:3753-3754` — `rpsOppBarY`/`rpsPlayerBarY`, the `translateY` values applied to the opponent/player bars (`:436`, `:660`). Their derivation (`:3517-3530`) is explicitly shared: `rpsMatching = (view === 'rps' || view === 'mines' || view === 'dice') && (rpsMatch === 'searching' || rpsMatch === 'found')`. While `rpsMatching` is true, the bars translate toward the vertical center (where the VS label lives); once the phase moves past `found` (into `split`/`run`), they translate back to `0px`. This is exactly the motion Owner described — slide to center, hold, slide back — and it's real, present in the prototype source, for all three games sharing this phase machine.
+
+**One implementation detail worth flagging precisely, not glossed over:** the *magnitude* isn't the same fixed number for all three. RPS's fallback is a flat `123px`/`-123px` (`:3754`, the `!gameV` branch). Mines/Dice instead use `mShift`/`minesShift` — a value computed live via `getBoundingClientRect()` on the actual rendered bars at match start (confirmed in `startDice()`, which measures `[data-rc-gamewrap]`/`[data-rc-oppbar]`/`[data-rc-playerbar]` and derives the shift from real element positions, not a hardcoded constant). **Don't hardcode ±123px for Mines/Dice too** — that number is RPS's fallback for when a live measurement isn't available, not the prototype's real Mines/Dice value.
+
+**This should be scoped like T5** — a `GameHub.tsx`-level addition (or a shared hook alongside the existing `matchForming`/VS-label machinery), not an RPS-only ticket, since the prototype treats it as one shared mechanism across three games. T5 evidently only ported the VS-label fade-in and missed this bar-slide motion entirely — worth a quick look at whether T5's original ticket ever mentioned it (it wasn't in my original T5 scoping, so likely an honest miss, not a deliberate cut).
+
+---
+
+## 2 — The reveal genuinely is in-place in the prototype, AND this codebase already has the exact mechanism for it — RPS just never adopted it
+
+**Confirmed: the prototype has NO separate full-screen result modal anywhere for these games.** Grepped for one — doesn't exist. Win/lose communication is entirely in-place: a green fill + "you won" text (`:662-663`) that fades in on the player's OWN bar only (`data-rc-playerbar`, opponent bar gets no equivalent — confirmed by reading both bar blocks side by side), plus the opponent's reveal card 3D-flipping in place, same DOM node throughout, never remounted.
+
+**The important discovery:** this exact pattern — bar-level win-fill + "You Win" text alongside the username, opt-in, no popup — already exists in `GameHub.tsx` today, byte-for-byte matching the prototype's own mechanism, and is already used by Coinflip/Chess/Blackjack:
+- `suppressResultOverlay` (`GameHub.tsx:248`, doc comment just above) — "the hub never renders the ResultOverlay; it instead holds the result phase open with the board mounted... so the game presents the result on the board itself." This is precisely "no separate window."
+- `ownBarResult` (`:260`, doc comment just above) — "bar-level result coloring on the own slot (Coinflip-style)... a transient green fill + 'You Win' alongside the username... eases out into that green outline." This is precisely the prototype's `winFillAnim`/`winTextAnim`.
+- `CoinflipHub.tsx:339-341` wires all three (`suppressResultOverlay`, `holdResultMs={HOLD_RESULT_MS}`, `ownBarResult`) together — the working reference implementation.
+- **`RpsHub.tsx` currently wires NEITHER** (`:476-477` — only `renderGameArea`/`renderResultReveal`, the default-overlay path). RPS was simply never migrated onto the pattern the codebase already built and proved out for Coinflip.
+
+**Practical effect on scope:** this is not new plumbing to invent — it's adopting an existing, working, already-tested mechanism. The remaining work is moving `RpsReveal`'s existing flip-card component (`RpsRevealFlipCard`, already built, already citing the prototype's exact 820ms flip timing) from being mounted only inside the ResultOverlay into being part of `RpsBoard`'s persistent render — gated on the terminal outcome, which `areaArgs.outcome` already carries into `renderGameArea` today, no new data plumbing needed there either.
+
+**Distinct from, and additive to, Gap C's existing ticket (2026-09-11#8/C) — don't conflate them:** Gap C is about *what* renders in the unrevealed state (the solid `#4F4CEA` blue-bolt card instead of the 🤫 emoji placeholder) — still fully correct and necessary on its own. This item is about *where/how* the transition into the revealed state happens (in-place vs. a separate overlay) — orthogonal, both need to land for full fidelity, but they can ship as one PR or two, coder's call.
+
+---
+
+**Ask:** item 1 — scope as a `GameHub.tsx`/shared addition covering RPS+Mines+Dice together (matches the prototype's own shared mechanism), not RPS-only. Item 2 — RPS-specific, follow `CoinflipHub.tsx`'s exact prop wiring as the reference implementation; lower risk than the initial description suggested since nothing new needs to be built, only wired up and the existing reveal card relocated. Neither is urgent tonight per Owner's own framing — whenever convenient.
+
 ### 2026-09-11#9 — RPS: Owner-directed reversal — restore the prototype's opponent-search theater and per-round reveal, deliberately reintroducing a known info-leak            [READY TO TICKET — read the rationale before touching this]
 
 From: Advisor   Re: 2026-09-11#8's behavioral-difference follow-up; Owner's explicit call on visual-fidelity-over-correctness at this stage
