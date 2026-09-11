@@ -1,6 +1,74 @@
 # Advisor → PM (append-only; newest on top)
 
-### 2026-09-10#4 — T4 (ChessHub dark-pin) + token/geometry reconciliation sweep — full tickets            [READY TO TICKET — small, not blocking T3b heavy]
+### 2026-09-11#2 — T7 (Mines engine rewrite) — Designer answered everything, ticket is READY            [READY TO TICKET — flag as higher-care than a normal ticket]
+From: Advisor   Re: 2026-09-11#1's T7 hold; the rules-5/7/9 diff sent to the Designer
+
+Designer answered all five sub-questions plus a security question Advisor hadn't even asked. Full canonical spec + every answer is in `NEW_DESIGN_MIGRATION.md` § "Canonical new Mines ruleset" — read that in full before ticketing, this summary is not a substitute. **T7 is no longer blocked.**
+
+**The governing idea, worth internalizing before writing code:** hitting a mine costs nothing but the rest of your round — you keep your gems either way. So tapping always has non-negative expected value and there's never a reason to stop. Optimal play is "tap until a mine or 22." **Nothing in the implementation should model a player weighing whether to continue** — that's not how this game works anymore.
+
+**What changes from today's engine (`packages/games/mines/src/{board,mines}.ts`):**
+- Board: 8×8/7-mine → 5×5/3-mine, **parameterised** `(size, mineCount)`, not forked.
+- Clearing all 22 safe tiles → auto-lock at 22 (same as today's "cleared" lock). Both at 22 = draw.
+- **Remove early resolution.** Today, the match ends the instant a locked player is mathematically passed by the other. Designer wants this gone — both players play their own round (mine/clock/22) to completion, independently, THEN compare. This is a real rewrite of `decide()`/`resolve()`, not a tweak.
+- **Hide the opponent's gem count for the whole round**, not just until either player locks (today's behavior). Reveal only once both are done. `viewFor`'s `revealOppCount` logic needs to change accordingly.
+- **Remove the 4s auto-reveal / 5s-per-move timer entirely**, replace with a single 30s round clock that's explicitly a cap, not a mechanic (times out a disconnected/idle player, nothing else).
+- 10-consecutive-draw void cap: **keep exactly as-is**, no change.
+- Disconnect: **confirmed** — lock at whatever gems they had (including zero) when the clock ends, no void, no special handling.
+- Seed security: **Advisor verified this is already correct, no change needed** — `viewFor`'s non-terminal branch never spreads `state` (no `seed` leak), and a player's own `mines` array is only attached once THEY lock. The only seed-reveal path is the terminal branch, which — once early resolution is removed — only fires once both are done. Removing early resolution incidentally closes the one path that could have exposed it early.
+
+**Real open architecture question, not solved here — flag for whoever picks this up, don't let it get quietly hacked into `mines.ts`:** rule 10 means Mines can't use the core's existing per-player-timer contract (`meta.moveTimeoutMs` + `timeoutMove`, `packages/core/src/matchmaking.ts`) as-is — `timeoutMove` must always return a legal move on expiry, but Mines' new clock needs to **lock the player with no move injected at all**. Blackjack/Coinflip/Limbo/Keno/Roulette/RPS all share this same core timer file. Whoever implements T7 needs to propose a small, generic addition to the core contract (a "lock, no move" primitive) — not a Mines-only branch (invariant #5) — and that addition should get its own careful review given how many other games it touches.
+
+**Ask:** ticket this with extra care relative to a normal screen-rebuild PR — it's a core-adjacent change (touches shared matchmaking timer infrastructure, not just `packages/games/mines/`) and a fairness-sensitive one (seed/redaction logic). Suggest: one agent, not parallelized with anything else touching `packages/core/`; acceptance criteria should include re-running the full existing Mines test suite plus new tests for no-early-resolution and hidden-count behavior; and the core-timer-contract proposal should be reviewed on its own before the Mines-specific implementation lands on top of it, rather than approved as one big diff.
+
+### 2026-09-11#1 — rps/mines/dice rebuild — full scoping, one Owner question, rest ready            [READY TO TICKET except T7]
+From: Advisor   Re: the retracted "no design source" claim; tracker's "After T4+sweep: rps/mines/dice"
+
+Full retraction context is in the tracker's Status snapshot — short version: the design material was in `Full Spec.html` the whole time (`openGame(k)` → `view: 'mines'|'rps'|'dice'`, driven by clicking the actual `[data-rc-grid]` tiles, which is why an earlier text-based check missed it). Scoped properly this time by reading the actual game-engine code on both sides, not visual impression. One real open question below (T7) needs the Designer; everything else is ready.
+
+**Good news first:** the current app is architecturally much further along than "full rebuild" suggested. All game hubs already share one `GameHub.tsx` (1162 lines) with `idle | waiting | in-match | result` phases, a name-cycling search animation (`useNameScan`), and a win-fill celebration (`useWinReveal`) — the same *concepts* the prototype uses, just styled differently. This isn't a rebuild from nothing; it's a reskin of a mature system plus one small shared addition (T5) and three per-game visual/board areas (T6a/b/c).
+
+---
+
+## T5 — Shared "VS" match-found transition (`GameHub.tsx`)
+
+**What's actually missing**, verified against the real transition point in code, not guessed: `GameHub.tsx:497`'s `matchForming = phase === 'waiting' && currentMatchId != null` is exactly the moment a match has been assigned but play hasn't started — the prototype's `openGame`/`startDice` flow shows a floating "VS" label (`matchVsLabel`/`rpsMatchVsOp`/`matchVsTop`, `Full Spec.html:432-433`) centered between the two bars for this same window, then fades as the game area activates. The current app has no equivalent — it goes straight from "Searching…" to the frozen pre-match state with no reveal beat.
+
+**Scope:** add the VS-label overlay to `GameHub.tsx`, gated on `matchForming`, positioned between `OpponentSlot` (`:718`) and `OwnSlot` (`:759`) matching the prototype's absolute-position/fade-in treatment (lines cited above). This benefits every game hub that uses `GameHub`, not just these three — one shared addition, not three separate ones.
+
+**Done when:** the VS label appears during the `matchForming` window on at least Mines/RPS/Dice, fades correctly into `in-match`, existing `GameHub.test`/hub-specific tests still pass, no regression to Coinflip/Blackjack/Chess's own transition.
+
+---
+
+## T6a — Dice visual rebuild (mechanic unchanged — confirmed identical)
+
+**Confirmed, not assumed:** `packages/games/dice/src/dice.ts`'s own doc comment: independent seeded rolls 0.00–99.99 per player, higher wins, exact tie → instant reroll, deliberately no target/line (human-vs-human, never-the-house). The prototype's `startDiceResult()` (`Full Spec.html`, near `startDice`) does the identical `win = my > opp` comparison. **The mechanic does not change — this is visual only.**
+
+**Scope — `apps/web/src/screens/DiceHub.tsx`:** replace the current plain "place your bet and roll" idle state + result display with the prototype's dual roll-gauge treatment (`isDice` block, `Full Spec.html:531-603`): two horizontal pill tracks (opponent's above, player's below), each filling 0→rolled-value with an animated cube icon riding the fill edge, a 0/25/50/75/100 scale between them, and a history "belt" of the last 5 results sliding in from the right (`diceHistory`, :594-598). Pull exact colors/timings/easings from that block directly, cite line numbers in the PR — same convention as T1/T2.
+
+**Done when:** roll animation and history belt match the prototype in both themes; the underlying `rollFor`/`resolve` engine is untouched; existing Dice tests (mechanic + redaction) still pass; harness diff improves once wired up.
+
+---
+
+## T6b — RPS visual rebuild (pick-window model unchanged — confirmed by design, not incidental)
+
+**Confirmed:** `packages/games/rps/src/rps.ts`'s doc comment: a FIXED 10s pick window, resolves ONLY at expiry (never on "both chosen"), specifically to avoid a timing side-channel — a real fairness decision, not a stub. The prototype's simplified demo uses a 7s cosmetic countdown with an instant reroll on a tie (`rpsClock: 7`) — consistent in *shape* (timed window, tie-replay) but the prototype is a design mock, not an authoritative engine spec. **Keep the current 10s/resolve-at-expiry model; take the prototype for the visual treatment only**, per the standing "build from rendered markup, not the prototype's data layer" rule.
+
+**Scope — `apps/web/src/screens/RpsHub.tsx`:** rebuild the picker + reveal to match the prototype's `isRps` block (`Full Spec.html:605-658`): two square avatar-style cards either side of a "VS" + digit-flip countdown, a 3D card-flip reveal (`rpsFlipRot`) showing the resolved rock/paper/scissors icon, and the 3-icon picker row below (`rpsRock`/`rpsPaper`/`rpsScissors`, :644-654). This card-flip area is RPS-specific gameplay UI (distinct from T5's shared VS-label, which is the brief pre-match beat) — don't conflate the two.
+
+**Done when:** picker + flip-reveal match the prototype in both themes; pick window stays 10s, resolve-at-expiry; existing RPS engine tests untouched and still passing.
+
+---
+
+## T7 — Mines engine: Designer answered (5×5 is a rules change) — still not a ticket, blocked on 5 sub-questions
+
+**UPDATE 2026-09-11:** Designer confirmed the 5×5 is intentional and it's a real rules change. Full canonical ruleset is in `NEW_DESIGN_MIGRATION.md` § "Canonical new Mines ruleset (Designer, 2026-09-11)" — read that, not this paragraph, when T7 is eventually ticketed. Headline: 5×5 / 25 / 3 mines / 22 safe, 30s round clock replacing per-move timers, remove the 4s auto-reveal entirely, generalise the seeded engine to `(size, mineCount)` params (don't fork), draw→rematch and bust-keeps-gems both already match today's engine.
+
+Designer asked for a diff-list (rules 5/7/9 vs. today's engine) before we touch code — Advisor produced it, Owner is relaying. **T7 stays un-ticketed until the Designer answers the 5 open sub-questions in that list** (clearing auto-lock; early-resolution vs. play-to-clock; opponent-count visibility; draw-cap; disconnect). The Mines *visual* can ride with T6a/T6b; the *engine* waits.
+
+Not blocking T5/T6a/T6b — independent files, ready now.
+
+**Ask: ticket T5 first (small, shared, unblocks nothing else but touches the file everything else reads), then T6a/T6b in parallel (different files, no collision). Hold T7 until the Designer answers the sub-questions.**
 From: Advisor   Re: tracker's "T4" placeholder + the `--brand-purple`/header-padding notes from T2 (#489)
 
 Neither of these blocks or is blocked by T3b heavy (#498) — different files, pick up whenever there's spare capacity. Both are small; I did the investigation so the tickets are precise rather than "go look into it."
