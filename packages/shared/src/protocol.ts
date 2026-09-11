@@ -289,6 +289,41 @@ export interface RewardsClaimResponse {
   newClaimableBalance: number;
 }
 
+// ─── Chat (general-only room, V1 — issue #439/2026-09-11#7a) ────────────────────
+
+/** One chat message. `name`/`tier` are resolved SERVER-SIDE from the authenticated sender's
+ *  playerId at send time (`resolveUsername` + `tierForXp`, `apps/server/src/ws/gateway.ts`) —
+ *  the client-sent payload (`ChatSendPayload`, below) carries only `text`; the client can NEVER
+ *  supply its own name or tier (closes a spoofing hole). `text` is relayed verbatim — the
+ *  server does not parse or validate @mentions; pill rendering is a client concern. Tier→color
+ *  mapping is also a client concern, not encoded here. Defined here (not in `@rapidclash/core`,
+ *  where `ChatTransport` otherwise mirrors `EphemeralLedger`'s shape) because `packages/core`
+ *  depends on `packages/shared`, not the reverse — same reason `LedgerEntry` lives here and
+ *  `ephemeral-ledger.ts` merely imports it. */
+export interface ChatMessage {
+  id: string; // randomUUID(), for React keys / future de-dup
+  name: string;
+  tier: VipTier;
+  text: string;
+  createdAt: number; // Date.now() at send time
+}
+
+/** Client → Server: post a message to the (only, general) chat room. */
+export interface ChatSendPayload {
+  text: string;
+}
+
+/** Server → Client: broadcast of one newly-sent message to every `chat.subscribe`'d socket. */
+export interface ChatMessagePayload {
+  message: ChatMessage;
+}
+
+/** Server → Client: sent immediately in reply to `chat.subscribe` (no payload needed to
+ *  subscribe — there's only one room for V1) so a freshly-opened chat sheet isn't empty. */
+export interface ChatHistoryPayload {
+  messages: ChatMessage[];
+}
+
 /** The ranking strategy a leaderboard row was produced by (= RankingType['kind']).
  *  The core ranks generically by each game's declared RankingType (ADR-007); the
  *  client renders `score` per `kind` (a win-rate fraction vs a signed money amount). */

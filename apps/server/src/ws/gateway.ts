@@ -1,7 +1,15 @@
 import type { FastifyInstance } from 'fastify';
 import type { SocketStream } from '@fastify/websocket';
-import type { Identity, Matchmaking, JoinMatched, MatchRecord } from '@rapidclash/core';
-import { ChallengeError, usesPlayerTimers, usesScheduledDeadlines } from '@rapidclash/core';
+import type Database from 'better-sqlite3';
+import type { Identity, Matchmaking, JoinMatched, MatchRecord, ChatTransport } from '@rapidclash/core';
+import {
+  ChallengeError,
+  usesPlayerTimers,
+  usesScheduledDeadlines,
+  tierForXp,
+  createChatTransport,
+  CHAT_MAX_MESSAGE_LENGTH,
+} from '@rapidclash/core';
 import { IllegalMove, isDemoBotId } from '@rapidclash/shared';
 import type { GuestServices } from '../guest/index.js';
 import type {
@@ -23,6 +31,10 @@ import type {
   ChallengeExpiredPayload,
   OpenChallenge,
   ApplyResult,
+  ChatSendPayload,
+  ChatMessagePayload,
+  ChatHistoryPayload,
+  VipTier,
 } from '@rapidclash/shared';
 import type { GameModule } from '@rapidclash/shared';
 
@@ -37,6 +49,11 @@ const playerMatch = new Map<string, string>();
 
 // Open-challenge feed subscribers, keyed by gameId → set of sockets.
 const challengeSubscribers = new Map<string, Set<WsSocket>>();
+
+// Chat (issue #439/ticket 2026-09-11#7a) subscriber set — a flat Set, not a Map keyed by room
+// like challengeSubscribers above, because chat is general-only for V1 (one global room, no
+// per-game keying, per the Advisor/PM decision this ticket builds on).
+const chatSubscribers = new Set<WsSocket>();
 
 // Pending forfeit timers: set on disconnect, cancelled on reconnect/resume.
 const pendingForfeits = new Map<string, ReturnType<typeof setTimeout>>();
@@ -113,6 +130,10 @@ export function registerWsGateway(
   identity: Identity,
   matchmaking: Matchmaking,
   gameModules: GameModule[],
+  /** The shared server DB — needed here ONLY for a read-only VIP-tier lookup backing chat's
+   *  `resolveTier` (see below); every other handler in this file still reaches persistence
+   *  exclusively through `identity`/`matchmaking`/`guest`. */
+  db: Database.Database,
   /** Guest mode's isolated world (issue #267) — a second Matchmaking + its own ledger, wired in
    *  by `server.ts`. Optional so existing call sites (and tests) that don't care about guest
    *  mode need no change; a guest token then simply falls back to the real matchmaking below. */
@@ -142,6 +163,15 @@ export function registerWsGateway(
     return Number.isFinite(n) ? n : 3_000;
   })();
 
+  // Chat kill switch (issue #439/ticket 2026-09-11#7a), read once at registration exactly like
+  // FORFEIT_DELAY_MS/GUEST_BOT_TAKE_MIN_MS/MAX_MS above — a plain boot-time env var, enforced
+  // server-side, matching the existing idiom exactly (not a client-bundled flag, and not a
+  // live-flippable-without-restart mechanism — the Advisor/PM decision this ticket builds on
+  // settled for the second, precedent-matching reading). DEFAULT DISABLED: a forgotten/missing
+  // env var must fail CLOSED (chat off), not open, on a fresh deploy — the literal string
+  // 'true' is the only way to turn it on.
+  const chatEnabled = process.env.CHAT_ENABLED === 'true';
+
   /** Resolve a display name for ANY id — bot/guest first (never a DB lookup), else the real
    *  identity layer. The single replacement for every `identity.getUsername(...)` call site
    *  below, so the real identity layer is never asked about a guest or bot id (issue #267's
@@ -151,12 +181,53 @@ export function registerWsGateway(
     return guest?.usernameFor(id) ?? identity.getUsername(id) ?? id;
   }
 
+  /** Read-only VIP-tier lookup for ANY playerId, backing chat's `resolveTier` — mirrors
+   *  `match-history.ts`'s own `xpLifetimeStmt`/`tierFor` idiom (`packages/core/src/match-
+   *  history.ts:209-229`) EXACTLY, for the same reasons: `rewards` is owned/created lazily by
+   *  `rewards.ts` and may not exist yet on every db this gateway is stood up against (tests,
+   *  guest-only setups) — the prepare is wrapped, not bare. Deliberately NOT `Rewards.getSnapshot`
+   *  (the route-layer API `apps/server/src/routes/rewards.ts` uses): that call INSERTs a fresh
+   *  all-zero row for every never-before-seen account, and chat sees guest ids on every send —
+   *  using it here would silently leak ephemeral guest identities into the durable `rewards`
+   *  table. This is a plain, read-only SELECT: a missing row (including every guest id, which
+   *  never has one) simply reads as 0 XP, which `tierForXp` correctly maps to 'Unranked'. */
+  let stmtXpLifetime: Database.Statement<[string], { xp_lifetime: number }> | null | undefined;
+  function resolveTier(playerId: string): VipTier {
+    if (stmtXpLifetime === undefined) {
+      try {
+        stmtXpLifetime = db.prepare<[string], { xp_lifetime: number }>(
+          `SELECT xp_lifetime FROM rewards WHERE account_id = ?`,
+        );
+      } catch {
+        stmtXpLifetime = null; // no `rewards` table on this db — every sender reads as 0 XP.
+      }
+    }
+    const xpLifetime = stmtXpLifetime?.get(playerId)?.xp_lifetime ?? 0;
+    return tierForXp(xpLifetime).tier;
+  }
+
+  // One global, in-memory chat transport (issue #439/ticket 2026-09-11#7a) — created exactly
+  // once here, since `registerWsGateway` itself only ever runs once per `buildApp()` call (see
+  // `chat-transport.ts`'s own doc comment on the "call exactly once" contract). No per-room
+  // keying: general-only room for V1.
+  const chatTransport: ChatTransport = createChatTransport({ resolveUsername, resolveTier });
+
   /** Push an incremental feed update to every socket subscribed to this game (OC8). */
   function pushChallengesUpdate(gameId: string, update: ChallengesUpdatePayload): void {
     const subs = challengeSubscribers.get(gameId);
     if (!subs) return;
     for (const s of subs) {
       if (s.readyState === 1) send<ChallengesUpdatePayload>(s, 'challenges.update', update);
+    }
+  }
+
+  /** Broadcast one newly-sent chat message to every subscribed socket — same shape as
+   *  `pushChallengesUpdate` above (a Set of subscriber sockets + a loop checking `readyState
+   *  === 1` before sending), per the ticket's explicit instruction to reuse that exact pattern
+   *  rather than invent a new fan-out mechanism. */
+  function pushChatMessage(update: ChatMessagePayload): void {
+    for (const s of chatSubscribers) {
+      if (s.readyState === 1) send<ChatMessagePayload>(s, 'chat.message', update);
     }
   }
 
@@ -568,6 +639,8 @@ export function registerWsGateway(
         // Drop this socket from every challenge feed it was subscribed to (this is
         // always safe — it targets this exact socket, not the player's live one).
         for (const subs of challengeSubscribers.values()) subs.delete(socket);
+        // Same for chat (issue #439/ticket 2026-09-11#7a) — always safe for the same reason.
+        chatSubscribers.delete(socket);
 
         // A fast reconnect may have already registered a newer socket for this player
         // (the close event for the old socket can fire *after* the new one connects).
@@ -776,6 +849,54 @@ export function registerWsGateway(
             case 'challenges.unsubscribe': {
               const { gameId } = msg.payload as ChallengeSubscribePayload;
               if (!isGuest) challengeSubscribers.get(gameId)?.delete(socket);
+              break;
+            }
+
+            // Chat (issue #439/ticket 2026-09-11#7a) — general-only room, V1. Open to both real
+            // and guest connections alike (unlike the open-challenges feed above, there is no
+            // "must not leak guest activity into a real channel" concern here: chat is one
+            // shared room by design, not a per-mode economic feed). `chat.subscribe`/reading is
+            // deliberately NOT gated by `chatEnabled` — only `chat.send` is (see below) — so a
+            // freshly-opened chat sheet can always subscribe and see the (possibly empty)
+            // history; when the kill switch is off nothing can ever have been sent, so history
+            // is trivially always empty in that state anyway. Stated explicitly per the ticket's
+            // ask to document which side(s) of chat the kill switch gates.
+            case 'chat.subscribe': {
+              chatSubscribers.add(socket);
+              send<ChatHistoryPayload>(socket, 'chat.history', { messages: chatTransport.history() });
+              break;
+            }
+
+            case 'chat.send': {
+              if (!chatEnabled) {
+                sendError(socket, 'CHAT_DISABLED', 'Chat is currently disabled');
+                break;
+              }
+              // Every connection reaching this handler has already been authenticated by the
+              // token check at connection time (see the top of this handler) — `playerId` is
+              // never empty here. This check is defense in depth, not a real gap: it guards
+              // against `playerId` somehow being falsy without crashing the connection, exactly
+              // as the ticket asks ("send a clear error, don't crash the connection").
+              if (!playerId) {
+                sendError(socket, 'UNAUTHORIZED', 'You must be signed in to send a chat message');
+                break;
+              }
+              const { text } = msg.payload as ChatSendPayload;
+              if (typeof text !== 'string' || text.trim().length === 0) {
+                sendError(socket, 'CHAT_EMPTY', 'Chat message text must not be empty');
+                break;
+              }
+              if (text.length > CHAT_MAX_MESSAGE_LENGTH) {
+                sendError(socket, 'CHAT_TOO_LONG', `Chat message text must be at most ${CHAT_MAX_MESSAGE_LENGTH} characters`);
+                break;
+              }
+              // senderId is the ONLY thing the client's payload can influence — name/tier are
+              // resolved server-side inside chatTransport.send from `playerId` (the
+              // authenticated connection's own id), never from `msg.payload`. This is the
+              // trust-boundary guarantee the ticket calls out explicitly: the client cannot
+              // spoof its own name or tier because ChatSendPayload carries nothing but `text`.
+              const message = chatTransport.send(playerId, text);
+              pushChatMessage({ message });
               break;
             }
 
