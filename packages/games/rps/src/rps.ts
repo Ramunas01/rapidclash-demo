@@ -110,11 +110,21 @@ function resolve(s: RpsState, now: number): GameEvent[] {
     s.forcedOutcome = { type: 'void' };
     return [{ type: 'match_voided', payload: { reason: 'replay_cap', replays: s.replays } }];
   }
+  // Snapshot the just-tied round's throws BEFORE `s.choices` is reset for the fresh round below —
+  // once reset, this round's throws are gone from state entirely and no viewFor could ever recover
+  // them. Deliberately reveals both throws to both players on a tied round — a real info-leak a
+  // strategic player could exploit round-to-round. Owner-approved 2026-09-11: this is an
+  // investor-demo build, not the production implementation: visual/experiential fidelity to the
+  // Designer's prototype outweighs this correctness concern at this stage. Do not treat this as an
+  // oversight; do not silently "fix" it back to redacted without Owner sign-off. (ADVISOR_TO_PM.md
+  // 2026-09-11#9, item 2.) Carried in the EVENT only (not state) so it stays a bounded, one-time
+  // reveal to whoever is connected at that instant — a later reconnect/resume never re-derives it.
+  const revealedChoices = { ...s.choices };
   s.round += 1;
   s.choices = {};
   s.locked = {};
   s.windowEndsAt = now + pickWindowMs(); // fresh full-length window
-  return [{ type: 'new_round', payload: { round: s.round, replays: s.replays } }];
+  return [{ type: 'new_round', payload: { round: s.round, replays: s.replays, revealedChoices } }];
 }
 
 function isChoice(v: unknown): v is RpsChoice {

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import type { Outcome } from '@rapidclash/shared';
@@ -192,14 +192,22 @@ function RpsIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
 
 /**
  * The live in-match board (lifts Play.tsx's choice UI). Pre-terminal only — your pick shows,
- * the opponent stays hidden (🤫); the terminal reveal happens in the result overlay at
- * match.end, so this never leaks the opponent's choice.
+ * the opponent stays hidden (🤫) EXCEPT for a brief, deliberate reveal beat right after a tied
+ * round (see below); the terminal (decisive/void) reveal happens in the result overlay at
+ * match.end, so this component never leaks the opponent's choice for a round still in progress.
  *
  * Visual rebuild (T6b): two square "photo-frame" cards either side of a VS + digit-flip countdown
  * (Full Spec.html:605-658) — your card shows your live pick (an opacity/scale swap between the
  * three icons, Full Spec.html:611-613's `op`/`scale` treatment), the opponent's card stays the
- * redacted 🤫 tile for the whole window (its reveal is a separate beat — see `RpsReveal` below,
- * which owns the prototype's 3D card-flip, Full Spec.html:625-637). The pick-window MODEL is
+ * redacted 🤫 tile for the whole window it's covering (its terminal reveal is a separate beat —
+ * see `RpsReveal` below, which owns the prototype's 3D card-flip, Full Spec.html:625-637).
+ *
+ * 2026-09-11#9 item 2 (deliberate, Owner-approved redaction rollback — ADVISOR_TO_PM.md, see
+ * `rps.ts`'s `resolve()` for the server-side rationale in full): a TIED round is the one exception.
+ * The `new_round` event's `revealedChoices` field carries both players' just-ended throws; this
+ * component flips the opponent's card to the real throw (reusing `RpsRevealFlipCard`'s 820ms flip),
+ * holds it ~1.5s (matching the prototype's own tie hold, Full Spec.html:3084-3099), then falls back
+ * to the redacted tile as the fresh round's window opens. The pick-window MODEL is otherwise
  * unchanged: `windowEndsAt` only drives this cosmetic countdown, exactly the way
  * `CoinflipHub.tsx`'s `CountdownRing` already does for Coinflip's identical 10s window — the
  * server alone resolves the round, only ever at expiry (#164/#387).
@@ -210,7 +218,7 @@ function RpsIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
  * window; the client ignores that churn). Every tap sends the replacement throw; the server locks
  * both at window expiry. No same-side/"taken-throw" restriction (it would leak the opponent's pick).
  */
-function RpsBoard({ playerId, gameState, onMove, onForfeit, username, serverClockOffset = 0 }: GameAreaArgs) {
+function RpsBoard({ playerId, opponentId, gameState, events, onMove, onForfeit, username, serverClockOffset = 0 }: GameAreaArgs) {
   const view = gameState as RpsView | null;
   const tileBg = useRpsTileBg();
   // Own throw is not redacted, but it trails the tap by a round-trip — the optimistic pick bridges it.
@@ -227,6 +235,29 @@ function RpsBoard({ playerId, gameState, onMove, onForfeit, username, serverCloc
     setOptimisticPick(id);
     onMove(id);
   }
+
+  // 2026-09-11#9 item 2 (deliberate, Owner-approved redaction rollback — see rps.ts's resolve()):
+  // a tied round's `new_round` event carries `revealedChoices`, both players' real throws for the
+  // round that just ended. Flip the opponent's card from the redacted 🤫 face to that real throw
+  // (RpsRevealFlipCard's existing 820ms flip, Full Spec.html:625-637), hold it ~1.5s (matching the
+  // prototype's own tie hold, Full Spec.html:3084-3099), then fall back to the redacted tile as the
+  // fresh round's window opens (the `round` bump above already clears the optimistic pick then).
+  const TIE_REVEAL_HOLD_MS = 1500;
+  const TIE_REVEAL_FLIP_MS = 820;
+  const [tieReveal, setTieReveal] = useState<{ seq: number; choice: string | undefined } | null>(null);
+  const tieRevealSeq = useRef(0);
+  const tieRevealTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (tieRevealTimer.current) clearTimeout(tieRevealTimer.current); }, []);
+  useEffect(() => {
+    const newRound = events?.find((e) => e.type === 'new_round');
+    const revealed = (newRound?.payload as { revealedChoices?: Record<string, string> } | undefined)?.revealedChoices;
+    const oppChoice = opponentId ? revealed?.[opponentId] : undefined;
+    if (!oppChoice) return; // not a tie's new_round (or no opponent id yet) — nothing to reveal.
+    tieRevealSeq.current += 1;
+    setTieReveal({ seq: tieRevealSeq.current, choice: oppChoice });
+    if (tieRevealTimer.current) clearTimeout(tieRevealTimer.current);
+    tieRevealTimer.current = setTimeout(() => setTieReveal(null), TIE_REVEAL_FLIP_MS + TIE_REVEAL_HOLD_MS);
+  }, [events, opponentId]);
 
   // Cosmetic countdown, driven by the server's authoritative window close (`windowEndsAt`) when
   // present — accurate and RESTARTS automatically on each tie-replay round (re-stamped server-side).
@@ -283,10 +314,25 @@ function RpsBoard({ playerId, gameState, onMove, onForfeit, username, serverCloc
           </div>
         </div>
 
-        <RpsFrame frame={FRAME_NEUTRAL} tileBg={tileBg} size={CARD_W} height={CARD_H}>
-          {/* Redaction: never reveal the opponent's choice before match.end. */}
-          <span className="text-3xl" data-testid="hub-opponent-pick">🤫</span>
-        </RpsFrame>
+        {tieReveal ? (
+          // 2026-09-11#9 item 2: a just-tied round's real opponent throw, flipped into view then
+          // held before falling back to the redacted tile below — see the effect above.
+          <RpsRevealFlipCard
+            key={tieReveal.seq}
+            frame={FRAME_NEUTRAL}
+            tileBg={tileBg}
+            choice={tieReveal.choice}
+            size={CARD_W}
+            height={CARD_H}
+            testid="hub-opponent-pick-revealed"
+          />
+        ) : (
+          <RpsFrame frame={FRAME_NEUTRAL} tileBg={tileBg} size={CARD_W} height={CARD_H}>
+            {/* Redaction: never reveal the opponent's choice before match.end (or outside the
+                tied-round reveal beat above). */}
+            <span className="text-3xl" data-testid="hub-opponent-pick">🤫</span>
+          </RpsFrame>
+        )}
       </div>
 
       <p className="text-[11px] font-medium text-muted-foreground" data-testid="hub-my-pick">
@@ -346,12 +392,19 @@ function RpsPanel(args: GameAreaArgs) {
  *  both faces (:627/:632) so only one ever shows. Only the OPPONENT's card flips — my own choice was
  *  never hidden from me, so it renders resolved immediately (see `RpsReveal` below), the same
  *  asymmetry the prototype's own `rpsLeftFrame`/`rpsFlipRot` split encodes (only the right/opponent
- *  card carries `rpsFlipRot`). */
-function RpsRevealFlipCard({ frame, tileBg, choice }: { frame: string; tileBg: string; choice: string | undefined }) {
+ *  card carries `rpsFlipRot`).
+ *
+ *  `size`/`height` default to the compact `REVEAL_CARD` square (the terminal `RpsReveal` overlay's
+ *  usage below); `RpsBoard`'s tied-round reveal (2026-09-11#9 item 2) passes `CARD_W`/`CARD_H` so
+ *  the in-board card matches the live board's own rectangular frame instead. The flip itself plays
+ *  once per MOUNT (fixed `initial`/`animate` values) — callers that need it to replay must remount
+ *  via a changing `key`, which `RpsBoard` does per tie. */
+function RpsRevealFlipCard({ frame, tileBg, choice, size = REVEAL_CARD, height = size, testid }: { frame: string; tileBg: string; choice: string | undefined; size?: number; height?: number; testid?: string }) {
   return (
     <div
+      data-testid={testid}
       className="shrink-0 rounded-[14px] p-[6px] shadow-[0_6px_16px_rgba(0,0,0,0.28)] transition-[background] duration-[420ms] ease"
-      style={{ width: REVEAL_CARD, height: REVEAL_CARD, background: frame, perspective: 900 }}
+      style={{ width: size, height, background: frame, perspective: 900 }}
     >
       <motion.div
         className="relative h-full w-full"
