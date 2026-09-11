@@ -1,5 +1,75 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-12#1 — 4 more RPS gaps from Owner's latest live pass — item 3 is a real correction to #547            [READY TO TICKET — item 3 first, it's the most important]
+From: Advisor   Re: your 4 questions on Owner's rapidclash-00102-km6 pass
+
+All four confirmed against the real `prototype's `renderVals()` computed-value logic (not just markup), which is where the answers actually live for all four of these — cheap surface reads would have missed every one. One process note: I caught myself mid-investigation reading `RpsHub.tsx` on a stale local branch that predated #546/#547/#548 and almost drew wrong conclusions from it (specifically, almost reported `ownBarResult`/`suppressResultOverlay` as never wired, which is false on real `main`) — caught it via `git log` before writing anything down, same standing lesson as earlier tonight.
+
+---
+
+## 3 FIRST — `ownBarResult` (#547) is the wrong mechanism for RPS. Real correction, not new information the earlier review missed.
+
+**The prototype's `renderVals()` proves this precisely.** The bar-level win-fill/"you won" text mechanism (`winFillAnim`/`winTextAnim`/`playerBarRing`) is driven by `mOutcome`, and `mOutcome`'s own definition gates it entirely on `gameV`:
+```
+const gameV = view === 'mines' || isDice;              // :3519
+const mResult = gameV && mr != null;                    // :3522
+const mOutcome = (mResult && (mr === 'final' || mr === 'closed')) ? (myG > oppG ? 'win' : ...) : null;  // :3528
+```
+**`gameV` is `mines`/`dice` only — `view === 'rps'` is never included.** `mOutcome` is `null` for every RPS state, unconditionally. This isn't an edge case or something that might not apply — the prototype's own source structurally cannot produce a bar-level win-fill for RPS. `ownBarResult` (`RpsHub.tsx`, wired in #547 mirroring `CoinflipHub.tsx:339-341`'s reference pattern) borrows a mechanism that, per the prototype's own logic, is exclusive to Mines/Dice.
+
+**RPS's actual, already-implemented win indication is the card frame color, confirmed correct since T6b (#509), untouched by any of this:**
+```
+rpsOut = rpsPhase === 'done' ? this.rpsOutcome() : null;                                    // :3532
+rpsLeftFrame:  rpsOut==='win' ? '#34D399' : rpsOut==='lose' ? '#F04438' : rpsOut==='draw' ? '#F79009' : '#FFFFFF';  // :3810
+rpsRightFrame: rpsOut === 'draw' ? '#F79009' : '#FFFFFF';                                     // :3811
+```
+The player's own card frame turns green/red/orange; the opponent's card frame **only ever turns orange on a draw, never green or red** (matches what the PM independently confirmed against this exact line while reviewing T6b, 2026-09-11#1). This, combined with the card **enlarging** at the same moment (item 2 below, `rpsExpanded()`), is the complete, real win-indication moment in the prototype — a bigger, differently-colored card. There is no bar treatment layered on top of it, ever, for RPS.
+
+**Fix:** remove `ownBarResult` from `RpsHub.tsx`'s `<GameHub>` call. Keep `suppressResultOverlay` — that part's still correct, the in-place reveal itself was the right call, just not paired with the bar mechanism. `FRAME_WIN`/`FRAME_LOSE`/`FRAME_DRAW` and the `myFrame`/`oppFrame` logic already in the codebase (pre-#547, from T6b) need no changes — they're already correct.
+
+**Please add a code comment at the `ownBarResult` removal site citing this exact `gameV` gate** (`Full Spec.html:3519`) so nobody re-adds it later assuming RPS should match Coinflip's pattern — it structurally doesn't, per the prototype's own source, not by omission.
+
+---
+
+## 1 — Real z-index bug (confirmed via CSS stacking rules against the actual DOM), plus a missing dim treatment
+
+**Z-index:** `GameHub.tsx`'s `OpponentSlot`/`OwnSlot` (`:911`, `:959`) apply `barShiftY` as a plain `style={{ transform: ... }}` (no `z-index` anywhere in either component). A `transform` creates a stacking context but defaults to `z-index: auto` — meaning paint order among such siblings still follows DOM order. In the arena JSX (`:722-733`), `OpponentSlot` is mounted BEFORE `renderGameArea(areaArgs)` (the RPS card block) — so when the slide-to-center motion moves `OpponentSlot` down to overlap the RPS card visually, the card (later in DOM, same auto-z stacking level) paints on top of it. **This exactly matches Owner's observation.**
+
+The prototype avoids this by giving its bars an explicit stacking order: `data-rc-oppbar`/`data-rc-playerbar` are `position:relative; z-index:3` (`Full Spec.html:436`, `:660`) — explicitly above both the VS label (`z-index:2`, `:432`) and the un-indexed card block. **Fix:** give `OpponentSlot`/`OwnSlot` an explicit `z-[3]` (or equivalent) whenever `barShiftY != null`, matching the prototype's own value exactly.
+
+**Table dimming — genuinely missing, confirmed absent, not just under-implemented:** the prototype fades the RPS card block to 28% opacity during the slide (`rpsBoardOp: rpsMatching ? 0.28 : 1`, `Full Spec.html:3795`) — this is precisely why the sliding bars stand out against it; there's no separate treatment on the bars themselves, the "table" recedes instead. Grepped the current codebase for any equivalent — only a stale comment references `rpsBoardOp` (`RpsHub.tsx:193`), no real implementation exists. **Fix:** apply `opacity: 0.28` (transitioned) to RPS's card wrapper while `barSlideActive` is true (the flag already exists, `GameHub.tsx:584`).
+
+---
+
+## 2 — Card enlargement at reveal is real and precisely quantified, confirmed missing entirely
+
+`rpsExpanded()` (`Full Spec.html:3263-3265`, true during phases `reveal`/`flip`/`done`) drives real, hardcoded transitions, not a metaphorical "bigger":
+| | small (default) | big (`rpsExpanded()`) |
+|---|---|---|
+| card width (`rpsCardW`) | 92px | **124px** |
+| card height (`rpsCardH`) | 130px | **176px** |
+| gap between cards (`rpsGap`) | 36px | **12px** |
+| VS column width (`rpsVsW`) | 56px | **38px** |
+| picker area height (`rpsChoicesH`) | 180px | **0px** (collapses) |
+| picker area opacity (`rpsChoicesOp`) | 0.7–1 | **0** |
+| icon scale inside the picked card | 1 | **1.6** |
+
+(all from `Full Spec.html:3804-3814`, `:3252` for the icon scale — `rpsChoice()`'s `scale: on ? (big ? 1.6 : 1) : 0.4`)
+
+**Current app hardcodes the small values as fixed constants, no expanded state exists at all:** `CARD_W = 92`, `CARD_H = 130`, `CARD_GAP = 36` (`RpsHub.tsx:29/31/33`), and the picker area only ever gets `opacity-70` + `disabled` at terminal (`:459`, `:469`) — it stays fully laid out and visible, never collapsing. **Fix:** derive `CARD_W`/`CARD_H`/`rpsGap`/`rpsVsW` from `terminal` (already computed, `:299`) the same way the prototype derives them from `rpsExpanded()`, animate via the existing transition durations (620ms cubic-bezier, cited above alongside each value), and replace the picker's `opacity-70`+`disabled` treatment with a genuine height-collapse + fade-to-0 (`max-height` + `opacity`, matching `rpsChoicesH`/`rpsChoicesOp` exactly) once `terminal` is true.
+
+---
+
+## 4 — Three text strings, three different verdicts, confirmed individually against the prototype's actual source
+
+- **"Waiting for an opponent…" (`RpsHub.tsx:239`, RpsIdle's own paragraph) — genuinely extraneous, real duplicate, safe to remove.** Grepped the entire prototype: it has exactly ONE "waiting" text anywhere for this state — the opponent bar's own "Searching..." span (`Full Spec.html:462`, gated by `rpsSearchOp`). The current app shows THREE things simultaneously during search: the bar's own "Searching…" (already correct, matches), `GameHub.tsx`'s shared PLAY-button label ("Waiting for an opponent · m:ss", `:766` — shared plumbing every game uses, keep it), AND this RpsIdle-specific extra paragraph (`:239`), which is the genuinely redundant one — the prototype never has this third copy. **Remove `RpsHub.tsx:239`'s paragraph specifically; leave `GameHub.tsx`'s shared countdown label alone.**
+- **"Picked {choice} — tap another to change, or wait for the timer" (`RpsHub.tsx:487`) — has zero prototype equivalent, confirmed via grep (no "Picked" anywhere in `Full Spec.html`).** This is real, useful UX copy explaining a mechanic (freely-changeable pick until the window closes) the prototype's own mock never had to explain because it's a static, non-interactive demo. Recommend keeping it — it's not decorative, it prevents real player confusion about whether tapping again does anything — but flagging since it's a genuine addition beyond the prototype's own text, not hidden functionality Owner might want removed on sight. Your/Owner's call given the "visual fidelity first" stance, but this one crosses into "explains real interactive behavior a static mock never needed to."
+- **"Forfeit" (visible button, `RpsHub.tsx:492-493`) — a real, more nuanced case, don't just delete it.** The prototype's own `renderVals()` DOES compute a forfeit handler (`rpsForfeit: () => {...}`, `Full Spec.html:3821`) — but grepped every other line in the file, and it's never bound to any visible element (`onClick="{{ rpsForfeit }}"` appears nowhere). So the underlying capability exists in the prototype's own dead code (same category as `DEFAULT_BOMBS` and the other stale-array precedents this tracker already documents), but there's no visible "Forfeit" button anywhere in the actual rendered UI. **This needs an explicit Owner call, not a silent removal:** forfeiting is a real safety-valve (a player stuck in a bad match can leave rather than being forced to keep tapping) — removing the visible affordance without also confirming there's still SOME way to functionally forfeit would be removing real capability, not just a cosmetic mismatch. Options: (a) keep the button but restyle it to something less prominent, matching the prototype's evident intent of not surfacing it as a first-class action; (b) remove it entirely and rely on inaction (auto-throw at window expiry, already the existing behavior) as the de facto "give up" path. Flagging both, not picking one.
+
+---
+
+**Ask:** item 3 first (it's undoing something already shipped, highest priority to get right before more work builds on the wrong mechanism). Items 1 and 2 are independent of each other and of item 3, can go in any order or combine into one PR (both touch `RpsHub.tsx` + `GameHub.tsx`'s shared arena). Item 4's three strings need three separate calls, not one blanket "remove all UI text Owner didn't recognize" — one's a clean removal, one's a keep-with-flag, one needs an actual Owner decision before any code changes.
+
 ### 2026-09-11#10 — Owner's live post-deploy pass: two more real gaps, both traced to root cause            [READY TO TICKET — item 2 is lower-risk than it sounds, see below]
 From: Advisor   Re: your two questions from Owner's live anonymous-browser test
 
