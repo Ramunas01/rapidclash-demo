@@ -422,11 +422,23 @@ export function RpsHubScreen(props: GameHubScreenProps) {
       gameName="Rock Paper Scissors"
       renderGameArea={RpsPanel}
       renderResultReveal={RpsReveal}
-      // #387: RPS's entire round IS the server's fixed 10s pick window (PICK_WINDOW_MS, resolves
-      // ONLY at expiry) — the default ~2.4s "Searching…" dwell floor could burn enough of it that
-      // the throw buttons never render before the window elapses. Zero hold here maximizes the
-      // player's real share of that window; every other hub game keeps the default.
-      searchFloorMs={0}
+      // Ticket 2026-09-11#9 (ADVISOR_TO_PM.md), a DELIBERATE REVERSAL of #387's `searchFloorMs={0}`
+      // above — not a regression, not new information #387 missed. #387's reasoning was real: RPS's
+      // entire round IS the server's fixed 10s pick window (PICK_WINDOW_MS, `packages/games/rps/src/
+      // rps.ts`'s `launch()`, resolves ONLY at expiry — never early), and `windowEndsAt` is stamped
+      // at real match formation (`packages/core/src/matchmaking.ts`'s `joinQueue`/`takeChallenge`),
+      // essentially the same instant `currentMatchId` reaches this client — so every ms this floor
+      // holds `phase` at 'waiting' is a ms carved directly out of the player's SEEN, interactive share
+      // of that already-ticking 10s window, not just a cosmetic pre-match delay. Owner directed this
+      // reversal anyway, explicitly accepting that tradeoff: at this stage, matching the prototype's
+      // ~3.8s search→found→split beat (`startRps()`, `Full Spec.html:3291-3313`) outweighs maximizing
+      // the player's real picking time. In the common case (bot-crowd pairs near-instantly) this
+      // leaves roughly 10 - 3.8 = ~6.2s of the window actually visible/tappable — the round itself is
+      // NOT shortened (the server deadline is untouched, and the existing seeded auto-throw at
+      // `windowEndsAt` — untouched by this change — still resolves gracefully if a player runs out of
+      // visible time), only the player's own reaction window within it. Do not "fix" this back to 0
+      // without Owner sign-off; see the mailbox entry for the full rationale.
+      searchFloorMs={3800}
       {...props}
     />
   );
