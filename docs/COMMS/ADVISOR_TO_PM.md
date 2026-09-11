@@ -1,5 +1,51 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-11#9 — RPS: Owner-directed reversal — restore the prototype's opponent-search theater and per-round reveal, deliberately reintroducing a known info-leak            [READY TO TICKET — read the rationale before touching this]
+
+From: Advisor   Re: 2026-09-11#8's behavioral-difference follow-up; Owner's explicit call on visual-fidelity-over-correctness at this stage
+
+**Read this framing before dispatching — it changes how the diff should be reviewed, not just what changes.** Owner compared RPS's actual match flow (not just the idle screen) against the prototype and found two behavioral differences from what the app currently does *on purpose*, for real, previously-good reasons. Owner's explicit direction: **at this stage, visual/experiential fidelity to the Designer's vision outweighs correctness** — the near-term goal is persuading investors the team can execute a compelling vision (this demo is never going to be the production build; delivery constraints belong to a future platform). Where matching the prototype exactly would require accepting a real gap the current code was deliberately built to avoid, **accept the gap and document it in a code comment explaining why**, rather than silently preserving the safer-but-less-satisfying current behavior.
+
+This is a genuine, deliberate reversal of a design decision made earlier tonight — not new information the original decision missed. Treat the PR that implements this as reintroducing a known, accepted risk, not as "fixing a bug."
+
+---
+
+## 1 — Restore the ~3.8s opponent-search sequence for RPS
+
+**Current, deliberate behavior (T5, tonight):** RPS passes `searchFloorMs={0}` to `GameHub`, so `matchForming`'s VS-label beat structurally never arms — the picker appears the instant a match forms. This was a real, reasoned trade-off (RPS's whole round is a short, fixed pick window; burning ~4s of it on search theater was judged not worth it).
+
+**Owner's direction: reverse this for RPS specifically.** Restore something matching the prototype's own timing, cited exactly (`startRps()`, `Full Spec.html:3291-3313`):
+- **t=0 → ~2.4s ("searching")**: opponent name field cycles through random names every 70ms (a slot-machine scramble). Prototype pool: `RPS_NAMES`.
+- **~2.4s → ~3.16s ("found")**: name settles on a real pick, holds still.
+- **~3.16s → ~3.8s ("split")**: transition beat (this is the same `rpsMatch === 'split'` moment T5's shared VS-label keys off — the two are related but this ticket is specifically about RPS's own dwell floor being restored, not re-touching the shared `GameHub.tsx` VS-label mechanism itself).
+- **~3.8s**: picker becomes active.
+
+**Mechanism:** give RPS a non-zero `searchFloorMs` (matching this ~3.8s total, or close — exact number isn't sacred, matching the *feel* is the point) instead of `0`. Confirm with whoever picks this up whether restoring the floor alone reproduces the full sequence or whether some of the name-cycling visual needs its own client-side treatment beyond what the floor mechanism already drives for other games.
+
+**Related open question, not decided here: does this apply to Coinflip too?** Coinflip shares the exact same `searchFloorMs={0}` exception from the same T5 PR, same reasoning. Owner's comparison was RPS-only tonight. Flag to Owner whether Coinflip should get the same reversal for consistency, or stay as-is — don't silently extend this ticket's scope to Coinflip without asking, and don't silently leave it inconsistent either.
+
+---
+
+## 2 — Reveal the opponent's actual throw on every round, including ties — a real, deliberate redaction rollback
+
+**Current, deliberate behavior:** `packages/games/rps/src/rps.ts`'s `viewFor` (`:216-225`) redacts the opponent's choice on every non-terminal state — and a tie is explicitly non-terminal (`resolve()`, `:100-116`: "Tie → not terminal: replay"). Worse for this purpose: `resolve()`'s tie branch clears `s.choices = {}` (`:114`) as part of dealing the next round, so the tied throw isn't just hidden, it's **gone from state entirely** by the time any client could read it — this was built so a player could never retroactively see a past round's throw and pattern-read the opponent's future picks.
+
+**Prototype's actual behavior** (`Full Spec.html:3084-3099`): the opponent's card flips to reveal their real throw on **every** round — win, lose, or tie — via `rpsPhase: 'flip'`. Only on a tie does it then hold the revealed cards for 1.5s before auto-dealing a fresh round. The player always sees what was thrown.
+
+**Owner's direction: implement the prototype's version, accepting the information a player gains round-to-round as an intentional, documented risk** — this is exactly the "produce the leaky code, comment why" case from the framing above.
+
+**Why this needs a protocol change, not a redaction-flag flip:** because `s.choices` is wiped before the next `viewFor` call, there's no state left to stop redacting — a tie's throws only exist in memory for the instant `resolve()` runs. The fix has to capture them into the event itself, before they're cleared:
+
+- `resolve()`'s tie branch (`:100-116`) currently emits `{ type: 'new_round', payload: { round, replays } }` with no choice data. Add the two throws to this payload — capture `{ ...s.choices }` **before** the `s.choices = {}` reset two lines later (`:114`), e.g. `payload: { round: s.round, replays: s.replays, revealedChoices: { ...beforeReset } }`.
+- Per `GAME_MODULE_INTERFACE.md`'s "nothing secret in an event" rule, an event that includes a field is broadcast unredacted to both players by design — this is the intentional exception, so **the code needs a comment at this exact spot** stating plainly why: something to the effect of *"Deliberately reveals both throws to both players on a tied round — a real info-leak a strategic player could exploit round-to-round. Owner-approved 2026-09-11: this is an investor-demo build, not the production implementation: visual/experiential fidelity to the Designer's prototype outweighs this correctness concern at this stage. Do not treat this as an oversight; do not silently "fix" it back to redacted without Owner sign-off."*
+- Client side (`RpsHub.tsx`): `RpsBoard`'s opponent card currently only ever shows the redacted 🤫 tile pre-terminal (`:198-201`'s own doc comment: "the opponent's card stays the redacted 🤫 tile for the whole window"). Wire it to consume the new `revealedChoices` field on a `new_round` event: flip to the real throw (reuse `RpsRevealFlipCard`'s existing 820ms flip, already citing the prototype's own timing exactly), hold ~1.5s (matching the prototype's hold), then reset to the redacted tile as the new round's window opens.
+
+**Scope:** `packages/games/rps/src/rps.ts` (the event payload + its test coverage — existing redaction tests will need updating to assert the choices ARE present on `new_round`, a real, deliberate flip of an existing assertion, not a broken test to "fix") + `RpsHub.tsx` (`RpsBoard`'s tie-handling). Mechanic (win/lose/tie rules, the pick-window model) is completely unchanged — this is redaction-policy and visual-timing only.
+
+---
+
+**Ask:** two tickets (search-theater timing is independent of the reveal-on-tie change, can ship separately or together, coder's call). Both are Owner-directed reversals of decisions made earlier tonight — cite this mailbox entry in both PRs so a future reviewer doesn't mistake either for a regression. The code-comment requirement in item 2 is not optional — this is exactly the kind of change that looks like a bug to anyone who doesn't already have this context.
+
 ### 2026-09-11#8 — Owner's manual side-by-side found 3 real gap clusters, two of them platform-wide            [READY TO TICKET — all three]
 From: Advisor   Re: Owner directly comparing the live RPS screen against the prototype, screen-by-screen
 
