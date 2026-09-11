@@ -1,5 +1,35 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-11#4 — Mines idle-state polish (small) + currency-picker dropdown (real feature, not small) — both scoped            [READY TO TICKET]
+From: Advisor   Re: your post-deploy flag on the two deferred items
+
+Congratulations on the deploy — good milestone, and good judgment holding these two back rather than rushing them into that window. Scoped both now against current `main` (post-#524).
+
+---
+
+## Mines idle-state polish — small, same file T8 already touched
+
+**Confirmed by reading the prototype's own tile-computation code directly:** the prototype does NOT have a separate idle-state design for the Mines board — `minesTiles: MINES_TILES.map(...)` (`Full Spec.html`, near line 3684) is the SAME function that renders the live in-match board; before a match starts it's just every tile in its default covered state (`open: false`), same colors T8 already ported (`MINES_TILE_COVERED`/`MINES_BOARD_BG`). There is no idle-specific mock to cite beyond what's already in `MinesHub.tsx`.
+
+**Scope:** `MinesIdle` (`MinesHub.tsx:160-176`) currently renders plain `border-border bg-background` divs — swap for T8's own `MINES_TILE_COVERED`/`MINES_BOARD_BG` constants and the card/board radii T8 already established, so the idle preview is visually the live board's covered state, dimmed (`opacity-50`, unchanged), rather than a separate generic gray grid. Should be almost entirely reusing what's already in the file — no new prototype investigation needed, this is "finish applying T8's own values everywhere T8 touched," not new scope.
+
+**Done when:** idle preview uses the same tile colors/radii as the live board (dimmed); no new hex/colors introduced beyond what T8 already defined; existing MinesHub tests updated only if they assert on the old idle classnames.
+
+---
+
+## Currency-picker dropdown — a real, bounded feature, bigger than T9 was
+
+**Flagging the size honestly up front:** this is not a small follow-up like T9 (T9 swapped an icon on an existing button). This is a genuine dropdown component that doesn't exist in the app at all today — search input, two grouped sections, 8 currency rows with mock balances, open/close animation, backdrop click-away. Confirmed by reading the prototype's actual state/markup, not guessing:
+
+- **Trigger:** the existing wallet chip (`HubRibbon.tsx`'s `hub-wallet-chip` button) currently only calls `onWallet` (opens the Wallet screen). Prototype (`Full Spec.html:2233`, `toggleCur`) opens an inline dropdown panel instead — `onWallet` needs to stay reachable some other way (the WALLET sub-pill half of the same chip, most likely — the prototype's own layout already separates the currency-symbol/balance half from the purple WALLET sub-pill, `:2231-2241`) since both actions need to exist.
+- **Panel** (`:2242-2296`): a search input (`curQuery`/`onCurQuery`, placeholder "Search"), a "Cash" section header + one USD row, a "Cryptocurrency" section header + rows for BTC/USDT/USDC/SOL/ETH/LTC/XRP (`OPEN_CURS`, prototype line 2855) — each row: coin icon (already have all 8 as SVG `<symbol>`s in the prototype, lines ~104), name, and a mock balance. Open/close via `curOpen` boolean, animated (`opacity 220ms ease, transform 280ms cubic-bezier(0.22,0.61,0.36,1)`, translateY+scale), closes on an outside-click backdrop (`closeCur`).
+- **Mock balances are hardcoded per-currency strings in the prototype** (`CUR_BAL`/`CUR_CRYPTO` objects, near line ~3592) — e.g. `SOL: '$1,642'`/`'10.6483'` — NOT derived from the real integer credit balance. Per the tracker's existing "Currency presentation" section (already Owner-approved 2026-09-09): this is correct and intentional, not something to fix — "per-currency balances are mock display strings (as in the prototype), not derived from one number." Whoever implements this should reuse a literal copy of the prototype's own mock numbers, not invent new ones.
+- **Also present in the prototype but explicitly a judgment call for whoever scopes the ticket further, not decided here:** a fiat/crypto display toggle (`curFiat`) that swaps between `CUR_BAL` (dollar strings) and `CUR_CRYPTO` (native-unit strings) for the same currency. Could ship in the same PR or be split into its own smaller follow-up — flagging rather than pre-deciding since it's a discrete, separable piece.
+
+**Deliberately not scoping the exact component boundaries/file split here** — that's real implementation-design work (new component vs. extending `HubRibbon.tsx` inline, where the mock-balance data lives) that deserves the same "cite real prototype values, don't freehand" ticket-writing pass T6a/T6b/T8 got, and I'd rather hand you accurate raw material than a rushed file-by-file plan. Let me know if you want me to go one level deeper (component boundaries, exact test plan) before dispatching, or if your usual ticket-authoring pass from here is enough given the citations above.
+
+**Priority note, not a directive:** this is cosmetic-only (Charter #4's approved investor-demo skin) and was correctly deprioritized once during the deploy push — nothing about it is more urgent now that the deploy has landed. Sequence it wherever makes sense relative to whatever's next on the roadmap (chat, races/leaderboards, the lobby-collapse), your call.
+
 ### 2026-09-11#3 — T8 (Mines visual rebuild) + T9 (GameHub $ skin gap) — both ready            [READY TO TICKET]
 From: Advisor   Re: your flag on the Mines visual follow-up; Owner's ~6h-to-deploy target
 
