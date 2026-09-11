@@ -113,6 +113,57 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     }
   });
 
+  // 2026-09-11#10 item 2 (ADVISOR_TO_PM.md): the terminal (match-end) reveal and the tie-reveal beat
+  // both flip the SAME `RpsRevealFlipCard` at different moments — a terminal outcome must always win
+  // the render over a still-pending tie-reveal (impossible to race for real, since the next round's
+  // earliest resolution is a full fresh ~10s window later, but this proves the defensive composition
+  // holds rather than just leaning on that timing margin).
+  it('a terminal outcome always wins over a still-pending tie-reveal (composes without glitching)', () => {
+    vi.useFakeTimers();
+    try {
+      const gameState: RpsView = { players: ['pid', 'bob'], choices: {}, round: 1 };
+      const events = [
+        { type: 'new_round', payload: { round: 1, replays: 1, revealedChoices: { pid: 'rock', bob: 'scissors' } } },
+      ];
+      const { rerender } = render(
+        <RpsHubScreen
+          {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock', 'paper', 'scissors'], events })}
+        />,
+      );
+      // The tie-reveal is armed, showing the opponent's just-tied scissors throw.
+      expect(screen.getByTestId('hub-opponent-pick-revealed').textContent).toContain('✌️');
+
+      // Before its ~2.3s hold elapses, the match actually ends decisively — the terminal outcome
+      // must win immediately, not queue behind the tie-reveal's own timer.
+      const terminalState: RpsView = { players: ['pid', 'bob'], choices: { pid: 'paper', bob: 'rock' } };
+      act(() => {
+        rerender(
+          <RpsHubScreen
+            {...baseProps({
+              currentMatchId: null,
+              gameState: terminalState,
+              lastOutcome: { type: 'win', winner: 'pid' },
+              lastSettlement: { delta: 9, newBalance: 1009 },
+            })}
+          />,
+        );
+      });
+
+      // Exactly one revealed opponent card, showing the TERMINAL throw (rock) — not the stale tie's
+      // (scissors), and no duplicate/competing flip nodes.
+      expect(screen.getAllByTestId('hub-opponent-pick-revealed')).toHaveLength(1);
+      expect(screen.getByTestId('hub-opponent-pick-revealed').textContent).toContain('✊');
+
+      // Advancing past the tie-reveal's own (now-cleared) timer must not glitch anything back to
+      // redacted — the terminal reveal persists (it never resets, unlike the tie beat).
+      act(() => { vi.advanceTimersByTime(820 + 1500); });
+      expect(screen.getByTestId('hub-opponent-pick-revealed').textContent).toContain('✊');
+      expect(screen.queryByTestId('hub-opponent-pick')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("2026-09-11#9: a DECISIVE round's new_round-less broadcast never flips the opponent card (revealedChoices is tie-only)", () => {
     const gameState: RpsView = { players: ['pid', 'bob'], choices: {} };
     // No `events` at all — the common case (a provisional pick's broadcast carries none either).
@@ -162,7 +213,11 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     expect(screen.getByTestId('hub-move-rock').getAttribute('aria-pressed')).toBe('false');
   });
 
-  it('Result: ending a match shows the overlay with the credits delta and the both-choices reveal', async () => {
+  // 2026-09-11#10 item 2 (ADVISOR_TO_PM.md): the prototype has no separate result modal for this
+  // game — RPS now wires `suppressResultOverlay`/`ownBarResult` (mirroring CoinflipHub.tsx) so the
+  // outcome presents IN PLACE on the persistent board instead, matching the pre-existing Coinflip
+  // pattern this replaces the old `hub-result-overlay` assertions with.
+  it('Result: ending a match reveals the outcome in place on the board — no overlay, opponent throw flips, own bar shows the win', async () => {
     const gameState: RpsView = { players: ['pid', 'bob'], choices: { pid: 'rock', bob: 'scissors' } };
     const { rerender } = render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
@@ -171,11 +226,19 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
         {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 9, newBalance: 1009 } })}
       />,
     );
-    await waitFor(() => expect(screen.getByTestId('hub-result-overlay')).toBeInTheDocument());
-    expect(screen.getByTestId('hub-result-text').textContent).toContain('You Won');
-    expect(screen.getByTestId('hub-result-delta').textContent).toContain('+9');
-    // Both choices are revealed at terminal (server-authoritative).
-    expect(screen.getByTestId('hub-result-rps')).toBeInTheDocument();
+    await waitFor(() => {
+      // No separate popup ever appears — the board itself carries the result.
+      expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
+      expect(screen.getByTestId('hub-board')).toBeInTheDocument();
+      // The opponent's real throw (scissors) is revealed in place — the redacted tile is gone,
+      // replaced by the SAME flip-card component the tied-round reveal uses (2026-09-11#9 item 2).
+      expect(screen.queryByTestId('hub-opponent-pick')).toBeNull();
+      expect(screen.getByTestId('hub-opponent-pick-revealed').textContent).toContain('✌️');
+      // The pick grid locks at terminal — no round left to pick into.
+      expect(screen.getByTestId('hub-move-rock')).toBeDisabled();
+      // Bar-level "You Win" — generic GameHub `ownBarResult` machinery, same as CoinflipHub.
+      expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you win/i);
+    });
   });
 
   it('JOIN balance-check + chrome (shared GameHub behaviour holds for RPS)', () => {
