@@ -85,7 +85,8 @@ describe('GamesCarousel — OPEN GAMES tab: real data (signed in)', () => {
     const c1 = rowByMatchId('c1');
     expect(within(c1).getByText('Coinflip')).toBeInTheDocument();
     expect(within(c1).getByText('@alice')).toBeInTheDocument();
-    expect(within(c1).getByText('5')).toBeInTheDocument();
+    // signed-in (baseProps default loggedIn: true) → the Owner-approved $ skin (2026-09-11#8 item B.2)
+    expect(within(c1).getByText('$5')).toBeInTheDocument();
 
     const m1 = rowByMatchId('m1');
     expect(within(m1).getByText('Mines')).toBeInTheDocument();
@@ -122,9 +123,27 @@ describe('GamesCarousel — OPEN GAMES tab: real data (signed in)', () => {
     expect(screen.getByTestId('games-carousel-notice').textContent).toMatch(/not enough/i);
   });
 
-  it('no $ anywhere — play-money framing only', () => {
+  it('2026-09-11#8 item B.2: registered (loggedIn) viewers see the Owner-approved $ skin, not the RC-coin glyph (CHARTER.md #4)', () => {
     const { container } = render(<GamesCarousel {...baseProps({ challengesByGame: manyChallenges(3) })} />);
-    expect(container.textContent ?? '').not.toMatch(/\$/);
+    expect(container.textContent ?? '').toMatch(/\$/);
+  });
+
+  it('2026-09-11#8 item B.1: a real human username (no embedded @) renders with exactly one @, never doubled', () => {
+    const challengesByGame = { coinflip: [challenge('c1', 'alice', 5, 100)] };
+    render(<GamesCarousel {...baseProps({ challengesByGame })} />);
+    const row = rowByMatchId('c1');
+    expect(within(row).getByText('@alice')).toBeInTheDocument();
+    expect(within(row).queryByText(/@@/)).toBeNull();
+  });
+
+  it('2026-09-11#8 item B.1: a bot-crowd username (already embeds its own @) renders with exactly one @ and keeps the 🤖 ADR-010 disclosure — not doubled, not stripped', () => {
+    // Real shape bot-crowd posts (tools/bot-crowd/src/config.ts:226-233): BOT_PREFIX ('🤖') + '@' + handle.
+    const challengesByGame = { mines: [challenge('m1', '🤖@sweeper', 25, 100)] };
+    render(<GamesCarousel {...baseProps({ challengesByGame })} />);
+    const row = rowByMatchId('m1');
+    expect(within(row).getByText('🤖@sweeper')).toBeInTheDocument(); // exactly one @, 🤖 intact
+    expect(within(row).queryByText(/@🤖@sweeper/)).toBeNull(); // not doubled
+    expect(within(row).queryByText(/^@/)).toBeNull(); // no extra leading @ prepended on top
   });
 });
 
@@ -142,6 +161,17 @@ describe('GamesCarousel — OPEN GAMES tab: real data (logged out)', () => {
     const join = within(row).getByTestId(/^games-carousel-join-/);
     fireEvent.click(join);
     expect(onTakePublicChallenge).toHaveBeenCalledWith({ matchId: 'p1', gameId: 'coinflip', stake: 15 });
+  });
+
+  it('2026-09-11#8 item B.2: logged-out viewers keep the play-money RC-coin glyph — no $ leaks in for the public/unregistered audience', () => {
+    // The static RANK board's XP/PRIZE figures don't depend on the network-polled open-challenges
+    // feed, so this exercises the $-gating in isolation. Stubbed fetch just avoids a real network
+    // call from the (unrelated, still-active) public-poll effect this component also runs.
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => [] }) as Response));
+    const { container } = render(<GamesCarousel {...baseProps({ loggedIn: false })} />);
+    fireEvent.click(screen.getByTestId('games-carousel-tab-3')); // RANK — XP figures
+    expect(container.textContent ?? '').not.toMatch(/\$/);
+    expect(screen.getAllByText('XP:').length).toBeGreaterThan(0);
   });
 });
 

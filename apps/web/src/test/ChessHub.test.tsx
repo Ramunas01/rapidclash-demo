@@ -265,7 +265,8 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
     // The hub uses the same GamesCarousel the Home page renders (no per-row time-control chip).
     await waitFor(() => expect(document.querySelector('[data-match-id="c1"]')).toBeTruthy());
     const row = document.querySelector('[data-match-id="c1"]') as HTMLElement;
-    expect(within(row).getByTestId(/^games-carousel-stake-/).textContent).toBe('10');
+    // registered (default loggedIn: true) → the Owner-approved $ skin, 2026-09-11#8 item B.2
+    expect(within(row).getByTestId(/^games-carousel-stake-/).textContent).toBe('$10');
     expect(within(row).getByTestId(/^games-carousel-game-/).textContent).toBe('Chess');
   });
 
