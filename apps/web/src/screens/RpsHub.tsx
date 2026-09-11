@@ -139,13 +139,42 @@ function RpsCountdown({ seconds }: { seconds: number }) {
   );
 }
 
-/** Greyed preview shown in Idle/Waiting — the three choices, dimmed. Same tile/radius/gap language
- *  as the live picker row below (Full Spec.html:643-654) — the idle state is that same block at
- *  rest, not a separate design. */
+/** Idle/Waiting preview shown before a match starts. Full Spec.html's `isRps` block (:605-658) is
+ *  ONE persistent panel — the two-card + VS frame (:608-641) sits directly above the picker grid
+ *  (:643-654) with no `sc-if` between them, so the prototype shows both together at rest, not just
+ *  once a match is live: `rpsBoardOp` (:606) gates the whole panel's visibility, not this row
+ *  specifically, and `rpsChoicesOp`/`rpsChoicesPE` (:643) only ever dim/disable the picker grid.
+ *  #512: this component (unlike `RpsBoard` below, T6b/#509) still only rendered the old plain grid
+ *  with no card/VS frame above it — this reuses `RpsFrame`/`ARIAL`/the card constants T6b already
+ *  added rather than duplicating that markup.
+ *
+ *  Idle variant of the frame: both cards render empty/placeholder (no pick exists yet — mirrors
+ *  `rpsRock.op`/`rpsPaper.op`/`rpsScissors.op` and the opponent-side equivalents all sitting at 0 in
+ *  the prototype's own at-rest state, :611-613/:634-636) and the digit-flip clock is omitted
+ *  entirely rather than shown static-and-frozen — the prototype gates that clock's own box with
+ *  `rpsClockOp`/`rpsClockScale` (:618) exactly because there's no live pick window to count down
+ *  outside a match; `RpsBoard`'s live countdown only ever mounts once `phase === 'in-match'`. */
 function RpsIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
   const tileBg = useRpsTileBg();
   return (
     <div className="flex flex-col items-center gap-4 py-3">
+      <div className="flex items-center justify-center" style={{ gap: CARD_GAP }}>
+        <RpsFrame frame={FRAME_NEUTRAL} tileBg={tileBg} size={CARD_W} height={CARD_H} testid="hub-idle-my-pick">
+          <span className="text-3xl opacity-0">•</span>
+        </RpsFrame>
+        <div className="flex shrink-0 items-center justify-center" style={{ width: VS_WIDTH }}>
+          <span
+            className="font-bold"
+            style={{ fontFamily: ARIAL, fontSize: 16, letterSpacing: 1, color: '#FFFFFF' }}
+          >
+            VS
+          </span>
+        </div>
+        <RpsFrame frame={FRAME_NEUTRAL} tileBg={tileBg} size={CARD_W} height={CARD_H} testid="hub-idle-opponent-pick">
+          <span className="text-3xl">🤫</span>
+        </RpsFrame>
+      </div>
+
       <div className="grid w-full grid-cols-3 opacity-50" style={{ gap: 9 }}>
         {RPS_CHOICES.map((c) => (
           <div key={c.id} className="flex flex-col items-center gap-1 rounded-[16px] py-4" style={{ background: tileBg }}>
