@@ -48,7 +48,7 @@ describe('chessModule.meta', () => {
       minPlayers: 2,
       maxPlayers: 2,
       ranking: { kind: 'elo', k: 32 },
-      bet: { minStake: 1, maxStake: 100, symmetricStake: true },
+      bet: { minStake: 1, maxStake: 10000, symmetricStake: true },
       averageDurationSec: 300,
       rakeRate: 0.1,
       timeControl: {

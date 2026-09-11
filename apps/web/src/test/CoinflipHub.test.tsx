@@ -182,6 +182,20 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     });
   });
 
+  // Ticket 2026-09-12 (Chess high-stake escalation, PM-scoped — no prototype source): the "100"
+  // preset's tap-again gesture only exists when a hub passes GameHub's `highStakeCycle` prop.
+  // CoinflipHubScreen never does, so this is the regression guard that Coinflip's own "100" button
+  // stays completely plain — repeated taps just keep re-arming 100, never cycling.
+  it("Coinflip's own 100 preset is unaffected by the Chess-only high-stake cycle — repeated taps just keep arming 100", () => {
+    render(<CoinflipHubScreen {...baseProps()} />);
+    const preset = screen.getByTestId('hub-bet-100');
+    for (let i = 0; i < 3; i++) {
+      fireEvent.click(preset);
+      expect(preset.textContent).toBe('$100');
+      expect(preset.getAttribute('aria-pressed')).toBe('true');
+    }
+  });
+
   it('#143: PLAY with no bet armed guides to the bet panel (no match starts); arming clears the cue, no auto-play', () => {
     const scrollSpy = vi.fn();
     Element.prototype.scrollIntoView = scrollSpy;

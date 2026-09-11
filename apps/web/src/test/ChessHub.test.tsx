@@ -28,7 +28,7 @@ const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 /** The chess meta the picker is data-driven from (mirrors the module's declared timeControl). */
 const CHESS_META: GameMeta = {
   id: 'chess', displayName: 'Chess', minPlayers: 2, maxPlayers: 2,
-  ranking: { kind: 'elo', k: 32 }, bet: { minStake: 1, maxStake: 100, symmetricStake: true },
+  ranking: { kind: 'elo', k: 32 }, bet: { minStake: 1, maxStake: 10000, symmetricStake: true },
   averageDurationSec: 300, rakeRate: 0.1,
   timeControl: {
     options: [
@@ -114,6 +114,50 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
     expect(screen.getByTestId('hub-section-bet').getAttribute('data-needs-bet')).toBeNull();
     expect(screen.getByTestId('hub-bet-hint').textContent).toBe('');
     expect(onPlay).not.toHaveBeenCalled(); // …with NO auto-play
+  });
+
+  // Ticket 2026-09-12 (Chess high-stake escalation, PM-scoped product decision — no prototype
+  // source exists; `Full Spec.html` only ever sets a bet chip to its exact tapped value, no
+  // escalation gesture anywhere). Chess-only: the "100" preset's tap-again gesture cycles through
+  // CHESS_HIGH_STAKES (ChessHub.tsx), the same #381 "1→2" gesture shape generalized via GameHub's
+  // `highStakeCycle` prop. Mirrors CoinflipHub.test.tsx's #381 describe block structure closely.
+  describe('ticket 2026-09-12: tap-again on the 100 preset cycles the Chess-only high-stake tiers', () => {
+    it('repeated taps cycle 100 → 250 → 500 → 1000 → 2500 → 5000 → 10000 → back to 100', () => {
+      render(<ChessHubScreen {...baseProps()} />);
+      const preset = screen.getByTestId('hub-bet-100');
+      const expected = [100, 250, 500, 1000, 2500, 5000, 10000, 100];
+      for (const stake of expected) {
+        fireEvent.click(preset);
+        expect(preset.textContent).toBe(`$${stake.toLocaleString('en-US')}`);
+        expect(preset.getAttribute('aria-pressed')).toBe('true');
+      }
+    });
+
+    it('tapping a different preset then tapping 100 again lands on exactly 100, not mid-cycle', () => {
+      render(<ChessHubScreen {...baseProps()} />);
+      const preset = screen.getByTestId('hub-bet-100');
+      fireEvent.click(preset); // 100
+      fireEvent.click(preset); // 250
+      fireEvent.click(preset); // 500
+      fireEvent.click(screen.getByTestId('hub-bet-10')); // a different preset resets the gesture
+      fireEvent.click(preset); // fresh tap on 100
+      expect(preset.textContent).toBe('$100');
+      expect(preset.getAttribute('aria-pressed')).toBe('true');
+      expect(screen.getByTestId('hub-bet-10').getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('none of the intermediate high-stake tiers ever appear as their own preset button in the grid', () => {
+      render(<ChessHubScreen {...baseProps()} />);
+      const preset = screen.getByTestId('hub-bet-100');
+      for (const tier of [250, 500, 1000, 2500, 5000, 10000]) {
+        expect(screen.queryByTestId(`hub-bet-${tier}`)).toBeNull();
+      }
+      fireEvent.click(preset); // 100
+      fireEvent.click(preset); // 250
+      for (const tier of [250, 500, 1000, 2500, 5000, 10000]) {
+        expect(screen.queryByTestId(`hub-bet-${tier}`)).toBeNull(); // still no separate grid entry
+      }
+    });
   });
 
   it('Idle: the time-control picker (data-driven from meta.timeControl) drives PLAY → onPlay(stake, control)', async () => {
