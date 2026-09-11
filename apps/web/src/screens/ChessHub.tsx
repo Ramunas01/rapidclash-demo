@@ -16,6 +16,15 @@ const LIGHT_SQUARE = '#ffffff';
 const DARK_SQUARE = '#b0a3e6';
 const LOW_TIME_MS = 10_000; // warn under ~10s (spec: "Client (display only)")
 
+/** Ticket 2026-09-12 (Chess high-stake escalation, PM-scoped product decision — no prototype
+ *  source; `Full Spec.html` only ever sets a bet chip to its exact tapped value). Chess-only:
+ *  passed as `GameHub`'s `highStakeCycle` prop so the shared "100" preset button's tap-again
+ *  gesture cycles through these tiers (same #381 "1→2" gesture shape, generalized) instead of
+ *  just re-arming 100. Every other hub omits this prop entirely, so their own "100" button is
+ *  completely unaffected (plain `onArm(100)`). Requires chess's real `bet.maxStake` ceiling to be
+ *  raised to 10000 (`packages/games/chess/src/chess.ts`) to actually accept these stakes. */
+const CHESS_HIGH_STAKES = [100, 250, 500, 1000, 2500, 5000, 10000] as const;
+
 /** The standard chess opening position. The board is NEVER empty: with no live game the board falls
  *  back to this so idle/searching shows the starting position (white at the bottom, static). A live
  *  game overrides it with the server FEN; a finished game keeps its retained final FEN. */
@@ -489,6 +498,7 @@ export function ChessHubScreen(props: GameHubScreenProps) {
       suppressResultOverlay
       ownBarResult
       pinDark
+      highStakeCycle={CHESS_HIGH_STAKES}
       {...props}
     />
   );

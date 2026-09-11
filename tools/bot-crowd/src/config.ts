@@ -41,8 +41,19 @@ export interface BotConfig {
  *  `apps/web`'s `GameHub.tsx` only via an undocumented tap-again gesture on the `1¢` preset — it is
  *  deliberately never its own `BET_PRESETS` entry, so a general-roster rester never draws it from
  *  `STAKE_SET` anyway (kept in this set purely to close the taker-claiming gap in `isTakeable`).
- *  Extend this array to reserve more tiers. */
-export const HUMAN_RESERVED_STAKES: readonly number[] = [2];
+ *  Extend this array to reserve more tiers.
+ *
+ *  Ticket 2026-09-12: `250, 500, 1000, 2500, 5000, 10000` added — Chess's new high-stake escalation
+ *  tiers (its "100" preset button's tap-again cycle, `apps/web/src/screens/ChessHub.tsx`'s
+ *  `CHESS_HIGH_STAKES`; chess's real `bet.maxStake` was raised to 10000 alongside this to actually
+ *  accept them), reserved so the demo bot crowd can never snipe a showcase high-stake Chess
+ *  challenge out from under a human. `100` itself is deliberately NOT added here — issue #384
+ *  already released it back to bots and it stays a normal, unreserved preset every game uses.
+ *  This array is global across every game, but since no other game's UI can ever produce a stake
+ *  above 100 (their contracts all stay at `maxStake: 100`), reserving these five new values has
+ *  zero effect anywhere except protecting Chess's new tiers — inert everywhere else by
+ *  construction, not by a game-specific carve-out. */
+export const HUMAN_RESERVED_STAKES: readonly number[] = [2, 250, 500, 1000, 2500, 5000, 10000];
 
 /** Stakes a rester picks from (the UI bet presets, minus the human-reserved tiers). Each rester is
  *  assigned ONE random stake at startup — varied bets across games, without needing two bots per game. */

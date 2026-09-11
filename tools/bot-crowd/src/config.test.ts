@@ -164,10 +164,10 @@ describe('bot name pools stay disjoint across rosters (issue #375)', () => {
   });
 });
 
-describe('HUMAN_RESERVED_STAKES (issue #381: generalized from the single HUMAN_RESERVED_STAKE=100; issue #384: 100 released back to bots)', () => {
-  it('is exactly [2] — 100 was released back to bots by issue #384 now that 2 alone covers human-only testing', async () => {
+describe('HUMAN_RESERVED_STAKES (issue #381: generalized from the single HUMAN_RESERVED_STAKE=100; issue #384: 100 released back to bots; ticket 2026-09-12: Chess high-stake tiers added)', () => {
+  it('is exactly [2, 250, 500, 1000, 2500, 5000, 10000] — 100 stays released to bots (#384); the five new values are Chess-only high-stake tiers', async () => {
     const { HUMAN_RESERVED_STAKES } = await loadConfig({});
-    expect([...HUMAN_RESERVED_STAKES]).toEqual([2]);
+    expect([...HUMAN_RESERVED_STAKES]).toEqual([2, 250, 500, 1000, 2500, 5000, 10000]);
   });
 
   it("the general (non-gated) roster's rester stake pool never includes a HUMAN_RESERVED_STAKES value (2), but CAN include 100 (issue #384)", async () => {
@@ -175,6 +175,15 @@ describe('HUMAN_RESERVED_STAKES (issue #381: generalized from the single HUMAN_R
     const resterStakes = ROSTER.filter((b) => b.policy === 'rester').map((b) => b.stake);
     expect(resterStakes.length).toBeGreaterThan(0);
     for (const stake of resterStakes) expect(HUMAN_RESERVED_STAKES.includes(stake)).toBe(false);
+  });
+
+  it('ticket 2026-09-12: all 5 new Chess high-stake tiers (250/500/1000/2500/5000/10000) are reserved, excluding any taker from ever claiming a challenge posted at one', async () => {
+    const { HUMAN_RESERVED_STAKES } = await loadConfig({});
+    for (const stake of [250, 500, 1000, 2500, 5000, 10000]) {
+      expect(HUMAN_RESERVED_STAKES.includes(stake)).toBe(true);
+    }
+    // 100 itself is deliberately NOT reserved (#384) — only the tiers above it are new here.
+    expect(HUMAN_RESERVED_STAKES.includes(100)).toBe(false);
   });
 });
 

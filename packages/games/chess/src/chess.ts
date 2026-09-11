@@ -119,7 +119,12 @@ export const chessModule: GameModule = {
     // DECLARED ranking — the leaderboard does not compute elo yet (separate
     // issue); this is pending the Advisor's ranking decision.
     ranking: { kind: 'elo', k: 32 },
-    bet: { minStake: 1, maxStake: 100, symmetricStake: true },
+    // maxStake raised 100 → 10000 (ticket 2026-09-12, PM-scoped): the web ChessHub's "100" preset
+    // now escalates through a Chess-only tap-again cycle (100/250/500/1000/2500/5000/10000, see
+    // GameHub.tsx's `highStakeCycle` prop) — the server's generic stake-range check
+    // (matchmaking.ts's `stake < minStake || stake > maxStake`) needed the real ceiling raised to
+    // actually accept those stakes; no other server-side change was required.
+    bet: { minStake: 1, maxStake: 10000, symmetricStake: true },
     averageDurationSec: 300,
     rakeRate: 0.1, // 10% of the pot from the winner on a decisive result (skill game)
     // Cumulative per-player clock (the core applies it generically; default 10 min).

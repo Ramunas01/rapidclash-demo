@@ -311,6 +311,28 @@ interface GameHubProps extends GameHubScreenProps {
    *  is consumed (in the render, below) for the full mechanism and why `HubRibbon` is excluded.
    *  Omitted (the default) → no behavior change, byte-identical to before this prop existed. */
   pinDark?: boolean;
+  /** Ticket 2026-09-12 (Chess high-stake escalation, PM-scoped — no prototype source exists for
+   *  this; `Full Spec.html` only ever sets a bet chip to its exact tapped value, no escalation
+   *  gesture anywhere). Opt-in, mirroring every other per-hub behavior on this component: when set,
+   *  the FIRST value in the array is treated as a preset within `BET_PRESETS` (Chess passes
+   *  `[100, 250, 500, 1000, 2500, 5000, 10000]`, so it keys off the existing "100" button) and that
+   *  button's tap-again gesture cycles through the rest of the array instead of just re-arming its
+   *  own face value — the same #381 "1→2" gesture shape, generalized. Tapping any OTHER preset
+   *  first and then tapping back resets the cycle to the array's first rung (never resumes
+   *  mid-cycle), for free, via `nextInCycle`'s `indexOf` returning -1 for "not currently in this
+   *  cycle". Undefined (every hub but ChessHub) → byte-identical no-op: the "100" button (and every
+   *  other preset) keeps its plain `onArm(v)`. */
+  highStakeCycle?: readonly number[];
+}
+
+/** Ticket 2026-09-12: generalizes the #381 "tap-again to escalate" gesture beyond the hardcoded
+ *  1→2 case. `indexOf` returns -1 both when nothing is armed and when the currently-armed stake
+ *  isn't part of THIS cycle at all (armed at some other preset) — `(-1 + 1) % length === 0` then
+ *  naturally lands on `cycle[0]`, which is exactly the "any other preset resets the gesture"
+ *  behavior the existing 1→2 gesture already has, with no special-casing needed here. */
+function nextInCycle(cycle: readonly number[], current: number | null): number {
+  const idx = current != null ? cycle.indexOf(current) : -1;
+  return cycle[(idx + 1) % cycle.length];
 }
 
 /** A 1s ticking clock for countdowns (cosmetic; expiry is server-authoritative). */
@@ -335,7 +357,7 @@ function useNow(active: boolean): number {
  */
 export function GameHub(props: GameHubProps) {
   const {
-    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar, searchFloorMs = 2400, matchBarSlide, pinDark = false,
+    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar, searchFloorMs = 2400, matchBarSlide, pinDark = false, highStakeCycle,
     token, playerId, username, avatarId = 'default', opponentId, opponentName, serverClockOffset = 0, balance, currentMatchId, gameState, events,
     legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
@@ -782,6 +804,7 @@ export function GameHub(props: GameHubProps) {
               onSelectControl={setSelectedControl}
               excludedStakes={isGuest ? GUEST_EXCLUDED_STAKES : undefined}
               isGuest={isGuest}
+              highStakeCycle={highStakeCycle}
             />
           </div>
 
@@ -1043,7 +1066,7 @@ function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdi
  *  Play-a-Friend becomes the active Cancel, while the bet row freezes with the SAME visuals — but
  *  NO "Playing…" label); `noOpponent` shows the polite "No opponent found" note after expiry. */
 function PlayPanel({
-  playing, searching, noOpponent, armedStake, onArm, onPlay, onCancel, actionSlot, secondaryActionSlot, timeControl, selectedControl, onSelectControl, excludedStakes, isGuest,
+  playing, searching, noOpponent, armedStake, onArm, onPlay, onCancel, actionSlot, secondaryActionSlot, timeControl, selectedControl, onSelectControl, excludedStakes, isGuest, highStakeCycle,
 }: {
   playing: boolean;
   /** Pure search: freeze the bet row (no "Playing…") and turn Play-a-Friend into the active Cancel. */
@@ -1078,6 +1101,13 @@ function PlayPanel({
    *  this one call site rather than touching its "never $" contract. Guests keep `<Credits>`
    *  unchanged. Default false (guest) so existing non-GameHub callers — none today — stay safe. */
   isGuest?: boolean;
+  /** Ticket 2026-09-12: opt-in per-hub high-stake escalation cycle (ChessHub only today) — see the
+   *  `GameHubProps.highStakeCycle` doc comment above for the full mechanism. `highStakeCycle[0]`
+   *  is the existing `BET_PRESETS` entry (100) whose tap-again gesture is generalized; the rest of
+   *  the array are stakes reachable only through that one button's cycling state, exactly like `2`
+   *  is today reachable only through the "1" button's #381 gesture. Undefined for every hub that
+   *  doesn't pass it (byte-identical no-op). */
+  highStakeCycle?: readonly number[];
 }) {
   // Both a live match and a pure search freeze the bet controls with the identical greyed/inert
   // treatment — the ONLY difference is the primary label (search shows the waiting slot, not
@@ -1094,7 +1124,13 @@ function PlayPanel({
   // stake 2 lights the `v === 1` slot, same slot 1 renders in). -1 (no bet armed, or an armed
   // value outside the offered grid) hides the indicator entirely, same as the prototype's own
   // `betValueOp` gate on both the value row and the indicator (`Full Spec.html:708,716`).
-  const armedIndex = presets.findIndex((v) => armedStake === v || (v === 1 && armedStake === 2));
+  // Ticket 2026-09-12: generalizes the #381 check above — a preset's slot also lights up for
+  // `armedStake` when it's the `highStakeCycle` anchor (v === highStakeCycle[0]) and the armed
+  // stake is somewhere else IN that cycle (never its own BET_PRESETS entry, same idiom as `2`).
+  const armedInHighStakeCycle = highStakeCycle != null && armedStake != null && highStakeCycle.includes(armedStake);
+  const armedIndex = presets.findIndex((v) => (
+    armedStake === v || (v === 1 && armedStake === 2) || (highStakeCycle != null && v === highStakeCycle[0] && armedInHighStakeCycle)
+  ));
   // Track math ported 1:1 from `Full Spec.html:3739` (`betIndLeft`) / `:716` (indicator width),
   // generalized from the prototype's hardcoded 6-column case to whatever count is actually
   // offered (5 when a guest's reserved stake is withheld, issue #353) — same 5px padding / 2px
@@ -1240,10 +1276,17 @@ function PlayPanel({
             }}
           />
           {presets.map((v) => {
-            const displayValue = v === 1 && armedStake === 2 ? 2 : v;
+            // Ticket 2026-09-12: this preset's slot shows the escalated `armedStake` instead of its
+            // own face value when it's the `highStakeCycle` anchor and the armed stake is somewhere
+            // in that cycle — no prototype source (product decision), same shape as the #381 `v===1`
+            // clause right below it.
+            const isHighStakeAnchor = highStakeCycle != null && v === highStakeCycle[0];
+            const displayValue = v === 1 && armedStake === 2 ? 2
+              : isHighStakeAnchor && armedInHighStakeCycle ? (armedStake as number)
+              : v;
             // Plain colored text sitting on top of the track (`c.color`, `:3741` — white when
             // selected, `var(--rc-green)` otherwise) — no per-button border/background anymore.
-            const selected = armedStake === v || (v === 1 && armedStake === 2);
+            const selected = armedStake === v || (v === 1 && armedStake === 2) || (isHighStakeAnchor && armedInHighStakeCycle);
             return (
               <button
                 key={v}
@@ -1256,7 +1299,15 @@ function PlayPanel({
                 // tapping again while 1 is armed arms 2; tapping again while 2 is armed toggles
                 // back to 1. Every other preset keeps its plain onArm(v). 2 is never its own
                 // BET_PRESETS entry / grid button — only reachable through this one button's state.
-                onClick={v === 1 ? () => onArm(armedStake === 1 ? 2 : 1) : () => onArm(v)}
+                // Ticket 2026-09-12: generalizes the SAME gesture shape to `highStakeCycle` (Chess's
+                // "100" button, PM-scoped — no prototype source, this is a product decision) via
+                // `nextInCycle`; checked after the `v===1` branch so the two never collide (kept
+                // fully separate per the ticket) even though `highStakeCycle[0]` is never `1` today.
+                onClick={
+                  v === 1 ? () => onArm(armedStake === 1 ? 2 : 1)
+                  : isHighStakeAnchor ? () => onArm(nextInCycle(highStakeCycle!, armedStake))
+                  : () => onArm(v)
+                }
                 className="relative z-10 min-w-0 rounded-full py-2.5 text-center text-[13px] font-bold tabular-nums"
                 style={{ fontFamily: SPACE_GROTESK, color: selected ? '#FFFFFF' : 'var(--rc-green)' }}
               >

@@ -38,8 +38,13 @@ export const GUEST_COINFLIP_STAKE = 100;
 
 /**
  * Fixed per-match stake for guest Chess (issue #278), same reasoning as `GUEST_COINFLIP_STAKE`:
- * matches `chess`'s own `bet.maxStake` ceiling so the pooled bots (which must rest at the SAME
- * `(gameId, stake, timeControlId)` queue key to pair instantly) can only ever rest at one stake.
+ * a normal, in-range stake (well below chess's real `bet.maxStake` ceiling, raised to 10000 by the
+ * ticket 2026-09-12 Chess high-stake escalation feature) so the pooled bots (which must rest at
+ * the SAME `(gameId, stake, timeControlId)` queue key to pair instantly) can only ever rest at one
+ * stake. Chosen as 100 to match the existing Coinflip/Blackjack guest stakes for one uniform guest
+ * starting-stack story — not because it needs to sit at chess's maximum. Guest mode is a
+ * deliberately separate, fixed-stake curated flow, functionally unaffected by the real
+ * matchmaking ceiling.
  */
 export const GUEST_CHESS_STAKE = 100;
 

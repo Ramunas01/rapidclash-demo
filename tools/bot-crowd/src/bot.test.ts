@@ -70,6 +70,16 @@ describe('isTakeable — general (fully ungated) behaviour is unaffected', () =>
     expect(isTakeable(challenge({ ownerName: 'AnyHuman', stake: 100 }))).toBe(true);
   });
 
+  it('never claims any of the 5 new Chess high-stake tiers (250/500/1000/2500/5000/10000), gated or not — ticket 2026-09-12', async () => {
+    const { isTakeable } = await loadBot({ TAKER_ALLOW_PREFIX: '' });
+    // These tiers are only reachable via ChessHub's tap-again escalation on the "100" preset
+    // (apps/web/src/screens/GameHub.tsx's `highStakeCycle`) — reserved the same way `2` already is,
+    // so a taker bot never snipes a showcase high-stake Chess challenge from a human.
+    for (const stake of [250, 500, 1000, 2500, 5000, 10000]) {
+      expect(isTakeable(challenge({ ownerName: 'AnyHuman', stake }))).toBe(false);
+    }
+  });
+
   it('TAKER_EXCLUDE_STAKE defaults to 0 (no-op) — every non-reserved stake stays claimable', async () => {
     const { isTakeable } = await loadBot({ TAKER_EXCLUDE_STAKE: undefined, TAKER_ALLOW_PREFIX: '' });
     for (const stake of [1, 5, 10, 25, 50, 100]) {
