@@ -38,11 +38,11 @@ describe('HubRibbon — solid full-width bg + below-header gap (Advisor #7)', ()
     expect(row?.className).not.toContain('bg-transparent');
   });
 
-  it('adds a pb-4 gap on the inner row below the header content', () => {
+  it('adds a pb-3.5 gap on the inner row below the header content (reconciliation sweep, matches the prototype\'s 14px)', () => {
     render(<HubRibbon balance={1000} onLogo={vi.fn()} onWallet={vi.fn()} />);
     const header = screen.getByAltText('RapidClash').closest('header');
     const row = header?.querySelector(':scope > div');
-    expect(row?.className).toContain('pb-4');
+    expect(row?.className).toContain('pb-3.5');
   });
 });
 

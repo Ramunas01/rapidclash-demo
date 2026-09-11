@@ -30,11 +30,11 @@ const HOLD_MS = 2200;
  * known; only the width/opacity/transform interpolate, via plain CSS transitions, not a JS counter.
  */
 
-// ── Prototype-literal colors — fixed, never theme-dependent. Same rule this app already applies to
-// the prototype's other recurring literal, `#8B45F0` (GamesCarousel.tsx / HubToolbar.tsx /
-// HubRibbon.tsx keep it raw rather than aliasing it to this app's OWN, slightly different
-// `--brand-purple`) — the prototype's own `getState()` never varies these with `light` either. ──
-const DICE_PURPLE = '#8B45F0'; // lines 541, 574 — the track's always-full base pill
+// ── Prototype-literal colors — fixed, never theme-dependent. The prototype's own `getState()`
+// never varies these with `light` either. Reconciliation sweep (2026-09-11): `--brand-purple`
+// now matches the prototype's `#8B45F0` exactly (was `#8140e2`, this app's own pre-existing,
+// slightly different value) — the track's base pill below reads the token directly instead of
+// a raw literal, now that they're the same value. ──
 const DICE_FILL_GREEN = '#22C55E'; // lines 542, 575 — the roll-progress fill
 const DICE_WIN_GREEN = '#16A34A'; // lines 556, 589, 3451, 3678-3679 — winning number / winning history pill
 const DICE_LOSE_RED = '#DC2626'; // lines 3678-3679 — losing number color
@@ -121,7 +121,7 @@ function DiceTrack({ pos, roll, numColor, light }: { pos: 'opp' | 'mine'; roll: 
       </div>
       <div className="relative h-full rounded-full" style={{ background: grooveColor }}>
         {/* The always-full base pill — lines 541, 574. */}
-        <div className="absolute inset-2 rounded-full" style={{ background: DICE_PURPLE }} />
+        <div className="absolute inset-2 rounded-full" style={{ background: 'var(--brand-purple)' }} />
         {/* The roll-progress fill — lines 542/575 (color), 3675-3677 (width formula + transition). */}
         <div className="absolute bottom-2 left-2 top-2 rounded-full" style={{ background: DICE_FILL_GREEN, width: fillWidth, transition: FILL_TRANSITION }} />
         {/* The riding die — lines 543/576 (position/opacity/scale), 3608-3609 (position formula). */}

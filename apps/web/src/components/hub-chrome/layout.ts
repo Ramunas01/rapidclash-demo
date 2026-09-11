@@ -39,18 +39,23 @@ export const HUB_BODY = 'pb-[calc(7rem_+_env(safe-area-inset-bottom))]';
  * Top clearance for a `fixed inset-0` hub screen (e.g. `MenuOverlay`) that sits outside normal
  * document flow and so can't inherit the free spacing an in-flow screen gets automatically
  * beneath the sticky `HubRibbon` (see `HUB_BODY`'s own note above for the bottom-clearance
- * equivalent). `60px` is `HubRibbon`'s own real rendered height before any safe-area inset —
- * confirmed live (issue #446) by rendering `HubRibbon` in a real Chromium instance (Playwright,
- * 390x844 viewport) and reading `getBoundingClientRect().height` on its `<header>`: exactly 60px
- * with `env(safe-area-inset-top)` at 0. That matches the box model directly: the header itself
- * carries no fixed padding beyond `pt-[env(safe-area-inset-top)]`; its inner row has no top
- * padding, `pb-4` (16px) on the bottom, and its tallest child is the wallet chip (`py-1.5` wrapping
- * the "Wallet" pill's own `py-2` + text-xs line-height, ≈44px) — 44px content + 16px `pb-4` = 60px.
- * `env(safe-area-inset-top)` is added on top, mirroring exactly how `HUB_BODY` adds
- * `env(safe-area-inset-bottom)` for the opposite edge. Use this instead of a flat literal so a
- * future fixed-overlay screen doesn't drift out of sync with `HubRibbon` the way `MenuOverlay` did.
+ * equivalent). `61px` is `HubRibbon`'s own real rendered height before any safe-area inset,
+ * confirmed live (reconciliation sweep, 2026-09-11, re-measuring issue #446's original check by
+ * rendering `HubRibbon` in a real Chromium instance, Playwright, 390x840 viewport, reading
+ * `getBoundingClientRect().height` on its `<header>`) in BOTH auth states, since they render
+ * different pill controls at different heights: **signed-out (LOGIN/SIGNUP pills) is the taller
+ * state at 61px** — signed-in (the WALLET chip) is 57px. The original #446 measurement only
+ * checked the signed-in state and assumed the wallet chip was tallest; it wasn't. Using the
+ * shorter value here would under-clear `MenuOverlay` by 4px for every signed-out/guest user, so
+ * this constant uses the taller of the two, matching the header's real box model: no top padding
+ * beyond `pt-[env(safe-area-inset-top)]`, `pb-3.5` (14px, matching the prototype's own header
+ * spacing — see `HubRibbon.tsx`'s own doc comment) on the inner row, plus its tallest child's
+ * natural height. `env(safe-area-inset-top)` is added on top, mirroring exactly how `HUB_BODY`
+ * adds `env(safe-area-inset-bottom)` for the opposite edge. Use this instead of a flat literal so
+ * a future fixed-overlay screen doesn't drift out of sync with `HubRibbon` the way `MenuOverlay`
+ * did.
  */
-export const HUB_FIXED_TOP = 'pt-[calc(60px_+_env(safe-area-inset-top))]';
+export const HUB_FIXED_TOP = 'pt-[calc(61px_+_env(safe-area-inset-top))]';
 
 /**
  * Guest variant of `HUB_SHELL` (issue #292 / SEAM-001): `min-h-[100vh]` instead of

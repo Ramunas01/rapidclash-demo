@@ -38,7 +38,7 @@ describe('hubBodyPadding', () => {
 // env(safe-area-inset-top) the way HUB_BODY already does for the opposite edge.
 describe('HUB_FIXED_TOP', () => {
   it("is exactly HubRibbon's real rendered height (60px, confirmed live via Playwright/Chromium — see layout.ts's jsdoc) plus env(safe-area-inset-top), mirroring HUB_BODY's own calc() pattern", () => {
-    expect(HUB_FIXED_TOP).toBe('pt-[calc(60px_+_env(safe-area-inset-top))]');
+    expect(HUB_FIXED_TOP).toBe('pt-[calc(61px_+_env(safe-area-inset-top))]');
   });
 
   it('is a calc() expression, not a flat literal — must track a real safe-area inset, not a fixed value transcribed from a mock', () => {

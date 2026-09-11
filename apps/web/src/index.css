@@ -105,14 +105,14 @@
      * matching the file's existing precedent of using the app's own palette over the handoff's
      * literal hex — see the comment above `DARK_TOKENS` before this ticket).
      */
-    --rc-theme-btn-shadow: 0 0 10px 2px rgba(129, 64, 226, 0.55);
+    --rc-theme-btn-shadow: 0 0 10px 2px rgba(139, 69, 240, 0.55);
 
     /* HubToolbar's active-item icon glow (issue #484, T2 shared-chrome rebuild) — same
      * brand-purple-derived literal that lived inline as a raw `drop-shadow-[...]` hex before this
      * ticket (`#8140e2` + alpha, this app's own `--brand-purple`, not the prototype's literal —
      * the prototype's nav doesn't spec a glow at all, this is this app's own pre-existing
      * decorative addition). Keyed off selection, not theme, same as `--rc-theme-btn-shadow` above. */
-    --rc-nav-active-glow: 0 0 5px rgba(129, 64, 226, 0.53);
+    --rc-nav-active-glow: 0 0 5px rgba(139, 69, 240, 0.53);
 
     /* Shared card back (SVG/CSS component) — one source of truth (raw hex, used directly). */
     --card-back: #5956f6; /* flat blue-violet inset panel */
@@ -175,8 +175,8 @@
     --rc-green: #34d399;
     --rc-danger: #f0556b;
     --rc-sort-sheet-bg: #1a1a2e;
-    --rc-theme-btn-shadow: 0 0 10px 2px rgba(129, 64, 226, 0.55);
-    --rc-nav-active-glow: 0 0 5px rgba(129, 64, 226, 0.53);
+    --rc-theme-btn-shadow: 0 0 10px 2px rgba(139, 69, 240, 0.55);
+    --rc-nav-active-glow: 0 0 5px rgba(139, 69, 240, 0.53);
     --card-back: #5956f6;
     --card-back-mark: #5351e2;
     --coin-heads-face: #f2a63b;
@@ -225,9 +225,14 @@
 }
 
 /* The brand purple, consumed directly as `bg-brand`/`text-brand` (hex, not hsl-wrapped).
- * Updated to the v2 primary so brand-colored screen chrome re-themes with the palette. */
+ * Reconciliation sweep (2026-09-11): matches the prototype's own accent purple exactly
+ * (`design/prototype/RapidClash Full Spec.html` lines 62/178, both literally `#8B45F0`) —
+ * was `#8140e2`, a pre-existing app value that predated this migration and had drifted from
+ * the design source. The theme-button and nav-active glow shadow tokens defined earlier in this
+ * file (both `:root` and `.dark`) were this same old hex in decimal — recomputed alongside this
+ * to `#8B45F0`'s decimal equivalent so the glow still matches the purple it glows around. */
 :root {
-  --brand-purple: #8140e2;
+  --brand-purple: #8B45F0;
 }
 
 @layer utilities {
