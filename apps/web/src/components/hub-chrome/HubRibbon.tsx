@@ -1,5 +1,6 @@
 import { Credits } from '../hub-shared/RcIcon.js';
 import { useTheme } from '../../lib/theme.js';
+import { CurrencyPicker } from './CurrencyPicker.js';
 import logoLightBgUrl from '../../assets/brand/rapidclash-wordmark.webp';
 import logoDarkBgUrl from '../../assets/brand/rapidclash-wordmark-dark.png';
 
@@ -59,12 +60,16 @@ interface Props {
  * copying the prototype's dark-crop PNG in alongside it and swapping on `useTheme().resolved`.
  *
  * Wallet chip: the `$`/multi-currency skin is Owner-approved (`CHARTER.md` #4 amendment,
- * `docs/NEW_DESIGN_MIGRATION.md` → "Currency presentation") for the registered app — this renders
- * a fixed USD badge (prototype's `<symbol id="cur-USD">`, line ~104: green circle + white "$") next
- * to the balance instead of the play-money `¢` `RcIcon`. Guest mode is unchanged — CHARTER.md's
- * guest surface stays `¢`/play-money-framed, so the `isGuest` branch below still renders `<Credits>`.
- * The full multi-currency picker (`curOpen`, the dropdown this chip could expand into) is its own
- * not-yet-started ticket (`NEW_DESIGN_MIGRATION.md`'s "Currency picker" row) — out of scope here.
+ * `docs/NEW_DESIGN_MIGRATION.md` → "Currency presentation") for the registered app. Guest mode is
+ * unchanged — CHARTER.md's guest surface stays `¢`/play-money-framed, so the `isGuest` branch
+ * below still renders `<Credits>`.
+ *
+ * Currency picker (issue #530, `docs/COMMS/ADVISOR_TO_PM.md` 2026-09-11#5): the currency-badge +
+ * balance half of the signed-in pill is now `CurrencyPicker` (own file) — it owns the dropdown
+ * panel (search, Cash/Cryptocurrency rows, fiat/hide-zero toggles) entirely internally and
+ * defaults to `'USD'`, i.e. the real `balance` prop, unlike the prototype's own literal `'SOL'`
+ * default (a deliberate PM call — see that component's own doc comment). The purple WALLET
+ * sub-pill stays right here, unchanged, still calling `onWallet` directly.
  */
 export function HubRibbon({ balance, onLogo, onWallet, loggedIn = true, isGuest = false }: Props) {
   const { resolved } = useTheme();
@@ -100,31 +105,26 @@ export function HubRibbon({ balance, onLogo, onWallet, loggedIn = true, isGuest 
               <span className="text-xs font-extrabold uppercase tracking-wide text-[var(--rc-muted)]">Demo</span>
             </div>
           ) : loggedIn ? (
-            // Prototype `~2231-2241`: outer pill `padding:4px 4px 4px 14px; gap:0`, the
-            // currency+balance group carries its own `padding-right:12px` for the visual gap
-            // before the WALLET sub-pill (rather than a `gap` on the outer flex row).
-            <button
-              type="button"
-              onClick={onWallet}
-              aria-label="Open wallet"
-              data-testid="hub-wallet-chip"
-              className="flex items-center gap-0 rounded-full bg-surface py-1 pl-[14px] pr-1 transition-colors hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-            >
-              <span className="flex items-center gap-[7px] pr-3">
-                <UsdBadge />
-                <span
-                  className="tabular-nums text-[var(--rc-text)]"
-                  style={{ fontFamily: "'Space Grotesk', Arial, Helvetica, sans-serif", fontSize: '16px', fontWeight: 700, letterSpacing: '-0.2px' }}
-                  data-testid="hub-balance"
-                >
-                  {balance === null ? '—' : `$${balance.toLocaleString('en-US')}`}
-                </span>
-              </span>
-              <span className="flex items-center gap-1.5 rounded-full bg-brand px-[11px] py-[9px] text-xs font-extrabold uppercase tracking-wide text-white">
+            // Prototype `~2231-2241`: outer pill `padding:4px 4px 4px 14px; gap:0`, split into
+            // two adjacent buttons (issue #530, currency picker) — the currency+balance half
+            // (now `CurrencyPicker`'s own trigger, opens the picker panel) and the purple WALLET
+            // sub-pill (unchanged, still calls `onWallet` directly, prototype `:2237-2240`).
+            // `relative` here is the picker panel's anchor (`position:absolute; top:calc(100% +
+            // 8px)`, prototype `:2247` — the panel spans the SAME width as this whole pill, not
+            // just the currency half, matching the prototype's own sibling-of-the-pill layout).
+            <div className="relative flex items-center gap-0 rounded-full bg-surface py-1 pl-[14px] pr-1">
+              <CurrencyPicker balance={balance} />
+              <button
+                type="button"
+                onClick={onWallet}
+                aria-label="Open wallet"
+                data-testid="hub-wallet-chip"
+                className="flex items-center gap-1.5 rounded-full bg-brand px-[11px] py-[9px] text-xs font-extrabold uppercase tracking-wide text-white transition-colors hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+              >
                 <WalletGlyph />
                 Wallet
-              </span>
-            </button>
+              </button>
+            </div>
           ) : (
             // Prototype `~2220-2227`: outer pill `gap:4px; padding:4px`; each inner pill
             // `padding:9px 17px`, 14px bold text, `letter-spacing:0.6px`, literal "LOGIN"/"SIGNUP"
@@ -153,25 +153,6 @@ export function HubRibbon({ balance, onLogo, onWallet, loggedIn = true, isGuest 
         </div>
       </div>
     </header>
-  );
-}
-
-/** USD currency badge — prototype's `<symbol id="cur-USD">` (line ~104 of the spec HTML): a flat
- *  green circle + white "$". Fixed brand-money colors, not `--rc-*` tokens — same treatment as
- *  `RcIcon`'s own literal fills (`#0B4D24`/`#0F7A37`/…): a currency glyph's identity color, not
- *  chrome, so it doesn't vary with theme (the prototype's own `cur-USD` symbol is unconditional
- *  too — never swapped by `light`). */
-function UsdBadge() {
-  return (
-    <svg width="19" height="19" viewBox="0 0 32 32" aria-hidden="true" style={{ display: 'block', flex: '0 0 19px' }}>
-      <circle cx="16" cy="16" r="16" fill="#16A34A" />
-      <text
-        x="16" y="16.8" textAnchor="middle" dominantBaseline="central"
-        fontFamily="Arial, Helvetica, sans-serif" fontSize="24" fontWeight="bold" fill="#FFFFFF"
-      >
-        $
-      </text>
-    </svg>
   );
 }
 
