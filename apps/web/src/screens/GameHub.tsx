@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { motion } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { Trophy, X } from 'lucide-react';
-import { GUEST_HUMAN_RESERVED_STAKE, type AvatarId, type GameMeta, type OpenChallenge, type Outcome, type SettlementSummary } from '@rapidclash/shared';
+import { GUEST_HUMAN_RESERVED_STAKE, type AvatarId, type GameEvent, type GameMeta, type OpenChallenge, type Outcome, type SettlementSummary } from '@rapidclash/shared';
 import type { GameView } from '../App.js';
 import { api } from '../api.js';
 import { formatClock } from '../format.js';
@@ -84,6 +84,12 @@ export type Phase = 'idle' | 'waiting' | 'in-match' | 'result';
 export interface GameAreaArgs {
   phase: Phase;
   gameState: GameView | null;
+  /** The last match.state broadcast's raw GameEvent[] (2026-09-11#9 item 2) — usually empty (most
+   *  broadcasts carry none). Per GAME_MODULE_INTERFACE.md's "nothing secret in an event" rule,
+   *  anything a module puts here is already safe to hand straight to a game area component; GameHub
+   *  is purely a passthrough — interpreting a specific event type is that game's own job (only
+   *  RpsHub.tsx's RpsBoard reads it today, for RPS's tied-round reveal). */
+  events?: GameEvent[];
   legalMoves: string[];
   onMove(move: string): void;
   onForfeit(): void;
@@ -146,6 +152,9 @@ export interface GameHubScreenProps {
   balance: number;
   currentMatchId: string | null;
   gameState: GameView | null;
+  /** See GameAreaArgs.events — App.tsx threads the last match.state broadcast's events through
+   *  unchanged; most hub games ignore this entirely. */
+  events?: GameEvent[];
   legalMoves: string[];
   waitingExpiresAt: number | null;
   lobbyExpired: boolean;
@@ -301,7 +310,8 @@ function useNow(active: boolean): number {
 export function GameHub(props: GameHubProps) {
   const {
     gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar, searchFloorMs = 2400, pinDark = false,
-    token, playerId, username, avatarId = 'default', opponentId, opponentName, serverClockOffset = 0, balance, currentMatchId, gameState, legalMoves,
+    token, playerId, username, avatarId = 'default', opponentId, opponentName, serverClockOffset = 0, balance, currentMatchId, gameState, events,
+    legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
     onPlay, onCancel, onTakeChallenge, onTakePublicChallenge, onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, onTrackChallenges,
     onUntrackChallenges, onSelectGame, onOpenWallet, onOpenGameList, onOpenRewards, onOpenAffiliate, onResultDismiss,
@@ -577,7 +587,7 @@ export function GameHub(props: GameHubProps) {
 
   // Built once and fed to the game area, the per-game slot asides (chess clocks) and the play action.
   const timeControlBaseMs = timeControl?.options.find((o) => o.id === selectedControl)?.baseMs;
-  const areaArgs: GameAreaArgs = { phase, gameState, legalMoves, onMove: onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, playerId, opponentId, username, opponentName, serverClockOffset, timeControlBaseMs, outcome: overlay?.outcome ?? null, drawBeat, onRevealComplete: handleRevealComplete };
+  const areaArgs: GameAreaArgs = { phase, gameState, events, legalMoves, onMove: onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, playerId, opponentId, username, opponentName, serverClockOffset, timeControlBaseMs, outcome: overlay?.outcome ?? null, drawBeat, onRevealComplete: handleRevealComplete };
   // The bar-level draw outline: on for every game EXCEPT the ones that carry the draw on their own
   // surface (Blackjack → cards + "Push" label). The board still gets the full `drawBeat` via areaArgs.
   const barDrawBeat = suppressDrawBar ? false : drawBeat;

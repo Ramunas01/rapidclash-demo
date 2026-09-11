@@ -214,6 +214,7 @@ describe('rpsModule — tie → instant replay (universal tie rule)', () => {
     for (const c of ['rock', 'paper', 'scissors']) {
       const { state, events } = playTie(c);
       expect(rpsModule.isTerminal(state)).toBe(false);
+      // The FRESH round's state stays redaction-safe — cleared for the next window, same as ever.
       expect(view(state).choices).toEqual({});
       expect(view(state).locked).toEqual({});
       expect(view(state).round).toBe(1);
@@ -222,6 +223,37 @@ describe('rpsModule — tie → instant replay (universal tie rule)', () => {
       expect(events.some((e) => e.type === 'new_round')).toBe(true);
       expect(events.some((e) => e.type === 'match_decided')).toBe(false);
     }
+  });
+
+  // 2026-09-11#9 item 2 (deliberate redaction rollback, Owner-approved): the just-tied round's throws
+  // are now revealed to BOTH players via `new_round`'s `revealedChoices` payload field — a genuine,
+  // intentional flip. Previously no test asserted anything about the event payload's contents at all
+  // (the only prior assertion, above, is about post-reset STATE staying `{}`, which is unchanged and
+  // still correct — the reveal lives in the event, never in state). This test is net-new coverage for
+  // the new field, not a flip of a prior "absent" assertion, since none existed at this granularity.
+  it('2026-09-11#9: new_round reveals BOTH players\' just-tied throws via revealedChoices — a deliberate, Owner-approved info-leak, not a bug', () => {
+    for (const c of ['rock', 'paper', 'scissors'] as const) {
+      const { events } = playTie(c);
+      const newRound = events.find((e) => e.type === 'new_round');
+      expect(newRound).toBeDefined();
+      const payload = newRound!.payload as { round: number; replays: number; revealedChoices: Record<string, unknown> };
+      expect(payload.revealedChoices).toEqual({ [P1]: c, [P2]: c });
+    }
+  });
+
+  it('2026-09-11#9: revealedChoices carries the PRE-reset throws for a decisive (non-tied) 2nd round after a tie too', () => {
+    // Round 0 ties on rock/rock → new_round reveals {P1: rock, P2: rock}. Round 1 is decisive and does
+    // NOT emit a new_round (match_decided instead) — revealedChoices is a tie-only field, confirmed
+    // here by its absence on the decisive event's payload.
+    let s: unknown = playTie('rock').state;
+    const ends = view(s).windowEndsAt!;
+    s = pick(s, P1, 'rock', ends - 1).state;
+    s = pick(s, P2, 'scissors', ends - 1).state;
+    s = lock(s, P1, ends).state;
+    const { events } = lock(s, P2, ends);
+    const decided = events.find((e) => e.type === 'match_decided');
+    expect(decided).toBeDefined();
+    expect((decided!.payload as Record<string, unknown>).revealedChoices).toBeUndefined();
   });
 
   it('a decisive throw after a tie still settles (same escrow)', () => {

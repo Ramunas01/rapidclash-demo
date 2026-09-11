@@ -83,6 +83,43 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     expect(onMakeMove).toHaveBeenCalledWith('rock');
   });
 
+  // 2026-09-11#9 item 2 (deliberate, Owner-approved redaction rollback — ADVISOR_TO_PM.md): a tied
+  // round's new_round event carries revealedChoices, and RpsBoard flips the opponent card to the
+  // real throw, holds it, then resets to redacted — a real, intentional behavior change from "always
+  // hidden pre-terminal", not a regression.
+  it("2026-09-11#9: a tied round's new_round event flips the opponent card to the real throw, holds ~1.5s, then resets to redacted", () => {
+    vi.useFakeTimers();
+    try {
+      const gameState: RpsView = { players: ['pid', 'bob'], choices: {}, round: 1 };
+      const events = [
+        { type: 'new_round', payload: { round: 1, replays: 1, revealedChoices: { pid: 'rock', bob: 'scissors' } } },
+      ];
+      render(
+        <RpsHubScreen
+          {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock', 'paper', 'scissors'], events })}
+        />,
+      );
+      // Flipped: the redacted 🤫 tile is gone; the opponent's real (scissors) throw is now in the DOM
+      // (both flip faces are always present — backface-visibility is a visual-only 3D property jsdom
+      // doesn't lay out — so this asserts the revealed face was added, not that the hidden face left).
+      expect(screen.queryByTestId('hub-opponent-pick')).toBeNull();
+      expect(screen.getByTestId('hub-opponent-pick-revealed').textContent).toContain('✌️');
+
+      // After the flip (820ms) + hold (~1.5s), it falls back to the redacted tile.
+      act(() => { vi.advanceTimersByTime(820 + 1500); });
+      expect(screen.getByTestId('hub-opponent-pick').textContent).toBe('🤫');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("2026-09-11#9: a DECISIVE round's new_round-less broadcast never flips the opponent card (revealedChoices is tie-only)", () => {
+    const gameState: RpsView = { players: ['pid', 'bob'], choices: {} };
+    // No `events` at all — the common case (a provisional pick's broadcast carries none either).
+    render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock', 'paper', 'scissors'] })} />);
+    expect(screen.getByTestId('hub-opponent-pick').textContent).toBe('🤫');
+  });
+
   it('own slot renders the player\'s chosen avatar preset (avatarId threaded into the own bar)', () => {
     const gameState: RpsView = { players: ['pid', 'bob'], choices: {} };
     render(<RpsHubScreen {...baseProps({ avatarId: 'boy-light', currentMatchId: 'm1', gameState, legalMoves: ['rock'] })} />);

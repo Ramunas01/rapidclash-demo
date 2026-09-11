@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { GameMeta, Move, Outcome, SettlementSummary, OpenChallenge, PlayerClocks, AvatarId } from '@rapidclash/shared';
+import type { GameMeta, Move, Outcome, SettlementSummary, OpenChallenge, PlayerClocks, AvatarId, GameEvent } from '@rapidclash/shared';
 import { GUEST_COINFLIP_STAKE, GUEST_CHESS_STAKE, GUEST_CHESS_TIME_CONTROL, GUEST_BLACKJACK_STAKE, GUEST_CURATED_GAMES } from '@rapidclash/shared';
 import { WsClient, hasStoredMatch, readStoredGameId, writeStoredGameId, type WsStatus } from './ws.js';
 import { initGuestEvents, emitReady, emitResize, emitRequestFullscreenOnMobileEntry, emitFirstWin } from './guest/events.js';
@@ -391,6 +391,14 @@ export function App() {
   // from an id and never fabricated (the hub falls back to a neutral "Opponent").
   const [opponentName, setOpponentName] = useState<string | null>(null);
   const [gameState, setGameState] = useState<GameView | null>(null);
+  // The last match.state broadcast's raw GameEvent[] (2026-09-11#9 item 2). Most broadcasts carry
+  // none (provisional picks emit no events — see rps.ts's applyMove doc comment); a module may
+  // include event-only PUBLIC data here — e.g. RPS's `new_round` reveals a tied round's throws via
+  // `revealedChoices`, per GAME_MODULE_INTERFACE.md's "nothing secret in an event" rule this is
+  // always redaction-safe to hand straight to every hub screen. App.tsx only threads this array
+  // through (via GameHubScreenProps → GameAreaArgs); interpreting a given event type is each game
+  // area component's own job (only RpsHub.tsx's RpsBoard reads it today).
+  const [lastMatchEvents, setLastMatchEvents] = useState<GameEvent[]>([]);
   // Client→server clock offset (ms): `serverNow − clientNow` from the match payload. The hub adds
   // it to Date.now() so display-only timers (Crash's live altitude) align to the server's clock.
   const [serverClockOffset, setServerClockOffset] = useState(0);
@@ -759,6 +767,9 @@ export function App() {
         setOpponentName(payload.opponentName ?? null);
         if (payload.serverNow != null) setServerClockOffset(payload.serverNow - Date.now());
         setGameState(payload.state as GameView);
+        // A fresh match starts with no events yet — clear a prior match's stale ones so a leftover
+        // reveal can never bleed into the new match's board.
+        setLastMatchEvents([]);
         // Route from the server-authoritative gameId (Charter invariant #2), not the
         // local pendingGameId — the take-challenge path never set pendingGameId, which
         // silently rendered the default (RPS) board for the wrong game. Persist it so a
@@ -772,6 +783,7 @@ export function App() {
       onMatchState(payload, matchId) {
         const state = payload.state as GameView;
         setGameState(state);
+        setLastMatchEvents(payload.events ?? []);
         // On a reload-driven resume, restore match identity + opponent + screen so the
         // user lands back in the live match (these are already set during normal play).
         if (matchId) { setCurrentMatchId(matchId); setWaitingExpiresAt(null); setLobbyExpired(false); }
@@ -1239,6 +1251,7 @@ export function App() {
           balance={balance}
           currentMatchId={currentMatchId}
           gameState={gameState}
+          events={lastMatchEvents}
           legalMoves={legalMoves as string[]}
           waitingExpiresAt={waitingExpiresAt}
           lobbyExpired={lobbyExpired}
