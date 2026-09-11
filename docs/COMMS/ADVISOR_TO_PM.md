@@ -1,5 +1,49 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-11#8 — Owner's manual side-by-side found 3 real gap clusters, two of them platform-wide            [READY TO TICKET — all three]
+From: Advisor   Re: Owner directly comparing the live RPS screen against the prototype, screen-by-screen
+
+Owner did a manual visual pass on RPS specifically and found 9 concrete discrepancies. Verified every one against current `main` (not stale production) before writing this — all 9 are real and still present. Two of the three root causes turned out to be **shared components used by all 12 games**, not RPS-specific, so this is a higher-leverage find than it first looked.
+
+---
+
+## A — `GameHub.tsx`'s bet/play panel is missing several real prototype elements (affects all 12 games)
+
+Confirmed against `Full Spec.html:695-745` (the bet-panel block) vs. `GameHub.tsx`'s current `hub-section-bet`/`hub-play`/`hub-play-friend`:
+
+1. **Missing the currency-name + live-bet-value row** entirely. Prototype (`:703-709`): a row above the bet track showing the currency icon + `{{curSym}} (democash)` on the left, and a second icon + the currently-armed stake in green `${{betValue}}` on the right. `GameHub.tsx` has no equivalent — today's "BET AMOUNT" label is the closest thing, and it's just a plain caption, not this two-sided row.
+2. **Bet-amount presets should be one shared pill/ribbon with a sliding indicator, not 6 individually-boxed buttons.** Prototype (`:709-719`): one `border-radius:999px` track (`betTrackBg`, light `#D7D7E2`/dark `#12121A`) containing a `position:absolute` purple pill (`betIndLeft`) that slides to the selected value (`transition:left 420ms cubic-bezier(...)`), with plain green (`c.color`) text values sitting on top of it — no per-button border/background. Current `GameHub.tsx` renders each preset as its own separately-styled `<button className="rounded-lg ... bg-background">` — a materially different, boxier look.
+3. **Both `PLAY` and `Play a Friend` are missing the prototype's drop-shadow.** Prototype: `playBtnShadow: '0 5px 0 #5F27B8'` (a flat 5px darker-purple ledge beneath the button, the chunky "pressable" look), released on press via `style-active="transform:translateY(3px)"`. Current `hub-play`/`hub-play-friend` buttons in `GameHub.tsx` (lines ~932-951, ~1062-1073) are flat `bg-brand` pills with zero shadow.
+4. **"PROVABLY FAIR BY DESIGN" + shield-check icon is completely missing.** Prototype (`:729-745`): sits directly below "Play a Friend," a small badge (11px bold caption + an SVG shield-with-checkmark icon, colors `provablyFg` light `#0B0B0B`/dark `#FFFFFF`). Confirmed via grep: this string does not exist anywhere in `apps/web/src`.
+
+**Scope:** all four live in `GameHub.tsx`'s shared bet/play section — one PR fixes this for every game at once, not a per-game ticket.
+
+---
+
+## B — `GamesCarousel.tsx`'s "OPEN GAMES" / live ticker has a real bug + a currency-skin gap (affects all 12 game hubs + HomeHub + ProfileHub)
+
+Confirmed by reading the component directly, not inferring from the screenshot:
+
+1. **Real bug: usernames render with a doubled "@@".** `GamesCarousel.tsx:275` builds the row as `` `@${row.c.ownerName}` `` — but bot-crowd's own usernames already embed an "@" by construction (`BOT_PREFIX = '🤖'`, names built as `` `${BOT_PREFIX}@sweeper` `` → the stored name is literally `"🤖@sweeper"`). Prepending another "@" produces `"@🤖@sweeper"` — the doubled "@@" Owner saw. **Fix is NOT a blind reuse of `ProfileHub.tsx`'s existing `normalizeOpponentName`** (`:190-196`) — that helper strips the 🤖 prefix too, and its own doc comment explains why that's fine *there* but not here: "ADR-010's informed-consent labeling targets the lobby/open-challenges feed" — i.e. this exact feed is required to keep showing the bot disclosure. The correct fix here is narrower: strip only a leading `@` before prepending one, keep the 🤖 emoji intact — `` `@${row.c.ownerName.replace(/^@/, '')}` ``.
+2. **Still shows the old `RcIcon` (green coin) instead of the `$` skin.** Three separate spots in `GamesCarousel.tsx` — `:567`, `:616`, `:625` (grep for `RcIcon size={15}` to catch all three; this component appears to render more than one carousel variant) — none touched by T9 (T9 only updated `GameHub.tsx`'s bet-preset buttons). Same fix shape as T9, applied to all three.
+3. **No VIP-tier/level badge next to the username at all** — confirmed by reading the full row JSX (`:551-575`): a tile-art thumbnail, game name, host name, stake, JOIN button — no tier icon anywhere in the markup. This isn't a partially-implemented badge, it's not implemented. Real net-new small addition if wanted (reuse `tierForXp`, same as the chat ticket did), not a bug fix — flagging as a separate, lower-priority line item within this ticket rather than blocking the other two fixes on it.
+
+**Scope:** `GamesCarousel.tsx`, shared by `GameHub.tsx` + `HomeHub.tsx` + `DiceHub.tsx` + `ProfileHub.tsx` (confirmed via grep) — one PR, wide reach.
+
+---
+
+## C — RPS-specific: placeholder emoji were never swapped for the real vector art
+
+`RpsHub.tsx:9-12` (`RPS_CHOICES`) uses plain Unicode emoji (✊/✋/✌️) for the picker, and the opponent's redacted-state icon is the 🤫 emoji (`:343+`) — both stand-ins for the prototype's actual bespoke flat-vector purple hand illustrations (`Full Spec.html:611-613`, `:646-653`) and its solid-blue-fill-with-a-bolt-icon reveal card (`background:#4F4CEA`, exact citation `Full Spec.html:628`). This reads as a fidelity shortcut taken during T6b's original build, not a functional bug — the mechanic is unaffected, only the art.
+
+Also confirmed: the idle-state copy "Choose a bet and press PLAY, or JOIN an open challenge" (`RpsHub.tsx`'s `RpsIdle`) has no equivalent in the prototype's own idle state at all — the prototype's vertical space there is empty/compact instead. Minor, but easy to fix alongside the icon swap.
+
+**Scope:** `RpsHub.tsx` only.
+
+---
+
+**Ask:** three tickets, A and B are the higher-leverage ones (platform-wide, not per-game) — worth prioritizing over C. All three are visual/asset-level, no engine/mechanic risk, straightforward citations, no open decisions needed from you or the Owner this time.
+
 ### 2026-09-11#7 — Chat, split into two tickets per your decisions            [READY TO TICKET — (a) needs T7-level care]
 From: Advisor   Re: your two decisions on 2026-09-11#6 (general-only room, boot-time env var kill switch)
 
