@@ -206,8 +206,15 @@ describe('RouletteHubScreen (GameHub + RoulettePanel)', () => {
     expect(within(screen.getByTestId('result-you')).queryByText(/win/i)).toBeNull();
   });
 
-  it('is sanitized: no $ leaks into the game body (play-money credits, chips are scoring only — the header wallet chip legitimately shows the Owner-approved $ skin, CHARTER.md #4, issue #484)', () => {
+  it('T9: registered users see the Owner-approved $ skin in the bet panel too, not just the header wallet chip (GameHub.tsx PlayPanel, CHARTER.md #4; play-money credits/chips are scoring only)', () => {
     const { container } = render(<RouletteHubScreen {...inMatch()} />);
+    const header = container.querySelector('header');
+    const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');
+    expect(bodyText).toMatch(/\$/);
+  });
+
+  it('T9: guest mode keeps the play-money RcIcon bet display — no $ leaks into the game body', () => {
+    const { container } = render(<RouletteHubScreen {...inMatch({ isGuest: true })} />);
     const header = container.querySelector('header');
     const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');
     expect(bodyText).not.toMatch(/\$/);

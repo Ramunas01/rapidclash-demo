@@ -292,8 +292,15 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
     expect(screen.getByTestId('hub-slot-opponent').textContent).toContain('Povcnent');
   });
 
-  it('is sanitized: no $ leaks into the game body (the header wallet chip legitimately shows the Owner-approved $ skin — CHARTER.md #4, issue #484)', () => {
+  it('T9: registered users see the Owner-approved $ skin in the bet panel too, not just the header wallet chip (GameHub.tsx PlayPanel, CHARTER.md #4)', () => {
     const { container } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: ['hit', 'stand'] })} />);
+    const header = container.querySelector('header');
+    const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');
+    expect(bodyText).toMatch(/\$/);
+  });
+
+  it('T9: guest mode keeps the play-money RcIcon bet display — no $ leaks into the game body', () => {
+    const { container } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: ['hit', 'stand'], isGuest: true })} />);
     const header = container.querySelector('header');
     const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');
     expect(bodyText).not.toMatch(/\$/);
