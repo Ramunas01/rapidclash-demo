@@ -12,7 +12,7 @@ import { GamesCarousel } from '../components/hub-shared/GamesCarousel.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
 import {
-  CATEGORY_IDS, CATEGORY_TAB_LABEL, CATEGORY_TITLE, isInCategory, type CategoryId,
+  CATEGORY_IDS, CATEGORY_TAB_LABEL, CATEGORY_TITLE, CATEGORY_GAMES, isInCategory, type CategoryId,
 } from '../components/hub-shared/categories.js';
 import {
   OriginalsIcon, CardGamesIcon, ChanceGamesIcon, SkillGamesIcon, EventsIcon,
@@ -132,12 +132,27 @@ export function HomeHubScreen({
       // Descending ordinal — the highest (most-recently-added) ordinal sorts first.
       sorted.sort((a, b) => (INTRO_ORDER[b.id] ?? -1) - (INTRO_ORDER[a.id] ?? -1));
     } else {
+      // Tie-break (issue #476): the design's own per-category tile order, not alphabetical —
+      // alphabetical would put Baccarat first on a fresh/quiet DB where every count is 0.
+      //
+      // Issue #501 found this used the flat master GRID_ORDER for every category, not just
+      // ORIGINALS. That's only correct for ORIGINALS, because CATEGORY_GAMES.originals IS the
+      // master GRID sequence — every other category has its own curated order in the prototype
+      // (`CAT_GAMES` in `design/prototype/RapidClash Full Spec.html`) that filtering-by-GRID-order
+      // does not reproduce: CHANCE GAMES, e.g., shows Dice/Roulette before Mines/Crash, but
+      // GRID_ORDER's flat sequence sorts Mines/Crash first (their master-grid position is
+      // earlier). On the harness's fresh/quiet demo DB (every popularity count 0, so this
+      // tie-break decides the whole order), that wrong sequence was most of games-chance's ~20pt
+      // fidelity gap — the tile grid showed different games at each grid position, not just a
+      // shifted one. Search results span every category with no single "active category" tile
+      // order to fall back to, so they keep the flat GRID_ORDER.
+      const tieOrder: Record<string, number> = searching
+        ? GRID_ORDER
+        : Object.fromEntries(CATEGORY_GAMES[cat].map((id, i) => [id, i]));
       sorted.sort((a, b) => {
         const diff = (popularity[b.id] ?? 0) - (popularity[a.id] ?? 0);
         if (diff !== 0) return diff;
-        // Tie-break (issue #476): the design's own GRID order (Coinflip first), not alphabetical —
-        // alphabetical would put Baccarat first on a fresh/quiet DB where every count is 0.
-        return (GRID_ORDER[a.id] ?? Infinity) - (GRID_ORDER[b.id] ?? Infinity);
+        return (tieOrder[a.id] ?? Infinity) - (tieOrder[b.id] ?? Infinity);
       });
     }
     return sorted;
@@ -317,6 +332,26 @@ const CATEGORY_ICON: Record<CategoryId, (props: { className?: string }) => React
 };
 
 function CategoryTabs({ cat, onChange }: { cat: CategoryId; onChange(c: CategoryId): void }) {
+  // Issue #501: the prototype's own category-pill click handler (`c{i}.pick`, `design/prototype/
+  // RapidClash Full Spec.html` ~line 3888) doesn't just flip the active tab — it also re-centers
+  // the clicked pill within the rail's own horizontal scroll (`tile.offsetLeft - (rail.clientWidth
+  // - tile.offsetWidth) / 2`, clamped to the scrollable range). The rebuilt rail never replicated
+  // that: it only ever fired `onChange`, so the rail's scrollLeft stayed 0 forever. That's why the
+  // games-chance fidelity capture showed the rail (and, by extension, every non-default tab) at a
+  // different horizontal scroll position than the prototype reference — ~20pt of the fidelity gap
+  // traced to this alone. Mirror the prototype's math exactly so both sides land at the same
+  // scrollLeft for the same selected tab.
+  function selectAndCenter(id: CategoryId, tile: HTMLButtonElement) {
+    onChange(id);
+    const rail = tile.parentElement;
+    if (!rail) return;
+    const target = tile.offsetLeft - (rail.clientWidth - tile.offsetWidth) / 2;
+    const max = rail.scrollWidth - rail.clientWidth;
+    // Optional call: jsdom (the unit-test DOM) doesn't implement Element.scrollTo at all — every
+    // real browser does, so this is a test-environment-only guard, not a feature-detect a real
+    // user's browser would ever fall through.
+    rail.scrollTo?.({ left: Math.max(0, Math.min(max, target)), behavior: 'smooth' });
+  }
   return (
     <div className="no-scrollbar flex gap-2.5 overflow-x-auto px-4 pt-1 pb-[9px]" role="tablist" aria-label="Game categories">
       {CATEGORY_IDS.map((id) => {
@@ -329,7 +364,7 @@ function CategoryTabs({ cat, onChange }: { cat: CategoryId; onChange(c: Category
             role="tab"
             aria-selected={active}
             data-testid={`home-cat-${id}`}
-            onClick={() => onChange(id)}
+            onClick={(e) => selectAndCenter(id, e.currentTarget)}
             className={cn(
               'flex h-[77px] w-[76px] shrink-0 flex-col items-center justify-center gap-2.5 rounded-[14px] px-1 text-center transition-colors focus:outline-none',
               active ? 'bg-brand/10' : 'bg-surface',

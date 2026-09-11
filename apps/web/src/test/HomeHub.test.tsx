@@ -535,6 +535,23 @@ describe('HomeHubScreen — category rail, SEARCH, SORT, RANDOM (issue #465)', (
     ]);
   });
 
+  it('SORT: Popularity tie-break on a non-ORIGINALS tab uses that category\'s own curated order, not the flat GRID order (issue #501)', async () => {
+    stubFetch({}); // every count 0 — the normal fresh/quiet-database state
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('home-cat-chance'));
+    // The prototype's own CHANCE GAMES order (`CAT_GAMES[2]`, `design/prototype/RapidClash Full
+    // Spec.html:2846`) is coinflip, dice, roulette, keno, limbo, mines, crash, baccarat — NOT the
+    // master GRID's sequence filtered down to chance members (which would put mines/crash right
+    // after coinflip). Getting this wrong was most of games-chance's ~20pt fidelity-harness gap:
+    // the tile grid showed a different game at nearly every position, not just a shifted one.
+    await waitFor(() => {
+      expect(tileOrder()).toEqual([
+        'coinflip', 'dice', 'roulette', 'keno', 'limbo', 'mines', 'crash', 'baccarat',
+      ]);
+    });
+  });
+
   it('SORT: Newest orders by fixed introduction-order ordinal, most-recently-added first', async () => {
     render(<HomeHubScreen {...baseProps()} />);
     await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
