@@ -1,5 +1,35 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-11#6 — Chat: full scope — this is the biggest item on the remaining roadmap, treat accordingly            [SCOPED — two real decisions needed, not ready to ticket as one PR]
+From: Advisor   Re: tracker's "After shared-chrome: chat" line; the screen-inventory table's Chat row
+
+**Sizing this honestly up front:** this is materially bigger than everything scoped tonight, including the currency picker. It's a real, new, server-touching feature (client UI + a server-side WS transport + a kill switch), not a reskin or a self-contained client component. Recommend NOT dispatching this as one PR — split per the "V1 scope" section below, and treat the server-side piece with T7-level care (new WS message types, a new server-side broadcast path — genuinely new surface, not editing an existing one).
+
+The tracker's screen-inventory table (row: "Chat nav item") already had real prior scoping recorded — the underlying scratch doc it cites (`docs/COMMS/from-advisor/chat-local-transport.md`) no longer exists on disk (gitignored, written in an earlier session's worktree, never committed — same category as other from-advisor scratch this session has found gone). Rebuilt the reasoning from the prototype source directly rather than relying on the missing file.
+
+## What's actually there — confirmed by reading the prototype's chat state machine directly
+
+Full sheet UI, not a stub: a bottom sheet with **full-height and half-height modes** (`chatHalf`, toggle icon `Full Spec.html:2372`), a **room switcher** (`chatRoom`, defaulting to `'general'`; only two rooms are actually seeded — `'general'` and `'chess'`, `:4049-4052`, `:4127`), a **scrollable message list** with VIP-tier-colored names (`nameColor`, `:4133` — bronze/silver/gold/emerald/diamond, matching the tracker's own canonical VIP ladder tiers exactly, plus a purple `mod` badge color) and **@mention rendering** as pill tokens (`:4128-4129`), and a **send composer** with a genuinely clever technique worth citing precisely: the real `<textarea>` has `color:transparent` and sits directly on top of an `aria-hidden` overlay div rendering the same text with @mentions styled as pills (`:2427-2428`) — a "rich-text-look, plain-text-input" trick, not a rich text editor. Draft cap 400 chars, soft-limit ring warning at 160 (`:4075-4077`). Enter sends (`:4101`).
+
+## Two real decisions, not mine to make, before this is ticket-ready
+
+**1. Room/channel scope — the mock only proves `general` + `chess`, not a general mechanism.** Is this meant to be one global "General" room only (simplest, matches the default state, avoids inventing scope the mock doesn't show), or a room-per-active-game pattern (12 rooms, only "chess" happens to be the one example actually seeded in the mock)? The mock gives no evidence either way beyond the one example — this needs an explicit call, not an assumption. Recommend starting with `general` only for V1 and treating per-game rooms as a stretch/follow-up, but flagging rather than deciding since it changes the data model shape.
+
+**2. What "server-checked kill switch" actually means — two readings, matters for how much new infra this needs.** The tracker's own phrasing ("not a client-bundled env var") is explicit about *not* wanting a build-time client flag a technical user could bypass by inspecting the bundle — that part's clear. What's not clear: does it need to be flippable **live, without a redeploy** (a genuinely new piece of infra — nothing in this codebase does that today; every existing `process.env.X` read in `gateway.ts`, e.g. `CHALLENGE_SWEEP_MS`, is parsed once at boot), or is "server-checked" satisfied by a plain env var read at boot and enforced on every relevant WS handler server-side (matches existing precedent exactly, zero new infra, just needs a restart to flip)? Recommend the second (matches precedent, ships faster) unless there's a specific "kill it mid-demo without restarting the server" requirement driving the "not client-bundled" wording — Owner's call if that requirement is real.
+
+## Architecture, decided (not a decision point — this part follows existing precedent directly)
+
+- **This has to be real, live, cross-player messaging, not fake/client-only** — the tracker explicitly worries about "a real collusion-channel risk in a PvP money game." That risk only exists if two actual paired opponents can exchange actual real-time messages. So "local-only" in the tracker's phrasing means **ephemeral (in-memory, not persisted to durable storage, gone on server restart)**, not "never leaves the browser." This is architecturally identical to the guest ledger's existing pattern.
+- **Follow the `EphemeralLedger extends Ledger` precedent exactly** (`packages/core/src/ephemeral-ledger.ts`): define a plain `ChatTransport` interface (send/subscribe/room-history shape), one in-memory implementation backing it, gone on restart, one shared instance keyed by room (mirrors `EphemeralLedger`'s per-`accountId` keying). No new persistence layer, no database migration.
+- **New WS message types, following `gateway.ts`'s existing `case 'namespace.verb':` convention** (`queue.join`, `move.make`, etc., `apps/server/src/ws/gateway.ts:672+`) — something like `chat.subscribe` / `chat.send`, broadcast to every connected client in that room. This is genuinely new server surface (a new fan-out broadcast path), not editing an existing handler — size it accordingly, don't underestimate it as "just another WS case."
+- **VIP tier → name color**: reuse the canonical `VIP_TIERS`/`VIP_ROWS` data already in this doc (§ "Canonical Rewards VIP ladder") rather than inventing a second tier list — the prototype's bronze/silver/gold/emerald/diamond color mapping should map onto the same six tiers RewardsHub already renders.
+
+## Explicitly deferred, not part of any V1 scope
+
+Moderation, persistence, real identity verification for mentions (@name only needs to render as a pill, not resolve to a real user record), rate limiting beyond the existing WS connection-level protections. The tracker's own reasoning for keeping this pre-seed-scoped (avoiding moderation/GDPR load) stands — don't let a V1 ticket quietly grow to include any of this.
+
+**Ask:** this needs your/Owner's call on the two decisions above before it's ticket-ready. Once decided, split into at minimum: (a) the `ChatTransport` + WS message types (server, new surface, extra care), (b) the client chat sheet UI (can build against a mocked transport in parallel once (a)'s interface is agreed, doesn't need to wait for (a) to merge). Given the size, this alone is probably a multi-PR body of work, not a single ticket like T5-T9.
+
 ### 2026-09-11#5 — Currency picker: component boundaries, file plan, one real open decision, full test plan            [READY TO TICKET — one decision needed first, see below]
 From: Advisor   Re: your ask to go one level deeper on 2026-09-11#4's currency picker
 
