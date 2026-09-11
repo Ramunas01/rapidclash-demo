@@ -1,8 +1,8 @@
-import { describe, beforeEach, it, expect } from 'vitest';
+import { describe, beforeEach, it, expect, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import type { GameModule, GameState, PlayerId, Outcome, ApplyResult, Rng, PlayerClocks } from '@rapidclash/shared';
 import { IllegalMove } from '@rapidclash/shared';
-import { createLedger, createMatchmaking, GRANT_AMOUNT, PLATFORM_ACCOUNT } from './index.js';
+import { createLedger, createMatchmaking, GRANT_AMOUNT, PLATFORM_ACCOUNT, usesScheduledDeadlines } from './index.js';
 
 // ─── Minimal mock game module (no legal moves, never terminal) ────────────────
 
@@ -871,6 +871,145 @@ describe('scheduled deadlines (absolute per-player auto-fire, Crash-shape)', () 
   function setupCrashAt(nowAtBank: number, elapsedAtBank: number): number {
     return nowAtBank - elapsedAtBank + CRASH_OFFSET;
   }
+});
+
+// ─── Lock-on-timeout (ADR-012) — scheduledDeadlines paired with lockOnTimeout instead of
+// timeoutMove. A tiny fake (Mines-shape, no dependency on the real mines module) whose round
+// clock is a hard cap: on expiry the core must call `lockOnTimeout` directly and never
+// synthesize/validate a Move — the module deliberately omits `timeoutMove` entirely so the
+// sweep has no fallback to silently drop into.
+
+describe('lock-on-timeout (ADR-012 — scheduledDeadlines + lockOnTimeout, no timeoutMove)', () => {
+  const ROUND_MS = 5_000;
+  interface RoundState {
+    players: [PlayerId, PlayerId];
+    startedAt: number;
+    score: Record<PlayerId, number>;
+    locked: Record<PlayerId, boolean>;
+  }
+  const isTerm = (s: RoundState) => s.players.every((p) => s.locked[p]);
+
+  let applyMoveSpy: ReturnType<typeof vi.fn>;
+
+  const roundModule: GameModule = {
+    meta: {
+      id: 'roundgame', displayName: 'Round Game', minPlayers: 2, maxPlayers: 2,
+      ranking: { kind: 'net_winnings' }, bet: { minStake: 1, maxStake: 100, symmetricStake: true },
+      averageDurationSec: 5, rakeRate: 0.025,
+    },
+    init: (players) => ({
+      players: [players[0], players[1]],
+      startedAt: 0,
+      score: { [players[0]]: 0, [players[1]]: 0 },
+      locked: { [players[0]]: false, [players[1]]: false },
+    } as RoundState),
+    launch: (state, now) => ({ ...(state as RoundState), startedAt: now } as GameState),
+    legalMoves: (state, p) => {
+      const s = state as RoundState;
+      return !isTerm(s) && !s.locked[p] ? ['tap'] : [];
+    },
+    applyMove: (state, _move, ctx): ApplyResult => {
+      // Spied on to prove the lock-on-timeout sweep path never reaches here.
+      applyMoveSpy(ctx.playerId);
+      const s = state as RoundState;
+      return {
+        state: { ...s, score: { ...s.score, [ctx.playerId]: s.score[ctx.playerId] + 1 } } as GameState,
+        events: [{ type: 'tapped', payload: { playerId: ctx.playerId } }],
+      };
+    },
+    isTerminal: (state) => isTerm(state as RoundState),
+    outcome: (state): Outcome => {
+      const s = state as RoundState;
+      const [a, b] = s.players;
+      if (s.score[a] === s.score[b]) return { type: 'draw' };
+      return { type: 'win', winner: s.score[a] > s.score[b] ? a : b };
+    },
+    viewFor: (state) => state,
+    forfeit: (state, quitter) => {
+      const s = state as RoundState;
+      const opp = s.players.find((p) => p !== quitter)!;
+      return { ...s, locked: { ...s.locked, [quitter]: true, [opp]: true } } as GameState;
+    },
+    // Absolute per-player deadline: the round clock is a fixed cap from launch, unaffected by moves.
+    scheduledDeadlines: (state) => {
+      const s = state as RoundState;
+      if (s.startedAt === 0 || isTerm(s)) return {};
+      const out: Record<PlayerId, number> = {};
+      for (const p of s.players) if (!s.locked[p]) out[p] = s.startedAt + ROUND_MS;
+      return out;
+    },
+    // No `timeoutMove` — this module relies exclusively on `lockOnTimeout`.
+    lockOnTimeout: (state, playerId): ApplyResult => {
+      const s = state as RoundState;
+      const next = { ...s, locked: { ...s.locked, [playerId]: true } } as RoundState;
+      return {
+        state: next as GameState,
+        events: [{ type: 'player_locked', payload: { playerId, reason: 'timeout', score: s.score[playerId] } }],
+      };
+    },
+  };
+
+  function setupRound(stake = 50) {
+    let clock = 1_000_000;
+    const db = new Database(':memory:');
+    const ledger = createLedger(db);
+    const mm = createMatchmaking(ledger, [roundModule], undefined, { now: () => clock });
+    ledger.grant('alice');
+    ledger.grant('bob');
+    mm.joinQueue('alice', 'roundgame', stake);
+    const r = mm.joinQueue('bob', 'roundgame', stake);
+    if (r.status !== 'matched') throw new Error('expected matched');
+    return { ledger, mm, matchId: r.matchId, start: clock, advance: (ms: number) => { clock += ms; }, now: () => clock };
+  }
+
+  beforeEach(() => { applyMoveSpy = vi.fn(); });
+
+  it('usesScheduledDeadlines resolves true for a module pairing scheduledDeadlines with lockOnTimeout (no timeoutMove)', () => {
+    expect(usesScheduledDeadlines(roundModule)).toBe(true);
+  });
+
+  it('launch schedules both players at the absolute round deadline', () => {
+    const { mm, matchId, start } = setupRound();
+    expect(mm.getActiveMatch(matchId)!.playerDeadlines).toEqual({ alice: start + ROUND_MS, bob: start + ROUND_MS });
+  });
+
+  it('both players idle past the deadline → the sweep calls lockOnTimeout directly (never applyMove), settles as a draw', () => {
+    const { mm, matchId, advance, now } = setupRound();
+    advance(ROUND_MS + 100);
+    const res = mm.sweepTimedOutMoves(now());
+
+    expect(res.map((r) => r.playerId)).toEqual(['alice', 'bob']);
+    expect(res[0].terminal).toBe(false); // alice locked first, bob still had a legal move
+    expect(res[0].events).toEqual([{ type: 'player_locked', payload: { playerId: 'alice', reason: 'timeout', score: 0 } }]);
+    expect(res[1].terminal).toBe(true);
+    expect(res[1].outcome).toEqual({ type: 'draw' }); // 0 gems each
+    expect(mm.getActiveMatch(matchId)).toBeUndefined(); // settled + removed
+    expect(applyMoveSpy).not.toHaveBeenCalled(); // no Move was ever synthesized/validated
+  });
+
+  it('a real move scores before the deadline locks both players → decisive settlement with per-game rake', () => {
+    const { mm, matchId, advance, now, ledger } = setupRound(100);
+    mm.applyMove(matchId, 'alice', 'tap', now()); // alice: 1 gem, via the normal applyMove path
+    advance(ROUND_MS + 100);
+    const res = mm.sweepTimedOutMoves(now());
+
+    expect(res).toHaveLength(2); // both locked by the clock
+    expect(res[1]).toMatchObject({ playerId: 'bob', terminal: true });
+    expect(res[1].outcome).toEqual({ type: 'win', winner: 'alice' });
+    expect(res[1].settlement!['alice'].delta).toBe(95); // 100 − round(200*0.025)=5
+    expect(res[1].settlement!['bob'].delta).toBe(-100);
+    expect(ledger.getBalance(PLATFORM_ACCOUNT)).toBe(5);
+    expect(applyMoveSpy).toHaveBeenCalledTimes(1); // only the explicit tap — never for the timeout locks
+  });
+
+  it('a locked player is never re-swept (legalMoves is empty once locked)', () => {
+    const { mm, matchId, advance, now } = setupRound();
+    advance(ROUND_MS + 100);
+    mm.sweepTimedOutMoves(now()); // both lock, match settles
+    expect(mm.getActiveMatch(matchId)).toBeUndefined();
+    advance(10_000);
+    expect(mm.sweepTimedOutMoves(now())).toEqual([]); // no-op: nothing left to sweep
+  });
 });
 
 // ─── Cumulative per-player clock (time control) — generic core mode ───────────

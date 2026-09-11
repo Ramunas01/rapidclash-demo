@@ -42,9 +42,11 @@ export function usesTimeControl(mod: GameModule): boolean {
 
 /** Absolute scheduled per-player deadlines (Crash) — the THIRD mode: the module declares each
  *  still-active player's absolute auto-fire time via `scheduledDeadlines`, and the core injects
- *  `timeoutMove` on expiry through the same generic sweep (no game-id branch, invariant #5). */
+ *  `timeoutMove` on expiry through the same generic sweep (no game-id branch, invariant #5).
+ *  ADR-012: a module may pair `scheduledDeadlines` with `lockOnTimeout` INSTEAD of `timeoutMove`
+ *  — same scheduling mechanism, but the sweep locks the player with no Move synthesized. */
 export function usesScheduledDeadlines(mod: GameModule): boolean {
-  return typeof mod.scheduledDeadlines === 'function' && typeof mod.timeoutMove === 'function';
+  return typeof mod.scheduledDeadlines === 'function' && (typeof mod.timeoutMove === 'function' || typeof mod.lockOnTimeout === 'function');
 }
 
 /** Either per-player-timer mode (per-move reset OR cumulative clock). Used internally for the
@@ -699,10 +701,20 @@ export function createMatchmaking(
 
         let result: ApplyResult;
         try {
-          // timeoutMove must return a currently-legal move; applyMove validates it and
-          // resets this player's timer. The seeded match rng keeps the auto-move deterministic.
-          const move = mod.timeoutMove!(match.state, p, match.rng);
-          result = applyMove(match.matchId, p, move, now);
+          if (mod.lockOnTimeout) {
+            // ADR-012: no Move to synthesize or validate — the module locks this player
+            // directly. Mirror applyMove's bookkeeping (state, match-progress deadline,
+            // per-player timer refresh) since we bypass applyMove itself here.
+            result = mod.lockOnTimeout(match.state, p, now);
+            match.state = result.state;
+            match.deadlineAt = now + turnTimeoutMs;
+            if (hasPerPlayerClock(mod)) refreshPlayerTimers(match, mod, now, p);
+          } else {
+            // timeoutMove must return a currently-legal move; applyMove validates it and
+            // resets this player's timer. The seeded match rng keeps the auto-move deterministic.
+            const move = mod.timeoutMove!(match.state, p, match.rng);
+            result = applyMove(match.matchId, p, move, now);
+          }
         } catch {
           // A misbehaving module must not wedge the sweep: drop this player's timer and
           // leave the match for the disconnect/forfeit backstop.
