@@ -455,6 +455,16 @@ function ChessPanel(args: GameAreaArgs) {
  * migrated into the slot pills (opponent name + clock above, your name + clock below) via the
  * generic renderSlotAside mechanism, and the data-driven two-line time-control picker in the play
  * panel. Mechanic / WS flow / server-authoritative clock are unchanged — presentation only.
+ *
+ * T4 (issue #489): passes `pinDark` — this hub already matches the new design and needs no screen
+ * rebuild, but that was only ever verified in dark mode. The shadcn base tokens (`--background`/
+ * `--foreground`/`--card`/…) never got a light override (only the `--rc-*` set did, T1/T3), so this
+ * screen is accidentally frozen dark almost everywhere already except where it happens to use a
+ * token that DID get a light value — concretely, `bg-success` below (→ `--rc-success` →
+ * `--rc-green`, T3a) DOES have a light override, so without this a light-mode win would flash the
+ * light-mode green on an otherwise-dark screen. See `GameHub.tsx`'s doc comment above the `pinDark`
+ * prop for the mechanism and for why the scope stops short of `HubRibbon` (it already handles light
+ * mode correctly on its own, including a JS-level logo swap a CSS scope can't reach).
  */
 export function ChessHubScreen(props: GameHubScreenProps) {
   // Unlock audio on the first user gesture (idempotent) — the demo's first sound is the chess
@@ -478,6 +488,7 @@ export function ChessHubScreen(props: GameHubScreenProps) {
       renderPrimaryAction={(args) => (args.phase === 'in-match' ? <ChessPrimaryAction args={args} /> : null)}
       suppressResultOverlay
       ownBarResult
+      pinDark
       {...props}
     />
   );
