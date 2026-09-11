@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { cn } from '@/lib/utils';
 import type { RpsView } from '../App.js';
 import { useTheme } from '../lib/theme.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
@@ -33,6 +32,26 @@ const CARD_H = 130;
 const CARD_GAP = 36;
 /** rpsVsW, non-expanded (Full Spec.html:3807). */
 const VS_WIDTH = 56;
+
+// ---- Ticket 2026-09-12#1 item 2 — `rpsExpanded()`'s "big" geometry (Full Spec.html:3263-3265,
+// true during phases 'reveal'/'flip'/'done'; `RpsBoard` below keys this off its own `terminal`
+// instead — match-end only, deliberately NOT the tied-round reveal beat, since that state's own
+// architecture here is a separate, non-terminal "flash the real throw then reset" beat rather than
+// the prototype's single shared phase machine; see `RpsBoard`'s doc comment for why the two can't
+// be conflated). Every value below is the `rpsBig` branch of its corresponding constant above
+// (Full Spec.html:3804-3807), applied only at `terminal`. -------------------------------------
+/** rpsCardW, expanded (Full Spec.html:3805). */
+const CARD_W_BIG = 124;
+/** rpsCardH, expanded (Full Spec.html:3806). */
+const CARD_H_BIG = 176;
+/** rpsGap, expanded (Full Spec.html:3804). */
+const CARD_GAP_BIG = 12;
+/** rpsVsW, expanded (Full Spec.html:3807). */
+const VS_WIDTH_BIG = 38;
+/** The shared width/height/gap transition every one of the geometry properties above uses in the
+ *  prototype (`Full Spec.html:608/609/616`'s identical `transition:...620ms cubic-bezier(0.3,0.9,
+ *  0.32,1)` clause on each). */
+const EXPAND_EASE = 'cubic-bezier(0.3,0.9,0.32,1)';
 
 // ---- Prototype-exact colors --------------------------------------------------------------------
 /** rpsLeftFrame / rpsRightFrame (Full Spec.html:3810-3811). Unlike every other RPS color in this
@@ -140,8 +159,12 @@ function RpsFrame({
   return (
     <div
       data-testid={testid}
-      className="shrink-0 rounded-[14px] p-[6px] shadow-[0_6px_16px_rgba(0,0,0,0.28)] transition-[background] duration-[420ms] ease"
-      style={{ width: size, height: height ?? size, background: frame }}
+      className="shrink-0 rounded-[14px] p-[6px] shadow-[0_6px_16px_rgba(0,0,0,0.28)]"
+      // Ticket 2026-09-12#1 item 2: width/height now animate too (the card grows at `terminal`) —
+      // matches Full Spec.html:609's own transition list exactly (background 420ms ease, width/height
+      // 620ms cubic-bezier(0.3,0.9,0.32,1)); moved off Tailwind's `transition-*` utilities since they
+      // can't express two different durations/easings in one declaration.
+      style={{ width: size, height: height ?? size, background: frame, transition: `background 420ms ease, width 620ms ${EXPAND_EASE}, height 620ms ${EXPAND_EASE}` }}
     >
       <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-[9px]" style={{ background: tileBg }}>
         {children}
@@ -190,8 +213,10 @@ function RpsCountdown({ seconds }: { seconds: number }) {
 /** Idle/Waiting preview shown before a match starts. Full Spec.html's `isRps` block (:605-658) is
  *  ONE persistent panel — the two-card + VS frame (:608-641) sits directly above the picker grid
  *  (:643-654) with no `sc-if` between them, so the prototype shows both together at rest, not just
- *  once a match is live: `rpsBoardOp` (:606) gates the whole panel's visibility, not this row
- *  specifically, and `rpsChoicesOp`/`rpsChoicesPE` (:643) only ever dim/disable the picker grid.
+ *  once a match is live: `rpsBoardOp` (:606, wired at `RpsPanel`'s wrapper below — ticket
+ *  2026-09-12#1 item 1's table-dim fix) gates the whole panel's visibility (this idle preview
+ *  included), not this row specifically, and `rpsChoicesOp`/`rpsChoicesPE` (:643) only ever
+ *  dim/disable the picker grid.
  *  #512: this component (unlike `RpsBoard` below, T6b/#509) still only rendered the old plain grid
  *  with no card/VS frame above it — this reuses `RpsFrame`/`ARIAL`/the card constants T6b already
  *  added rather than duplicating that markup.
@@ -202,7 +227,7 @@ function RpsCountdown({ seconds }: { seconds: number }) {
  *  entirely rather than shown static-and-frozen — the prototype gates that clock's own box with
  *  `rpsClockOp`/`rpsClockScale` (:618) exactly because there's no live pick window to count down
  *  outside a match; `RpsBoard`'s live countdown only ever mounts once `phase === 'in-match'`. */
-function RpsIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
+function RpsIdle() {
   const tileBg = useRpsTileBg();
   return (
     <div className="flex flex-col items-center gap-4 py-3">
@@ -233,10 +258,16 @@ function RpsIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
       </div>
       {/* 2026-09-11#8/C: the prototype's own `isRps` block (:605-658) has no text in this vertical
           space at rest — it's empty/compact, not a caption. The "Choose a bet and press PLAY…"
-          instructional sentence was never in the prototype source; removed. The 'waiting' copy below
-          is kept — it's real matchmaking-state feedback (search-theater is a separate, already-scoped
-          mechanism, 2026-09-11#9 item 1), not a decorative stand-in this ticket is about. */}
-      {phase === 'waiting' && <p className="text-xs text-muted-foreground">Waiting for an opponent…</p>}
+          instructional sentence was never in the prototype source; removed.
+          Ticket 2026-09-12#1 item 4 (ADVISOR_TO_PM.md): the "Waiting for an opponent…" paragraph
+          that used to render here (gated on `phase === 'waiting'`) was ALSO removed — grepped the
+          entire prototype and it has exactly ONE "waiting" text for this state, the opponent bar's
+          own "Searching…" span (`Full Spec.html:462`, `GameHub.tsx`'s `OpponentSlot`, already
+          correct/untouched). This paragraph was a genuine third copy alongside that AND `GameHub.tsx`'s
+          own shared PLAY-button countdown label ("Waiting for an opponent · m:ss") — the prototype
+          never has this third copy, so it's a real duplicate, not a decorative stand-in like the
+          instructional sentence above. Do not re-add it; the shared PLAY-button label is the one
+          "waiting" text every hub (not just RPS) already shows correctly. */}
     </div>
   );
 }
@@ -277,8 +308,9 @@ function RpsIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
  * `terminal ? … : tieReveal ? … : …` ordering below) — the two can never mount competing flips into
  * the same opponent-card slot.
  *
- * `suppressResultOverlay`/`ownBarResult` are wired on the `<GameHub>` call below (no `holdResultMs`
- * — see that call's comment for why RPS's short 820ms flip doesn't need Coinflip's artificial hold).
+ * `suppressResultOverlay` is wired on the `<GameHub>` call below (no `ownBarResult` — 2026-09-12#1
+ * item 3, see that call's comment for the citation chain — and no `holdResultMs`, see the same call's
+ * comment for why RPS's short 820ms flip doesn't need Coinflip's artificial hold).
  *
  * Timer-only-resolve model (#164): the pick is CLIENT-LOCAL and FREELY CHANGEABLE for the whole
  * window — tapping a throw rings it PURPLE immediately (no wait for the server echo) and re-tapping
@@ -302,6 +334,19 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, onForfeit, 
   const neutralOutcome = outcome?.type === 'draw' || outcome?.type === 'void';
   const myFrame = mineWon ? FRAME_WIN : oppWon ? FRAME_LOSE : neutralOutcome ? FRAME_DRAW : FRAME_NEUTRAL;
   const oppFrame = neutralOutcome ? FRAME_DRAW : FRAME_NEUTRAL;
+  // Ticket 2026-09-12#1 item 2 (ADVISOR_TO_PM.md): `rpsExpanded()`'s big geometry, keyed off
+  // `terminal` — deliberately match-end ONLY, not the tied-round reveal beat below. In the
+  // prototype's own single phase machine `rpsExpanded()` (reveal/flip/done) actually also covers a
+  // tie's 'flip' moment, so its cards grow there too — but this codebase's tie-reveal is a
+  // structurally separate, non-terminal "flash the real throw, hold, reset" beat (2026-09-11#9 item
+  // 2) built on its own local `tieReveal` state, not the prototype's shared phase field, so there is
+  // no faithful way to key growth off "the tie's flip sub-moment" here without inventing a second,
+  // unrelated timing window. Keeping growth strictly terminal-only is simpler, cannot desync from the
+  // match's real end, and never fights the tie-reveal's own 1.5s hold/reset timer for the frame size.
+  const cardW = terminal ? CARD_W_BIG : CARD_W;
+  const cardH = terminal ? CARD_H_BIG : CARD_H;
+  const cardGap = terminal ? CARD_GAP_BIG : CARD_GAP;
+  const vsWidth = terminal ? VS_WIDTH_BIG : VS_WIDTH;
   // The opponent's real throw — `viewFor` (rps.ts) stops redacting once the state is terminal, so
   // this is already the true value by the time `outcome` (and therefore `terminal`) arrives.
   const oppThrow = opponentId ? view?.choices?.[opponentId] : undefined;
@@ -376,20 +421,21 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, onForfeit, 
     <div className="flex flex-col items-center gap-4" data-testid="hub-board">
       {/* You — VS + countdown — Opponent (opponent hidden until the terminal reveal beat below).
           Full Spec.html:608 (gap), :616 (VS column width), :618 (countdown float). */}
-      <div className="flex items-center justify-center" style={{ gap: CARD_GAP }}>
-        <RpsFrame frame={terminal ? myFrame : FRAME_NEUTRAL} tileBg={tileBg} size={CARD_W} height={CARD_H}>
+      <div className="flex items-center justify-center" style={{ gap: cardGap, transition: `gap 620ms ${EXPAND_EASE}` }}>
+        <RpsFrame frame={terminal ? myFrame : FRAME_NEUTRAL} tileBg={tileBg} size={cardW} height={cardH} testid="hub-my-pick-frame">
           <span
-            className={cn(
-              'flex items-center justify-center transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.34,1.7,0.5,1)]',
-              myChoice ? 'scale-100 opacity-100' : 'scale-[0.4] opacity-0',
-            )}
+            className="flex items-center justify-center transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.34,1.7,0.5,1)]"
+            // Ticket 2026-09-12#1 item 2: icon scale 1 → 1.6 at `terminal` (Full Spec.html:3252's
+            // `rpsChoice()`, `on ? (big ? 1.6 : 1) : 0.4`) — moved off the old fixed `scale-100`
+            // Tailwind class since the "on" scale is no longer a single constant.
+            style={{ opacity: myChoice ? 1 : 0, transform: `scale(${myChoice ? (terminal ? 1.6 : 1) : 0.4})` }}
             data-testid="hub-my-pick-icon"
           >
             {myChoice ? <RpsHandIcon choice={myChoice} size={70} /> : null}
           </span>
         </RpsFrame>
 
-        <div className="relative flex shrink-0 items-center justify-center" style={{ width: VS_WIDTH }}>
+        <div className="relative flex shrink-0 items-center justify-center" style={{ width: vsWidth, transition: `width 620ms ${EXPAND_EASE}` }}>
           <span
             className="font-bold"
             style={{ fontFamily: ARIAL, fontSize: 16, letterSpacing: 1, color: '#FFFFFF' }}
@@ -412,18 +458,23 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, onForfeit, 
           // removed) `RpsReveal` overlay component — same `RpsRevealFlipCard`, same 820ms flip
           // (Full Spec.html:625-637), just mounted on the persistent board instead of a popup. No
           // reset timer: unlike the tie-reveal beat below, this stays revealed — the match is over.
+          // `cardW`/`cardH` are the BIG geometry here (terminal is true) — see `rpsExpanded()`'s
+          // comment above `cardW`'s declaration for why the tie-reveal branch below deliberately
+          // keeps passing the small `CARD_W`/`CARD_H` instead.
           <RpsRevealFlipCard
             key="terminal"
             frame={oppFrame}
             tileBg={tileBg}
             choice={oppThrow}
-            size={CARD_W}
-            height={CARD_H}
+            size={cardW}
+            height={cardH}
             testid="hub-opponent-pick-revealed"
           />
         ) : tieReveal ? (
           // 2026-09-11#9 item 2: a just-tied round's real opponent throw, flipped into view then
-          // held before falling back to the redacted tile below — see the effect above.
+          // held before falling back to the redacted tile below — see the effect above. Always the
+          // SMALL geometry (never `cardW`/`cardH` — those are the terminal-only big values, and
+          // `terminal` is false in this branch by construction).
           <RpsRevealFlipCard
             key={tieReveal.seq}
             frame={FRAME_NEUTRAL}
@@ -434,7 +485,7 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, onForfeit, 
             testid="hub-opponent-pick-revealed"
           />
         ) : (
-          <RpsFrame frame={FRAME_NEUTRAL} tileBg="#4F4CEA" size={CARD_W} height={CARD_H}>
+          <RpsFrame frame={FRAME_NEUTRAL} tileBg="#4F4CEA" size={cardW} height={cardH}>
             {/* Redaction: never reveal the opponent's choice before match.end (or outside the
                 tied-round reveal beat above). Solid #4F4CEA fill + bolt icon (Full Spec.html:628-629,
                 2026-09-11#8/C) — not the 🤫 emoji stand-in. */}
@@ -451,45 +502,60 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, onForfeit, 
           legalMoves/your_turn). The selected throw rings the win-green ring (the selection
           language) — Full Spec.html:645-654 (grid gap:9px) + :3245's `ring` formula (`var(--rc-green)`
           resolves to the exact same #0B8F5A light / #34D399 dark pair that formula produces).
-          Locks (dimmed + inert) once `terminal` — mirrors the prototype's own `rpsChoicesOp`/
-          `rpsChoicesPE` dropping to 0.7/`none` outside the live 'run' phase (Full Spec.html:3809) —
-          there is no round left to pick into, and CoinflipHub's `OwnPills` locks the same way at its
-          own terminal (returning a static pill with no `onClick`). */}
+          Ticket 2026-09-12#1 item 2: at `terminal` the whole row now genuinely COLLAPSES (max-height
+          + opacity → 0, Full Spec.html:643's `rpsChoicesH`/`rpsChoicesOp` going to 0px/0 — the outer
+          wrapper below owns that, `opacity 450ms ease, max-height 620ms cubic-bezier(0.3,0.9,0.32,1)`,
+          the exact transition list at that line) rather than the old dim-to-70%-and-disable
+          treatment — there is no round left to pick into, and the prototype's own `rpsChoicesPE`
+          drops to `none` too, mirrored here by `pointerEvents`. `disabled` stays on each button as
+          defense-in-depth even though the collapsed wrapper already removes them from the hit-test. */}
       <div
-        className={cn('grid w-full grid-cols-3 transition-opacity duration-300', terminal && 'opacity-70')}
-        style={{ gap: 9 }}
-        role="group"
-        aria-label="RPS choices"
+        className="w-full overflow-hidden"
+        style={{
+          opacity: terminal ? 0 : 1,
+          maxHeight: terminal ? 0 : 180,
+          pointerEvents: terminal ? 'none' : 'auto',
+          transition: 'opacity 450ms ease, max-height 620ms ' + EXPAND_EASE,
+        }}
       >
-        {RPS_CHOICES.map(({ id, label }) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => handlePick(id)}
-            disabled={terminal}
-            aria-label={label}
-            aria-pressed={myChoice === id}
-            data-testid={`hub-move-${id}`}
-            data-selected={myChoice === id || undefined}
-            className="flex flex-col items-center gap-1 rounded-[16px] py-4 transition-[background,box-shadow] duration-200 ease-out hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:hover:brightness-100"
-            style={{
-              background: tileBg,
-              boxShadow: myChoice === id ? 'inset 0 0 0 3px var(--rc-green)' : 'inset 0 0 0 3px transparent',
-            }}
-          >
-            <RpsHandIcon choice={id} size={54} />
-            <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{label}</span>
-          </button>
-        ))}
+        <div className="grid grid-cols-3" style={{ gap: 9 }} role="group" aria-label="RPS choices">
+          {RPS_CHOICES.map(({ id, label }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => handlePick(id)}
+              disabled={terminal}
+              aria-label={label}
+              aria-pressed={myChoice === id}
+              data-testid={`hub-move-${id}`}
+              data-selected={myChoice === id || undefined}
+              className="flex flex-col items-center gap-1 rounded-[16px] py-4 transition-[background,box-shadow] duration-200 ease-out hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:hover:brightness-100"
+              style={{
+                background: tileBg,
+                boxShadow: myChoice === id ? 'inset 0 0 0 3px var(--rc-green)' : 'inset 0 0 0 3px transparent',
+              }}
+            >
+              <RpsHandIcon choice={id} size={54} />
+              <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{label}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {myChoice && !terminal && (
         <p className="text-center text-sm text-muted-foreground" data-testid="hub-locked">Picked {myChoice} — tap another to change, or wait for the timer</p>
       )}
       {/* Forfeit only makes sense mid-match — the match is already decided once terminal, and
-          `onForfeit` has no live match left to act on. */}
+          `onForfeit` has no live match left to act on.
+          Ticket 2026-09-12#1 item 4/3 (ADVISOR_TO_PM.md): the prototype's own `renderVals()` DOES
+          compute a `rpsForfeit` handler (Full Spec.html:3821) but never binds it to any visible
+          element — dead code in the mock, no visual equivalent to copy. Owner's call: keep the
+          FUNCTION (a stuck player must still be able to leave a bad match) but restyle it away from
+          a first-class action — smaller, lower-contrast text than the "Picked …" hint above it, no
+          extra top padding pulling it into its own visually-weighted row, so it reads as a quiet
+          escape hatch rather than a primary control this design source never gave it. */}
       {!terminal && (
-        <button type="button" onClick={onForfeit} className="pt-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+        <button type="button" onClick={onForfeit} className="text-[11px] font-normal text-muted-foreground/60 transition-colors hover:text-muted-foreground">
           Forfeit
         </button>
       )}
@@ -506,12 +572,23 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, onForfeit, 
  *  at match.end, it just keeps rendering THIS slot with `phase` advanced to 'result' and `outcome`
  *  set. Mirrors `CoinflipPanel`'s identical `live = phase === 'in-match' || phase === 'result'` gate —
  *  the same persistent-board pattern, just spelled as a second phase check instead of a `live` const
- *  since RPS's idle/board split was already a ternary rather than one always-mounted subtree. */
+ *  since RPS's idle/board split was already a ternary rather than one always-mounted subtree.
+ *
+ *  Ticket 2026-09-12#1 item 1 (ADVISOR_TO_PM.md): fades this whole wrapper to 28% opacity while
+ *  `barSlideActive` (threaded through via `GameAreaArgs`, mirroring `GameHub.tsx`'s own flag of the
+ *  same name) — matches `rpsBoardOp: rpsMatching ? 0.28 : 1` (`Full Spec.html:3795`) exactly, same
+ *  380ms ease transition as the outer `isRps` div itself uses (`:606`). This is what makes the
+ *  opponent/own bars sliding toward the VS label (the bar-slide mechanism, `matchBarSlide`) actually
+ *  read against a receded table instead of blending into a same-toned board. */
 function RpsPanel(args: GameAreaArgs) {
   const showBoard = args.phase === 'in-match' || args.phase === 'result';
   return (
-    <div className="rounded-[22px] bg-[var(--rc-surface)] p-4">
-      {showBoard ? <RpsBoard {...args} /> : <RpsIdle phase={args.phase} />}
+    <div
+      data-testid="hub-rps-panel"
+      className="rounded-[22px] bg-[var(--rc-surface)] p-4"
+      style={{ opacity: args.barSlideActive ? 0.28 : 1, transition: 'opacity 380ms ease' }}
+    >
+      {showBoard ? <RpsBoard {...args} /> : <RpsIdle />}
     </div>
   );
 }
@@ -526,8 +603,9 @@ function RpsPanel(args: GameAreaArgs) {
  *
  *  `RpsBoard` is the only caller (2026-09-11#10 item 2 relocated this from a separate `RpsReveal`
  *  overlay component, since removed, into the persistent board itself) — both its tied-round reveal
- *  (2026-09-11#9 item 2) and its terminal reveal (this ticket) pass `CARD_W`/`CARD_H` explicitly so
- *  the card always matches the live board's own rectangular frame; no default size remains since
+ *  (2026-09-11#9 item 2, always the small `CARD_W`/`CARD_H`) and its terminal reveal (2026-09-12#1
+ *  item 2, the big `cardW`/`cardH` once `terminal`) pass the size explicitly so the card always
+ *  matches the live board's own rectangular frame at that moment; no default size remains since
  *  there's no longer a separate, smaller overlay-card usage to default for. The flip itself plays
  *  once per MOUNT (fixed `initial`/`animate` values) — callers that need it to replay must remount
  *  via a changing `key`, which `RpsBoard` does per tie (the terminal reveal never needs to replay —
@@ -536,8 +614,10 @@ function RpsRevealFlipCard({ frame, tileBg, choice, size, height, testid }: { fr
   return (
     <div
       data-testid={testid}
-      className="shrink-0 rounded-[14px] p-[6px] shadow-[0_6px_16px_rgba(0,0,0,0.28)] transition-[background] duration-[420ms] ease"
-      style={{ width: size, height, background: frame, perspective: 900 }}
+      className="shrink-0 rounded-[14px] p-[6px] shadow-[0_6px_16px_rgba(0,0,0,0.28)]"
+      // Ticket 2026-09-12#1 item 2: same width/height growth as `RpsFrame` above (Full Spec.html:625's
+      // transition list — width/height 620ms cubic-bezier(0.3,0.9,0.32,1), background 420ms ease).
+      style={{ width: size, height, background: frame, perspective: 900, transition: `background 420ms ease, width 620ms ${EXPAND_EASE}, height 620ms ${EXPAND_EASE}` }}
     >
       <motion.div
         className="relative h-full w-full"
@@ -571,28 +651,35 @@ function RpsRevealFlipCard({ frame, tileBg, choice, size, height, testid }: { fr
  * its result in place on the board itself rather than a separate pop-up.
  *
  * 2026-09-11#10 item 2 (ADVISOR_TO_PM.md): the prototype has NO separate full-screen result modal
- * for this game anywhere in `Full Spec.html` — win/lose is communicated entirely in-place, a green
- * fill + "you won" text fading in on the player's own bar (:662-663) plus the opponent's reveal card
- * 3D-flipping in place, same DOM node throughout. This hub now wires the same `suppressResultOverlay`
- * + `ownBarResult` pattern `CoinflipHub.tsx` already uses for exactly that (the working reference
- * implementation — `CoinflipHub.tsx:339-341`): GameHub never renders the separate `ResultOverlay`;
- * it holds the result phase open with `RpsBoard` still mounted (see `RpsPanel` above) so the terminal
- * reveal — relocated from the removed `RpsReveal` overlay component into `RpsBoard` itself — plays on
- * the board in place of a popup. The bar-level "You Win" fill is entirely generic `GameHub.tsx`
- * machinery (`ownBarResult`); no RPS-side work was needed for it.
+ * for this game anywhere in `Full Spec.html` — win/lose is communicated entirely in-place: the
+ * player's own card frame turns green/red/orange, the opponent's reveal card 3D-flips in place (same
+ * DOM node throughout), and both cards enlarge (2026-09-12#1 item 2, `rpsExpanded()`). This hub wires
+ * `suppressResultOverlay` (`CoinflipHub.tsx:339-341`'s reference pattern) so GameHub never renders
+ * the separate `ResultOverlay`; it holds the result phase open with `RpsBoard` still mounted (see
+ * `RpsPanel` above) so the terminal reveal — relocated from the removed `RpsReveal` overlay component
+ * into `RpsBoard` itself — plays on the board in place of a popup.
+ *
+ * Deliberately NOT wiring `ownBarResult` (2026-09-12#1 item 3, ADVISOR_TO_PM.md — a real correction
+ * to a prior PR, not new information): `ownBarResult` was wired here briefly (2026-09-11#10 item 2)
+ * mirroring Coinflip's identical prop, but the prototype's own `renderVals()` proves RPS structurally
+ * cannot use this mechanism — the bar-level win-fill/"You Win" text (`winFillAnim`/`winTextAnim`/
+ * `playerBarRing`) is driven by `mOutcome`, which is gated entirely on `gameV = view === 'mines' ||
+ * isDice` (`Full Spec.html:3519`) — `view === 'rps'` is never included, so `mOutcome` is `null` for
+ * every RPS state, unconditionally. RPS's real, already-correct win indication is the card frame
+ * color (`myFrame`/`oppFrame` above, ported from `rpsLeftFrame`/`rpsRightFrame`, `:3810-3811`)
+ * combined with the card enlarging at the same moment (item 2 above) — there is no bar treatment
+ * layered on top of it, ever, for RPS. Do not re-add `ownBarResult` here assuming RPS should match
+ * Coinflip/Mines/Dice's pattern — it structurally doesn't, per the prototype's own source.
  *
  * Deliberately NOT wiring `holdResultMs` (unlike Coinflip's `HOLD_RESULT_MS={2600}`): Coinflip needs
  * it because its coin's flip visual is gated on `gameState` directly (immediate at match end) while
- * `holdResultMs` only delays the BAR (`phase`/`outcome`, and therefore `ownBarResult`'s fill) behind
- * it, giving the ~1.8-2.4s coin flip room to land first. RPS's terminal reveal is gated on `outcome`
- * itself (see `RpsBoard`'s doc comment for why — `RpsView`'s client type carries no `winner` field to
- * derive it from `gameState` directly), so an added hold would delay the FLIP'S OWN START by the same
- * amount, not just the bar — doubling total reveal latency instead of sequencing it. Without a hold,
- * `outcome`/phase='result' land essentially the same tick the match ends (RPS had zero hold in the
- * old overlay path too, and that flip already played correctly), and `ownBarResult`'s fixed
- * `BAR_VERDICT_BEAT_MS` (250ms) delay plus its ~500ms fill-in already lands the bar's green fill at
- * ~750ms — just before the 820ms card flip finishes — a close, naturally-sequenced fit with no
- * artificial hold needed.
+ * `holdResultMs` only delays the BAR (`phase`/`outcome`) behind it, giving the ~1.8-2.4s coin flip
+ * room to land first. RPS's terminal reveal is gated on `outcome` itself (see `RpsBoard`'s doc
+ * comment for why — `RpsView`'s client type carries no `winner` field to derive it from `gameState`
+ * directly), so an added hold would delay the FLIP'S OWN START by the same amount, not just the bar —
+ * doubling total reveal latency instead of sequencing it. Without a hold, `outcome`/phase='result'
+ * land essentially the same tick the match ends (RPS had zero hold in the old overlay path too, and
+ * that flip already played correctly).
  */
 export function RpsHubScreen(props: GameHubScreenProps) {
   return (
@@ -601,7 +688,12 @@ export function RpsHubScreen(props: GameHubScreenProps) {
       gameName="Rock Paper Scissors"
       renderGameArea={RpsPanel}
       suppressResultOverlay
-      ownBarResult
+      // Ticket 2026-09-12#1 item 3 (ADVISOR_TO_PM.md): `ownBarResult` REMOVED here — a real
+      // correction to 2026-09-11#10 item 2, which wired it mirroring `CoinflipHub.tsx`'s pattern.
+      // The prototype's `mOutcome` (the bar-fill mechanism `ownBarResult` renders) is gated on
+      // `gameV = view === 'mines' || isDice` (`Full Spec.html:3519`) — RPS is structurally excluded,
+      // unconditionally, not by omission. See the doc comment above this component for the full
+      // citation chain. Do not re-add this prop assuming RPS should match Coinflip/Mines/Dice.
       // Ticket 2026-09-11#9 (ADVISOR_TO_PM.md), a DELIBERATE REVERSAL of #387's `searchFloorMs={0}`
       // above — not a regression, not new information #387 missed. #387's reasoning was real: RPS's
       // entire round IS the server's fixed 10s pick window (PICK_WINDOW_MS, `packages/games/rps/src/
