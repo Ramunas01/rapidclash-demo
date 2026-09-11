@@ -54,7 +54,7 @@ describe('AffiliateHubScreen — entry points (issue #423)', () => {
       const menu = useMenuOverlay();
       return (
         <>
-          <HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={menu.onMenu} active={menu.open ? 'menu' : 'games'} />
+          <HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={menu.onMenu} onChat={vi.fn()} active={menu.open ? 'menu' : 'games'} />
           <MenuOverlay open={menu.open} anchorRect={menu.anchorRect} onClose={menu.close} onOpenGames={vi.fn()} onOpenRewards={vi.fn()} onOpenAffiliate={onOpenAffiliate} />
         </>
       );

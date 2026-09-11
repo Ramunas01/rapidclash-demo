@@ -14,10 +14,13 @@ interface Props {
    *  clip-path reveal from the real button position — HubToolbar owns the button/ref, the caller
    *  owns the overlay, so the rect has to cross that boundary somehow. */
   onMenu(anchorRect: MenuAnchorRect): void;
-  /** Which item reads as active (default 'games' — the home/games surface). 'menu' is set by the
-   *  caller while its Menu overlay is open — mutually exclusive with the other three, same as
-   *  they already are with each other. */
-  active?: 'games' | 'account' | 'rewards' | 'menu';
+  /** Chat → opens the chat sheet (ticket 2026-09-11#7b, `useChat.ts`/`ChatSheet.tsx`). Flips Chat
+   *  from reserved/comingSoon to a live nav item, same treatment issue #414 gave Menu. */
+  onChat(): void;
+  /** Which item reads as active (default 'games' — the home/games surface). 'menu'/'chat' are set
+   *  by the caller while that item's own overlay/sheet is open — mutually exclusive with the
+   *  other items, same as they already are with each other. */
+  active?: 'games' | 'account' | 'rewards' | 'menu' | 'chat';
 }
 
 /**
@@ -35,6 +38,9 @@ interface Props {
  * hubs; `position: fixed` at the bottom (#142 keeps the footer fixed while the page body scrolls).
  * The bottom pad clears the home-indicator safe-area under viewport-fit=cover.
  *
+ * Chat (ticket 2026-09-11#7b) flips from reserved to live the same way issue #414 flipped Menu —
+ * a real button + `onClick` wired to `onChat`, rather than the greyed `comingSoon` treatment.
+ *
  * Light-mode threading (#484's actual point): the two backdrop layers below (`hub-nav-fade`'s
  * gradient, `hub-nav-fill`) used to build off the shadcn `--background` token, which carries no
  * `[data-theme='light']` override — so they stayed solid #0B0B0B even once the rest of the app
@@ -45,7 +51,7 @@ interface Props {
  * are this app's own brand-purple, fixed in both themes — matches the prototype's own
  * `navXColor` literal (`#8B45F0`), which never varies with `light` either.
  */
-export function HubToolbar({ onGames, onAccount, onRewards, onMenu, active = 'games' }: Props) {
+export function HubToolbar({ onGames, onAccount, onRewards, onMenu, onChat, active = 'games' }: Props) {
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   function handleMenuClick() {
     const el = menuBtnRef.current;
@@ -94,7 +100,7 @@ export function HubToolbar({ onGames, onAccount, onRewards, onMenu, active = 'ga
         <ToolbarItem label="Games" active={active === 'games'} onClick={onGames} icon={ICON_GAMES} />
         <ToolbarItem label="Account" active={active === 'account'} onClick={onAccount} icon={ICON_ACCOUNT} />
         <ToolbarItem label="Rewards" active={active === 'rewards'} onClick={onRewards} icon={ICON_REWARDS} />
-        <ToolbarItem label="Chat" comingSoon icon={ICON_CHAT} />
+        <ToolbarItem label="Chat" active={active === 'chat'} onClick={onChat} icon={ICON_CHAT} />
       </div>
     </nav>
     </>

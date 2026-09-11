@@ -4,6 +4,8 @@ import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
 import { MenuOverlay } from '../components/hub-chrome/MenuOverlay.js';
 import { useMenuOverlay } from '../components/hub-chrome/useMenuOverlay.js';
+import { ChatSheet } from '../components/hub-chrome/ChatSheet.js';
+import { useChat } from '../components/hub-chrome/useChat.js';
 import { HUB_SHELL } from '../components/hub-chrome/layout.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
 import { RcIcon } from '../components/hub-shared/RcIcon.js';
@@ -134,6 +136,15 @@ interface Props {
 
 export function AffiliateHubScreen({ username, balance, onBack, onHome, onOpenProfile, onOpenRewards, onOpenAffiliate }: Props) {
   const menu = useMenuOverlay();
+  // Ticket 2026-09-11#7b: the chat sheet's own subscribe/open/close/message-list state.
+  const chat = useChat();
+  function navTo(fn: () => void) {
+    return () => { chat.close(); menu.wrap(fn)(); };
+  }
+  function openChat() {
+    menu.close();
+    chat.openChat();
+  }
 
   const [tab, setTab] = useState<AffTab>('OVERVIEW');
   const [leftFade, setLeftFade] = useState(0);
@@ -353,11 +364,12 @@ export function AffiliateHubScreen({ username, balance, onBack, onHome, onOpenPr
       </main>
 
       <HubToolbar
-        onGames={menu.wrap(onHome)}
-        onAccount={menu.wrap(onOpenProfile)}
-        onRewards={menu.wrap(onOpenRewards)}
-        onMenu={menu.onMenu}
-        active={menu.open ? 'menu' : 'account'}
+        onGames={navTo(onHome)}
+        onAccount={navTo(onOpenProfile)}
+        onRewards={navTo(onOpenRewards)}
+        onMenu={(rect) => { chat.close(); menu.onMenu(rect); }}
+        onChat={openChat}
+        active={chat.open ? 'chat' : menu.open ? 'menu' : 'account'}
       />
       <MenuOverlay
         open={menu.open}
@@ -366,6 +378,14 @@ export function AffiliateHubScreen({ username, balance, onBack, onHome, onOpenPr
         onOpenGames={onHome}
         onOpenRewards={onOpenRewards}
         onOpenAffiliate={onOpenAffiliate}
+      />
+      <ChatSheet
+        open={chat.open}
+        expanded={chat.expanded}
+        messages={chat.messages}
+        onClose={chat.close}
+        onToggleExpanded={chat.toggleExpanded}
+        onSend={chat.send}
       />
 
       <CreateCampaignSheet

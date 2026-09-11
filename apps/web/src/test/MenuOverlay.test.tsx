@@ -25,6 +25,7 @@ function Harness({
         onAccount={menu.wrap(vi.fn())}
         onRewards={menu.wrap(onRewards)}
         onMenu={menu.onMenu}
+        onChat={vi.fn()}
         active={menu.open ? 'menu' : 'games'}
       />
       <MenuOverlay

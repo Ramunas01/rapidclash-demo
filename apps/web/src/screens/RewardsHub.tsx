@@ -5,6 +5,8 @@ import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
 import { MenuOverlay } from '../components/hub-chrome/MenuOverlay.js';
 import { useMenuOverlay } from '../components/hub-chrome/useMenuOverlay.js';
+import { ChatSheet } from '../components/hub-chrome/ChatSheet.js';
+import { useChat } from '../components/hub-chrome/useChat.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
 import { RcIcon } from '../components/hub-shared/RcIcon.js';
@@ -136,6 +138,15 @@ export function RewardsHubScreen({ token, username, balance, onHome, onOpenProfi
   const [liveBalance, setLiveBalance] = useState(balance);
   // Issue #414: the Menu overlay's own open/close/reveal-origin state.
   const menu = useMenuOverlay();
+  // Ticket 2026-09-11#7b: the chat sheet's own subscribe/open/close/message-list state.
+  const chat = useChat();
+  function navTo(fn: () => void) {
+    return () => { chat.close(); menu.wrap(fn)(); };
+  }
+  function openChat() {
+    menu.close();
+    chat.openChat();
+  }
   const [snapshot, setSnapshot] = useState<RewardsSnapshot | null>(null);
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState('');
@@ -265,11 +276,12 @@ export function RewardsHubScreen({ token, username, balance, onHome, onOpenProfi
       </main>
 
       <HubToolbar
-        onGames={menu.wrap(onHome)}
-        onAccount={menu.wrap(onOpenProfile)}
-        onRewards={menu.wrap(onOpenRewards)}
-        onMenu={menu.onMenu}
-        active={menu.open ? 'menu' : 'rewards'}
+        onGames={navTo(onHome)}
+        onAccount={navTo(onOpenProfile)}
+        onRewards={navTo(onOpenRewards)}
+        onMenu={(rect) => { chat.close(); menu.onMenu(rect); }}
+        onChat={openChat}
+        active={chat.open ? 'chat' : menu.open ? 'menu' : 'rewards'}
       />
       <MenuOverlay
         open={menu.open}
@@ -278,6 +290,14 @@ export function RewardsHubScreen({ token, username, balance, onHome, onOpenProfi
         onOpenGames={onHome}
         onOpenRewards={onOpenRewards}
         onOpenAffiliate={onOpenAffiliate}
+      />
+      <ChatSheet
+        open={chat.open}
+        expanded={chat.expanded}
+        messages={chat.messages}
+        onClose={chat.close}
+        onToggleExpanded={chat.toggleExpanded}
+        onSend={chat.send}
       />
     </div>
   );
