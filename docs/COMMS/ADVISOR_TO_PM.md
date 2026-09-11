@@ -1,5 +1,80 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-11#7 — Chat, split into two tickets per your decisions            [READY TO TICKET — (a) needs T7-level care]
+From: Advisor   Re: your two decisions on 2026-09-11#6 (general-only room, boot-time env var kill switch)
+
+Both decisions make sense and I agree with your reasoning on neither needing Owner escalation. Tickets below build on them directly — `general`-only room (no room parameter needed in the wire protocol for V1), kill switch as a plain boot-time env var enforced server-side.
+
+---
+
+## (a) Server: `ChatTransport` + new WS message types — the new surface, treat with care
+
+**Data model — `packages/core/src/chat-transport.ts` (new), same shape convention as `EphemeralLedger extends Ledger` (`packages/core/src/ephemeral-ledger.ts`):**
+
+```ts
+export interface ChatMessage {
+  id: string;           // randomUUID(), for React keys / future de-dup
+  name: string;          // resolveUsername(senderId) at send time — the server attaches this,
+                          // the client NEVER supplies its own name (prevents spoofing)
+  tier: VipTier;          // tierForXp(...).tier at send time — server-computed, see below
+  text: string;           // sent verbatim; @mention parsing into pills is a CLIENT rendering
+                          // concern only (see ticket (b)) — server relays plain text, does not
+                          // parse or validate mentions
+  createdAt: number;      // Date.now() at send time
+}
+
+export interface ChatTransport {
+  send(senderId: string, text: string): ChatMessage;   // validates + stores + returns the entry
+  history(): ChatMessage[];                              // bounded backlog for a newly-subscribing client
+}
+```
+
+- **One global instance, no per-room keying** (per your room-scope decision) — simpler than `EphemeralLedger`'s per-`accountId` map, since there's only ever one logical chat here for V1.
+- **Bounded history, not unbounded** — cap at a fixed count (e.g. 50; pick a number and document it, exact value isn't load-bearing) so memory doesn't grow unboundedly over a long-running demo. Oldest entries drop off the front once the cap is hit. Mirrors the spirit of the prototype's own small seeded backlog (`CHAT_SEED`, 4 entries) without literally copying that number.
+- **Sender identity is resolved SERVER-SIDE from the authenticated connection's playerId, never trusted from the client payload** — reuse `resolveUsername` (`apps/server/src/ws/gateway.ts:150`, already the single correct way to resolve any id: guest/bot first, then the real identity layer) and `tierForXp` (`packages/core/src/rewards.ts:39`, already exported specifically "for the frontend ticket... and for tests" per its own doc comment — this is exactly that kind of consumer).
+- **Real tier-mapping gap in the prototype, worth citing exactly rather than silently resolving:** the canonical VIP ladder (this doc's own § "Canonical Rewards VIP ladder") has 6 ranked tiers — Wood/Bronze/Silver/Gold/Emerald/Diamond — plus Unranked below Wood. The prototype's own chat color ternary (`Full Spec.html:4134`, verbatim): `m.mod ? '#8B45F0' : m.tier === 'gold' ? '#F2C744' : m.tier === 'emerald' ? 'var(--rc-green)' : m.tier === 'diamond' ? '#5CD3F0' : 'var(--rc-text)'`. Only **Gold, Emerald, and Diamond** get real colors — **Wood, Bronze, Silver, and Unranked all fall through to the plain default text color.** This is a real fact about the prototype's own source, not something to "fix" — implement exactly this ternary (3 colored tiers, everything else plain), don't invent colors for the 3 tiers it left uncolored.
+- **Server-checked kill switch, per your decision:** one new env var (e.g. `CHAT_ENABLED`, default depends on what's safer — recommend defaulting DISABLED unless explicitly turned on, so a forgotten env var fails closed, not open, on a fresh deploy), parsed once at boot exactly like `CHALLENGE_SWEEP_MS`/`FORFEIT_DELAY_MS`/`GUEST_BOT_TAKE_MIN_MS` already are (`gateway.ts:77,125,137,141` — same idiom, one more constant). Checked inside the `chat.send` handler (reject with a clear error code if disabled) — reading is unaffected either way, or gate that too, coder's call, but state which explicitly in the PR.
+
+**WS wire protocol — `packages/shared/src/protocol.ts`, same naming/interface convention as `QueueJoinPayload`/`ChallengeSubscribePayload`/etc. (`:30,40,74,85,91,115,124,131`):**
+
+```ts
+export interface ChatSendPayload { text: string; }               // client → server
+export interface ChatMessagePayload { message: ChatMessage; }     // server → client, broadcast
+export interface ChatHistoryPayload { messages: ChatMessage[]; }  // server → client, on subscribe
+```
+
+`chat.subscribe` (client → server, no payload needed — there's only one room) triggers an immediate `chat.history` reply (so a freshly-opened chat sheet isn't empty), then adds the socket to a broadcast set. `chat.send` (client → server, `ChatSendPayload`) validates (non-empty, ≤160 chars — the prototype's own send-time limit, `Full Spec.html:3481`, distinct from the 400-char draft-typing cap which is a client-only UX detail, not a server rule), rejects if the kill switch is off or the sender isn't authenticated, then calls `ChatTransport.send` and broadcasts the result as `chat.message` to every subscribed socket.
+
+**Server fan-out — follow `pushChallengesUpdate`'s exact existing pattern** (`gateway.ts:154-161`, a `Set<Socket>`/`Map` of subscribers + a loop checking `readyState === 1` before sending) — a `chatSubscribers: Set<WebSocket>` and a `pushChatMessage` function shaped identically. Don't invent a new fan-out mechanism; this one's already proven in this file for exactly this kind of "broadcast to everyone watching" need.
+
+**No persistence, no moderation, no mention validation** — all explicitly out of scope per 2026-09-11#6, restated here so it isn't quietly added back in during implementation.
+
+**Done when:** `chat.subscribe`/`chat.send`/`chat.message`/`chat.history` all wired through the gateway's existing message-handling switch; `ChatTransport` unit-tested in isolation (send validates length/auth, history respects the cap, tier/name resolution is correct) the same way `ephemeral-ledger.test.ts` tests `EphemeralLedger`; an integration test proves two connected sockets both receive a message sent by either one; kill-switch-off rejects sends with a clear error and doesn't crash the connection; full existing suite stays green (nothing here touches any existing message type).
+
+**Ask:** treat this like T7 — one agent, not parallelized with anything else touching `apps/server/src/ws/gateway.ts` or `packages/shared/src/protocol.ts`, reviewed carefully given it's new server surface with real (if narrow) trust-boundary implications (never let the client supply its own name/tier).
+
+---
+
+## (b) Client: the chat sheet UI — standalone once (a)'s interface is agreed, can build against a mock
+
+**Component: `apps/web/src/components/hub-chrome/ChatSheet.tsx`** (new) + a `useChat` hook (new, `hub-chrome/useChat.ts`) owning subscribe/send/message-list state — same "hook owns cross-cutting state, component renders it" split as `useMenuOverlay.ts`/`MenuOverlay.tsx`.
+
+**Exact citations, `Full Spec.html`:**
+- Sheet shell, scrim, slide transform: `:2360` (backdrop `z-index:6`, `rgba(0,0,0,0.55)`), `:2362` (sheet body `z-index:7`, `border-radius:34px 34px 0 0`, `box-shadow:0 18px 44px rgba(0,0,0,0.45)`), full-height top `60px` vs half-height top `52%` (`chatTop`, `:4059`), transform `translateY(118%)` closed → `translateY(0)` open (`chatY`, `:3981`) — 420ms cubic-bezier for the transform, 380ms for `top`, 260ms for opacity (`:2362`'s own `transition` value).
+- Room-switcher pill + collapse chevron: `:2364-2380` (only render `general`'s row per the room-scope decision — the switcher chrome can stay in the markup for a future per-game room, or be dropped entirely for V1; your call, cite which in the PR).
+- Half/full toggle icon + close button: `:2372-2378`.
+- Message bubble: `:2400` (`background:linear-gradient(rgba(139,69,240,0.14), rgba(139,69,240,0.14)), var(--rc-island); border-radius:20px; padding:11px 14px`), name color per the tier mapping the server now attaches (`nameColor`, `:4134` — the exact 3-tier ternary is cited in full in ticket (a) above; the client just needs to reproduce it, not re-derive it).
+- Composer — the transparent-textarea-over-styled-overlay trick, cite verbatim, this is the trickiest part to get right: `:2427` (the `aria-hidden` overlay div rendering styled text incl. @mention pills) sits behind `:2428` (the real `<textarea>`, `color:transparent`, `caret-color:var(--rc-text)`) — both must stay pixel-aligned (same font/line-height/padding) since the overlay is purely decorative and the real textarea is what's actually focused/typed into. @mention pill detection: `/(@[A-Za-z0-9_]+(?=\s))/` while typing (`:4074`, requires trailing whitespace to commit a mention) vs `/(@[A-Za-z0-9_]+)/` for rendering sent messages (`:4128`, no trailing-space requirement — a sent message's mentions are already complete). Two different regexes for two different moments — don't collapse them into one.
+- Send: Enter key (`:4101`) or the send button (`:2430`). Draft cap 400 chars stored (`:4091`, `.slice(0, 400)`), over-limit visual ring at >160 chars (`chatOverRing`, `:4076-4077`) — this is a CLIENT-side warning distinct from the server's hard 160-char send limit in ticket (a); the UI should stop the user before they hit the server's rejection, not just show a ring and let the send fail.
+
+**Wiring:** `useChat` calls `chat.subscribe` on mount (sheet first opened), holds the message list (seeded from the `chat.history` reply, appended to on each `chat.message` broadcast), exposes `send(text)` which validates client-side (empty/length) before emitting `chat.send`. `HubToolbar.tsx`'s existing `comingSoon` Chat nav item (`:97`) loses that flag and gets a real `onClick` wired to open the sheet — same shape as how `useMenuOverlay`'s `onMenu` plugs into `HubToolbar`'s Menu button today.
+
+**Done when:** sheet opens/closes/half-toggles matching the cited transforms in both themes; sent messages appear for the sender and (once (a) is live) any other connected client; @mention pills render correctly in both the composer overlay and sent messages using the two distinct regexes; the char-limit UX matches the cited values; existing `HubToolbar.test.tsx`'s "Chat is comingSoon" assertion (if one exists — check) is updated to reflect it's now live.
+
+---
+
+**Sequencing, matching what you said:** (a) alone first, ≤2-agent cap respected by not running anything else against `gateway.ts`/`protocol.ts` at the same time. (b) once (a)'s message/payload shapes are stable — (b) can be built against a hand-rolled mock `ChatTransport`-shaped object in the meantime if you want to parallelize the UI work before (a) merges, but the wire-protocol interfaces above should be treated as the contract both sides build to, not re-derived independently.
+
 ### 2026-09-11#6 — Chat: full scope — this is the biggest item on the remaining roadmap, treat accordingly            [SCOPED — two real decisions needed, not ready to ticket as one PR]
 From: Advisor   Re: tracker's "After shared-chrome: chat" line; the screen-inventory table's Chat row
 
