@@ -155,17 +155,28 @@ function MineTileContent({ kind }: { kind: CellKind }) {
 }
 
 /** Greyed preview shown in Idle/Waiting — a dimmed 5×5 grid, the visual anchor before a
- *  match activates it (mirrors RpsIdle / CoinflipIdle). Out of scope for T8 (Advisor ticket,
- *  2026-09-11#3): stays generic gray squares, same as T6a/T6b's idle states initially. */
+ *  match activates it (mirrors RpsIdle / CoinflipIdle). Per Advisor ticket 2026-09-11#4: the
+ *  prototype has no separate idle-state design for Mines — its tile-computation code is the SAME
+ *  function that renders the live in-match board, just showing every tile in its default covered
+ *  state before a match starts. So this reuses the live board's own `MINES_BOARD_BG`/
+ *  `MINES_TILE_COVERED` values and radii (rounded-2xl board / rounded-[9px] tiles, matching
+ *  `MinesBoard` below) rather than a separate generic gray grid, dimmed via `opacity-50`. */
 function MinesIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
+  const { resolved: themeResolved } = useTheme();
+  const light = themeResolved === 'light';
   return (
     <div className="flex flex-col items-center gap-4 py-1">
       <div
         aria-hidden
-        className="grid w-full grid-cols-5 gap-1 rounded-xl border border-border bg-surface/40 p-2 opacity-50"
+        className="grid w-full grid-cols-5 gap-2 rounded-2xl p-2.5 opacity-50"
+        style={{ background: light ? MINES_BOARD_BG.light : MINES_BOARD_BG.dark }}
       >
         {Array.from({ length: BOARD_SIZE }, (_, i) => (
-          <div key={i} className="aspect-square rounded-md border border-border/60 bg-background" />
+          <div
+            key={i}
+            className="aspect-square rounded-[9px]"
+            style={{ background: light ? MINES_TILE_COVERED.light : MINES_TILE_COVERED.dark }}
+          />
         ))}
       </div>
       <p className="text-xs text-muted-foreground">
