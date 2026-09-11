@@ -1,6 +1,7 @@
 // A single demo bot: an ordinary REST+WS client (ADR-010) that mostly posts-and-
 // waits so a human can JOIN it, and replies to its turn with a random legal move.
 
+import { randomUUID } from 'node:crypto';
 import type {
   ChallengesListPayload,
   ChallengesUpdatePayload,
@@ -171,7 +172,6 @@ export class Bot {
    *  resends `your_turn` to this bot whenever the OPPONENT places a chip — without this guard the
    *  bot would schedule duplicate all-ins from those resends (harmless but noisy rejections). */
   private movePending = false;
-  private topUpSeq = 0;
   private warnedNoAdmin = false;
   /** Crash: true once this bot has pre-set its auto-eject for the current match (set it once). */
   private crashActed = false;
@@ -438,7 +438,19 @@ export class Bot {
         this.playerId,
         {
           amount: config.topUpAmount,
-          idempotencyKey: `botcrowd:topup:${this.playerId}:${this.topUpSeq++}`,
+          // Issue #532: MUST be durably unique per real top-up attempt, not just unique within one
+          // process's lifetime. This used to be `${this.playerId}:${this.topUpSeq++}`, an in-memory
+          // counter that resets to 0 on every restart — and bot-crowd restarts after every deploy
+          // (standing runbook). On restart, a bot that previously needed a top-up would reuse the
+          // same low-numbered key from its prior life; the ledger's idempotency correctly treated
+          // that as a duplicate and returned the stale original entry with 200 OK, but the
+          // `this.balance += entry.amount` below then credited that stale amount to the LOCAL
+          // tracker regardless — so the bot's local balance silently drifted from the real
+          // server-side balance and it got permanently stuck. A random UUID per attempt is
+          // genuinely unique across restarts, so a duplicate can no longer occur here. (There's no
+          // retry-safety need for a deterministic key: the catch block below never retries a failed
+          // attempt with the same key — it just logs and gives up.)
+          idempotencyKey: `botcrowd:topup:${this.playerId}:${randomUUID()}`,
         },
         adminToken,
       );
