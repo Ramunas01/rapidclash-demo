@@ -315,6 +315,15 @@ describe('minesModule.viewFor — redaction: opponent count hidden for the WHOLE
     expect(v.boards[A].mines).toBeUndefined(); // active player sees no mines
   });
 
+  // T8: `roundStartedAt` is exposed in the non-terminal view so the client can render the 30s
+  // round clock. It's pure per-round timing metadata — reveals no mine position or score.
+  it('T8: exposes roundStartedAt in the non-terminal view (drives the client-side round clock)', () => {
+    const safe = safeSquares(0);
+    const s = state({ [A]: board([safe[0]]), [B]: board([safe[0], safe[1]]) }, { roundStartedAt: 4_200 });
+    const v = as(mines.viewFor(s, A));
+    expect(v.roundStartedAt).toBe(4_200);
+  });
+
   it('STAYS hidden once the OPPONENT locks but the viewer is still active (old engine revealed this — new engine does not)', () => {
     const safe = safeSquares(0);
     // A busted at 3, B still active → under the OLD rule B would see A's final count as a

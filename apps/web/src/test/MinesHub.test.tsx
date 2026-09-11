@@ -118,6 +118,54 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     expect(screen.getByTestId('opponent-count').textContent).toContain('7 safe');
   });
 
+  // T8: the 30s round clock, driven by the server-authoritative `roundStartedAt` (not a
+  // client-guessed/reset-on-render value).
+  it('T8: the round clock counts down accurately from server-authoritative roundStartedAt', async () => {
+    vi.useFakeTimers();
+    const now = Date.now();
+    try {
+      render(
+        <MinesHubScreen
+          {...baseProps({
+            currentMatchId: 'm1',
+            gameState: view({ uncovered: [] }, {}, { roundStartedAt: now }),
+            legalMoves: asLegal(allCovered),
+          })}
+        />,
+      );
+      const clock = screen.getByTestId('mines-round-clock');
+      expect(clock.textContent).toContain('30s'); // just started — full 30s
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(12_000); });
+      expect(clock.textContent).toContain('18s'); // 30 - 12 = 18s left
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+      expect(clock.textContent).toContain('0s'); // clamped at 0, never negative
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('T8: the round clock keeps counting for a locked player (shared round cap, not a per-player window)', async () => {
+    vi.useFakeTimers();
+    const now = Date.now();
+    try {
+      render(
+        <MinesHubScreen
+          {...baseProps({
+            currentMatchId: 'm1',
+            gameState: view({ uncovered: [0, 1], locked: true, bustedOn: 10 }, { locked: false }, { roundStartedAt: now }),
+            legalMoves: asLegal([]),
+          })}
+        />,
+      );
+      await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+      expect(screen.getByTestId('mines-round-clock').textContent).toContain('25s');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('Replay: an internal draw-replay re-deals — the board resets for the new round, no result overlay', () => {
     const { rerender } = render(
       <MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [0, 1, 2] }), legalMoves: asLegal([3, 4, 5]) })} />,
