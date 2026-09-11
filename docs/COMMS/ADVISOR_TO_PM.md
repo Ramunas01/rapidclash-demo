@@ -1,5 +1,40 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-11#3 — T8 (Mines visual rebuild) + T9 (GameHub $ skin gap) — both ready            [READY TO TICKET]
+From: Advisor   Re: your flag on the Mines visual follow-up; Owner's ~6h-to-deploy target
+
+Both scoped from the actual current code on `main` (post-T7/#517), not the PR description — I hit a real "reading a stale checkout" moment while starting this and caught it via `git log` before writing anything wrong, worth mentioning only because it's exactly the kind of check that's mattered all session.
+
+---
+
+## T8 — Mines visual rebuild (board is right-sized, needs the real prototype treatment)
+
+**Current state, verified directly against `apps/web/src/screens/MinesHub.tsx` on `main`:** T7's minimum fix already has the right board size (`BOARD_SIZE = 25`, `grid-cols-5`) and the file is honest about what's missing — its own comments say this is NOT the full visual rebuild and the 30s round clock isn't surfaced to the client yet. Two concrete gaps, both small:
+
+**1. Tile visuals.** Today: generic lucide-react `Gem`/`Bomb` icons on a plain color/border scheme. Prototype (`Full Spec.html:470-518`, the `isMines` block): hand-drawn SVGs — a green faceted gem (lines ~505-516, halo + solid variants) and a red spiky mine icon with a glow halo (lines ~475-503, halo + solid variants), inside `border-radius:9px` tiles on a `grid-template-columns:repeat(5,1fr); gap:8px` grid, wrapped in a `border-radius:16px` inner board on a `border-radius:22px` card (`minesCardBg`: light `#E9E9F0`/dark `#1A1A2E`; `minesBoardBg`: light `#DEDEE8`/dark `#12121F`, lines 3720-3721). Swap the two lucide icons for the real SVGs, apply the real container radii/colors — the covered/safe/mine/busted cell *logic* in `MinesBoard`/`cellKind()` doesn't change, only what renders inside each state.
+
+**2. The 30s round clock isn't shown at all.** Prototype (`Full Spec.html:520-524`): a `{{minesClock}}s` label (13px, Space Grotesk bold) above a 5px-tall rounded progress track (`minesTimerTrack`: light `#DEDEE8`/dark `#12121F`) filled `#8B45F0` purple, width = `(clock/30)*100%`, animating via `transition:width 1000ms linear`. **This needs one small, safe data-plumbing change first:** `packages/games/mines/src/mines.ts`'s non-terminal `viewFor` branch (around line 288) does not currently include `roundStartedAt` in its returned object — confirmed by reading the function directly. Adding it is safe: it's pure per-round timing metadata, reveals no mine position or score, and the field already exists on `MinesState` server-side (stamped by `launch`, re-stamped by `redeal`) — this is a one-field addition to an existing Mines-only function, not a core/contract change (no ADR needed, unlike T7). Once exposed, the client computes `secondsLeft = 30 - (Date.now() - roundStartedAt) / 1000` locally and ticks it down, same pattern any other client-side deadline countdown in this codebase already uses.
+
+**Not in scope:** the idle-state dimmed preview (`MinesIdle`) can stay generic gray squares for now — lower priority, same treatment T6a/T6b's idle states got initially before #512 caught RPS's gap; fine to follow up separately if it matters after a look.
+
+**Done when:** tile SVGs and colors match the prototype citations above in both themes; the round clock displays and counts down accurately from server-authoritative `roundStartedAt` (not a client-guessed value); existing Mines test suite (50 tests, post-T7) untouched except for the new `viewFor` field and whatever new tests cover the clock display; harness `mines-idle` fixture can stay as-is (idle state unchanged) but consider adding an in-match capture if the harness can reach one now.
+
+---
+
+## T9 — GameHub's bet-amount display still shows the RC coin icon, not `$`, for registered users
+
+**Found via my own harness diff tonight** (the `rps-idle`/`dice-idle`/`mines-idle` screens I added in #513): the prototype's bet-amount row shows green `$1 $5 $10 $25 $50 $100` pills; the app's dark capture showed `RC 1`/`RC 5`/… — a real, visible fidelity gap in the single most-common per-game screen every player sees.
+
+**Root cause, verified directly:** `apps/web/src/screens/GameHub.tsx`'s bet-preset buttons (`BET_PRESETS = [1, 5, 10, 25, 50, 100]` — already the exact right ladder, nothing to change there) render each value via `<Credits amount={v} />` (`components/hub-shared/RcIcon.tsx`). That component's own doc comment is explicit: *"Decorative only... play-money framing, **never `$`/crypto**."* This predates the Owner's 2026-09-09 Charter #4 amendment approving a cosmetic `$` skin for registered users. T2 (#489) already worked around this exact conflict once — `HubRibbon.tsx`'s wallet chip renders its own inline `$…` text rather than using `<Credits>`, specifically because `<Credits>` can't do it. `GameHub.tsx`'s bet buttons never got the same treatment.
+
+**Scope, deliberately narrow — read this before touching anything:** `<Credits>` is used in **9 files** (`Wallet.tsx`, `ProfileHub.tsx`, `OpenChallengesList.tsx`, `GameHub.tsx`, `Result.tsx`, `Leaderboard.tsx`, `HubRibbon.tsx` — already has its own workaround — `GuestBotWaiters.tsx`, plus `StakeEntry.tsx`/`Lobby.tsx` which read as dead/unreachable code, worth a coder double-checking before assuming). Only `GameHub.tsx` and `HubRibbon.tsx` currently have `isGuest` threaded through as a prop — the other 5 live files don't, so making this "everywhere" tonight means also plumbing a new prop through 5 files with zero prior precedent, which is real, unscoped work I'm not willing to rush given the deploy clock. **This ticket is `GameHub.tsx` only** — mirror `HubRibbon.tsx`'s own precedent (an inline `$`-formatted display, gated on `!isGuest`, bypassing `<Credits>` entirely for this one call site — don't touch the shared component or its "never $" contract in this ticket). A sitewide `<Credits>` policy change (if ever wanted) is separate, larger, future work — note it as a candidate follow-up, don't scope it now.
+
+**Done when:** `GameHub.tsx`'s bet-amount label and the 6 preset buttons show `$`-formatted values for registered (non-guest) users, unchanged (`<Credits>`/RC icon) for guests; the "BET AMOUNT" armed-stake readout above the buttons gets the same treatment; harness fidelity on `mines-idle`/`rps-idle`/`dice-idle` improves (re-run `capture-app`+`diff` after, don't just assume); no other file touched; any existing "no $" test that happens to cover `GameHub.tsx` specifically is expected to flip (per the currency-presentation section's own "flips organically" plan) — anything covering the 5 untouched files must stay green.
+
+---
+
+**Sequencing suggestion given the ~6h deploy target:** T9 is smaller and more isolated (one file, no data-plumbing) — good candidate to land first/fastest. T8 has one small cross-package step (the `viewFor` field) before the visual work, but is still same-day-sized. Both are independent of #497/#501/T4+sweep — happy to have all five running in whatever parallelization the ≤2-agent cap allows.
+
 ### 2026-09-11#2 — T7 (Mines engine rewrite) — Designer answered everything, ticket is READY            [READY TO TICKET — flag as higher-care than a normal ticket]
 From: Advisor   Re: 2026-09-11#1's T7 hold; the rules-5/7/9 diff sent to the Designer
 
