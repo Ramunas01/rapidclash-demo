@@ -1,5 +1,50 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-11#5 — Currency picker: component boundaries, file plan, one real open decision, full test plan            [READY TO TICKET — one decision needed first, see below]
+From: Advisor   Re: your ask to go one level deeper on 2026-09-11#4's currency picker
+
+Read the full picker source this time, not just the summary I gave last round — a few more details showed up (two toggle switches at the bottom I hadn't cited before: "Display in Fiat" and "Hide zero balances", both fully wired, not dead state). Citations below are exact.
+
+## Component boundaries — decided, with reasoning
+
+**One new self-contained component, no new props on `HubRibbon`.** Checked all 5 call sites of `<HubRibbon>` (HomeHub/ProfileHub/GameHub/AffiliateHub/RewardsHub) — none need to know about picker state, so it stays entirely internal to the chrome layer:
+
+- **`apps/web/src/components/hub-chrome/CurrencyPicker.tsx`** (new) — owns `open`/`query`/`curSel`/`fiatOn`/`hideZero` state locally (`useState`, no shared hook needed — unlike Menu's `useMenuOverlay`, only one screen-position ever renders this, so there's nothing to share). Exports one component, rendered from inside `HubRibbon.tsx`.
+- **`apps/web/src/components/hub-chrome/currencyData.ts`** (new) — the mock data as plain exported constants (`CUR_BAL`, `CUR_CRYPTO`, `CUR_NAME`, `OPEN_CURS`), literal copies of the prototype's own values (below) — not derived from the real `balance` prop, never will be, that's the Owner-approved design.
+- **Currency SVG icons** — inline functions inside `CurrencyPicker.tsx`, one per coin, same placement convention `HubRibbon.tsx`'s own `UsdBadge()` already set (a hand-written inline SVG per symbol, not a spritesheet). Ported directly from the prototype's `<symbol id="cur-*">` defs, line ~104.
+- **`HubRibbon.tsx` changes:** split the current single wallet-chip `<button>` into two adjacent buttons inside the same outer pill — confirmed via the prototype's own structure (`Full Spec.html:2233` `toggleCur` is scoped to only the currency-icon+balance div; the purple WALLET sub-pill at `:2237-2240` is a separate sibling element, untouched by `toggleCur`). So: left button (currency icon + balance) opens `CurrencyPicker`; right button (purple WALLET pill) keeps calling `onWallet`, completely unchanged. Wrap the pair in `position:relative` so the picker panel (`position:absolute; top:calc(100%+8px)`, prototype `:2247`) anchors correctly.
+- **Not using shadcn's `popover.tsx`/`dropdown-menu.tsx`/`switch.tsx`** — confirmed via grep that none of the three are used anywhere else in the app (scaffolded, never adopted). The codebase's actual convention for this exact shape (a full-screen backdrop + a positioned panel, e.g. `HomeHub.tsx`'s `SortSheet`) is hand-rolled: a `fixed inset-0` backdrop div (click → close) + the panel absolutely positioned relative to its trigger. Following that same idiom keeps this consistent with the rest of the codebase rather than introducing an unused library for the first time.
+
+## Exact citations for the panel content (`Full Spec.html:2242-2320`)
+
+- **Search row** (`:2244-2248`): `curSearchBg` (light `#E7E7EE`/dark `#12121F`), placeholder "Search", filters case-insensitively by symbol OR full name (`CUR_NAME`, below) as a substring — not just symbol.
+- **"Cash" section header + USD row** (`:2249-2258`): USD is always its own labeled group, never mixed into "Cryptocurrency".
+- **"Cryptocurrency" section header + 7 rows** (`:2259-2300`), `OPEN_CURS = ['SOL','BTC','USDT','ETH','LTC','USDC','XRP']` (prototype line 2855) — note this is NOT alphabetical, it's the prototype's own literal order, keep it.
+- **Row visibility logic** (`:3586-3592`, exact): a row shows if it matches the search query AND (it's the currently-selected currency OR "hide zero" is off OR its balance isn't exactly the string `'$0.00'`) — i.e. the selected currency is never hidden even if zero and hide-zero is on, and zero-balance filtering only applies to unselected rows.
+- **Two footer toggle rows** (`:2309-2319`) — "Display in Fiat" and "Hide zero balances", each a hand-rolled 40×22px pill switch (not shadcn's `Switch`): on = `#8B45F0` track, off = light `#C9C9D6`/dark `#12121F`; a white 16px knob translating `0→18px`. One small shared `ToggleSwitch` sub-component for both, since they're pixel-identical apart from state.
+- **Mock data, literal, port exactly** (`:3583-3584`, `CUR_BAL`/`CUR_CRYPTO`): `{USD:'$119.20', BTC:'$0.00', ETH:'$0.00', USDT:'$837', USDC:'$0.00', SOL:'$1,642', LTC:'$0.00', XRP:'$0.00'}` (fiat mode) / `{USD:'119.20', BTC:'0.00000000', ETH:'0.00000000', USDT:'837.0', USDC:'0.00000000', SOL:'10.6483', LTC:'0.00000000', XRP:'0.00000000'}` (crypto mode) — `CUR_NAME` for search: `{USD:'US Dollar', BTC:'Bitcoin', ETH:'Ethereum', USDT:'Tether', USDC:'USD Coin', SOL:'Solana', LTC:'Litecoin', XRP:'XRP Ripple'}`.
+- **The trigger badge itself changes with selection** (`:2234`, `curSym`): picking a currency in the panel swaps BOTH the collapsed trigger's icon AND its displayed value to that currency's mock balance — it does not stay on the real integer balance once a non-default currency is picked. USD is a special case even within this: selecting it always shows `CUR_BAL.USD` regardless of the fiat/crypto toggle (a dollar has no separate "crypto" unit).
+
+## One real decision I'm not making myself — needs your or the Owner's call before implementation starts
+
+**The prototype's own default selected currency is SOL, not USD** (`const curSel = this.state.curSel || 'SOL'`, line 3579) — meaning out of the box, before a user ever opens the picker, the prototype's trigger shows a mock SOL balance (`$1,642`), NOT the real balance. Today's app (post-T9) always shows the real integer balance with a `$` format. Defaulting to SOL would mean the wallet chip **never shows the real balance by default** for a freshly-registered user — only after they explicitly pick USD in the picker. Two options, genuinely a product call, not an engineering one:
+- **(a) Default `curSel` to `'USD'`** — trigger keeps showing the real balance out of the box (matches today's behavior exactly), the picker is purely additive; SOL/BTC/etc. only ever show once a user deliberately explores the picker.
+- **(b) Default to `'SOL'`**, matching the prototype's literal source exactly — the investor-demo skin is "on" from first paint, at the cost of the real balance not being the first thing shown.
+Recommend (a) for the reason above (least surprise, doesn't silently change what a signed-in user's balance chip shows today) — flagging (b) as the literal-fidelity option since "build from rendered markup" has been the standing rule all session. Your/Owner's call.
+
+## Test plan
+
+- Trigger renders the decided default currency's icon+balance; WALLET sub-pill unaffected, still calls `onWallet` directly (split didn't break it).
+- Tapping the currency+balance side opens the panel; tapping the backdrop or picking any currency closes it.
+- All 8 rows present in `OPEN_CURS` order (not alphabetical), correct icons, correct section headers (Cash vs Cryptocurrency).
+- Search filters by symbol AND name, case-insensitive substring — verify a name-only match (e.g. "dollar" finding USD) works, not just symbol matches.
+- Hide-zero-balances toggle hides `$0.00` rows EXCEPT the currently-selected one, even if it's also zero — this exact exception is easy to get wrong, worth its own test.
+- Fiat/crypto toggle swaps every row's displayed value between `CUR_BAL`/`CUR_CRYPTO`; USD row stays on `CUR_BAL.USD` regardless of the toggle.
+- Picking a currency updates the trigger's icon + value AND closes the panel in one action.
+- **Invariant test, most important:** the real integer `balance` prop / actual credits ledger is never read, written, or altered by anything in this component regardless of picker state — this is cosmetic-only per Charter #4, and a test should assert nothing here ever touches real balance data.
+- `isGuest` path completely unaffected — guest mode's "Demo" badge branch never renders `CurrencyPicker` at all (already true structurally, just confirm no regression).
+- Both themes: track colors from `light: '#DEDEE8'`-style pairs correctly reference the theme's active mode.
+
 ### 2026-09-11#4 — Mines idle-state polish (small) + currency-picker dropdown (real feature, not small) — both scoped            [READY TO TICKET]
 From: Advisor   Re: your post-deploy flag on the two deferred items
 
