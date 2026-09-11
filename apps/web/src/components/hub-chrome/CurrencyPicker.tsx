@@ -300,7 +300,11 @@ function SearchGlyph() {
  * `UsdBadge()`. Shared by both the trigger and the panel's rows (the prototype itself references
  * the very same `<symbol>` set from both places via `<use href="#cur-...">`). ── */
 
-function CurrencyIcon({ sym, size = 20 }: { sym: string; size?: number }) {
+/** Exported for `GameHub.tsx`'s PlayPanel bet-panel currency row (ticket 2026-09-11#8, item A1) —
+ *  the prototype's `{{ curSym }}` row (`Full Spec.html:705,709`) references the exact same
+ *  `#cur-{{ curSym }}` sprite this component already ports 1:1 below; reusing it here rather than
+ *  duplicating a second copy of `IconUSD`. */
+export function CurrencyIcon({ sym, size = 20 }: { sym: string; size?: number }) {
   switch (sym) {
     case 'USD':
       return <IconUSD size={size} />;
