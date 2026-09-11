@@ -248,6 +248,12 @@ interface GameHubProps extends GameHubScreenProps {
    *  input. Every other hub game omits this (undefined → the existing 2400ms default), so their dwell
    *  is byte-identical to before this prop existed. */
   searchFloorMs?: number;
+  /** T4 (issue #489, interim until a real light design lands): pins everything this hub renders
+   *  EXCEPT `HubRibbon` — the shared main body, bottom nav, menu overlay, and result overlay — to
+   *  `.dark`'s token values regardless of the app-wide theme. See the doc comment above where this
+   *  is consumed (in the render, below) for the full mechanism and why `HubRibbon` is excluded.
+   *  Omitted (the default) → no behavior change, byte-identical to before this prop existed. */
+  pinDark?: boolean;
 }
 
 /** A 1s ticking clock for countdowns (cosmetic; expiry is server-authoritative). */
@@ -272,7 +278,7 @@ function useNow(active: boolean): number {
  */
 export function GameHub(props: GameHubProps) {
   const {
-    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar, searchFloorMs = 2400,
+    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar, searchFloorMs = 2400, pinDark = false,
     token, playerId, username, avatarId = 'default', opponentId, opponentName, serverClockOffset = 0, balance, currentMatchId, gameState, legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
     onPlay, onCancel, onTakeChallenge, onTakePublicChallenge, onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, onTrackChallenges,
@@ -560,10 +566,13 @@ export function GameHub(props: GameHubProps) {
     : ownBarVerdictBeat;
   const ownBarVerdict: Verdict | null = (ownBarResult && ownBarVerdictLit) ? ownBarFrameKind : null;
 
-  return (
-    <div className={hubShellClass(isGuest)}>
-      <HubRibbon balance={loggedIn ? liveBalance : null} onLogo={onOpenGameList} onWallet={onOpenWallet} loggedIn={loggedIn} isGuest={isGuest} />
-
+  // T4 (issue #489): everything below HubRibbon — the shared main body, bottom nav, menu overlay,
+  // and (for the rare hub that doesn't suppress it) the result overlay — for hubs that opt in via
+  // `pinDark`. Extracted to a variable so the `.dark` wrapper (below, in the actual return) can be
+  // applied conditionally without duplicating this whole block; every hub that omits `pinDark`
+  // renders `bodyChrome` completely unwrapped, so this is a byte-identical no-op for them.
+  const bodyChrome = (
+    <>
       <main data-testid="hub-body">
         {/* No blanket px-4 — sections that need insetting add their own; the shared Open Games /
             Bring-a-Rival / footer render full-bleed to the max-w-md edge (they pad internally). */}
@@ -732,6 +741,28 @@ export function GameHub(props: GameHubProps) {
           onDismiss={dismissResult}
         />
       )}
+    </>
+  );
+
+  return (
+    <div className={hubShellClass(isGuest)}>
+      <HubRibbon balance={loggedIn ? liveBalance : null} onLogo={onOpenGameList} onWallet={onOpenWallet} loggedIn={loggedIn} isGuest={isGuest} />
+      {/* T4 (issue #489): `pinDark` pins `bodyChrome` (everything except HubRibbon above) to
+          `.dark`'s token values regardless of the app-wide theme — an interim fix for hubs whose
+          own per-game files never got a light-mode pass (T1–T3 only threaded light overrides
+          through the `--rc-*` token set, not the shadcn base tokens (`--background`/`--card`/…),
+          so those hubs are accidentally frozen dark almost everywhere already; this makes it
+          permanent and immune to future drift). `.dark` (index.css) is a complete mirror of
+          `:root`'s dark values, so CSS custom properties inside this wrapper resolve to it instead
+          of any inherited `data-theme="light"` override on `<html>`. HubRibbon is deliberately
+          OUTSIDE this scope: it already threads `--rc-*` tokens correctly for light mode on its
+          own (T2), including a JS-level logo asset swap keyed off the REAL resolved theme
+          (`useTheme()` in HubRibbon.tsx) that a CSS-only scope can't override — wrapping it here
+          would silently break that (dark-pinned background, but the light-mode logo asset, since
+          `useTheme()` still reads the real app-wide theme → an illegible half-adjusted header).
+          Opt-in per hub (Coinflip/Blackjack/Chess today, via `pinDark`); every other hub omits it,
+          so `bodyChrome` renders with no extra wrapping DOM node — a byte-identical no-op. */}
+      {pinDark ? <div className="dark">{bodyChrome}</div> : bodyChrome}
     </div>
   );
 }

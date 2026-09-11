@@ -317,6 +317,15 @@ function OpponentPill({ args }: { args: GameAreaArgs }) {
  * in the player's own slot pill, picks hidden. Reveal staged client-side from match.end (opponent's
  * pick → coin flip → own-pill outline). No server/protocol/viewFor change beyond the module's opt-in
  * per-player pick timer + seeded auto-pick. See docs/COINFLIP_HUB.md.
+ *
+ * T4 (issue #489): passes `pinDark` — this hub already matches the new design and needs no screen
+ * rebuild, but that was only ever verified in dark mode. The shadcn base tokens (`--background`/
+ * `--foreground`/`--card`/…) never got a light override (only the `--rc-*` set did, T1/T3), so this
+ * screen is accidentally frozen dark almost everywhere already; pinning it explicitly makes that
+ * permanent and immune to future accidental light-token drift, until it gets an actual light
+ * design. See `GameHub.tsx`'s doc comment above the `pinDark` prop for why the scope stops short of
+ * `HubRibbon` (it already handles light mode correctly on its own, including a JS-level logo swap a
+ * CSS scope can't reach).
  */
 export function CoinflipHubScreen(props: GameHubScreenProps) {
   return (
@@ -330,6 +339,7 @@ export function CoinflipHubScreen(props: GameHubScreenProps) {
       suppressResultOverlay
       holdResultMs={HOLD_RESULT_MS}
       ownBarResult
+      pinDark
       // #387: Coinflip's entire round IS the server's fixed 10s pick window (PICK_WINDOW_MS,
       // resolves ONLY at expiry) — the default ~2.4s "Searching…" dwell floor could burn enough of
       // it that the pick buttons never render before the window elapses. Zero hold here maximizes

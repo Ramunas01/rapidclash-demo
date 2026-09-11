@@ -474,6 +474,15 @@ function BlackjackPanel(args: GameAreaArgs) {
  * outcome only) rings the player's own cards, persisting until a new game starts or the player
  * leaves. Internal-replay draws loop in the In-match phase. The mechanic / WS flow / redaction
  * are unchanged.
+ *
+ * T4 (issue #489): passes `pinDark` — this hub already matches the new design and needs no screen
+ * rebuild, but that was only ever verified in dark mode. The shadcn base tokens (`--background`/
+ * `--foreground`/`--card`/…) never got a light override (only the `--rc-*` set did, T1/T3), so this
+ * screen is accidentally frozen dark almost everywhere already; pinning it explicitly makes that
+ * permanent and immune to future accidental light-token drift, until it gets an actual light
+ * design. See `GameHub.tsx`'s doc comment above the `pinDark` prop for why the scope stops short of
+ * `HubRibbon` (it already handles light mode correctly on its own, including a JS-level logo swap a
+ * CSS scope can't reach).
  */
 export function BlackjackHubScreen(props: GameHubScreenProps) {
   return (
@@ -492,6 +501,7 @@ export function BlackjackHubScreen(props: GameHubScreenProps) {
       // …and a push shows NOTHING on the bars — the cards + orange "Push" label carry the draw. Opt out
       // of the shared orange draw-bar (the board still gets drawBeat via areaArgs).
       suppressDrawBar
+      pinDark
       {...props}
     />
   );
