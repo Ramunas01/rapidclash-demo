@@ -112,6 +112,7 @@ gcloud run deploy rapidclash \
   --timeout 3600 \
   --min-instances 1 \
   --max-instances 1 \
+  --memory 1Gi \
   --session-affinity \
   --set-secrets ADMIN_PASSWORD=admin-password:latest \
   --set-env-vars GCS_BUCKET=rapidclash-snapshots-847070222251
@@ -123,6 +124,7 @@ Flag rationale (see ADR-009):
 - `--timeout 3600` — the 60-minute max for the WebSocket stream; `match.resume` handles reconnect on timeout.
 - `--max-instances 1` — **mandatory**: match state is in memory and the DB is a local file; neither survives scale-out (also makes the snapshot a single writer — no locking concern, ADR-011).
 - `--min-instances 1` — keeps a WebSocket-warm instance during demos (a few $/month). Set `0` when not demoing to drop to free (cold starts may delay/drop the first connection).
+- `--memory 1Gi` — **not the Cloud Run default (512Mi) — set it explicitly.** 2026-09-12: the service was OOM-killed repeatedly on 512Mi after the chat/RPS/chess-stakes feature batch grew per-connection in-memory state, dropping every WebSocket in a loop (revision `rapidclash-00104-djs` fixed it). See §5c below — re-check this after any future feature batch that adds real per-connection state.
 - `--session-affinity` — best-effort routing of reconnects back to the same instance.
 - `--set-env-vars GCS_BUCKET=…` — enables durable persistence (ADR-011): the server restores the DB snapshot on startup and snapshots it back after each settlement. Omit it (or drop the bucket) to fall back to the original ephemeral behaviour. Requires the bucket + IAM grant from §1b.
 
@@ -142,6 +144,14 @@ gcloud compute ssh demo-taker --project rapidclash-demotaker --zone us-central1-
 ```
 
 The bots re-authenticate with their existing accounts (a clean *login*, not a fresh registration — thanks to the durable-persistence fix, issue #378/#380, their balances survive) and start resting again within seconds. See `docs/DEMO_TAKER_VM_SETUP.md` for the VM itself.
+
+## 3c. "Bot-crowd looks dead" that's actually the service being OOM-killed, not §3b's stale-revision issue
+
+2026-09-12: Owner deployed, then reported the bot-crowd looked dead — the same symptom §3b describes, but a different root cause this time. The main Cloud Run service's memory limit (Cloud Run's 512Mi default — this repo didn't set `--memory` explicitly until the fix below) had gotten too tight after the chat/RPS/chess-stakes feature batch grew real per-connection in-memory state, and the container was being OOM-killed repeatedly, dropping every WebSocket connection in a loop.
+
+**Recognize it**: unlike §3b (bots healthy, just talking to a retired revision), this looks like the *whole* service is flapping — connections drop repeatedly, not just once after a deploy; `gcloud run services describe rapidclash --region us-central1` / the Cloud Run console's revision list shows repeated container restarts/crashes rather than one clean revision handoff.
+
+**Fix it**: bump the memory limit — `--memory 1Gi` is now baked into the canonical deploy command in §3 above (fixed live via `rapidclash-00104-djs`). If it recurs at 1Gi after a future feature batch that adds more per-connection state, check `gcloud run services describe rapidclash --region us-central1 --format="value(status.conditions)"` for OOM/restart conditions before assuming it's §3b's stale-revision issue again — the two look similar from the outside but need opposite fixes (§3b: restart the bots; this: raise the memory limit).
 
 ## 4. Verify
 
