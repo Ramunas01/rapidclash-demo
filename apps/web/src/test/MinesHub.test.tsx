@@ -48,6 +48,53 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
+  // Ticket 2026-09-12#2 item 1 (ADVISOR_TO_PM.md): the redundant idle paragraph ("Waiting for an
+  // opponent…" / "Choose a bet and press PLAY…") is gone — zero prototype equivalent, same removal
+  // RpsHub.tsx got in #551. The shared PLAY-button label already covers the waiting case.
+  it('Idle: no idle paragraph copy in either idle sub-state (item 1)', () => {
+    const { rerender } = render(<MinesHubScreen {...baseProps()} />);
+    expect(screen.queryByText(/waiting for an opponent…/i)).toBeNull();
+    expect(screen.queryByText(/choose a bet and press play/i)).toBeNull();
+
+    rerender(<MinesHubScreen {...baseProps({ waitingExpiresAt: Date.now() + 10_000 })} />);
+    expect(screen.queryByText(/waiting for an opponent…/i)).toBeNull();
+    expect(screen.queryByText(/choose a bet and press play/i)).toBeNull();
+  });
+
+  // Ticket 2026-09-12#2 item 2 (ADVISOR_TO_PM.md): the panel wrapper now dims to 28% opacity while
+  // `barSlideActive` (searching/matchForming) — matches `minesBoardOp: rpsMatching || mConverged ?
+  // 0.28 : 1` (`Full Spec.html:3756`) for its search-phase half; mirrors RpsHub.test.tsx's equivalent
+  // #551 assertion via `hub-rps-panel`, here via this file's own `hub-mines-panel` testid.
+  it('Panel dims to 0.28 opacity during pure searching (no match yet), matching RPS/Coinflip', () => {
+    // Mirrors RpsHub.test.tsx's equivalent #551 assertion ("the bar-slide also arms during pure
+    // searching") — `rpsMatching` covers both the searching and found sub-states.
+    render(<MinesHubScreen {...baseProps({ initialStake: 10, waitingExpiresAt: Date.now() + 10_000 })} />);
+    expect(screen.getByTestId('hub-mines-panel').style.opacity).toBe('0.28');
+  });
+
+  it('Panel dims to 0.28 opacity while matchForming holds, back to 1 once in-match (item 2)', async () => {
+    vi.useFakeTimers();
+    try {
+      const { rerender } = render(<MinesHubScreen {...baseProps({ initialStake: 10 })} />);
+      expect(screen.getByTestId('hub-mines-panel').style.opacity).toBe('1'); // idle: no dim
+
+      fireEvent.click(screen.getByTestId('hub-play')); // arms the search dwell start (searchStartRef)
+
+      // The server pairs the match immediately — rerender with a live match right away.
+      rerender(<MinesHubScreen {...baseProps({ initialStake: 10, currentMatchId: 'm1', gameState: view({ uncovered: [] }), legalMoves: asLegal(allCovered) })} />);
+
+      // Still inside the 2400ms dwell floor: phase holds at 'waiting' (matchForming true) — dimmed.
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      expect(screen.getByTestId('hub-mines-panel').style.opacity).toBe('0.28');
+
+      // Just past the floor: phase flips to in-match — the panel un-dims (`barSlideActive` false).
+      await act(async () => { await vi.advanceTimersByTimeAsync(1450); });
+      expect(screen.getByTestId('hub-mines-panel').style.opacity).toBe('1');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('Idle: arming a bet enables PLAY, which posts that stake (shared GameHub)', () => {
     const onPlay = vi.fn();
     render(<MinesHubScreen {...baseProps({ onPlay })} />);
@@ -182,15 +229,69 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
   });
 
-  it('Result: only the decisive match.end surfaces the GameHub overlay with the credits delta', async () => {
+  // Ticket 2026-09-12#2 item 3(b) (ADVISOR_TO_PM.md): `suppressResultOverlay` + `ownBarResult` are
+  // now wired on Mines' `<GameHub>` call — the same reference pattern `CoinflipHub.tsx` uses. The
+  // separate result pop-up (this test used to assert appeared) no longer renders at all; the win/
+  // lose/draw reveal happens on the player's own bar instead (the shared frame-ring/win-fill
+  // mechanism, already proven on Coinflip — see `CoinflipHub.test.tsx`'s equivalent tests for the
+  // exact testids/assertions mirrored below).
+  it('Result: no separate overlay — match.end reveals the outcome via the own-bar frame ring / win-fill (ownBarResult) instead', async () => {
     const gameState = view({ uncovered: [0, 1, 2, 3], locked: true });
     const { rerender } = render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: asLegal([]) })} />);
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
 
     rerender(<MinesHubScreen {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'alice' }, lastSettlement: { delta: 18, newBalance: 1018 } })} />);
-    await waitFor(() => expect(screen.getByTestId('hub-result-overlay')).toBeInTheDocument());
-    expect(screen.getByTestId('hub-result-text').textContent).toContain('You Won');
-    expect(screen.getByTestId('hub-result-delta').textContent).toContain('+18');
+    // `suppressResultOverlay`: GameHub never renders the separate `ResultOverlay`, terminal or not.
+    expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
+    await waitFor(() => expect(screen.getByTestId('hub-slot-own-verdict')).toBeInTheDocument());
+    expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you win/i);
+    expect(screen.queryByTestId('hub-result-overlay')).toBeNull(); // still absent after the reveal
+  });
+
+  it('Result win: shared 0.5/2/0.5 bar animation on the own bar only — keeps the username, "You Win" alongside, then settles to the green outline (mirrors CoinflipHub.test.tsx)', async () => {
+    vi.useFakeTimers();
+    try {
+      const gameState = view({ uncovered: [0, 1, 2, 3], locked: true });
+      const { rerender } = render(
+        <MinesHubScreen {...baseProps({ username: 'alice', currentMatchId: 'm1', gameState, legalMoves: asLegal([]) })} />,
+      );
+      rerender(
+        <MinesHubScreen
+          {...baseProps({
+            username: 'alice',
+            currentMatchId: null,
+            gameState,
+            lastOutcome: { type: 'win', winner: 'alice' },
+            lastSettlement: { delta: 18, newBalance: 1018 },
+          })}
+        />,
+      );
+
+      // No `holdResultMs` for Mines (like RPS) — the result phase starts essentially immediately;
+      // only the fixed BAR_VERDICT_BEAT_MS (250ms) gates the bar lighting.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(250 + 50);
+      });
+      const ownBar = screen.getByTestId('hub-slot-own');
+      const oppBar = screen.getByTestId('hub-slot-opponent');
+      expect(ownBar.textContent).toContain('alice'); // username stays put (not swapped out)
+      expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you win/i);
+      expect(ownBar.querySelector('.bg-success')).not.toBeNull(); // green fill = a background layer
+      expect(ownBar.className).not.toContain('ring-success'); // not yet settled to the outline
+      // Ring is OWN-BAR ONLY (Full Spec.html:3786, `oppBarRing: 'none'` unconditionally) — the
+      // opponent's pill never gets any win/lose/draw treatment.
+      expect(oppBar.querySelector('.bg-success')).toBeNull();
+      expect(oppBar.className).not.toContain('ring-success');
+
+      // 0.5s fill-in + 2s hold + 0.5s fade-out = 3s → settles to the persistent outline.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000 + 50);
+      });
+      expect(ownBar.className).toContain('ring-success');
+      expect(screen.queryByTestId('hub-slot-own-verdict')).toBeNull(); // "You Win" left with the fill
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // T5: the shared "VS" match-found overlay (GameHub.tsx, gated on `matchForming` = phase 'waiting'
