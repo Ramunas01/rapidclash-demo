@@ -248,6 +248,21 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull(); // still absent after the reveal
   });
 
+  // Ticket 2026-09-12#5 item 1 (ADVISOR_TO_PM.md) — HIGH PRIORITY correction to #555: `MinesPanel`
+  // used to gate on `phase === 'in-match'` only, so the instant `phase` became `'result'` (Mines has
+  // no `holdResultMs`, so this is immediate) the panel unmounted the resolved board and swapped to
+  // the blank idle grid, discarding the busted-tile/cleared-board reveal before it was ever visible.
+  it("Result: the resolved board (MinesBoard, not the blank idle grid) stays mounted and visible through the 'result' phase (item 1)", () => {
+    const gameState = view({ uncovered: [0, 1, 2, 3], locked: true });
+    const { rerender } = render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: asLegal([]) })} />);
+    expect(screen.getByTestId('hub-board')).toBeInTheDocument();
+
+    rerender(<MinesHubScreen {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'alice' }, lastSettlement: { delta: 18, newBalance: 1018 } })} />);
+    // No holdResultMs for Mines — phase jumps straight to 'result'. The real board must still be
+    // the thing rendered, not MinesIdle's blank preview grid.
+    expect(screen.getByTestId('hub-board')).toBeInTheDocument();
+  });
+
   it('Result win: shared 0.5/2/0.5 bar animation on the own bar only — keeps the username, "You Win" alongside, then settles to the green outline (mirrors CoinflipHub.test.tsx)', async () => {
     vi.useFakeTimers();
     try {

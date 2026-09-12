@@ -57,7 +57,15 @@ const DICE_SCALE = [0, 25, 50, 75, 100]; // line 3605
 const SPACE_GROTESK = "'Space Grotesk', Arial, Helvetica, sans-serif"; // e.g. lines 556, 563, 589, 596
 
 const FILL_TRANSITION = 'width 420ms cubic-bezier(0.4,0,0.2,1)'; // line 3675 (settled branch)
-const CUBE_TRANSITION = 'opacity 300ms ease, transform 420ms cubic-bezier(0.2,1.2,0.35,1)'; // lines 543, 576
+// Ticket 2026-09-12#5 item 3 (ADVISOR_TO_PM.md): `left` added to the prototype's own literal
+// transition list (lines 543/576 cite only opacity/transform — the prototype instead re-renders
+// `left` every rAF frame during its client-simulated 444ms count-up, `runDiceRoll`, :3432-3437, so
+// it never needed a CSS transition on position). This app has no such per-frame loop (deliberately —
+// no fabricated intermediate roll value, see this file's header comment), so a real CSS transition on
+// `left` is the honest substitute: it interpolates POSITION only, between two always-true endpoints
+// (0% at rest, the true final roll once known) — never an invented NUMBER. Same 420ms/easing as the
+// existing `transform` entry, since both drive the same physical motion.
+const CUBE_TRANSITION = 'opacity 300ms ease, transform 420ms cubic-bezier(0.2,1.2,0.35,1), left 420ms cubic-bezier(0.2,1.2,0.35,1)';
 const NUM_COLOR_TRANSITION = 'color 260ms ease'; // lines 556, 589
 const BELT_EASE: [number, number, number, number] = [0.3, 0.9, 0.32, 1]; // lines 3669, 3674
 const BELT_DURATION_S = 0.46; // 460ms — lines 3669, 3674
@@ -91,16 +99,32 @@ function DieCubeIcon() {
 
 /** One roll gauge — a horizontal pill track filling 0→rolled-value with the die riding the fill
  *  edge. `pos="opp"` mirrors `pos="mine"` (scale ticks + cube hang off the opposite edge, lines
- *  534-559 vs 567-592) so the two cubes converge toward the scale row between them. */
-function DiceTrack({ pos, roll, numColor, light }: { pos: 'opp' | 'mine'; roll: number | undefined; numColor: string; light: boolean }) {
+ *  534-559 vs 567-592) so the two cubes converge toward the scale row between them.
+ *
+ *  Ticket 2026-09-12#5 item 3 (ADVISOR_TO_PM.md): `active` (new prop, true only from `DiceBoard`,
+ *  false from `DiceIdle`'s preview) replaces gating cube visibility/scale on `roll != null`. Traced
+ *  the prototype's own state machine, not just its markup: `diceCubeIn` (the real gate behind
+ *  `diceMyOp`/`diceOppOp`/`diceCubeScale`, `:3612-3614`) flips true at the START of a roll —
+ *  `this.setState({ diceMy: 0, diceOpp: 0, diceRolling: false, diceCubeIn: true })`, `:3421` —
+ *  BEFORE `runDiceRoll`'s 444ms count-up even begins (`:3423`), not once it resolves. So the
+ *  prototype's cube is visible, full-scale, and AT its (then-zero) position for the entire roll,
+ *  not just a flash at the end — the count-up's per-frame `left` updates (no CSS transition needed
+ *  there; the prototype re-renders it every rAF frame) are what makes it visibly travel. This app
+ *  has no such frame loop (deliberate — see file header), so `left` is now a real CSS transition
+ *  (`CUBE_TRANSITION` above) instead: the cube pops in at rest (0%, already `cubeLeft`'s existing
+ *  `value ?? 0` fallback) the moment the board goes live, then visibly slides to its true endpoint
+ *  once `roll` arrives — an honest position interpolation between two always-true points, never a
+ *  fabricated intermediate NUMBER (the number label itself still only ever shows `fmtRoll(roll)`
+ *  once `roll` is non-null, unchanged). */
+function DiceTrack({ pos, roll, numColor, light, active }: { pos: 'opp' | 'mine'; roll: number | undefined; numColor: string; light: boolean; active: boolean }) {
   const isOpp = pos === 'opp';
   const trackColor = light ? DICE_TRACK.light : DICE_TRACK.dark;
   const grooveColor = light ? DICE_GROOVE.light : DICE_GROOVE.dark;
   const value = roll != null ? Math.max(0, Math.min(100, roll / 100)) : null;
   const fillWidth = value == null ? '50%' : `calc(10px + ${value} * (100% - 36px) / 100)`; // lines 3676-3677
   const cubeLeft = `calc(18px + ${value ?? 0} * (100% - 36px) / 100)`; // lines 3608-3609
-  const cubeOpacity = value == null ? 0 : 1; // lines 3612-3613 (gated on `diceCubeIn`, true once resolved)
-  const cubeScale = value == null ? 'scale(0.55)' : 'scale(1)'; // line 3614
+  const cubeOpacity = active ? 1 : 0; // lines 3612-3613 (`diceCubeIn` — true for the WHOLE roll, not just once resolved)
+  const cubeScale = active ? 'scale(1)' : 'scale(0.55)'; // line 3614 (same `diceCubeIn` gate)
 
   return (
     <div className="relative box-border h-[46px] rounded-full p-[11px]" style={{ background: trackColor }}>
@@ -126,6 +150,7 @@ function DiceTrack({ pos, roll, numColor, light }: { pos: 'opp' | 'mine'; roll: 
         <div className="absolute bottom-2 left-2 top-2 rounded-full" style={{ background: DICE_FILL_GREEN, width: fillWidth, transition: FILL_TRANSITION }} />
         {/* The riding die — lines 543/576 (position/opacity/scale), 3608-3609 (position formula). */}
         <div
+          data-testid={`dice-cube-${pos}`}
           className="absolute h-[56px] w-[52px] -ml-[26px]"
           style={{
             left: cubeLeft,
@@ -228,14 +253,25 @@ function DiceHistoryBelt({ history, light }: { history: HistoryPill[]; light: bo
  *  tracks + scale row + history belt, no copy (same redundant-idle-text cleanup already applied to
  *  RPS #551 and Mines #555). Sized to the prototype's own fixed box (`height:266px;
  *  padding:20px 16px; padding-top:47px; justify-content:flex-start`, `:532-604`'s one wrapper div
- *  spanning both idle and live states, no inner split) — see `DiceBoard`'s identical box below. */
-function DiceIdle({ light }: { light: boolean }) {
+ *  spanning both idle and live states, no inner split) — see `DiceBoard`'s identical box below.
+ *
+ *  Ticket 2026-09-12#5 item 2 (ADVISOR_TO_PM.md): fades this box to 28% opacity while
+ *  `barSlideActive` — the same matching-phase table-dim RPS (#551) and Mines (#555) already got,
+ *  never applied here (`minesBoardOp`, the shared property name that also drives this panel,
+ *  `Full Spec.html:3756`). Applied directly to this `hub-board` div (rather than a separate outer
+ *  wrapper, the way `RpsPanel`/`MinesPanel` do it) since Dice's idle/board split has no such wrapper
+ *  today and `hub-board` is already the single element every existing box-model test queries. */
+function DiceIdle({ light, barSlideActive }: { light: boolean; barSlideActive?: boolean }) {
   return (
-    <div data-testid="hub-board" className="flex h-[266px] flex-col justify-start gap-3.5 rounded-[22px] bg-surface px-4 py-5" style={{ paddingTop: 47 }}>
+    <div
+      data-testid="hub-board"
+      className="flex h-[266px] flex-col justify-start gap-3.5 rounded-[22px] bg-surface px-4 py-5"
+      style={{ paddingTop: 47, opacity: barSlideActive ? 0.28 : 1, transition: 'opacity 380ms ease' }}
+    >
       <div className="flex flex-col gap-3.5">
-        <DiceTrack pos="opp" roll={undefined} numColor={DICE_NEUTRAL_NUM} light={light} />
+        <DiceTrack pos="opp" roll={undefined} numColor={DICE_NEUTRAL_NUM} light={light} active={false} />
         <DiceScaleRow />
-        <DiceTrack pos="mine" roll={undefined} numColor={DICE_NEUTRAL_NUM} light={light} />
+        <DiceTrack pos="mine" roll={undefined} numColor={DICE_NEUTRAL_NUM} light={light} active={false} />
       </div>
     </div>
   );
@@ -243,7 +279,7 @@ function DiceIdle({ light }: { light: boolean }) {
 
 /** The live Dice area: both players auto-commit a `reveal` (no decisions), then the higher of two
  *  independent rolls wins. Neither roll is shown until the simultaneous reveal (server redaction). */
-function DiceBoard({ gameState, legalMoves, onMove, playerId, opponentId, history, light }: GameAreaArgs & { history: HistoryPill[]; light: boolean }) {
+function DiceBoard({ gameState, legalMoves, onMove, playerId, opponentId, history, light, barSlideActive }: GameAreaArgs & { history: HistoryPill[]; light: boolean }) {
   const view = gameState as DiceView | null;
   const me = playerId, opp = opponentId;
   const result = view?.result;
@@ -265,11 +301,17 @@ function DiceBoard({ gameState, legalMoves, onMove, playerId, opponentId, histor
 
   return (
     // Same fixed box as `DiceIdle` above — the prototype's `isDice` wrapper (`:532-604`) is ONE div
-    // spanning both idle and live states, not two differently-sized ones.
-    <div data-testid="hub-board" className="flex h-[266px] flex-col justify-start gap-3.5 rounded-[22px] bg-surface px-4 py-5" style={{ paddingTop: 47 }}>
-      <DiceTrack pos="opp" roll={oppRoll} numColor={oppNumColor} light={light} />
+    // spanning both idle and live states, not two differently-sized ones. Same item-2 opacity dim
+    // as `DiceIdle` — `barSlideActive` is only ever true during the pre-match search/forming beat,
+    // never simultaneously with a resolved result, so this never fights the result reveal.
+    <div
+      data-testid="hub-board"
+      className="flex h-[266px] flex-col justify-start gap-3.5 rounded-[22px] bg-surface px-4 py-5"
+      style={{ paddingTop: 47, opacity: barSlideActive ? 0.28 : 1, transition: 'opacity 380ms ease' }}
+    >
+      <DiceTrack pos="opp" roll={oppRoll} numColor={oppNumColor} light={light} active />
       <DiceScaleRow />
-      <DiceTrack pos="mine" roll={myRoll} numColor={myNumColor} light={light} />
+      <DiceTrack pos="mine" roll={myRoll} numColor={myNumColor} light={light} active />
       <DiceHistoryBelt history={history} light={light} />
       <p data-testid="dice-status" className="text-center text-xs font-medium text-muted-foreground">
         {resolved ? (meWon ? 'You rolled higher!' : oppWon ? 'Opponent rolled higher' : 'Tie') : 'Rolling…'}
@@ -278,10 +320,18 @@ function DiceBoard({ gameState, legalMoves, onMove, playerId, opponentId, histor
   );
 }
 
+// Ticket 2026-09-12#5 item 1 (ADVISOR_TO_PM.md) — HIGH PRIORITY correction to #558: this used to
+// gate on `phase === 'in-match'` only, so the instant `phase` became `'result'` (after HOLD_MS's
+// 2200ms hold) the panel unmounted `DiceBoard` and swapped to the blank `DiceIdle` gauges —
+// discarding the resolved cubes/history/status line right after they finally became visible. Fix:
+// mirror `CoinflipPanel`'s own `live` gate exactly (`CoinflipHub.tsx:120`) — `DiceBoard` reads only
+// `gameState`/`legalMoves` (never `phase` itself), so it renders the resolved roll correctly with
+// no further changes needed there.
 function DicePanel(args: GameAreaArgs & { history: HistoryPill[] }) {
   const { resolved: themeResolved } = useTheme();
   const light = themeResolved === 'light';
-  return args.phase === 'in-match' ? <DiceBoard {...args} light={light} /> : <DiceIdle light={light} />;
+  const live = args.phase === 'in-match' || args.phase === 'result';
+  return live ? <DiceBoard {...args} light={light} /> : <DiceIdle light={light} barSlideActive={args.barSlideActive} />;
 }
 
 /**

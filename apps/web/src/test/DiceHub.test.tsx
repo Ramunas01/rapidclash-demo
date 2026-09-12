@@ -102,6 +102,21 @@ describe('DiceHubScreen', () => {
     expect(screen.getByTestId('dice-status').textContent).toMatch(/you rolled higher/i);
   });
 
+  // Ticket 2026-09-12#5 item 3 (ADVISOR_TO_PM.md): the cube must be visible (not just a flash once
+  // resolved) for the entire live roll, resting at its known 0% start — traced the prototype's own
+  // `diceCubeIn` state flip (Full Spec.html:3421), which happens at roll-START, before the count-up.
+  it('item 3: both cubes are visible (opacity 1) from the moment the board goes live, before the roll resolves — never hidden until it "arrives"', () => {
+    render(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState: preRoll(), legalMoves: ['reveal'] })} />);
+    expect(screen.getByTestId('dice-cube-opp').style.opacity).toBe('1');
+    expect(screen.getByTestId('dice-cube-mine').style.opacity).toBe('1');
+  });
+
+  it('item 3: idle preview keeps both cubes hidden (opacity 0) — only the live board activates them', () => {
+    render(<DiceHubScreen {...baseProps()} />);
+    expect(screen.getByTestId('dice-cube-opp').style.opacity).toBe('0');
+    expect(screen.getByTestId('dice-cube-mine').style.opacity).toBe('0');
+  });
+
   it('T9: registered users see the Owner-approved $ skin in the bet panel too, not just the header wallet chip (GameHub.tsx PlayPanel, CHARTER.md #4)', () => {
     const { container } = render(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState: resolved() })} />);
     const header = container.querySelector('header');
@@ -178,6 +193,28 @@ describe('DiceHubScreen', () => {
     }
   });
 
+  // Ticket 2026-09-12#5 item 2 (ADVISOR_TO_PM.md): missing matching-phase table dim for Dice, the
+  // same fix RPS (#551) and Mines (#555) already got — confirmed absent (`barSlideActive` had zero
+  // references in this file before this fix). Mirrors the bar-slide test above's matchForming setup.
+  it('ticket 2026-09-12#5 item 2: the board dims to 0.28 opacity while matchForming holds, back to 1 once in-match', async () => {
+    vi.useFakeTimers();
+    try {
+      const { rerender } = render(<DiceHubScreen {...baseProps({ initialStake: 10 })} />);
+      expect(screen.getByTestId('hub-board').style.opacity).toBe('1'); // idle: no dim
+
+      fireEvent.click(screen.getByTestId('hub-play'));
+      rerender(<DiceHubScreen {...baseProps({ initialStake: 10, currentMatchId: 'm1', gameState: preRoll(), legalMoves: ['reveal'] })} />);
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      expect(screen.getByTestId('hub-board').style.opacity).toBe('0.28');
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(1450); });
+      expect(screen.getByTestId('hub-board').style.opacity).toBe('1');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // Coordinator addendum (2026-09-12#3): the prototype's idle-state opacity for this panel
   // (`minesBoardOp`, `Full Spec.html:3756`) is `rpsMatching || mConverged ? 0.28 : 1` — plain idle
   // is full brightness, and the prototype's `isDice` idle block (`:531-604`) carries no copy at all.
@@ -235,6 +272,30 @@ describe('DiceHubScreen', () => {
       await waitFor(() => expect(screen.getByTestId('hub-slot-own-verdict')).toBeInTheDocument(), { timeout: 3000 });
       expect(screen.queryByTestId('hub-result-dice')).toBeNull();
       expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
+    });
+
+    // Ticket 2026-09-12#5 item 1 (ADVISOR_TO_PM.md) — HIGH PRIORITY correction to #558: `DicePanel`
+    // used to gate on `phase === 'in-match'` only, so once HOLD_MS's 2200ms hold elapsed and `phase`
+    // became `'result'`, the panel unmounted the resolved `DiceBoard` (cubes + true rolls + history)
+    // and swapped to the blank `DiceIdle` gauges — discarding the reveal right after it finally
+    // became visible. The real rolls must still be on screen once the own-bar verdict lights.
+    it("the resolved board (true rolls, not the blank idle gauges) stays visible through the 'result' phase, past the own-bar verdict lighting (item 1)", async () => {
+      const gameState = winGameState();
+      const { rerender } = render(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
+      rerender(
+        <DiceHubScreen
+          {...baseProps({
+            currentMatchId: null,
+            gameState,
+            lastOutcome: { type: 'win', winner: 'me' },
+            lastSettlement: { delta: 10, newBalance: 1010 },
+          })}
+        />,
+      );
+      await waitFor(() => expect(screen.getByTestId('hub-slot-own-verdict')).toBeInTheDocument(), { timeout: 3000 });
+      // Still the real, resolved rolls — not DiceIdle's blank gauges (which show neither number).
+      expect(screen.getByTestId('hub-board').textContent).toContain('50.00');
+      expect(screen.getByTestId('hub-board').textContent).toContain('30.00');
     });
 
     it('own-bar win-fill mechanism fires on the own bar only — opponent bar never gets a win/lose ring', async () => {
