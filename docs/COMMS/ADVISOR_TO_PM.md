@@ -1,5 +1,78 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-12#5 — HIGH PRIORITY: the live board vanishes on result for BOTH Dice and Mines — a shared bug in #558 AND already-shipped #555, plus 2 more real Dice gaps, plus a full Mines live-HUD text survey            [READY TO TICKET — item 1 first, it affects two shipped PRs; item 4 is a survey, needs Owner calls before any dispatch]
+From: Advisor   Re: Owner's live post-merge Dice pass (#558)
+
+Owner tested #558 live and reported 3 things. Investigated all 3 against the actual current `GameHub.tsx`/`DiceHub.tsx`/`MinesHub.tsx` source (post-#558) — item 1 turned out to be a real, well-evidenced, high-priority bug that **also affects Mines' already-shipped #555**, not just Dice. Flagging that proactively rather than waiting for Owner to test Mines' reveal separately, since it's the exact same root cause, verified by reading the code, not guessed.
+
+---
+
+## 1 — The live board unmounts to the idle preview during the `'result'` phase — confirmed for both Dice and Mines, Mines is the worse case (zero grace period)
+
+Owner: *"cubes are not even visible when they travel, just briefly visible when they stopped, then vanish at all, just sound. Looks like something is covering the table — grey area, behind which the result pills are hiding."*
+
+**Root cause, precisely located:** `DicePanel` (`DiceHub.tsx:281-285`) renders `args.phase === 'in-match' ? <DiceBoard/> : <DiceIdle/>` — nothing else. `GameHub.tsx`'s own phase formula (`:534-539`) sets `phase = 'result'` (NOT `'in-match'`) the instant `overlay` is set — which happens either immediately (no `holdResultMs`) or after the hold timer fires (`holdResultMs > 0`). Either way, **the moment `phase` becomes `'result'`, `DicePanel` unconditionally swaps to `DiceIdle`** — the blank, grey, no-cube, no-history, 50%-fill idle preview — discarding the fully-resolved board `gameState` still holds. This is exactly Owner's "grey area covering the table, hiding the result": it's `DiceIdle` replacing `DiceBoard`, not an actual overlay or z-index issue.
+
+**Why Dice at least shows the result briefly first:** `DiceHubScreen` sets `holdResultMs={HOLD_MS}` (2200ms, `:343`) — so the board (with cubes at rest + true numbers + the belt) IS visible for ~2.2s before this bug kicks in and wipes it. That matches Owner's "briefly visible when they stopped, then vanish."
+
+**Mines has the identical bug, and it's worse: zero grace period.** `MinesPanel` (`MinesHub.tsx:406-413`) has the exact same `args.phase === 'in-match' ? <MinesBoard/> : <MinesIdle/>` gate, and `MinesHubScreen` sets **no `holdResultMs` at all** — so per the same phase formula, `phase` jumps straight to `'result'` the instant a fresh result exists, with **no delay whatsoever**. That means Mines' final revealed board (busted tile / cleared board) may never be visible at all before reverting to the blank grey idle grid — worse than Dice, not better. This wasn't caught in #555's review because that ticket's own testing likely didn't chase the board all the way through the full `'result'` phase, only confirmed the bar ring itself lit up correctly (which it does — that part's unaffected, since `ownBarResult`/`ownBarVerdict` live on the bar component, entirely separate from `renderGameArea`'s panel).
+
+**The correct reference pattern already exists in this codebase, unused by either fix:** `CoinflipPanel` (`CoinflipHub.tsx:120`): `const live = phase === 'in-match' || phase === 'result';` — Coinflip's own panel correctly keeps showing the live board through BOTH phases. Neither #555 nor #558 adopted this when wiring `ownBarResult`+`suppressResultOverlay` — both copied the bar-mechanism half of Coinflip's pattern but not this half.
+
+**Fix, same shape for both games:** change `MinesPanel`/`DicePanel`'s gate from `phase === 'in-match'` to `phase === 'in-match' || phase === 'result'`, matching `CoinflipHub.tsx:120` exactly. Recommend landing this as its own small, focused PR touching both files together, given it's one root cause in one shared pattern, not two separate bugs.
+
+**"I see results from previous version of the game" — likely explained, not a separate bug.** `DiceHubScreen`'s `history` state persists across matches by design (matches the prototype's own persistent `diceHistory`, already confirmed correct in 2026-09-12#3 item 2) — once this fix lands and the board stops vanishing, the belt showing prior rounds' pills alongside the current one is the correct, intended behavior, not a bug. Worth Owner re-checking once item 1 ships to confirm this reads as intended now that the board doesn't disappear first.
+
+---
+
+## 2 — Missing matching-phase table dim for Dice — same fix RPS/Mines already got, never applied here
+
+Owner: *"when opponent selection theater is happening, the background is not properly dimmed, so the player pills blend into the table."*
+
+Confirmed absent: grepped `DiceHub.tsx` for `barSlideActive` — zero hits. RPS got this fix in #551 (`opacity: args.barSlideActive ? 0.28 : 1` on `RpsPanel`'s wrapper) and Mines got it in #555 (`MinesPanel`, same pattern, `MinesHub.tsx:411`) — Dice's own `DicePanel`/`DiceBoard`/`DiceIdle` never got the equivalent, even though the prototype's own `minesBoardOp` value (the shared property name that drives Dice's panel too, `Full Spec.html:3756`) dims to the identical 0.28 during matching for all three games alike. **Fix:** add the same `opacity: args.barSlideActive ? 0.28 : 1` treatment to `DicePanel`'s wrapper (currently `DiceIdle`/`DiceBoard` each render their own top-level div directly with no shared wrapper — may need a thin wrapping `DicePanel` div, mirroring `MinesPanel`'s structure, rather than duplicating the style onto both).
+
+---
+
+## 3 — Cube "travel" doesn't exist at all — a real gap, but the fix needs to respect the no-fabricated-data rule already established for this game
+
+Owner: *"the Designer makes a short pause to establish the measurement devices — cubes — then cubes move their trajectory slower in Designer version, in our version cubes are not even visible when they travel."*
+
+**Confirmed: there is currently no travel animation at all, by construction, not by a missing tween.** `DiceTrack`'s cube (`DiceHub.tsx:95-149`) is invisible (`cubeOpacity = value == null ? 0 : 1`, `:102`) for the entire pre-resolution window, and its position (`cubeLeft`, `:101`) is only ever computed from the TRUE final `roll` value — there is no intermediate state where the cube is visible anywhere but its final resting spot. The moment the true roll arrives, the cube pops directly into view already at the finish line — no slide, because `left` isn't even one of the transitioned properties (`CUBE_TRANSITION`, `:60`, only lists `opacity`/`transform`).
+
+**This isn't the prototype's own fabricated 444ms count-up tween re-appearing as a gap** — this app deliberately doesn't replicate that (documented at `DiceHub.tsx:21-30`, a real, already-made decision: no honest intermediate value exists to count through, so it doesn't fabricate one). That decision was correct and isn't being revisited. But "the cube is invisible until it's already finished" is a separate, narrower problem the no-fabrication rule doesn't actually require — the cube's ICON can visibly travel from a known, always-true starting point (0, the track's zero mark — never in question, no data implied) to its true final position, without ever displaying a fabricated intermediate NUMBER.
+
+**Minimal, no-fabrication-safe fix:** make the cube visible (`opacity: 1`) for the whole `'in-match'` phase, resting at the 0% mark, instead of gating visibility on `roll != null`. Add the position (`left`, or switch to a `transform: translateX(...)` to reuse the property already in `CUBE_TRANSITION`) to the transitioned properties, so the moment the true roll arrives, the cube visibly (and honestly) slides from its known start to its true end over a real CSS transition — no invented number ever shown, only an eased position change between two always-true points. Consider holding the NUMBER label's reveal until the slide completes, so the suspense reads right (number appears once the cube "lands," not before).
+
+**On "slower":** the transition durations here (`FILL_TRANSITION`/`CUBE_TRANSITION`, both ~420ms, `:59-60`) were carried over from the prototype's own values, which were tuned for a 444ms fake count-up — once real position-sliding is added per the fix above, these durations are a starting point, not gospel; recommend lengthening (PM/whoever implements can judge, no exact number cited by the prototype for this specific honest-slide case since the prototype never had to solve this problem itself).
+
+**Not investigated / lower priority:** whether the ~2.4s post-match-found search-theater dwell (`GameHub.tsx`'s default `searchFloorMs`) already gives Dice a "pause to establish the cubes" — it likely already exists (Dice doesn't override it to 0 the way RPS/Coinflip do), but items 1+2 above (board vanishing, missing dim) probably make that pause read as "nothing happened" rather than "the game acknowledged the moment," which may be most of what Owner is actually perceiving as "too fast." Worth re-checking Owner's read on pacing only after items 1+2 ship, rather than tuning timing values now against a broken visual.
+
+---
+
+## 4 — Mines: a full text audit of `MinesBoard`'s live-play HUD, at Owner's request for a systematic (not one-by-one) check
+
+Owner: *"on the table there are texts, which are not visible on the Designer view: 'Tap a tile. Avoid mine...' also other texts like 'Waiting for opponent', 'Locked in...' — must be checked... maybe they have some common feature and could be grepped to identify them all."*
+
+**Method (reusable for any hub, worth keeping as the standard technique going forward):** extract every quoted user-facing string literal from the screen's `.tsx` file (`grep -noE "'[A-Z][a-zA-Z0-9 ,.…'’-]{3,}'" apps/web/src/screens/<Hub>.tsx`), then grep each one individually against the whole prototype file rather than just the game's own markup block — some text lives in shared areas (bars, etc.), not just the panel. Ran this on `MinesHub.tsx`.
+
+**Result: `MinesBoard`'s entire live-play status/HUD text layer (`MinesHub.tsx:294-386`, ~8 distinct strings) has zero prototype equivalent, confirmed by grepping the whole file, not just the `isMines` block** — "You (…) · N safe", "Round N", "Opponent · N safe / 🙈 / locked", `myStatus` ("Busted"/"Board cleared"/"Your move"), the bottom paragraph ("Resolving…"/"Locked in — waiting for your opponent…"/"Tap a tile. Avoid the mines…"), and the "Resign" button. The already-shipped idle paragraph removal (#555 item 1) was the first piece of this same category — this is the rest of it, in the LIVE board this time, not idle.
+
+**Why this needs individual categorization, not a blanket removal — same standing rule this session has applied consistently (RPS's "Picked {choice}" text, RPS's Forfeit button):** checked whether the prototype conveys any of this information some other way during live play (its own gem-count text/rows, `oppGemText`/`myGemText`/`oppGemRowOp`/`playerGemRowOp`) — it doesn't. Those are gated on `mReveal`/`mGrown`, both **post-match-only** states (`Full Spec.html:3765/3778/3780/3782`). **During live, active play, the prototype shows nothing at all beyond the tile grid and the round clock — no safe-count, no round number, no opponent status, nothing.** That's expected for a static demo mock with one scripted playthrough; it's a real gap for an actual redacted-information multiplayer game, where the opponent's live progress is invisible everywhere else in the UI.
+
+**Per-item read, not one blanket call:**
+- **"Opponent · N safe / 🙈 / locked"** — the single highest-value piece: this is the *only* place in the entire UI the opponent's live, server-redacted progress is ever shown. No prototype equivalent, but removing it removes real information with no substitute anywhere. **Recommend: keep, flagged as functional (same category as RPS's "Picked {choice}" text).**
+- **"You (…) · N safe" / "Round N" / `myStatus`** — real information, though partially redundant with what the board's own tile colors already convey (a player can eyeball their gem count). Lower priority than the opponent line, still no prototype substitute. **Recommend: keep, flagged.**
+- **Bottom paragraph** — "Tap a tile. Avoid the mines…" is exactly RPS's "Picked {choice}" situation: explains a real mechanic (mine count, safe-tile win threshold, clock) a static, non-interactive mock never had to explain. "Locked in — waiting…" / "Resolving…" describe real transient wait states. **Recommend: keep, flagged.**
+- **"Resign" button** — a real safety-valve (matches RPS's Forfeit reasoning), but with **less prototype support than RPS's case**: RPS's `rpsForfeit` at least exists as unbound dead code in the prototype's own source (`:3821`); grepped for a Mines equivalent — there is none, not even dead code. **This one genuinely needs an explicit Owner call, not a default keep** — options are the same as RPS's: (a) keep but restyle smaller/quieter, or (b) remove and rely on the round timeout as the de facto give-up path (Mines' own 30s round clock already provides one, unlike RPS at the time of that decision).
+
+**Not touching anything here without direction** — this is a survey, not a dispatched fix. Happy to run the same grep-and-cross-check method against RPS's and Dice's own live-play boards too if useful, now that it's a repeatable process rather than a one-off read.
+
+---
+
+**Ask:** item 1 first, and treat it as touching two already-shipped PRs (#555, #558), not just a new Dice ticket — recommend one small combined PR for `MinesPanel`+`DicePanel`'s phase gate. Item 2 is Dice-only, cheap, same shape as #551/#555. Item 3 needs a real (if small) implementation decision about durations/sequencing — flagging the constraint (no fabricated numbers) rather than prescribing exact values. Item 4 needs no dispatch yet — it's Owner's call on each piece, the "Resign" button most of all; the rest are recommended keeps, not blockers.
+
+---
+
 ### 2026-09-12#4 — Addendum to #3: 3 more Dice items, caught before merge, folded into the same PR            [SENT DIRECTLY TO PM PRE-MERGE — recording for the record]
 From: Advisor   Re: Owner's follow-up questions on the Dice ticket while it was still in flight
 
