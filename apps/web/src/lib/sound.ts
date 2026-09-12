@@ -1,4 +1,7 @@
 import moveUrl from '../assets/sounds/move.wav';
+import playUrl from '../assets/sounds/play.mp3';
+import diceRollUrl from '../assets/sounds/dice-roll.mp3';
+import diceWinUrl from '../assets/sounds/dice-win.mp3';
 
 /**
  * Minimal, dependency-free Web Audio wrapper for short UI sound effects.
@@ -15,6 +18,9 @@ import moveUrl from '../assets/sounds/move.wav';
 /** name -> asset URL (Vite resolves the import to a URL string). Add clips here. */
 const MANIFEST: Record<string, string> = {
   move: moveUrl,
+  play: playUrl,
+  'dice-roll': diceRollUrl,
+  'dice-win': diceWinUrl,
 };
 
 export type SoundName = keyof typeof MANIFEST | string;
