@@ -161,7 +161,7 @@ function MineTileContent({ kind }: { kind: CellKind }) {
  *  state before a match starts. So this reuses the live board's own `MINES_BOARD_BG`/
  *  `MINES_TILE_COVERED` values and radii (rounded-2xl board / rounded-[9px] tiles, matching
  *  `MinesBoard` below) rather than a separate generic gray grid, dimmed via `opacity-50`. */
-function MinesIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
+function MinesIdle() {
   const { resolved: themeResolved } = useTheme();
   const light = themeResolved === 'light';
   return (
@@ -179,9 +179,13 @@ function MinesIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
           />
         ))}
       </div>
-      <p className="text-xs text-muted-foreground">
-        {phase === 'waiting' ? 'Waiting for an opponent…' : 'Choose a bet and press PLAY, or JOIN an open challenge'}
-      </p>
+      {/* Ticket 2026-09-12#2 item 1 (ADVISOR_TO_PM.md): the "Waiting for an opponent…"/"Choose a bet
+          and press PLAY…" paragraph that used to render here was removed — grepped the prototype's
+          entire `isMines` idle/board block (Full Spec.html:470-529, gated only by `minesBoardOp`/
+          `minesClockOp`) and it has zero idle copy for either sub-state, just the tile grid + clock.
+          `GameHub.tsx`'s shared PLAY-button label ("Waiting for an opponent · m:ss") already covers
+          the waiting case, same precedent as RpsHub.tsx's identical removal in #551. Do not re-add
+          it; `phase` was dropped from this component's props along with it (no other reader left). */}
     </div>
   );
 }
@@ -389,11 +393,24 @@ function MinesBoard({ playerId, opponentId, username, gameState, legalMoves, onM
 /** The Mines game-area slot: greyed idle preview, or the live board in-match. Full Spec.html:471
  *  — border-radius:22px, background `minesCardBg`, padding 12px 12px 16px 12px. `minesCardBg` IS
  *  exactly `--rc-surface` in both themes (RpsHub.tsx:333's own note) — read via the token rather
- *  than re-deriving the same value. */
+ *  than re-deriving the same value.
+ *
+ *  Ticket 2026-09-12#2 item 2 (ADVISOR_TO_PM.md): fades this whole wrapper to 28% opacity while
+ *  `barSlideActive` (threaded through via `GameAreaArgs`, populated because `MinesHubScreen` already
+ *  opts into `matchBarSlide="measured"`) — matches `minesBoardOp: rpsMatching || mConverged ? 0.28 :
+ *  1` (`Full Spec.html:3756`), same 380ms ease transition + pattern `RpsPanel` got in #551. NOTE:
+ *  this only covers the `rpsMatching`/`barSlideActive` half of the prototype's condition — the
+ *  post-match `mConverged` dim does NOT apply yet, because that bar-convergence state (ticket
+ *  2026-09-12#2 item 3(a)) doesn't exist in this codebase. Do not report the dim as "fully done"
+ *  until 3(a) lands too; it's ticketed separately (out of scope here). */
 function MinesPanel(args: GameAreaArgs) {
   return (
-    <div className="rounded-[22px] bg-[var(--rc-surface)] px-3 pb-4 pt-3">
-      {args.phase === 'in-match' ? <MinesBoard {...args} /> : <MinesIdle phase={args.phase} />}
+    <div
+      data-testid="hub-mines-panel"
+      className="rounded-[22px] bg-[var(--rc-surface)] px-3 pb-4 pt-3"
+      style={{ opacity: args.barSlideActive ? 0.28 : 1, transition: 'opacity 380ms ease' }}
+    >
+      {args.phase === 'in-match' ? <MinesBoard {...args} /> : <MinesIdle />}
     </div>
   );
 }
@@ -402,6 +419,18 @@ function MinesPanel(args: GameAreaArgs) {
  * Mines Hub = the shared GameHub + a Mines play-panel (own 5×5 board, hidden opponent count
  * until both round, viewFor redaction). The WS flow and server-authoritative redaction are
  * unchanged — this is a presentation slot. See docs/MINES.md.
+ *
+ * Ticket 2026-09-12#2 item 3(b) (ADVISOR_TO_PM.md): wires `suppressResultOverlay` + `ownBarResult`,
+ * the same two props `CoinflipHub.tsx` uses at its own `<GameHub>` call (`CoinflipHub.tsx:339-341`).
+ * Unlike RPS's #547→#551 correction (which had to REMOVE this same pair — RPS's `view === 'rps'` is
+ * structurally excluded from the prototype's `mOutcome` gate), `ownBarResult` IS the textbook-correct
+ * mechanism for Mines: the prototype's own `gameV = view === 'mines' || isDice` (`Full Spec.html:
+ * 3519`) is the exact condition that turns on `mOutcome`/`playerBarRing`/`winFillAnim`/`winTextAnim`
+ * (`:3522-3528`, `:3787-3789`) — Mines is literally one of the two games this mechanism exists for.
+ * The ring is confirmed OWN-BAR ONLY in the prototype (`oppBarRing: 'none'` unconditionally, `:3786`)
+ * — `ownBarResult`'s existing behavior (only ever rendering on the player's own bar) already matches
+ * this exactly, so no extra gating was needed. Do not assume RPS and Mines must always be handled the
+ * same way just because they're both GameHub games — check the prototype's own gate for each.
  */
 export function MinesHubScreen(props: GameHubScreenProps) {
   return (
@@ -412,6 +441,8 @@ export function MinesHubScreen(props: GameHubScreenProps) {
       // Ticket 2026-09-11#10 item 1: Mines measures the real bar-slide magnitude live, matching the
       // prototype's own `startMines()` (`Full Spec.html:3341-3348`) — never the flat ±123px RPS uses.
       matchBarSlide="measured"
+      suppressResultOverlay
+      ownBarResult
       {...props}
     />
   );
