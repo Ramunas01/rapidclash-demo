@@ -1,5 +1,54 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-12#4 — Addendum to #3: 3 more Dice items, caught before merge, folded into the same PR            [SENT DIRECTLY TO PM PRE-MERGE — recording for the record]
+From: Advisor   Re: Owner's follow-up questions on the Dice ticket while it was still in flight
+
+Owner asked 3 more specific things about Dice while #3's ticket was still being built (no PR yet) — sent each straight to PM rather than waiting to batch a full entry, since catching them pre-merge was cheaper than a follow-up PR. All three landed in the same `DiceHub.tsx` idle/board components as #3, all folded into the one in-flight PR. Recording the full citations here for the permanent record.
+
+---
+
+## 5 — Idle gauges wrongly dimmed to 50% — pixel-verified, not just source-read
+
+Owner: *"Dice table indicator colors — in our case they are dim, in Designer vision — bright green and bright violet."*
+
+`DiceIdle` (`DiceHub.tsx:224-237`) wraps both roll gauges in `opacity-50` ("mirrors RpsIdle/MinesIdle/CoinflipIdle's dimmed anchor convention" — a convention that, on inspection, doesn't actually exist in the prototype for any of the three). Confirmed two ways, not just a source read:
+
+**Pixel sample, straight from the design-fidelity harness's own committed PNGs** (`tools/design-fidelity/{references,captures}/dark/dice-idle.png`):
+- Reference (prototype) green fill: RGB(34,197,94) = exactly `#22C55E` at full strength. Purple: RGB(139,69,240) = exactly `#8B45F0` at full strength.
+- Our capture: green RGB(30,112,70), purple RGB(82,47,143) — roughly half-brightness, consistent with a 50%-opacity overlay on the dark background.
+
+**Source confirmation:** the prototype's own idle-state opacity for this panel is `minesBoardOp: rpsMatching || mConverged ? 0.28 : 1` (`Full Spec.html:3756`, shared name — it also drives the Dice panel). During plain idle (nothing matching, nothing converged) that's **1** — full brightness. There's no dimmed-idle state in the prototype's own design for Dice at all.
+
+**Fix:** drop `opacity-50` from `DiceIdle`'s wrapper. The hex values were already exactly correct — only the opacity was wrong.
+
+**Same pattern flagged (not fixed) in RpsIdle (`RpsHub.tsx:251`) and MinesIdle (`MinesHub.tsx:171`)** — identical `opacity-50` "dimmed anchor" treatment, and both games' own idle-state board opacity in the prototype is also `1`. Since RPS and Mines already shipped, this is its own small follow-up ticket, not urgent tonight (PM agreed).
+
+---
+
+## 6 — "Place your bet and roll" / "Finding a rival…" — zero prototype equivalent, same removal pattern as RPS/Mines
+
+Owner: *"Not sure about the sentence 'Place your bet and roll' — on the table, whether Designer view has it."*
+
+Grepped the whole prototype file — zero hits for either string. The `isDice` idle block (`Full Spec.html:531-604`) is just the two tracks + scale row + history belt, no copy anywhere. Same category as the already-fixed RPS (`RpsHub.tsx:239`) and Mines (`MinesHub.tsx:182-184`) redundant idle paragraphs. **Fix:** delete `DiceHub.tsx:232-234`'s paragraph outright.
+
+---
+
+## 7 — Panel height doesn't match the prototype's fixed 266px box
+
+Owner: *"Table size in our case smaller vertically, not sure how later history pills will fit."*
+
+**The question itself is already answered safely** — `DiceHistoryBelt`'s container is `overflow-hidden` with each pill locked to `flex: 0 0 calc((100% - 32px) / 5)`, always showing exactly 5; the 6th (the cap, matching the prototype's own `.slice(0, 6)`) clips during its exit animation rather than pushing the panel taller. No clipping risk as history accumulates — that part was already right.
+
+**But the panel's own proportions are a real, separate mismatch.** The prototype fixes the Dice panel at `height:266px` explicitly (`Full Spec.html:532`: `box-sizing:border-box; padding-top:47px; gap:14px; justify-content:flex-start`) — constant regardless of content. `DiceIdle`/`DiceBoard` both use `min-h-[200px]` (`DiceHub.tsx:226/262`) — a floor, not a fixed value, and lower than the prototype's own number, so the panel renders visibly shorter and its height varies with content instead of staying constant. **Fix:** swap `min-h-[200px]` + the idle-only `justify-center` for the prototype's literal `height:266px` / `padding-top:47px` (idle) / `justify-content:flex-start`, matching the box model exactly.
+
+**RPS's panel has the identical `height:266px` pattern** (`Full Spec.html:606`, different internal padding/justify) — likely the same gap there, flagged but not asked to be touched now.
+
+---
+
+**Status:** all three sent directly to PM pre-merge (no PR existed yet for #3's ticket) and folded into the same in-flight PR — cheaper than a follow-up. Item 5's RpsIdle/MinesIdle echo and item 7's RPS echo are noted as their own small follow-up, not urgent.
+
+---
+
 ### 2026-09-12#3 — Dice vs. prototype: 1 real audio gap (bigger than it looks), 1 real reveal gap (small, same shape as Mines), 2 items already correct as-is            [READY TO TICKET — items 1+3]
 From: Advisor   Re: Owner's own Dice analysis pass (Owner had never played it before tonight)
 
