@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import type { Outcome } from '@rapidclash/shared';
-import type { DiceView, GameView } from '../App.js';
+import type { DiceView } from '../App.js';
 import { useTheme } from '../lib/theme.js';
+import { play } from '../lib/sound.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
 
 /** Hundredths → "42.37". */
@@ -218,20 +218,25 @@ function DiceHistoryBelt({ history, light }: { history: HistoryPill[]; light: bo
   );
 }
 
-/** Greyed dimmed preview — mirrors RpsIdle / MinesIdle / CoinflipIdle's "dimmed anchor" convention
- *  (this screen used to show a plain 🎲 + caption instead; T6a replaces it with a dimmed version of
- *  the real gauges so the idle state previews the actual board). */
-function DiceIdle({ phase, light }: { phase: GameAreaArgs['phase']; light: boolean }) {
+/** Idle preview — mirrors RpsIdle / MinesIdle / CoinflipIdle's "anchor" convention (this screen
+ *  used to show a plain 🎲 + caption instead; T6a replaces it with the real gauges so the idle
+ *  state previews the actual board). Full brightness, not dimmed: the prototype's own idle-state
+ *  opacity for this panel (`minesBoardOp`, shared property name, also drives the Dice panel at
+ *  `Full Spec.html:532`) is `rpsMatching || mConverged ? 0.28 : 1` (`:3756`) — outside
+ *  matching/converged (plain idle), that's `1`; there is no dimmed-idle state for Dice at all.
+ *  Nor is there any idle caption — the prototype's `isDice` idle block (`:531-604`) is just the two
+ *  tracks + scale row + history belt, no copy (same redundant-idle-text cleanup already applied to
+ *  RPS #551 and Mines #555). Sized to the prototype's own fixed box (`height:266px;
+ *  padding:20px 16px; padding-top:47px; justify-content:flex-start`, `:532-604`'s one wrapper div
+ *  spanning both idle and live states, no inner split) — see `DiceBoard`'s identical box below. */
+function DiceIdle({ light }: { light: boolean }) {
   return (
-    <div data-testid="hub-board" className="flex min-h-[200px] flex-col justify-center gap-3.5 rounded-[22px] bg-surface px-4 py-5">
-      <div className="flex flex-col gap-3.5 opacity-50">
+    <div data-testid="hub-board" className="flex h-[266px] flex-col justify-start gap-3.5 rounded-[22px] bg-surface px-4 py-5" style={{ paddingTop: 47 }}>
+      <div className="flex flex-col gap-3.5">
         <DiceTrack pos="opp" roll={undefined} numColor={DICE_NEUTRAL_NUM} light={light} />
         <DiceScaleRow />
         <DiceTrack pos="mine" roll={undefined} numColor={DICE_NEUTRAL_NUM} light={light} />
       </div>
-      <p className="text-center text-sm font-semibold text-muted-foreground">
-        {phase === 'waiting' ? 'Finding a rival…' : 'Place your bet and roll'}
-      </p>
     </div>
   );
 }
@@ -259,7 +264,9 @@ function DiceBoard({ gameState, legalMoves, onMove, playerId, opponentId, histor
   const oppNumColor = tie ? DICE_NEUTRAL_NUM : oppWon ? DICE_WIN_GREEN : meWon ? DICE_LOSE_RED : DICE_NEUTRAL_NUM;
 
   return (
-    <div data-testid="hub-board" className="flex min-h-[200px] flex-col gap-3.5 rounded-[22px] bg-surface px-4 py-5">
+    // Same fixed box as `DiceIdle` above — the prototype's `isDice` wrapper (`:532-604`) is ONE div
+    // spanning both idle and live states, not two differently-sized ones.
+    <div data-testid="hub-board" className="flex h-[266px] flex-col justify-start gap-3.5 rounded-[22px] bg-surface px-4 py-5" style={{ paddingTop: 47 }}>
       <DiceTrack pos="opp" roll={oppRoll} numColor={oppNumColor} light={light} />
       <DiceScaleRow />
       <DiceTrack pos="mine" roll={myRoll} numColor={myNumColor} light={light} />
@@ -274,29 +281,7 @@ function DiceBoard({ gameState, legalMoves, onMove, playerId, opponentId, histor
 function DicePanel(args: GameAreaArgs & { history: HistoryPill[] }) {
   const { resolved: themeResolved } = useTheme();
   const light = themeResolved === 'light';
-  return args.phase === 'in-match' ? <DiceBoard {...args} light={light} /> : <DiceIdle phase={args.phase} light={light} />;
-}
-
-/** Result reveal: the two independent rolls, side by side (the simultaneous reveal). */
-function DiceReveal({ gameState, playerId }: { outcome: Outcome; gameState: GameView | null; playerId: string | null }) {
-  const view = gameState as DiceView | null;
-  if (!view?.result || !playerId) return null;
-  const opp = view.players.find((p) => p !== playerId);
-  const mine = view.result.rolls[playerId];
-  const theirs = opp ? view.result.rolls[opp] : undefined;
-  return (
-    <div className="mb-3 flex items-center justify-center gap-4" data-testid="hub-result-dice">
-      <div className="text-center">
-        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">You</p>
-        <p className="text-2xl font-black tabular-nums text-foreground">{mine != null ? fmtRoll(mine) : '—'}</p>
-      </div>
-      <span className="text-xs font-black text-muted-foreground">VS</span>
-      <div className="text-center">
-        <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Opponent</p>
-        <p className="text-2xl font-black tabular-nums text-foreground">{theirs != null ? fmtRoll(theirs) : '—'}</p>
-      </div>
-    </div>
-  );
+  return args.phase === 'in-match' ? <DiceBoard {...args} light={light} /> : <DiceIdle light={light} />;
 }
 
 /**
@@ -328,6 +313,17 @@ export function DiceHubScreen(props: GameHubScreenProps) {
     lastSigRef.current = sig;
     const win = theirs != null && mine > theirs;
     setHistory((h) => [{ id: sig, value: mine, win }, ...h].slice(0, 6)); // line 3455 — `.slice(0, 6)`
+    // Ticket 2026-09-12#3 item 1: the prototype loops `dice-roll` from roll-start to resolution
+    // (`this.sfx('dice-roll', true)` … `this.stopSfx('dice-roll')`, `Full Spec.html:3436/3469`).
+    // `sound.ts`'s `play()` is a one-shot, fire-and-forget primitive with no loop/stop — building
+    // one just for this single call site was judged not worth it (see ADVISOR_TO_PM.md
+    // 2026-09-12#3 item 1's own recommendation). Since this reveal is server-authoritative (no
+    // fabricated intermediate roll — see this file's header comment), the honest analog of "the
+    // roll is happening" is this exact moment, once per newly-resolved match (deduped above).
+    play('dice-roll');
+    // `dice-win` is win-conditional only — the prototype's own asset set has no loss sound
+    // (`if (win) this.sfx('dice-win')`, `Full Spec.html:3452`); do not add one for a loss.
+    if (win) play('dice-win');
   }, [view, props.playerId]);
 
   const renderGameArea = useCallback((args: GameAreaArgs) => <DicePanel {...args} history={history} />, [history]);
@@ -337,7 +333,13 @@ export function DiceHubScreen(props: GameHubScreenProps) {
       gameId="dice"
       gameName="Dice"
       renderGameArea={renderGameArea}
-      renderResultReveal={DiceReveal}
+      // Ticket 2026-09-12#3 item 3: opt into the shared own-bar win-fill mechanism (Coinflip's own
+      // reference pattern, `CoinflipHub.tsx:339-341`) instead of the popup `DiceReveal` (now
+      // deleted, dead once suppressResultOverlay is set) — the prototype's own `mOutcome` gate
+      // (`gameV = view === 'mines' || isDice`, `Full Spec.html:3519`) explicitly includes Dice, and
+      // Dice needs none of Mines' harder parts (bar-convergence/gem-text are both `!isDice`-gated).
+      suppressResultOverlay
+      ownBarResult
       holdResultMs={HOLD_MS}
       // Ticket 2026-09-11#10 item 1: Dice measures the real bar-slide magnitude live, matching the
       // prototype's own `startDice()` (`Full Spec.html:3396-3403`) — never the flat ±123px RPS uses.

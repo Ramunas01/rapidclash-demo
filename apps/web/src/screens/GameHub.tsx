@@ -23,6 +23,7 @@ import { Avatar } from '../components/hub-shared/Avatar.js';
 import { Credits, RcIcon } from '../components/hub-shared/RcIcon.js';
 import { CurrencyIcon } from '../components/hub-chrome/CurrencyPicker.js';
 import { useTheme } from '../lib/theme.js';
+import { play, installUnlockOnFirstGesture } from '../lib/sound.js';
 import { outlineClasses, outlineForOutcome, replaysOf, useDelayedFlag, useWinReveal, WIN_FILL_IN_MS, type Verdict } from './hub-shared/slotReveal.js';
 
 /** How long after the result phase starts before the own-bar verdict lights (ms). */
@@ -375,6 +376,10 @@ export function GameHub(props: GameHubProps) {
   const menu = useMenuOverlay();
   // Ticket 2026-09-11#7b: the chat sheet's own state — same guest gating as Menu above.
   const chat = useChat();
+  // Ticket 2026-09-12#3 item 1: unlock audio on the first user gesture (idempotent — safe to call
+  // from many mounts). Consolidated here from ChessHub's own copy now that the shared PLAY button
+  // below plays a sound generically for every hub, not just Chess/Dice.
+  useEffect(() => { installUnlockOnFirstGesture(); }, []);
   function navTo(fn: () => void) {
     return () => { chat.close(); menu.wrap(fn)(); };
   }
@@ -1161,6 +1166,13 @@ function PlayPanel({
   }
   function handlePlayPress() {
     if (armedStake == null) { guideToBet(); return; } // no bet → guide; do NOT start a match
+    // Ticket 2026-09-12#3 item 1: the prototype's ONE shared PLAY handler (`playMines()`,
+    // `Full Spec.html:3830-3833`) fires `this.sfx('play')` unconditionally, before any per-game
+    // branching, as the very first line — this IS that same shared button, so wiring the sound
+    // here gives every hub (RPS/Mines/Dice/Chess/Coinflip alike) the click for free, matching the
+    // prototype's own scope exactly. It fires only once a match is actually starting, never on the
+    // guideToBet() early-return above (the prototype's own intent: the sound marks a real play).
+    play('play');
     onPlay();
   }
   // Play a Friend is inert/visual-only (owner D1). The guard is pre-wired so that WHEN that path

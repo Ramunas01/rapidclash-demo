@@ -5,7 +5,7 @@ import type { Square } from 'react-chessboard/dist/chessboard/types';
 import { Chess } from 'chess.js';
 import type { Outcome } from '@rapidclash/shared';
 import { cn } from '@/lib/utils';
-import { play, installUnlockOnFirstGesture } from '../lib/sound.js';
+import { play } from '../lib/sound.js';
 import { formatClock } from '../format.js';
 import type { ChessView, ChessMove } from '../App.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
@@ -476,9 +476,9 @@ function ChessPanel(args: GameAreaArgs) {
  * mode correctly on its own, including a JS-level logo swap a CSS scope can't reach).
  */
 export function ChessHubScreen(props: GameHubScreenProps) {
-  // Unlock audio on the first user gesture (idempotent) — the demo's first sound is the chess
-  // move thump, so this hub is an acceptable early mount point (App.tsx is off-limits here).
-  useEffect(() => { installUnlockOnFirstGesture(); }, []);
+  // Ticket 2026-09-12#3 item 1: audio-unlock installation moved to `GameHub.tsx`'s own mount
+  // effect (idempotent, so this consolidation is a no-op functionally) now that the shared PLAY
+  // button plays a sound generically for every hub, not just Chess.
   // Chess opts OUT of the shared heavy result overlay (no blur/confetti/wallet/balance/trophy/X) —
   // it shows the lightweight in-hub popup over the frozen board instead (ChessPanel) — and opts IN
   // to the shared own-bar outline (ownBarResult), the persistent green/red/orange indicator that
