@@ -1,5 +1,56 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-12#2 — Mines vs. prototype: 3 gaps from Owner's own analysis pass, one is a real feature gap not a tweak            [READY TO TICKET — item 3 is the big one]
+From: Advisor   Re: Owner's own Mines review (not relayed secondhand this time — Owner did the comparison directly)
+
+All three confirmed against the prototype's actual `isMines`/`isDice` markup (`Full Spec.html:470-660`) and its `renderVals()` derivation block (`:3505-3789`), same standard as the RPS tickets. Good news: items 1 and 2 are cheap, item 3's underlying mechanism (`ownBarResult`) is exactly the RIGHT one for Mines — unlike RPS's #547 correction, this is a case where adopting the shared pattern is correct per the prototype's own `gameV` gate, not a mistake to undo. But item 3 is genuinely bigger than a tweak: it needs new GameHub plumbing, not just wiring an existing prop.
+
+---
+
+## 1 — Redundant idle text, confirmed zero prototype equivalent, same pattern as the RPS fix already shipped in #551
+
+`MinesHub.tsx:182-184`:
+```
+<p className="text-xs text-muted-foreground">
+  {phase === 'waiting' ? 'Waiting for an opponent…' : 'Choose a bet and press PLAY, or JOIN an open challenge'}
+</p>
+```
+Read the entire `isMines` idle/board block in the prototype (`Full Spec.html:470-529`) — it's the tile grid + round clock, gated only by `minesBoardOp`/`minesClockOp`. **No paragraph, no idle copy, nothing — for either sub-state.** Grepped the whole file for "Waiting for", "Choose a bet", "press PLAY", "JOIN an open" — zero hits anywhere. This is the identical situation to `RpsHub.tsx`'s now-removed idle paragraph (2026-09-12#1 item 4, `#551`): the shared PLAY-button label (`GameHub.tsx:797`, "Waiting for an opponent · m:ss") already covers the waiting case; the prototype simply never explains the mechanic behind the else-branch. **Fix: delete the whole `<p>` at `MinesHub.tsx:182-184`,** matching the RPS precedent exactly — this is Owner's own ask, and it's a clean removal, not a flagged one.
+
+---
+
+## 2 — Board doesn't dim during search; the mechanism is already plumbed generically, Mines just never consumed it
+
+The prototype's Mines panel wrapper carries `opacity:{{ minesBoardOp }}` (`:471`), and `minesBoardOp: rpsMatching || mConverged ? 0.28 : 1` (`:3756`) — same 28% dim RPS's own board gets during search (`rpsBoardOp`, `:3795`, fixed in `#551`). **`MinesPanel` (`MinesHub.tsx:393-399`) applies no opacity treatment at all** — confirmed by direct read, it's a bare `rounded-[22px] bg-[var(--rc-surface))` wrapper. This is a real, confirmed gap, not just "needs checking" as Owner suspected.
+
+The cheap part: `GameHub.tsx` already threads `barSlideActive` through `GameAreaArgs` generically (`:686`) for every hub that opts into `matchBarSlide` — Mines already does (`MinesHubScreen`'s `matchBarSlide="measured"`). **Immediate fix: apply `opacity: args.barSlideActive ? 0.28 : 1` to `MinesPanel`'s wrapper**, the exact pattern `RpsPanel` already got in `#551` — no new plumbing needed for the search-phase half of this.
+
+**One caveat, ties into item 3 below:** the prototype's `minesBoardOp` condition is `rpsMatching || mConverged` — it also dims during the post-match bar-convergence phase (`mConverged`, item 3), which doesn't exist in this codebase yet. So the fix above gets the search-phase dim exactly right, but won't yet dim during the post-match reveal until item 3's convergence state lands too — flagging so this isn't reported as "fully done" prematurely once shipped.
+
+---
+
+## 3 — The reveal is a real, bigger feature gap: no bar-convergence, no gem-count badges, and the win/lose frame ring isn't wired — the popup Owner sees is the fallback path firing by default, not a broken feature
+
+**`MinesHubScreen` (`MinesHub.tsx:406-418`) wires neither `suppressResultOverlay` nor `ownBarResult`** — only `matchBarSlide="measured"`. So it falls straight into `GameHub`'s default result-popup path (`:891`, `overlay && !suppressResultOverlay`), which is exactly what Owner is seeing. Unlike RPS's #547 correction, **`ownBarResult` is the textbook-correct mechanism for Mines** — the prototype's own gate proves it: `gameV = view === 'mines' || isDice` (`:3519`) is the exact condition that turns on `mOutcome`/`playerBarRing`/`winFillAnim`/`winTextAnim` (`:3522-3528`, `:3787-3789`). Mines is literally one of the two games this mechanism exists for.
+
+That said, the full prototype behavior Owner described has **three distinct parts**, and only one of them is "wire an existing prop":
+
+**(a) Bars converge to the center after match end — genuinely new state, doesn't exist in `GameHub` today.** `mConverged = mActive && !isDice` (`:3524`) drives `rpsOppBarY`/`rpsPlayerBarY`/`matchVsTop` to a **different** shift magnitude than the search-phase slide: `mRShift` (fallback `{o:100, p:-100, vs:193}`, `:3529`) vs. the search-phase `mShift` (`{o:123, p:-123, vs:193}`, `:3520`) — real, distinct numbers, not the same motion reused. `GameHub.tsx`'s current `barSlideActive` (`:615`) is `matchForming || searching` only — there's no post-match "converged" phase at all yet. This needs new plumbing: a second bar-slide state (probably `matchBarSlide`'s measured-mode logic re-run against a "result" phase trigger) that only fires for Mines, not Dice (`!isDice` in the gate) — Dice's own result stays put and just recolors its number in-bar (`diceMyNumColor`/`diceOppNumColor`, `:3678-3679`), it never converges.
+
+**(b) The win/lose/draw frame ring — this part IS just wiring the existing, Coinflip-proven mechanism.** `playerBarRing` (`:3787`: inset 2px green/red/orange for win/draw/lose) + the win-fill/"you won" flash (`winFillAnim`/`winTextAnim`, `:3788-3789`) map exactly to `GameHub.tsx`'s `ownBarResult`/`ownBarVerdict` (`:691-704`), already proven on Coinflip. **Fix: add `suppressResultOverlay` + `ownBarResult` to `MinesHubScreen`'s `<GameHub>` call**, same reference pattern as `CoinflipHub.tsx`. One correction to Owner's own description worth flagging precisely: the prototype's ring is **own-bar only** — `oppBarRing: 'none'` unconditionally (`:3786`), the opponent's pill never gets a colored frame, only the player's own does (matches what Owner described — "frames my pill" — just confirming there's no symmetric opponent-side ring to also build).
+
+**(c) Gem-count text above/below the pills — new content, no generic slot for it exists yet.** `oppGemText`/`myGemText` (`:467`/`:690`) sit **outside** the bar's own box — `bottom: calc(100% + 6px)` for the opponent (text sits above their pill) and `top: calc(100% + 6px)` for the player (text sits below their own pill) — gated by `oppGemTextOp`/`myGemTextOp` (`mReveal`/`mGrown`-driven, `:3780/:3782`) and always colored `var(--rc-green)` (`:3779/:3781`) — **one correction to Owner's description here too: the gem-count text is always green, win or lose; the outcome color-coding lives entirely on the bar's frame ring (part b), not on this text.** `renderSlotAside` (used for Chess's clock) renders content *inside* the bar row, not positioned absolutely above/below it — this needs either a new prop or an extension of the existing slot API to place content outside the bar box.
+
+**Net scoping call: (b) is a same-night wire-up, matching Coinflip's own pattern exactly. (a) and (c) are real new features** — new `GameHub` plumbing for a post-match bar-converge state, and a new content-slot API for above/below-bar text — closer in size to #546's original bar-slide work than to a copy-paste fix. Recommend shipping (b) + item 1 + item 2 together first (all cheap, all real, no new plumbing), and scoping (a)+(c) as their own follow-up ticket once agreed — rather than blocking the easy wins on the bigger build.
+
+**Not in Owner's ask, flagging only for completeness:** the prototype also shows gem icons growing *inside* the player's own pill live during play (`minesGems`/`playGemStripOp`, the sc-for list around `:672`) — distinct from the post-match summary text in (c). Owner's description ("fills them with relevant number of gems") matches the post-match TEXT badge, not this in-play icon row. Not recommending scope creep into this unless Owner specifically wants it — noting it exists in case it comes up later.
+
+---
+
+**Ask:** items 1+2 are cheap, ship together (matches items already fixed on RPS in #551, same code shapes). Item 3(b) (the frame ring) can ride along in the same PR — it's just adding two props. Item 3(a)+(c) (bar convergence + gem badges) need their own ticket — real feature work, not a same-night fix.
+
+---
+
 ### 2026-09-12#1 — 4 more RPS gaps from Owner's latest live pass — item 3 is a real correction to #547            [READY TO TICKET — item 3 first, it's the most important]
 From: Advisor   Re: your 4 questions on Owner's rapidclash-00102-km6 pass
 
