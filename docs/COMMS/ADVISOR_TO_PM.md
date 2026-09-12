@@ -1,5 +1,59 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-12#3 — Dice vs. prototype: 1 real audio gap (bigger than it looks), 1 real reveal gap (small, same shape as Mines), 2 items already correct as-is            [READY TO TICKET — items 1+3]
+From: Advisor   Re: Owner's own Dice analysis pass (Owner had never played it before tonight)
+
+Owner described 4 things they saw/expected from watching Dice, framed as "not sure how it's supposed to work, but here it is" — not a bug report, an analysis pass. Checked all 4 against the prototype's actual asset list + `renderVals()`/class-method logic, not the visual impression alone. Result: **2 of the 4 are real gaps** (one bigger than it looks, one a clean small fix already scoped in the same shape as Mines' pending work), and **2 of the 4 are already correctly implemented, byte-for-byte** — worth saying so plainly rather than letting them sit as open questions.
+
+---
+
+## 1 — Audio: a real, confirmed gap, but smaller AND differently-shaped than "rich audio in all phases"
+
+**Currently wired: zero sounds for Dice, or for RPS/Mines.** Grepped `apps/web/src/lib/sound.ts`'s `MANIFEST` and every screen that imports it — only `ChessHub.tsx` plays anything (one "move" click sound). So the gap is real and confirmed, not a guess.
+
+**But the prototype's own actual sound design is more minimal than "basically all the UX is built on audio" suggests — worth being precise about what to build, not overbuild.** The prototype ships exactly **3** audio clips total (`design/prototype/assets/audio/{play,dice-roll,dice-win}.mp3` — the real files already exist in the repo, no sourcing needed), triggered at exactly 3 moments (`playMines()` :3833, `runDiceRoll()` :3432-3437, `startDiceResult()` :3448-3452):
+1. **`play.mp3`** — once, on PLAY press. Shared by RPS/Mines/Dice alike (`playMines()` is the one handler for all three) — worth wiring at the `GameHub.tsx` shared PLAY button, not per-game, so RPS/Mines get it for free too.
+2. **`dice-roll.mp3`** — looped (`sfx(name, true)`), starts when the roll begins, stopped (`stopSfx('dice-roll')`) the instant the roll resolves. Dice-only.
+3. **`dice-win.mp3`** — once, **only on a WIN** (`if (win) this.sfx('dice-win')`, :3452). **There is no loss sound in the prototype's own asset set** — a loss is silent, just the color change. Worth flagging precisely since it's a real correction to "sound in all phases": the reveal phase's sound is win-conditional, not universal.
+
+**The mute toggle is already fully wired and needs no work** — `PreferencesHub.tsx`'s "Game sounds" switch (issue #418) already reads/writes `sound.ts`'s real mute state, matching the prototype's own `toggleGameSound`/`gameSoundTrack` exactly. Nothing to do there.
+
+**One real architecture note, not just "add 3 lines":** `sound.ts`'s `play()` is a fire-and-forget one-shot Web Audio `BufferSourceNode` — no loop, no way to stop a sound once started. That's fine for Chess's single click, but `dice-roll` needs genuine loop+stop semantics to match the prototype. Two ways to go: (a) extend `sound.ts` with a real loop/stop primitive, or (b) since our reveal is server-authoritative (this file's own top comment already explains why we don't fake a counting animation — the true rolls arrive already decided), trigger `dice-roll` once at the start of the existing `HOLD_MS` (2200ms, `DiceHub.tsx:11`) reveal-hold window instead of trying to reproduce the prototype's fabricated 444ms tween — that window is the honest analog of "the roll is happening." Recommend (b) unless the implementer judges (a) cheap enough to just do properly; either way, flagging so it isn't scoped as a 10-minute add.
+
+---
+
+## 2 — The history "memory" belt — already correctly implemented, matches the prototype byte-for-byte. Nothing to do here.
+
+Checked Owner's exact description (row of pills below the tracks, green win-pills / grey loss-pills with white numbers, oldest slides off when full) against the prototype's actual `diceHistory` derivation (`:3658-3672`) and `DiceHub.tsx`'s existing `DiceHistoryBelt`:
+- **Colors**: prototype's loss pill is `#2F2F49` (dark) re-tinted to `#BFBFCE` (light grey) + `#1A1A2E` text specifically in light theme (`:3663-3666`) — `DiceHistoryBelt`'s `bg`/`fg` logic (`DiceHub.tsx:182-183`) matches this exact theme-conditional retint, not an approximation.
+- **Cap/shift**: prototype caps at 6 stored, shows 5, shifts the oldest out (`.slice(0, 6)`, `:3455`) — `DiceHubScreen`'s own history state does the identical `.slice(0, 6)` (`DiceHub.tsx:330`), with Framer Motion's `AnimatePresence`+`layout` standing in for the prototype's manual two-phase shift trick, same end visual result.
+
+**No gap, no action needed.** Owner's description of what they saw is accurate — it's just already built. Worth telling Owner directly so this doesn't come back as an open question.
+
+---
+
+## 3 — Reveal color animation on the player's own pill — real gap, same shape as Mines' pending item 3(b), and simpler
+
+Owner's description ("my pill: background goes green, then vanishes to just a green outline, small animation + sound") is precisely the prototype's `winFillAnim`/`winTextAnim`/`playerBarRing` mechanism (`:3787-3789`) — the SAME own-bar win-fill mechanism already proven on Coinflip and currently being wired for Mines (2026-09-12#2 item 3(b)). It fires for Dice too: `mOutcome`'s gate is `gameV = view === 'mines' || isDice` (`:3519`) — Dice is explicitly included.
+
+**`DiceHubScreen` (`DiceHub.tsx:335-347`) currently wires `renderResultReveal={DiceReveal}` — a popup — with `holdResultMs` but no `suppressResultOverlay`/`ownBarResult`.** Same root cause as Mines: never opted into the mechanism, not a broken one.
+
+**Fix is more direct than Mines':** Dice already has `holdResultMs={HOLD_MS}` wired (`:341`) — Coinflip's own reference pattern is exactly `suppressResultOverlay` + `holdResultMs` + `ownBarResult` together (`CoinflipHub.tsx:339-341`), and Dice is two-thirds there already. Add `suppressResultOverlay` + `ownBarResult`, drop `renderResultReveal={DiceReveal}` (the popup component becomes dead code, can be deleted). **Unlike Mines, Dice needs none of the harder parts** — `mConverged` (bar-convergence) is explicitly `mActive && !isDice` (`:3524`, Dice excluded), and the gem-count text is explicitly `!isDice`-gated on both sides (`oppGemTextOp`/`myGemTextOp`, `:3780/:3782`) — Dice never gets either. This is a same-night wire-up, full stop.
+
+**Ties to item 1:** the win-fill firing is the exact trigger moment for `dice-win.mp3` — worth landing both in the same PR since they're the same event.
+
+---
+
+## 4 — Moving colored cubes during play — already correctly implemented. Nothing to do here.
+
+`diceMyNumColor`/`diceOppNumColor` (green on higher roll, red on lower, neutral pre-final/tie — `:3678-3679`) match `DiceBoard`'s existing `myNumColor`/`oppNumColor` logic (`DiceHub.tsx:258-259`) exactly. The cubes' apparent "movement" (position/opacity/scale animating via CSS transition as the fill width changes) also already matches the prototype's own transitions (`DiceHub.tsx:59-61` cites the exact source lines). The one deliberate difference — our cube shows the true final number instantly rather than counting up from 0 — is an explicit, already-documented decision (`DiceHub.tsx:21-30`): the prototype's count-up is a client-fabricated tween against numbers the demo already knows; our server-authoritative reveal has no honest intermediate value to count through, so counting one up would mean displaying fabricated data. Not a gap — a correct call already made and explained in-repo.
+
+---
+
+**Ask:** items 1+3 together, one PR — same PR makes sense since the win-fill (3) is the sound trigger (1) needs anyway. Item 1's `play.mp3` wiring is worth doing at the shared `GameHub.tsx` PLAY button rather than per-screen, so RPS/Mines pick it up for free. Items 2+4 need no code — just closing the loop with Owner that what they saw is already correct.
+
+---
+
 ### 2026-09-12#2 — Mines vs. prototype: 3 gaps from Owner's own analysis pass, one is a real feature gap not a tweak            [READY TO TICKET — item 3 is the big one]
 From: Advisor   Re: Owner's own Mines review (not relayed secondhand this time — Owner did the comparison directly)
 
