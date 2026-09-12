@@ -402,15 +402,26 @@ function MinesBoard({ playerId, opponentId, username, gameState, legalMoves, onM
  *  this only covers the `rpsMatching`/`barSlideActive` half of the prototype's condition — the
  *  post-match `mConverged` dim does NOT apply yet, because that bar-convergence state (ticket
  *  2026-09-12#2 item 3(a)) doesn't exist in this codebase. Do not report the dim as "fully done"
- *  until 3(a) lands too; it's ticketed separately (out of scope here). */
+ *  until 3(a) lands too; it's ticketed separately (out of scope here).
+ *
+ *  Ticket 2026-09-12#5 item 1 (ADVISOR_TO_PM.md) — HIGH PRIORITY correction to #555: this used to
+ *  gate on `phase === 'in-match'` only, so the instant `phase` became `'result'` (immediately, since
+ *  `MinesHubScreen` sets no `holdResultMs`) the panel unmounted `MinesBoard` and swapped to the blank
+ *  `MinesIdle` grid — discarding the fully-resolved board (busted tile / cleared board) before it was
+ *  ever visible. `ownBarResult`'s win/lose ring on the bar was unaffected (separate component), which
+ *  is why this survived #555's own review. Fix: mirror `CoinflipPanel`'s own `live` gate exactly
+ *  (`CoinflipHub.tsx:120`, `phase === 'in-match' || phase === 'result'`) — `MinesBoard` reads only
+ *  `gameState`/`legalMoves` (never `phase` itself), so it renders the resolved board correctly with
+ *  no further changes needed there. */
 function MinesPanel(args: GameAreaArgs) {
+  const live = args.phase === 'in-match' || args.phase === 'result';
   return (
     <div
       data-testid="hub-mines-panel"
       className="rounded-[22px] bg-[var(--rc-surface)] px-3 pb-4 pt-3"
       style={{ opacity: args.barSlideActive ? 0.28 : 1, transition: 'opacity 380ms ease' }}
     >
-      {args.phase === 'in-match' ? <MinesBoard {...args} /> : <MinesIdle />}
+      {live ? <MinesBoard {...args} /> : <MinesIdle />}
     </div>
   );
 }
