@@ -262,7 +262,13 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 - **Races (24h / Weekly) + Leaderboards tab** — genuine new feature work (time-windowed leaderboard logic), sized separately from the lobby/stake-entry/play/result → single-screen-with-phases collapse.
 - **lobby / stake-entry / play / result → one screen, internal phases** — real architectural simplification (`App.tsx:1292-1317` today).
 
-## Status snapshot — 2026-09-13 (the full D01-D08 Designer handoff batch is shipped, tested, and deployed) — supersedes all earlier snapshots in this section
+## Status snapshot — 2026-09-13 (HIGH PRIORITY regression found post-deploy — bottom nav needs a double-tap; D01-D08 batch otherwise shipped, tested, deployed) — supersedes all earlier snapshots in this section
+
+**2026-09-13#9 — HIGH PRIORITY, current top item. Designer reported the bottom nav needs a double-tap to activate — confirmed a real regression from #569 (2026-09-13#3's own press-feel fix), root cause precise, fix small and well-understood. Full detail: `ADVISOR_TO_PM.md` 2026-09-13#9.**
+
+`HubToolbar.tsx`'s bar-pop retrigger remounts the ENTIRE bar (including all 5 buttons, not just a decorative element) on every `pointerdown`, via a `key={pulseKey}` bump — so the exact button a tap lands on gets destroyed and recreated before the browser finishes delivering that same gesture's `click`, which is exactly what produces "first tap doesn't register." Confirmed via the test suite's own comment: a test named "remount-safe" manually re-queries the DOM for a fresh button reference before firing its `click` assertion (`// re-queried after the pointerDown-driven remount`) — proving the test cannot actually catch this failure mode, since real taps are one continuous gesture on one DOM node, not "press something, then separately click whatever's there now." **Fix:** replace the `key`-based remount with a ref + imperative CSS reflow-trick (`el.style.animation = 'none'; void el.offsetHeight; el.style.animation = '...'`) — no state, no re-render, the button DOM nodes never change identity, so nothing can interfere with click delivery. Small, single-file fix (`HubToolbar.tsx` + its test).
+
+**Advisor next:** available, no open thread — #9 is the current ask, recommend it jumps the queue given it's a live, user-facing regression on the primary nav, not a cosmetic gap. **PM next:** dispatch as its own small PR ahead of any pending Designer-package work.
 
 **All 8 of today's Designer packages are merged to `main`, live in production at `rapidclash-00108-7gg`, and demo-taker's bot-crowd restarted clean (all 32 bots confirmed back online).** PM sanity-checked the live `/open-challenges` feed post-deploy — `ownerTier` still present and correct on every entry. Ticket-by-ticket recap, newest first:
 
@@ -280,7 +286,7 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 - **Two file-collision near-misses this week** (`HubToolbar.tsx` earlier, `ProfileHub.tsx` for D07/D08 today) — both from two D-tickets landing on the same file from a stale base, producing a silent duplicate-declaration merge (caught by `tsc`, not a conflict marker, since the two blocks landed on adjacent lines with no overlapping git context). PM's ask: flag a known file collision when a ticket is FIRST sent, not just discovered after the fact, whenever the Advisor already knows two in-flight D-tickets touch the same file.
 - **A minor doc-comment inaccuracy** in D07's own `apps/web/src/lib/rail.ts` (claimed Affiliate tabs also used the shared rail helper — false, only 2 real consumers, not 3) was caught and corrected by PM before merging; confirmed this didn't originate from any Advisor ticket text.
 
-**Advisor next:** available, no open thread — watching for Designer's next round of feedback against what's now live, or the next batch of packages. **PM next:** none pending; full batch shipped and verified.
+*(D01-D08 batch's own close-out, before #9 was found above: fully shipped and verified, nothing pending at the time.)*
 
 **Still queued from this batch, no scoping started:** the shared PLAY button's own missing `rcNavBarPop` (flagged 2026-09-13#3's survey, high leverage — one fix covers all 12 games — not yet ticketed); a possible "Related games" carousel's press feel (flagged same survey, not confirmed to exist in the app yet). Neither urgent. (See the older 2026-09-12 "Still queued" note below for the rest of the standing backlog.)
 
