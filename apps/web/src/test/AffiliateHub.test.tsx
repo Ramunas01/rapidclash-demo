@@ -283,6 +283,48 @@ describe('AffiliateHubScreen — campaigns', () => {
     const list = screen.getByTestId('affiliate-campaign-list');
     expect(within(list).getByText('My Stream')).toBeInTheDocument();
   });
+
+  // Ticket 2026-09-13#4, item (b): migrated onto the shared `BottomSheet` (`hub-chrome/
+  // BottomSheet.tsx`), which is where the real drag-to-dismiss support now lives — the sheet
+  // itself had none before this ticket (tap-to-close only). jsdom has no real layout, so the
+  // sheet's live height is mocked the same way `HubToolbar.test.tsx`'s own `reportAnchorRect`
+  // tests already do.
+  it('drag-to-dismiss: past half the sheet\'s own live height closes it, short of half snaps back', () => {
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      height: 400, width: 400, top: 0, left: 0, right: 400, bottom: 400, x: 0, y: 0, toJSON: () => ({}),
+    } as DOMRect);
+    try {
+      render(<AffiliateHubScreen {...baseProps()} />);
+      fireEvent.click(screen.getByTestId('affiliate-tab-campaigns'));
+      fireEvent.click(screen.getByTestId('affiliate-create-campaign'));
+      const sheet = screen.getByTestId('affiliate-create-sheet');
+      const handle = screen.getByTestId('affiliate-create-sheet-handle');
+
+      // Short of half (400/2=200) → snaps back, sheet stays open.
+      fireEvent.pointerDown(handle, { clientY: 0, pointerId: 1 });
+      fireEvent.pointerMove(handle, { clientY: 100, pointerId: 1 });
+      fireEvent.pointerUp(handle, { clientY: 100, pointerId: 1 });
+      expect(sheet.style.transform).toBe('translateY(0px)');
+
+      // Past half → closes (translates back off-screen).
+      fireEvent.pointerDown(handle, { clientY: 0, pointerId: 1 });
+      fireEvent.pointerMove(handle, { clientY: 250, pointerId: 1 });
+      fireEvent.pointerUp(handle, { clientY: 250, pointerId: 1 });
+      expect(sheet.style.transform).toBe('translateY(104%)');
+    } finally {
+      rectSpy.mockRestore();
+    }
+  });
+
+  it('the migrated sheet carries the prototype-verified fixed height, asymmetric radius, and shadow', () => {
+    render(<AffiliateHubScreen {...baseProps()} />);
+    fireEvent.click(screen.getByTestId('affiliate-tab-campaigns'));
+    fireEvent.click(screen.getByTestId('affiliate-create-campaign'));
+    const sheet = screen.getByTestId('affiliate-create-sheet');
+    expect(sheet.style.height).toBe('70%');
+    expect(sheet.style.borderRadius).toBe('34px 34px 52px 52px');
+    expect(sheet.style.boxShadow).toBe('0 -18px 40px rgba(0,0,0,0.45)');
+  });
 });
 
 describe('AffiliateHubScreen — earnings claim flow', () => {

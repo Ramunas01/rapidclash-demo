@@ -1320,9 +1320,13 @@ export function App() {
         <div className="ws-banner ws-banner-error" role="alert" data-testid="action-notice">{actionNotice}</div>
       )}
       {renderScreen()}
-      {authOpen && (
-        <AuthModal onSuccess={handleAuthSuccess} onGuestSuccess={handleGuestSuccess} onClose={closeAuth} />
-      )}
+      {/* Ticket 2026-09-13#4, item 3: always mounted (not `{authOpen && (...)}`) so `BottomSheet`'s
+          own transform/scrim-opacity transitions have something to animate FROM the very first
+          time a session opens the auth wall — the same "nothing to animate from on first open" gap
+          2026-09-13#2 already fixed for the Menu overlay. `AuthModal` no longer takes
+          `onGuestSuccess` — see its own top-of-file comment for why guest auth doesn't route
+          through it any more. */}
+      <AuthModal open={authOpen} onSuccess={handleAuthSuccess} onClose={closeAuth} />
     </>
   );
 }

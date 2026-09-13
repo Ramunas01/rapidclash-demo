@@ -198,8 +198,13 @@ function ToolbarItem({
       className={cn(
         // Ticket 2026-09-13#3: prototype's active-color switch is an instant swap, no transition
         // (was `transition-colors`, giving it a ~150ms Tailwind default fade it shouldn't have).
+        // Ticket 2026-09-13#4, item 4: also dropped `hover:text-[var(--rc-text)]` from the inactive
+        // branch — a classic "sticky mobile hover" bug (a real CSS hover state that sticks after a
+        // tap on touch devices, reading as a permanently "activated" near-white icon until the user
+        // taps elsewhere). Matches the prototype exactly: its nav-item color switch has no
+        // hover/pressed/transition treatment at all — only the shared bar-pop communicates a tap.
         'flex flex-1 flex-col items-center gap-1.5 py-0.5 focus:outline-none',
-        active ? 'text-brand drop-shadow-[var(--rc-nav-active-glow)]' : 'text-[var(--rc-muted)] hover:text-[var(--rc-text)]',
+        active ? 'text-brand drop-shadow-[var(--rc-nav-active-glow)]' : 'text-[var(--rc-muted)]',
       )}
     >
       {icon}
