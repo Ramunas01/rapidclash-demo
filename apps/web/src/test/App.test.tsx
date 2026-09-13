@@ -353,6 +353,18 @@ describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
     expect(sockets.length).toBe(0); // the WS (auth) is not opened until sign-in
   });
 
+  // Ticket 2026-09-13#5, item 1: the prototype's own `goRewards` has no login check (only
+  // `goAccount` gates) — a logged-out tap on the Rewards nav item must land directly on the
+  // Rewards hub, not the auth wall. This REVERSES the old `onRewardsTap` gate (previously the
+  // same shape as `onAccountTap`) — deliberately, not a regression.
+  it('tapping Rewards while logged-out lands directly on the Rewards hub, not the auth wall', async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('hub-nav-rewards'));
+    await waitFor(() => expect(screen.getByTestId('rewards-hub')).toBeInTheDocument());
+    expect(screen.queryByTestId('auth-modal')).toBeNull();
+  });
+
   it('JOIN a public challenge while logged-out → auth modal → on register the user LANDS on that hub with the stake armed and nothing auto-fires', async () => {
     render(<App />);
     await waitFor(() => screen.getByTestId('home-hub'));

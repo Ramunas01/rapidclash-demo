@@ -139,6 +139,18 @@
     --rc-theme-toggle-inactive-bg: #2F2F49;
     --rc-theme-toggle-inactive-shadow: 0 5px 0 #1E1E33;
 
+    /* RewardsHub's claim-button 3D ledge (ticket 2026-09-13#5, item 5 — `Full Spec.html:1043`/
+     * `:1047`, `claimShadow`/`claimLockShadow`). The active button's ledge is
+     * `box-shadow:0 5px 0 #5F27B8` — the SAME purple ledge value as `--rc-theme-toggle-active-shadow`
+     * above (Menu's Dark button) — reused directly here (`RakebackCard`'s `RC.claimShadow` in
+     * `RewardsHub.tsx` aliases this token), not duplicated under a second name. The locked
+     * button's ledge (`LockedClaimRow`, shared by both cards) is a real, genuinely NEW light/dark
+     * pair — grepped this file for `#BEBEC9`/`#12121F` before adding, zero hits on either:
+     * `0 5px 0 #12121F` dark / `0 5px 0 #BEBEC9` light. NOT a duplicate of `--rc-sunken`
+     * (`#0b0b0b` dark) — that token already correctly drives the locked button's own
+     * *background*; this one is for the ledge shadow specifically, a distinct darker value. */
+    --rc-claim-lock-shadow: 0 5px 0 #12121F;
+
     /* Shared card back (SVG/CSS component) — one source of truth (raw hex, used directly). */
     --card-back: #5956f6; /* flat blue-violet inset panel */
     --card-back-mark: #5351e2; /* the bolt watermark — tone-on-tone, a few shades darker */
@@ -205,6 +217,7 @@
     --rc-theme-toggle-active-shadow: 0 5px 0 #5F27B8;
     --rc-theme-toggle-inactive-bg: #2F2F49;
     --rc-theme-toggle-inactive-shadow: 0 5px 0 #1E1E33;
+    --rc-claim-lock-shadow: 0 5px 0 #12121F;
     --card-back: #5956f6;
     --card-back-mark: #5351e2;
     --coin-heads-face: #f2a63b;
@@ -235,6 +248,10 @@
    * `--rc-theme-toggle-active-shadow` is NOT overridden here, same reasoning as
    * `--rc-theme-btn-shadow` just above it — the active button's shadow is one theme-invariant
    * literal (`0 5px 0 #5F27B8`), so :root's declaration keeps applying under light theme too.
+   *
+   * `--rc-claim-lock-shadow` (ticket 2026-09-13#5, item 5) DOES get a light value here, same
+   * reasoning as `--rc-theme-toggle-inactive-shadow` just above — RewardsHub's locked CLAIM
+   * ledge is a real light/dark pair (`Full Spec.html:1047`'s `claimLockShadow`).
    */
   :root[data-theme='light'] {
     --rc-bg: #ffffff;
@@ -248,6 +265,7 @@
     --rc-sort-sheet-bg: #d3d3dd;
     --rc-theme-toggle-inactive-bg: #FFFFFF;
     --rc-theme-toggle-inactive-shadow: 0 5px 0 #C9C9D6;
+    --rc-claim-lock-shadow: 0 5px 0 #BEBEC9;
   }
 }
 
