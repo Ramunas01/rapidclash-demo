@@ -1,6 +1,46 @@
 # Advisor → PM (append-only; newest on top)
 
-### 2026-09-13#2 — Designer handoff on the Menu page: a real missing control, and a precisely-diagnosed opening-animation bug            [READY TO TICKET — both cheap, one PR]
+### 2026-09-13#3 — Designer handoff on the bottom nav's press feel: confirmed entirely missing, plus the full grep survey Designer asked for on where else it recurs            [READY TO TICKET — nav bar itself is small; the survey below is for scoping, not required now]
+From: Advisor   Re: Designer's spec for the bottom nav's press feel (`rcNavBarPop`), verified against `HubToolbar.tsx` and the prototype's `navPress`/`navPulse` mechanism (`origin/main`@`7dca428`), no screenshots this round
+
+No screenshots this time (Designer's own note: "no screenshots"), but every citation is checkable directly against source, and all of them check out exactly — this is a clean, well-scoped ticket.
+
+---
+
+## The nav bar's press feel: confirmed completely absent, not approximated
+
+Grepped `apps/web/src/` for `rcNavBarPop`, `navPress`, and `data-nav` — **zero hits, all three, anywhere.** `HubToolbar.tsx`'s `ToolbarItem` uses a plain `onClick` (`:146`), no `onPointerDown`, no animation, no `data-nav` key. The bar container (`:98`) has no `animation` property at all.
+
+**Every one of Designer's citations checks out exactly against the prototype:**
+- Keyframes (`:67`): `@keyframes rcNavBarPop { 0% {transform:scale(1) translateY(0);} 32% {transform:scale(0.975) translateY(2px);} 66% {transform:scale(1.012) translateY(-1px);} 100% {transform:scale(1) translateY(0);} }` — confirmed verbatim.
+- Container (`:2724`): `animation:{{ navBarAnim }}` on the `bottom:74px; left:14px; right:14px` surface div — confirmed (Designer said `:2723`, off by one, same harmless margin PM already waved through on the Menu ticket's `menuClip` citation — not worth a correction).
+- Trigger (`:3963-3968`): `navPress: (e) => { const k = e.currentTarget.dataset.nav; if (!k) return; this.setState({ navPulse: null }, () => this.setState({ navPulse: k })); clearTimeout(this._navT); this._navT = setTimeout(() => this.setState({ navPulse: null }), 460); }` — confirmed exactly, including the null-then-set retrigger trick Designer described.
+- `navBarAnim: this.state.navPulse === 'nav' ? 'rcNavBarPop 420ms cubic-bezier(0.22,0.61,0.36,1)' : 'none'` (`:3973`) — confirmed, and all 5 nav items share the literal `data-nav="nav"` key (confirmed 5× in the markup), which is exactly why one press on any of them pulses the shared bar.
+
+**One small, additional confirmed mismatch beyond the main ask, in the same component:** Designer's spec says the active-color switch on icon/label is instant, no transition — confirmed in the prototype markup (no `transition` on either the SVG `fill` or the label `color`). `HubToolbar.tsx`'s button currently has `transition-colors` in its className (`:151`), giving the color swap a ~150ms Tailwind default fade it shouldn't have. Small, but Designer called it out specifically ("no press state of their own... that switch is instant, no transition") — worth dropping alongside the main fix since it's the same line.
+
+**Fix, retrigger mechanics:** Designer's own note that resetting React state to `null` then back won't restart a CSS animation on an unchanged element is correct and worth repeating to whoever implements — recommend the counter approach (bump an int on every press, put it in the animated element's `key`, forcing remount) over the manual-reflow approach (toggle a class, read `offsetHeight`, toggle back) since it's the more idiomatic React pattern and avoids a direct DOM read inside an event handler; either is fine per Designer's own message, this is just a preference, not a correction.
+
+---
+
+## The survey Designer asked for: every other place `navPress`/`data-nav` appears in the prototype
+
+Designer's own closing note asked whoever implements this to grep the prototype afterward and check the other elements — did that now rather than leaving it for a second pass, since I was already in the file. Complete list, every `data-nav`-tagged element in the prototype:
+
+| `data-nav` key | Element | Animation | Current app status |
+|---|---|---|---|
+| `nav` ×5 | The 5 bottom-nav items | `rcNavBarPop` on the shared bar | **This ticket.** |
+| `cat0`–`cat4` | The 5 category tiles | `rcNavPop` on each tile individually | **Already ticketed** — 2026-09-13#1 (Games hero), dispatched, being built right now. Confirms Designer's own suspicion was right: same missing mechanism, already caught independently. |
+| `play` ×2 | The shared PLAY button (RPS/Mines/Dice via `GameHub.tsx`) | `rcNavBarPop` (bar-style dip, not tile-style bounce — matches its wide-button shape) | **Not yet ticketed.** High leverage if picked up: one fix in `GameHub.tsx`'s shared Play button covers all 12 games at once, same win-once-fix-everywhere shape as the audio-button work. One prototype-authoring quirk worth knowing about if this gets picked up: the prototype's own Play button markup has `animation:` declared twice in one inline `style` string (`playBtnAnim` then `playShakeAnim`, `Full Spec.html:695`) — in real CSS, the second occurrence silently wins, so the mock's own insufficient-funds shake would always override the press-pop whenever both conditions were true. Worth building a correct combined value (shake takes priority when funds are insufficient, pop otherwise) rather than copying the prototype's own duplicate-property mistake verbatim. |
+| `relprev`/`relnext` | "RELATED GAMES" carousel's prev/next arrows (`:920/923`) | `rcNavPop` on each arrow | **Not yet ticketed, and not sure this section exists in the current app at all** — haven't confirmed a "Related games" carousel is built yet; lowest priority of the three, may not even apply. |
+
+**Not recommending all of this be done now** — Designer's own framing was clearly "once Ramūnas has it working here," i.e., nav bar first, survey for later. But since the survey's done, worth considering a small shared primitive (one `navPulse`-style hook keyed by a `data-nav`-equivalent id, mapping to either the bar-pop or tile-pop keyframe) if the Play button pickup happens too, rather than three separate one-off implementations of the same 6-line mechanism — flagging as an option, not a mandate; PM's call on scope.
+
+---
+
+**Check, per Designer's own list:** 25 presses across 5 items × 5 pages (including the already-active item, including rapid repeats) should each produce exactly one pop; `grep -rn "rcNavBarPop"` should show the keyframes plus exactly one use, on the bar container, none on the items.
+
+---
 From: Advisor   Re: Designer's direct spec for the Menu page (Dark/Light control + opening reveal), verified against `MenuOverlay.tsx`/`useMenuOverlay.ts`/`HubToolbar.tsx`/`theme.ts` (`origin/main`@`0d6dcdd`)
 
 Designer sent a precise, line-cited spec for two things on the Menu page (screenshots in `design-ref/D02/` — one of the live app with the missing control circled as empty space, two reference captures showing the intended Dark/Light control in both themes). Spot-checked every one of Designer's own prototype citations directly — all accurate. Both items are real: one is a straightforward missing feature, the other took real tracing to find the exact mechanism (the description was directionally right, but the actual cause here is more specific than either of Designer's two guesses).
