@@ -1,5 +1,55 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-13#9 — HIGH PRIORITY REGRESSION: bottom nav needs a double-tap to activate — root cause confirmed precisely, it's #569's own bar-pop retrigger, and the test suite's own comment proves it was known and worked around rather than fixed            [READY TO TICKET — small, well-understood fix, one file]
+From: Advisor   Re: Designer's live-testing report ("menu navigation bar demands double-clicks") — verified against `HubToolbar.tsx`/`HubToolbar.test.tsx` (`origin/main`@`88f0ee6`)
+
+Confirmed real, root-caused precisely, not guessed. This is a regression from #569 (2026-09-13#3, the bottom-nav press-feel ticket) — the fix for that ticket's own retrigger requirement introduced a real click-swallowing bug as a side effect, and the test suite added alongside it demonstrably cannot catch the failure mode it actually causes (confirmed by reading the test's own comments, not inferred).
+
+---
+
+## Root cause: the bar-pop retrigger remounts the same DOM nodes that receive the tap, between pointerdown and click
+
+`HubToolbar.tsx:71-74`: `firePulse()` bumps a `pulseKey` counter on every `onPointerDown` (`:194`). `:134-135`: the bar's own container div — **which wraps all 5 interactive buttons, not just a decorative pulse element** — is `key={pulseKey}`. Every tap's `pointerdown` therefore triggers a React key change that **unmounts and remounts the entire bar, including the exact button the user's finger/pointer is on**, before the browser has finished dispatching that same gesture's `click` event.
+
+This is a well-known, real class of browser bug: when the DOM node a `pointerdown`/`mousedown` landed on is removed from the document before the corresponding `click` fires, browsers vary in how they handle it (drop the click, or retarget to whatever's now at that screen position) — but the practical, observed result here is exactly Designer's report: the first tap doesn't register as a click, requiring a second tap to actually activate the nav item.
+
+**Confirmed this was a known trade-off at the time, not an unforeseen accident — the ticket that shipped it explicitly named the two safe alternatives, and the wrong one was picked for this specific spot.** 2026-09-13#3's own ticket text (still in `HubToolbar.tsx`'s comments, `:66-70`) named both a counter-in-`key` approach AND a toggle-class-force-reflow-toggle-back approach as "either is fine" — but that framing was written for the general retrigger problem, without flagging that the counter-in-`key` variant is only safe when the keyed element does NOT also contain the interactive target of the very gesture that triggers the key bump. The bar container is exactly that unsafe case: it's simultaneously the thing being re-keyed for animation AND the direct parent of the buttons receiving the triggering `pointerdown`.
+
+---
+
+## The test suite's own comment proves this was seen and worked around, not caught
+
+`HubToolbar.test.tsx:441-445`, a test literally named **"a press does not interfere with the item's own click handler firing (remount-safe)"**:
+```js
+fireEvent.pointerDown(screen.getByTestId('hub-nav-games'));
+fireEvent.click(screen.getByTestId('hub-nav-games')); // re-queried after the pointerDown-driven remount
+```
+The test's own comment admits the remount happens. But `screen.getByTestId(...)` on the second line performs a **fresh DOM query**, fetching whatever button now exists at that testid *after* the remount, and fires a synthetic `click` directly at that fresh reference via React Testing Library's `fireEvent` — which dispatches a JS `Event` object straight at a specific element reference, bypassing the browser's actual physical hit-testing/retargeting pipeline entirely. **This test cannot fail even if the real-browser bug is 100% present**, because it never simulates a single continuous physical gesture the way a real tap is — it simulates "press somewhere, then separately, look up whatever's there now and click it," which is not what happens on a real device. The test's own name ("remount-safe") is the opposite of what it actually demonstrates.
+
+---
+
+## Fix: don't remount the buttons at all — drive the retrigger with a ref + imperative reflow, no `key`, no React state
+
+The safer alternative 2026-09-13#3's own ticket named — toggle the animation off, force a synchronous reflow, toggle it back on — needs no `key` and no state re-render at all when done via a ref:
+
+```js
+const barRef = useRef<HTMLDivElement>(null);
+function firePulse() {
+  const el = barRef.current;
+  if (!el) return;
+  el.style.animation = 'none';
+  void el.offsetHeight; // force a synchronous reflow so the next line is a genuine restart, not a no-op
+  el.style.animation = 'rcNavBarPop 420ms cubic-bezier(0.22,0.61,0.36,1)';
+}
+```
+This is strictly simpler than the current `pulseKey`/`useState` machinery (no state, no re-render, no `data-pulse-key` test hook needed) and it structurally cannot swallow a click — the bar div and every button inside it keep the exact same DOM identity across every press, so nothing about the animation retrigger can interfere with the browser's own click delivery for that same gesture. **Fix:** replace `pulseKey`/`setPulseKey`/the `key={pulseKey}` on the bar div with this ref-based approach; update `HubToolbar.test.tsx`'s existing assertions to check `barRef`'s live `style.animation` value directly (no re-query needed, since the element persists) rather than the `data-pulse-key` attribute, and rewrite the "remount-safe" test to something that actually proves it — e.g. capturing the bar/button DOM node references BEFORE the press and asserting they're `===` the same references after, which the current implementation would fail and the fix would pass.
+
+---
+
+**Ask:** small, single-file fix (`HubToolbar.tsx` + its own test file), well-understood, no design/UX change (the pop animation itself is unaffected — only the retrigger mechanism changes) — this is purely a correctness fix for a real regression, doesn't touch anything Designer-facing. Flagging as HIGH PRIORITY since it's a live, reported, user-facing interaction bug affecting the primary nav on every screen, not a cosmetic gap — recommend this jumps the queue ahead of any pending Designer-package work.
+
+---
+
 ### 2026-09-13#8 — Designer handoff on Account's Recent Games list: 5 real gaps confirmed, all cheap, plus one reported bug that's already fixed in current code — flagging rather than re-shipping a no-op            [READY TO TICKET — all 5 real items are small; item 2's color complaint needs a live-page check before assuming a fix is needed]
 From: Advisor   Re: Designer's spec for Account's Recent Games list (screenshots in `design-ref/D08/`), verified against `ProfileHub.tsx`/`format.ts`/`RcIcon.tsx`/`lib/currency.ts` (`origin/main`@`c9cd911`)
 
