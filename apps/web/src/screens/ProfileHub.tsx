@@ -1,11 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { motion } from 'framer-motion';
-import { Check, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from 'react';
 import type { AvatarId, GameMeta, RecentMatchEntry, RewardsSnapshot, VipTier } from '@rapidclash/shared';
 import { api } from '../api.js';
 import { TierIcon, progressPercent } from '../components/hub-shared/vipTier.js';
 import { TILE_ART, titleCase } from '../components/hub-shared/tiles.js';
-import { cn } from '@/lib/utils';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
 import { MenuOverlay } from '../components/hub-chrome/MenuOverlay.js';
 import { useMenuOverlay } from '../components/hub-chrome/useMenuOverlay.js';
@@ -13,11 +10,12 @@ import { ChatSheet } from '../components/hub-chrome/ChatSheet.js';
 import { useChat } from '../components/hub-chrome/useChat.js';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
-import { Avatar } from '../components/hub-shared/Avatar.js';
+import { Avatar, PersonGlyph, PRESETS } from '../components/hub-shared/Avatar.js';
 import { HUB_SHELL } from '../components/hub-chrome/layout.js';
 import { useTheme } from '../lib/theme.js';
 import { useCurSel } from '../lib/currency.js';
 import { CurrencyIcon } from '../components/hub-chrome/CurrencyPicker.js';
+import { railMask, centerPill } from '../lib/rail.js';
 
 interface Props {
   token: string;
@@ -48,8 +46,13 @@ interface Props {
   onOpenAffiliate?(): void;
 }
 
-/** The selectable avatars in the picker: default + the six presets (presets-only, no upload). */
-const PICKER_AVATARS: AvatarId[] = ['default', 'boy-light', 'girl-light', 'boy-brown', 'boy-dark', 'hooded-mono', 'hooded-degen'];
+/** The ten Designer-supplied preset avatars shown in the inline strip (ticket 2026-09-13#7 items
+ *  1+2 — replacing the six previously-named presets; presets-only, no upload). The strip's own
+ *  first tile is always the fixed-purple "reset to default" tile, rendered separately in the JSX
+ *  below (not part of this list — see the Owner's item-3 decision: that ONE tile is deliberately
+ *  fixed purple + white glyph, while the actual rendered default avatar everywhere else keeps this
+ *  app's own per-user disc color, unchanged). */
+const AVATAR_PRESETS: Exclude<AvatarId, 'default'>[] = ['rc-01', 'rc-02', 'rc-03', 'rc-04', 'rc-05', 'rc-06', 'rc-07', 'rc-08', 'rc-09', 'rc-10'];
 
 /** Design token references (docs/design-refs/design_handoff_account_page/README.md's Dark
  *  column values) — issue #491 (T3b, light group): this object used to hold its own hardcoded
@@ -230,6 +233,36 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
   const light = resolved === 'light';
   const [liveBalance, setLiveBalance] = useState(balance);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [avatarError, setAvatarError] = useState('');
+
+  // Avatar strip edge fades (ticket 2026-09-13#7 item 2b) — scroll-driven `mask-image` state, the
+  // same shared-track rail mechanism as the Open Games tab rail (`GamesCarousel.tsx`, `lib/rail.
+  // ts`'s `railMask`). Divisor/initial values transcribed verbatim from the prototype's own
+  // `onAvStripScroll` (`Full Spec.html:3919-3925` — right starts at 1, fades over 34px, distinct
+  // from the tab rail's own 24px).
+  const [avLeftFade, setAvLeftFade] = useState(0);
+  const [avRightFade, setAvRightFade] = useState(1);
+  function onAvStripScroll(e: UIEvent<HTMLDivElement>) {
+    const el = e.currentTarget;
+    const max = el.scrollWidth - el.clientWidth;
+    setAvLeftFade(max > 0 ? Math.min(1, el.scrollLeft / 34) : 0);
+    setAvRightFade(max > 0 ? Math.min(1, (max - el.scrollLeft) / 34) : 0);
+  }
+
+  // Each tile applies its own choice immediately on tap (no separate Save step) — the strip's
+  // SELECT button (below) only closes the strip; the choice is already live by the time it's
+  // tapped. Same `api.setAvatar` call + error handling the old modal's `handleSave` used, just
+  // triggered per-tap instead of per-Save-press.
+  async function applyAvatar(id: AvatarId, tile: HTMLElement) {
+    centerPill(tile);
+    setAvatarError('');
+    try {
+      const res = await api.setAvatar(id, token);
+      onAvatarChange?.(res.avatarId);
+    } catch (err) {
+      setAvatarError(err instanceof Error ? err.message : 'Could not save avatar');
+    }
+  }
 
   // VIP progress — same RewardsSnapshot shape/derivation RewardsHub.tsx already uses (issue
   // #306/#307): tier, rakebackRate, nextTier are all already on the response, just unread here
@@ -362,12 +395,16 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
                 "Game sounds" toggle, which now drives the same real lib/sound.ts module). */}
             <span style={{ fontFamily: ARIAL, fontSize: 19, fontWeight: 'bold', letterSpacing: '0.6px', color: RC.text }}>ACCOUNT</span>
 
-            {/* 2 — Profile card: avatar (tap → existing picker) + username + XP + VIP progress. */}
+            {/* 2 — Profile card: avatar (tap → inline strip) + username + XP-or-SELECT + VIP
+                progress. Ticket 2026-09-13#7 item 2b: the avatar circle itself toggles the strip
+                (no separate button); the XP readout is REPLACED by a SELECT button while open
+                (not shown alongside it) — tapping SELECT just closes the strip, since each tile's
+                own tap already applied the choice immediately (`applyAvatar` above). */}
             <section data-testid="profile-card" style={{ marginTop: 14, background: RC.surface, borderRadius: 22, padding: '18px 16px 20px 16px' }}>
               <div data-testid="profile-header" style={{ display: 'flex', alignItems: 'center', gap: 12, paddingBottom: 16 }}>
                 <button
                   type="button"
-                  onClick={() => setPickerOpen(true)}
+                  onClick={() => setPickerOpen((v) => !v)}
                   data-testid="profile-avatar-button"
                   aria-label="Change avatar"
                   style={{ flex: '0 0 44px', borderRadius: 999, border: 'none', background: 'transparent', padding: 0, cursor: 'pointer' }}
@@ -377,11 +414,111 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
                 <span data-testid="profile-username" style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: ARIAL, fontSize: 20, fontWeight: 'bold', letterSpacing: '0.4px', color: RC.text }}>
                   {username ?? 'Player'}
                 </span>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flex: '0 0 auto' }}>
-                  <span style={{ fontFamily: ARIAL, fontSize: 22, fontWeight: 'bold', letterSpacing: '1.2px', color: RC.text }}>XP:</span>
-                  <span data-testid="profile-xp" style={{ fontFamily: SPACE_GROTESK, fontSize: 22, fontWeight: 700, color: RC.green }}>
-                    {xpLifetime.toLocaleString('en-US')}
-                  </span>
+                {pickerOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => setPickerOpen(false)}
+                    data-testid="profile-avatar-select"
+                    aria-label="Select avatar"
+                    className="active:translate-y-[3px]"
+                    style={{
+                      flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: 8, padding: '9px 16px 9px 14px',
+                      borderRadius: 999, background: '#8B45F0', border: 'none', cursor: 'pointer',
+                      boxShadow: 'var(--rc-theme-toggle-active-shadow)', transition: 'box-shadow 160ms ease, transform 120ms ease',
+                    }}
+                  >
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block' }} aria-hidden="true">
+                      <path d="M4.5 12.6 9.8 18 19.5 6.6" />
+                    </svg>
+                    <span style={{ fontFamily: ARIAL, fontSize: 13, fontWeight: 'bold', letterSpacing: '0.9px', color: '#FFFFFF' }}>SELECT</span>
+                  </button>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flex: '0 0 auto' }}>
+                    <span style={{ fontFamily: ARIAL, fontSize: 22, fontWeight: 'bold', letterSpacing: '1.2px', color: RC.text }}>XP:</span>
+                    <span data-testid="profile-xp" style={{ fontFamily: SPACE_GROTESK, fontSize: 22, fontWeight: 700, color: RC.green }}>
+                      {xpLifetime.toLocaleString('en-US')}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Inline-expanding avatar strip (replaces the old `fixed inset-0` modal). CSS
+                  grid-row `0fr↔1fr` (340ms) + independent opacity fade (240ms) — two separate
+                  transitions, not one combined — transcribed verbatim from the prototype
+                  (`Full Spec.html:1362-1378`). Always mounted (collapsed via `gridTemplateRows:
+                  '0fr'`), not conditionally rendered — so it animates open every time, including
+                  the very first tap in a session. */}
+              <div
+                data-testid="avatar-strip-wrapper"
+                style={{ display: 'grid', gridTemplateRows: pickerOpen ? '1fr' : '0fr', transition: 'grid-template-rows 340ms cubic-bezier(0.22,0.61,0.36,1)' }}
+              >
+                <div style={{ overflow: 'hidden', minHeight: 0 }}>
+                  <div style={{ opacity: pickerOpen ? 1 : 0, transition: 'opacity 240ms ease', paddingBottom: 16 }}>
+                    <span style={{ display: 'block', paddingBottom: 9, fontFamily: ARIAL, fontSize: 11, fontWeight: 'bold', letterSpacing: '1.2px', color: RC.text }}>
+                      CHOOSE YOUR AVATAR
+                    </span>
+                    <div style={{ position: 'relative' }}>
+                      <div
+                        role="group"
+                        aria-label="Avatar presets"
+                        onScroll={onAvStripScroll}
+                        className="no-scrollbar"
+                        style={{
+                          display: 'flex', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: 6,
+                          maskImage: railMask(avLeftFade, avRightFade), WebkitMaskImage: railMask(avLeftFade, avRightFade),
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'nowrap', gap: 9, width: 'max-content', background: light ? '#DEDEE8' : '#12121A', borderRadius: 999, padding: 7, boxShadow: 'var(--rc-theme-toggle-inactive-shadow)' }}>
+                          {/* The "reset to default" tile — per the Owner's explicit item-3 decision,
+                              this ONE tile is deliberately fixed purple + white glyph (matching the
+                              Designer's spec exactly), regardless of username. It does NOT extend
+                              that treatment to how the actual default avatar renders anywhere else
+                              (the header circle above still shows this app's own per-user disc). */}
+                          <button
+                            type="button"
+                            data-testid="avatar-option-default"
+                            aria-label="Default avatar"
+                            aria-pressed={avatarId === 'default'}
+                            onClick={(e) => applyAvatar('default', e.currentTarget)}
+                            className="active:scale-[0.92]"
+                            style={{
+                              flex: '0 0 48px', width: 48, height: 48, borderRadius: 999, background: '#8B45F0',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', cursor: 'pointer',
+                              boxShadow: avatarId === 'default' ? '0 0 0 3px var(--rc-green)' : '0 0 0 3px rgba(0,0,0,0)',
+                              transition: 'box-shadow 200ms ease, transform 120ms ease',
+                            }}
+                          >
+                            <PersonGlyph style={{ width: 23, height: 23, color: '#FFFFFF' }} />
+                          </button>
+                          {AVATAR_PRESETS.map((id) => {
+                            const on = avatarId === id;
+                            return (
+                              <button
+                                key={id}
+                                type="button"
+                                data-testid={`avatar-option-${id}`}
+                                aria-pressed={on}
+                                onClick={(e) => applyAvatar(id, e.currentTarget)}
+                                className="active:scale-[0.92]"
+                                style={{
+                                  flex: '0 0 48px', width: 48, height: 48, borderRadius: 999, overflow: 'hidden', border: 'none', cursor: 'pointer',
+                                  backgroundColor: on ? '#8B45F0' : RC.surface,
+                                  backgroundImage: `url(${PRESETS[id]})`, backgroundSize: 'cover', backgroundPosition: 'center',
+                                  boxShadow: on ? '0 0 0 3px var(--rc-green)' : '0 0 0 3px rgba(0,0,0,0)',
+                                  transition: 'box-shadow 200ms ease, transform 120ms ease',
+                                }}
+                              />
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                    {avatarError && (
+                      <p data-testid="avatar-picker-error" role="alert" style={{ marginTop: 10, fontFamily: ARIAL, fontSize: 12, color: RC.danger }}>
+                        {avatarError}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -599,15 +736,6 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
         </div>
       )}
 
-      {pickerOpen && (
-        <AvatarPicker
-          token={token}
-          username={username}
-          current={avatarId}
-          onSaved={(id) => { onAvatarChange?.(id); setPickerOpen(false); }}
-          onClose={() => setPickerOpen(false)}
-        />
-      )}
     </div>
   );
 }
@@ -705,108 +833,3 @@ function ControlsIcon() {
   );
 }
 
-/**
- * §3 avatar picker — an overlay panel (the auth-popup `bg-surface` treatment, no rim) with the
- * default + 4 presets rendered via the shared Avatar (so the disc matches the user's). Tapping a
- * preset shows the purple selection ring; the solid Save button calls `api.setAvatar`, and on
- * success bubbles the id up (App mirrors it into state + localStorage). Presets-only — no upload.
- */
-function AvatarPicker({
-  token,
-  username,
-  current,
-  onSaved,
-  onClose,
-}: {
-  token: string;
-  username: string | null;
-  current: AvatarId;
-  onSaved(id: AvatarId): void;
-  onClose(): void;
-}) {
-  const [selected, setSelected] = useState<AvatarId>(current);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  // Lock body scroll while the overlay is open (same pattern as AuthModal).
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
-  }, []);
-
-  async function handleSave() {
-    setError('');
-    setSaving(true);
-    try {
-      const res = await api.setAvatar(selected, token);
-      onSaved(res.avatarId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save avatar');
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Choose your avatar"
-      data-testid="avatar-picker"
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ opacity: 0, y: -12, scale: 0.96 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-        onClick={(ev) => ev.stopPropagation()}
-        className="w-full max-w-sm rounded-2xl bg-surface p-6 shadow-2xl"
-      >
-        <div className="mb-4 flex items-center justify-between">
-          <span className="text-base font-bold">Choose your avatar</span>
-          <button type="button" onClick={onClose} aria-label="Dismiss" className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--rc-muted)] hover:text-[var(--rc-text)]">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-3 gap-3" role="group" aria-label="Avatar presets">
-          {PICKER_AVATARS.map((id) => {
-            const isSel = selected === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setSelected(id)}
-                aria-pressed={isSel}
-                data-testid={`avatar-option-${id}`}
-                className={cn(
-                  'flex items-center justify-center rounded-2xl bg-[var(--rc-bg)] p-3 transition-colors',
-                  isSel ? 'ring-[3px] ring-brand' : 'ring-1 ring-border hover:ring-white/20',
-                )}
-              >
-                <Avatar avatarId={id} username={username} size={56} />
-              </button>
-            );
-          })}
-        </div>
-
-        {error && (
-          <p className="mt-4 flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert" data-testid="avatar-picker-error">
-            {error}
-          </p>
-        )}
-
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saving}
-          data-testid="avatar-picker-save"
-          className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-brand py-3 text-sm font-bold text-white shadow-lg shadow-brand/20 transition-all hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <Check className="h-4 w-4" /> {saving ? 'Saving…' : 'Save'}
-        </button>
-      </motion.div>
-    </div>
-  );
-}

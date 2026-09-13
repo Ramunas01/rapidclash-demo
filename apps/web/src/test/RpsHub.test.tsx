@@ -176,10 +176,10 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
 
   it('own slot renders the player\'s chosen avatar preset (avatarId threaded into the own bar)', () => {
     const gameState: RpsView = { players: ['pid', 'bob'], choices: {} };
-    render(<RpsHubScreen {...baseProps({ avatarId: 'boy-light', currentMatchId: 'm1', gameState, legalMoves: ['rock'] })} />);
+    render(<RpsHubScreen {...baseProps({ avatarId: 'rc-01', currentMatchId: 'm1', gameState, legalMoves: ['rock'] })} />);
     const own = within(screen.getByTestId('hub-slot-own'));
     const ownAvatar = own.getByTestId('avatar');
-    expect(ownAvatar.getAttribute('data-avatar-id')).toBe('boy-light');
+    expect(ownAvatar.getAttribute('data-avatar-id')).toBe('rc-01');
     // A preset shows its <img>, not the default glyph.
     expect(own.getByTestId('avatar-img')).toBeInTheDocument();
     expect(own.queryByTestId('avatar-glyph')).toBeNull();
@@ -189,7 +189,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     const gameState: RpsView = { players: ['pid', 'bob'], choices: {} };
     // I picked a colourful preset; the opponent slot must NOT reflect any avatar — it has no avatarId
     // source at all (the opponent's stored avatar is never sent in-match, Charter #2).
-    render(<RpsHubScreen {...baseProps({ avatarId: 'girl-light', currentMatchId: 'm1', gameState, legalMoves: ['rock'] })} />);
+    render(<RpsHubScreen {...baseProps({ avatarId: 'rc-02', currentMatchId: 'm1', gameState, legalMoves: ['rock'] })} />);
     const opp = within(screen.getByTestId('hub-slot-opponent'));
     const oppAvatar = opp.getByTestId('avatar');
     expect(oppAvatar.getAttribute('data-avatar-id')).toBe('default'); // never a preset

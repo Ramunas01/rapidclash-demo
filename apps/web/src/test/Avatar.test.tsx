@@ -2,9 +2,9 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { Avatar } from '../components/hub-shared/Avatar.js';
-import boyLight from '../assets/avatars/avatar-boy-light.png';
-import hoodedMono from '../assets/avatars/avatar-hooded-mono.jpg';
-import hoodedDegen from '../assets/avatars/avatar-hooded-degen.jpg';
+import rc01 from '../assets/avatars/rc-01.png';
+import rc02 from '../assets/avatars/rc-02.png';
+import rc10 from '../assets/avatars/rc-10.png';
 
 /** Read the disc/glyph tokens the component exposes for testability (raw hsl/hex, CSSOM-agnostic). */
 function tokens() {
@@ -27,20 +27,22 @@ describe('Avatar (shared)', () => {
   });
 
   it('renders a preset <img> (by src) for a non-default avatarId', () => {
-    render(<Avatar username="alice" avatarId="boy-light" />);
+    render(<Avatar username="alice" avatarId="rc-01" />);
     const img = screen.getByTestId('avatar-img') as HTMLImageElement;
-    expect(img.getAttribute('src')).toBe(boyLight);
+    expect(img.getAttribute('src')).toBe(rc01);
     // No default glyph when a preset is shown.
     expect(screen.queryByTestId('avatar-glyph')).toBeNull();
   });
 
-  it('renders the two meme-style presets (hooded-mono, hooded-degen) added in #312', () => {
-    render(<Avatar username="alice" avatarId="hooded-mono" />);
-    expect((screen.getByTestId('avatar-img') as HTMLImageElement).getAttribute('src')).toBe(hoodedMono);
+  // Ticket 2026-09-13#7 items 1+2: the Designer's own official `rc-01`-`rc-10` export replaced
+  // the six previously-named presets (including the #312 meme-style pair) outright.
+  it('renders the Designer-supplied rc-01..rc-10 presets (2026-09-13#7)', () => {
+    render(<Avatar username="alice" avatarId="rc-02" />);
+    expect((screen.getByTestId('avatar-img') as HTMLImageElement).getAttribute('src')).toBe(rc02);
     expect(screen.queryByTestId('avatar-glyph')).toBeNull();
     cleanup();
-    render(<Avatar username="alice" avatarId="hooded-degen" />);
-    expect((screen.getByTestId('avatar-img') as HTMLImageElement).getAttribute('src')).toBe(hoodedDegen);
+    render(<Avatar username="alice" avatarId="rc-10" />);
+    expect((screen.getByTestId('avatar-img') as HTMLImageElement).getAttribute('src')).toBe(rc10);
     expect(screen.queryByTestId('avatar-glyph')).toBeNull();
   });
 

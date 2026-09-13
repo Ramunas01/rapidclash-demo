@@ -23,7 +23,7 @@ Auth token is sent as a bearer header and also used to authenticate the WS conne
 
 ### Avatars (`avatarId`)
 
-Each account stores an `avatarId` — one of a fixed set of **presets** (`'default' | 'boy-light' | 'girl-light' | 'boy-brown' | 'boy-dark'`). It is a plain string id; there is **no file upload / no image storage** — the client bundles the preset assets and maps the id to one. A new account is `'default'`; the column is added by a snapshot-safe, idempotent migration so a restored old snapshot's rows read `'default'`.
+Each account stores an `avatarId` — one of a fixed set of **presets** (`'default' | 'rc-01' | 'rc-02' | 'rc-03' | 'rc-04' | 'rc-05' | 'rc-06' | 'rc-07' | 'rc-08' | 'rc-09' | 'rc-10'`, ticket 2026-09-13#7 — a clean swap from an earlier six-named-preset set, no migration needed since an unrecognized stored id gracefully falls back to `'default'`). It is a plain string id; there is **no file upload / no image storage** — the client bundles the preset assets and maps the id to one. A new account is `'default'`; the column is added by a snapshot-safe, idempotent migration so a restored old snapshot's rows read `'default'`. `'default'` renders as this app's own per-user disc colour (derived from the username), not a fixed image — see `Avatar.tsx`.
 
 `avatarId` surfaces in exactly two places:
 

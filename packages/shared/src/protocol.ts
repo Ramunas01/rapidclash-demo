@@ -207,13 +207,24 @@ export interface AuthLoginBody {
 }
 
 /** The canonical avatar identity — the single source of truth shared by client and server.
- *  `'default'` = the derived disc + person glyph (no stored preset); the six presets are the
- *  selectable avatars (PNG or JPG). Presets-only (a string id, no file storage). The client `Avatar`
- *  component imports this and maps each preset id → its bundled asset. */
-export type AvatarId = 'default' | 'boy-light' | 'girl-light' | 'boy-brown' | 'boy-dark' | 'hooded-mono' | 'hooded-degen';
+ *  `'default'` = the derived disc + person glyph (no stored preset); `rc-01`..`rc-10` are the
+ *  selectable avatars (PNG). Presets-only (a string id, no file storage). The client `Avatar`
+ *  component imports this and maps each preset id → its bundled asset.
+ *
+ *  Ticket 2026-09-13#7 items 1+2: this is a clean swap, not an addition — the six previously
+ *  named presets (`boy-light`/`girl-light`/`boy-brown`/`boy-dark`/`hooded-mono`/`hooded-degen`)
+ *  are retired entirely in favor of the Designer's own official `rc-01`-`rc-10` export (see
+ *  `apps/web/src/assets/avatars/CREDITS.md` for the retirement note and the licensing-provenance
+ *  question this closes). No migration script needed: `coerceAvatar`
+ *  (`packages/core/src/identity.ts`) already validates any stored `avatarId` against
+ *  `AVATAR_IDS` and silently resets anything unrecognized (including any of the six retired
+ *  ids) to `'default'` — which, per the Owner's explicit decision on this ticket, renders as
+ *  this app's own per-user disc color (`Avatar.tsx`'s `discColor`/`glyphColor`), not a fixed
+ *  purple circle. */
+export type AvatarId = 'default' | 'rc-01' | 'rc-02' | 'rc-03' | 'rc-04' | 'rc-05' | 'rc-06' | 'rc-07' | 'rc-08' | 'rc-09' | 'rc-10';
 
 /** Every valid AvatarId, for server-side validation of the set-avatar endpoint. */
-export const AVATAR_IDS: readonly AvatarId[] = ['default', 'boy-light', 'girl-light', 'boy-brown', 'boy-dark', 'hooded-mono', 'hooded-degen'];
+export const AVATAR_IDS: readonly AvatarId[] = ['default', 'rc-01', 'rc-02', 'rc-03', 'rc-04', 'rc-05', 'rc-06', 'rc-07', 'rc-08', 'rc-09', 'rc-10'];
 
 export interface AuthResponse {
   token: string;

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import Database from 'better-sqlite3';
+import type { AvatarId } from '@rapidclash/shared';
 import { createLedger, GRANT_AMOUNT } from './ledger.js';
 import { createIdentity, isAvatarId } from './identity.js';
 
@@ -119,24 +120,24 @@ describe('identity avatar persistence (Advisor #12 ii)', () => {
     // First identity instance: register + set an avatar.
     const id1 = createIdentity(db, ledger);
     const { playerId } = await id1.register('olive', 'pw');
-    id1.setAvatarId(playerId, 'boy-brown');
-    expect(id1.getAvatarId(playerId)).toBe('boy-brown');
+    id1.setAvatarId(playerId, 'rc-03');
+    expect(id1.getAvatarId(playerId)).toBe('rc-03');
 
     // Simulate a process restart / restored snapshot: a fresh identity over the SAME db.
     const id2 = createIdentity(db, ledger);
-    expect(id2.getAvatarId(playerId)).toBe('boy-brown');
+    expect(id2.getAvatarId(playerId)).toBe('rc-03');
     const login = await id2.login('olive', 'pw');
-    expect(login.avatarId).toBe('boy-brown');
+    expect(login.avatarId).toBe('rc-03');
   });
 
   it('a soft-reset re-claim preserves the stored avatar', async () => {
     const { identity } = makeServices();
     const { playerId } = await identity.register('pia', 'pw');
-    identity.setAvatarId(playerId, 'girl-light');
+    identity.setAvatarId(playerId, 'rc-02');
     identity.clearPassword(playerId);
     const reclaim = await identity.register('pia', 'new-pw');
     expect(reclaim.playerId).toBe(playerId);
-    expect(reclaim.avatarId).toBe('girl-light');
+    expect(reclaim.avatarId).toBe('rc-02');
   });
 
   it('getAvatarId returns "default" for an unknown playerId', () => {
@@ -145,24 +146,42 @@ describe('identity avatar persistence (Advisor #12 ii)', () => {
   });
 
   it('isAvatarId validates the enum (rejects anything else)', () => {
-    for (const ok of ['default', 'boy-light', 'girl-light', 'boy-brown', 'boy-dark', 'hooded-mono', 'hooded-degen']) {
+    for (const ok of ['default', 'rc-01', 'rc-02', 'rc-03', 'rc-04', 'rc-05', 'rc-06', 'rc-07', 'rc-08', 'rc-09', 'rc-10']) {
       expect(isAvatarId(ok)).toBe(true);
     }
-    for (const bad of ['', 'boy', 'evil', 'pepe', 'doge', 42, null, undefined, {}]) {
+    // Ticket 2026-09-13#7 items 1+2: the six previously-named presets (boy-light/girl-light/
+    // boy-brown/boy-dark/hooded-mono/hooded-degen) are retired entirely, not kept alongside the
+    // ten new rc-01..rc-10 ids — a legacy stored id from any of them must now be rejected.
+    for (const bad of ['', 'boy', 'evil', 'pepe', 'doge', 'boy-light', 'girl-light', 'boy-brown', 'boy-dark', 'hooded-mono', 'hooded-degen', 'rc-11', 42, null, undefined, {}]) {
       expect(isAvatarId(bad)).toBe(false);
     }
+  });
+
+  // Ticket 2026-09-13#7 items 1+2 (Owner-decided): swapping the preset ID set needs no migration
+  // script — an account that had picked one of the six now-retired presets gracefully resets to
+  // 'default' on next load, which (per the Owner's item-3 decision) renders as this app's own
+  // per-user disc color, not a fixed image. This proves the graceful-reset safety net actually
+  // works for THIS exact migration, not just abstractly for "any unrecognized string".
+  it('a legacy stored preset id (e.g. "hooded-mono", retired by 2026-09-13#7) gracefully resets to "default"', async () => {
+    const { db, ledger } = makeServices();
+    const id1 = createIdentity(db, ledger);
+    const { playerId } = await id1.register('rae', 'pw');
+    id1.setAvatarId(playerId, 'hooded-mono' as AvatarId);
+    expect(id1.getAvatarId(playerId)).toBe('default');
+    const login = await id1.login('rae', 'pw');
+    expect(login.avatarId).toBe('default');
   });
 
   it('the migration is idempotent — re-initialising over the same db does not throw or reset avatars', async () => {
     const { db, ledger } = makeServices();
     const id1 = createIdentity(db, ledger);
     const { playerId } = await id1.register('quinn', 'pw');
-    id1.setAvatarId(playerId, 'boy-dark');
+    id1.setAvatarId(playerId, 'rc-04');
     // Running init again (as a snapshot restore / second buildApp would) is a no-op on data.
     const id2 = createIdentity(db, ledger);
     const id3 = createIdentity(db, ledger);
-    expect(id3.getAvatarId(playerId)).toBe('boy-dark');
-    expect(id2.getAvatarId(playerId)).toBe('boy-dark');
+    expect(id3.getAvatarId(playerId)).toBe('rc-04');
+    expect(id2.getAvatarId(playerId)).toBe('rc-04');
   });
 
   it('an account row predating the avatar_id column reads "default" after migration (snapshot-safe)', () => {

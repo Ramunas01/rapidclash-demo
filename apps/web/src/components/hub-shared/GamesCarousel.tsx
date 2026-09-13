@@ -10,6 +10,7 @@ import { RcIcon } from './RcIcon.js';
 import { TierIcon } from './vipTier.js';
 import { CurrencyIcon } from '../hub-chrome/CurrencyPicker.js';
 import { OPEN_CURS } from '../hub-chrome/currencyData.js';
+import { railMask, centerPill as centerPillOnRail } from '../../lib/rail.js';
 
 /**
  * Games-page "Open Games" carousel (issue #305, `docs/COMMS/from-advisor/games-and-rewards.md`
@@ -186,18 +187,9 @@ function useNowTick(intervalMs: number): number {
   return now;
 }
 
-/** `railMask(l, r)` — transcribed verbatim (ticket 2026-09-13#6 item 1, `Full Spec.html:3503-
- *  3508`). Replaces the tab rail's old two-overlay-div fade technique (mismatched with this
- *  rail's own spec, which is `mask-image`-based — the overlay-div technique belongs to the
- *  category rail, 2026-09-13#1, a different rail entirely) with a single gradient applied as the
- *  scroller's own `mask-image`/`-webkit-mask-image`, computed from the same `leftFade`/
- *  `rightFade` (0-1) state `onTabScroll` already tracks. */
-function railMask(l: number, r: number): string {
-  const a = Math.round(Math.max(0, Math.min(1, l || 0)) * 34);
-  const b = Math.round(Math.max(0, Math.min(1, r ?? 1)) * 34);
-  if (!a && !b) return 'none';
-  return `linear-gradient(to right, rgba(0,0,0,0) 0px, #000 ${a}px, #000 calc(100% - ${b}px), rgba(0,0,0,0) 100%)`;
-}
+// `railMask(l, r)` now lives in `lib/rail.ts` (2026-09-13#7 item 2b) — the Account page's inline
+// avatar-picker strip needs the exact same mask-image mechanism, so it's shared rather than
+// duplicated a third time. See that file's own doc comment for the full rationale.
 
 interface BoardRow {
   key: string;
@@ -502,30 +494,17 @@ export function GamesCarousel({ challengesByGame, nameByGame, balance, onTake, o
     setRightFade(max <= 0 ? 0 : Math.min(1, (max - el.scrollLeft) / 24));
   }
 
-  /** `centerPill()`, transcribed verbatim (ticket 2026-09-13#6 item 1, `Full Spec.html:3492-3501`).
-   *  Walks UP from the clicked pill past the non-scrolling inner track div (`tabRailBg`) to find
-   *  the actual scrollable ancestor — this rail has one more nesting level than `HomeHub.tsx`'s
-   *  `CategoryTabs`/`selectAndCenter` (issue #501), whose pill's own parent IS the scroller, so
-   *  that simpler version can't be reused as-is here. */
-  function centerPill(pill: HTMLElement) {
-    let rail: HTMLElement | null = pill.parentElement;
-    while (rail && rail.scrollWidth <= rail.clientWidth + 1) rail = rail.parentElement;
-    if (!rail) return;
-    const pr = pill.getBoundingClientRect();
-    const rr = rail.getBoundingClientRect();
-    const target = rail.scrollLeft + (pr.left - rr.left) - (rr.width - pr.width) / 2;
-    const max = rail.scrollWidth - rail.clientWidth;
-    // Optional call: jsdom (the unit-test DOM) doesn't implement Element.scrollTo at all — every
-    // real browser does, same test-environment-only guard as HomeHub.tsx's own selectAndCenter.
-    rail.scrollTo?.({ left: Math.max(0, Math.min(max, target)), behavior: 'smooth' });
-  }
-
   function pickAndCenterTab(i: number, pill: HTMLElement) {
     pickTab(i);
     // Matches the prototype's own `setState({tab, boardLimit}, () => requestAnimationFrame(() =>
     // this.centerPill(pill)))` — the rAF gives the browser a frame to commit this render's DOM
     // (background/box-shadow flip) before measuring the pill's own now-current position.
-    requestAnimationFrame(() => centerPill(pill));
+    // `centerPillOnRail` (`lib/rail.ts`) is the shared, extracted version of this rail's own
+    // `centerPill()` (ticket 2026-09-13#6 item 1, `Full Spec.html:3492-3501`) — it walks UP from
+    // the clicked pill past the non-scrolling inner track div (`tabRailBg`) to find the actual
+    // scrollable ancestor (this rail has one more nesting level than `HomeHub.tsx`'s
+    // `CategoryTabs`/`selectAndCenter`, issue #501, whose pill's own parent IS the scroller).
+    requestAnimationFrame(() => centerPillOnRail(pill));
   }
 
   function boardMore() {

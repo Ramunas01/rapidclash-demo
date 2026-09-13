@@ -324,7 +324,7 @@ export type GameView = RpsView | CoinflipView | ChessView | BlackjackView | Mine
  *  carry anything). Defaults to `'default'`. Kept local so App has no runtime dep on the enum list. */
 function loadAvatarId(): AvatarId {
   const v = localStorage.getItem('rc_avatarId');
-  const VALID: AvatarId[] = ['default', 'boy-light', 'girl-light', 'boy-brown', 'boy-dark', 'hooded-mono', 'hooded-degen'];
+  const VALID: AvatarId[] = ['default', 'rc-01', 'rc-02', 'rc-03', 'rc-04', 'rc-05', 'rc-06', 'rc-07', 'rc-08', 'rc-09', 'rc-10'];
   return (VALID as string[]).includes(v ?? '') ? (v as AvatarId) : 'default';
 }
 
