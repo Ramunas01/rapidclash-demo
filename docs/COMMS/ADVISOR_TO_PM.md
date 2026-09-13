@@ -1,6 +1,57 @@
 # Advisor → PM (append-only; newest on top)
 
-### 2026-09-13#7 — Designer handoff on avatar picker: real rebuild (floating popup → inline strip), assets already in the repo, but a genuine conflict with the app's own per-user disc-color feature needs a call before the default state changes            [READY TO TICKET — rebuild is well-scoped; flag the default-avatar conflict explicitly, don't silently pick a side]
+### 2026-09-13#8 — Designer handoff on Account's Recent Games list: 5 real gaps confirmed, all cheap, plus one reported bug that's already fixed in current code — flagging rather than re-shipping a no-op            [READY TO TICKET — all 5 real items are small; item 2's color complaint needs a live-page check before assuming a fix is needed]
+From: Advisor   Re: Designer's spec for Account's Recent Games list (screenshots in `design-ref/D08/`), verified against `ProfileHub.tsx`/`format.ts`/`RcIcon.tsx`/`lib/currency.ts` (`origin/main`@`c9cd911`)
+
+Five real, cheap, well-scoped gaps confirmed — plus one genuine surprise: the win/loss color logic Designer's message describes as currently broken **already matches the prototype exactly in current `main`**, confirmed by direct read, not assumed. Flagging that precisely rather than silently "fixing" code that's already correct, in case it points at a live/deployed-vs-source mismatch worth PM's attention.
+
+---
+
+## 1 — Empty state: confirmed wrong on every axis, easy copy-paste fix
+
+Current (`ProfileHub.tsx:395-398`): `padding: '16px 0'`, `fontSize: 12`, `color: RC.muted`, no horizontal margin, no letter-spacing, regular weight. Prototype's own Events-empty-state (`Full Spec.html:244-246`, confirmed exact): `margin:0 16px; padding:54px 0 10px 0`, `font-size:14px; font-weight:600; letter-spacing:0.3px; color:var(--rc-text)`. Every single value differs. **Fix:** copy `HomeHub.tsx`'s own `home-events-empty` treatment verbatim (same citation, already correctly implemented there — this screen just never got the same pass), swap the copy to "No recent games yet."
+
+---
+
+## 2 — Amount: real fix needed (RC coin → currency icon + $), but the color-by-outcome logic Designer flagged as broken is ALREADY correct — confirmed, not assumed
+
+**Confirmed real:** `MatchRow` (`ProfileHub.tsx:598-600`) renders `<Credits amount={m.delta} showSign />`, which draws `RcIcon.tsx`'s green "RC" coin — the exact glyph Designer's spec says must go. Prototype (`:1439-1445`, confirmed): a 15×15 `<use href="#cur-{{ curSym }}">` (the wallet's own selected currency, same sprite already wired for Open Games) + `'+$'`/`'-$'` prefix, Space Grotesk 700 **17px** (already matches — the current code's font-size is already 17, that part's fine). **Fix:** replace `<Credits>` with `CurrencyIcon` (`hub-chrome/CurrencyPicker.tsx`, already exported) + a plain `+$`/`-$`-prefixed numeral, reading the currency symbol from `useCurSel()` (`lib/currency.ts` — the exact global singleton 2026-09-13#6 asked for and #572 already built; this is direct reuse, not new plumbing). Since `ProfileHubScreen` requires a real `token` (auth-only screen, no guest path), there's no guest/logged-out branch to handle here — always `$` + the wallet's icon, unlike `GamesCarousel`'s own `AmountFigure` which has to cover both.
+
+**NOT confirmed as a bug, despite Designer's report — checked the actual current code directly:** Designer's message says "Right now lost amounts are showing near-white. They should be muted." Read `MatchRow` line-by-line: `vsColor = m.outcome === 'win' ? RC.green : m.outcome === 'loss' ? RC.text : RC.muted` and the amount's own `color: win ? RC.green : RC.muted` (`:569`, `:598`) — this is **already byte-identical to the prototype's own formula** (`Full Spec.html:4391-4392`: `amountColor: g[5]==='WON' ? green : muted`, `vsColor: g[5]==='WON' ? green : text`), confirmed via direct grep of both. `--rc-muted` resolves to `#83838f` (confirmed in `index.css`) — a real muted gray, not white. This logic shipped back on 2026-09-07 (#441/#444), well before today. **Possible explanations, not confirmed which:** the screenshot may be from a build that predates that fix, or `#83838f` simply reads closer to white than expected in a compressed/small screenshot next to genuinely-white text in the same row. Recommend PM (or whoever picks this up) load the actual live Account page and eyeball a real loss row before writing any code for this specific point — the amount/RC-coin swap above is real and needed either way, but the color logic itself may need zero changes.
+
+---
+
+## 3 — Opponent row: confirmed real, simple one-line removal
+
+Current row order: `VS → <Avatar> circle → tier icon → @username`. Prototype (`:1436`, confirmed): `VS → tier icon → @username`, no avatar element at all. **Fix:** delete `ProfileHub.tsx:590`'s `<Avatar avatarId={m.opponentAvatarId} username={m.opponentDisplayName} size={16} />` line entirely — everything else in this row (gap, margin-top, tier-icon conditional on `!== 'Unranked'`, ellipsis) already matches exactly, confirmed, no other changes needed here.
+
+---
+
+## 4 — VIEW MORE: two confirmed gaps, one confirmed extra beyond what Designer flagged
+
+**Ledge, confirmed missing:** current button (`:418-425`) has no `boxShadow`, no press state at all. Prototype (`:4539`, confirmed): `moreShadow: light ? '0 4px 0 #C9C9D6' : '0 4px 0 #1E1E33'` — the smaller 4px variant Designer specifically called out (vs. the 5px used on bigger buttons elsewhere this week). **Fix:** add the ledge + `translateY(3px)` press-sink, same family as every other small ledge-button shipped this week, just the 4px variant.
+
+**A real gap beyond Designer's own ask, caught by reading the actual transition values:** the collapsed-list wrapper (`:401`) animates `max-height` over **320ms**, but the prototype's own citation (Designer's message, and confirmed directly at `:1459`-adjacent JS) is **520ms**. Also: the bottom fade-gradient div (`:405-417`) is currently conditionally mounted/unmounted (`{!matchesExpanded && hasMorePages && (...)}`), not opacity-transitioned — so it pops in/out abruptly rather than the prototype's own `opacity 380ms ease` fade (`gamesFadeOpacity`, confirmed). **This is the third time this exact "conditionally-mounted, no transition-from-nothing" architecture gap has shown up this week** (the Menu overlay, the Auth sheet, now this) — worth naming as a real, recurring pattern in this codebase's own conventions rather than a one-off, if PM agrees. **Fix:** bump the transition to 520ms; keep the fade div always mounted, drive it with `opacity` (0/1) + `transition: opacity 380ms ease` instead of a conditional unmount.
+
+**Already correct, no change needed:** VIEW LESS (`:446-453`) is already flat with no `boxShadow` — matches the prototype's own flat treatment (`:1465`, confirmed no shadow property in that button's style) exactly.
+
+---
+
+## 5 — Date format: confirmed real, locale-dependent bug — root cause identified precisely
+
+`formatMatchTime` (`ProfileHub.tsx:184-190`) calls `toLocaleDateString(undefined, ...)`/`toLocaleTimeString(undefined, ...)` — **`undefined` locale**, meaning the output format depends on the browser/OS locale, not a fixed one. That's the exact mechanism behind Designer's screenshot showing `13 Sep, 1:02` (a day-first, no-AM/PM locale) instead of the prototype's `Aug 15, 9:42 PM` (month-first, 12-hour with AM/PM). This is a real inconsistency with the rest of the codebase's own convention — every other deterministic display in this app (`formatCredits`, `Credits`, the currency amounts) explicitly passes `'en-US'` for exactly this reason (this file's own header comment on `format.ts` says so). **Fix:** `d.toLocaleDateString('en-US', {month:'short', day:'numeric'})` + `d.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit', hour12: true})` — explicit locale and explicit `hour12`, not relying on either defaulting the way Designer's own screenshot happens to want.
+
+---
+
+## 6 — Game name: confirmed real, and the fix has an established precedent to follow, not invent
+
+`MatchRow` (`:586`) calls `titleCase(m.gameId)` — a bare capitalize-first-letter (`ProfileHub.tsx`'s own `titleCase` import, confirmed: `'rps'` → `'Rps'`). The real display name (`'Rock Paper Scissors'`) lives in each game's own `GameMeta.displayName`, fetched from `/games` — confirmed `HomeHub.tsx`/`GameHub.tsx` both already independently call `api.games(token)` and build a `nameByGame` map (`new Map(games.map(g => [g.id, g.displayName]))`) for exactly this purpose. **`ProfileHubScreen` currently never fetches `/games` at all** — `api` is imported for other calls but this one's missing. **Fix:** add the same `api.games(token)` fetch + `nameByGame` map to `ProfileHubScreen` (matching the existing per-screen-fetch pattern already established in two other hubs, not a new architecture), fall back to `titleCase(m.gameId)` only if the map lookup misses (keeps today's behavior as a safety net, doesn't regress if `/games` is slow/fails).
+
+---
+
+**Ask:** all six items are small, independent, and safe to ship in one PR — none touch shared components in a way that risks the other five Designer packages already in flight this week. Recommend explicitly checking the live Account page for a real loss-row's color (item 2's color question) before writing any color-logic code, since the current source already looks correct and a "fix" against already-correct code risks masking a real live/deploy discrepancy if one actually exists.
+
+---
 From: Advisor   Re: Designer's spec for the avatar picker on Account (screenshots in `design-ref/D07/` — the current floating popup, and the target inline-strip account card), verified against `ProfileHub.tsx`/`Avatar.tsx`/`packages/shared/src/protocol.ts` (`origin/main`@`2ae24cc`)
 
 Confirmed: this is a real UI rebuild (floating modal → inline expanding strip), not a restyle — matches the screenshots exactly. Good news on assets: the ten `rc-01`–`rc-10` PNGs Designer says to source from a zip are **already sitting in this repo**, committed as part of the prototype's own asset export. The one thing that needs an explicit call before any code: the prototype's "default" avatar and this app's current "default" avatar are two different, both-deliberate things, and only one can win.
