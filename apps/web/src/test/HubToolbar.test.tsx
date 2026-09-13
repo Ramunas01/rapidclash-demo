@@ -384,3 +384,96 @@ describe('HubToolbar — reportAnchorRect (ticket 2026-09-13#2, item 2: first-op
     expect(onMenu).toHaveBeenCalledTimes(1);
   });
 });
+
+// Ticket 2026-09-13#3: the prototype's shared nav bar pops with a one-shot `rcNavBarPop`
+// animation whenever ANY of the 5 items is pressed — all 5 share the literal `data-nav="nav"` key
+// in the prototype's markup, so one press pulses the whole shared bar, not just the tapped item.
+// Implemented here via a `pulseKey` counter bumped on `onPointerDown`, keying the bar container so
+// every press remounts it (restarting the CSS animation) rather than the prototype's own
+// null-then-set `navPulse` state trick.
+describe('HubToolbar — bottom-nav bar press feel (ticket 2026-09-13#3)', () => {
+  it('pressing any one of the 5 nav items triggers the shared bar container\'s pop animation', () => {
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} />);
+    // Before any press: no animation running yet.
+    expect(screen.getByTestId('hub-nav-bar').style.animation).toBe('');
+    fireEvent.pointerDown(screen.getByTestId('hub-nav-games'));
+    const bar = screen.getByTestId('hub-nav-bar'); // re-query: the press may have remounted it
+    expect(bar.style.animation).toContain('rcNavBarPop');
+    expect(bar.style.animation).toContain('420ms');
+  });
+
+  it('every one of the 5 items shares the same mechanism (not a per-item pop)', () => {
+    for (const label of ['menu', 'games', 'account', 'rewards', 'chat']) {
+      render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} />);
+      fireEvent.pointerDown(screen.getAllByTestId(`hub-nav-${label}`).at(-1)!);
+      expect(screen.getAllByTestId('hub-nav-bar').at(-1)!.style.animation).toContain('rcNavBarPop');
+    }
+  });
+
+  it('a second press shortly after the first still produces a fresh pop (the retrigger case)', () => {
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} />);
+    fireEvent.pointerDown(screen.getByTestId('hub-nav-games'));
+    const firstPulse = screen.getByTestId('hub-nav-bar').getAttribute('data-pulse-key');
+    expect(firstPulse).not.toBeNull();
+    fireEvent.pointerDown(screen.getByTestId('hub-nav-account'));
+    const secondPulse = screen.getByTestId('hub-nav-bar').getAttribute('data-pulse-key');
+    // The retrigger mechanism's own value must actually change between presses — not just be
+    // present both times — otherwise a rapid second press wouldn't restart the CSS animation.
+    expect(secondPulse).not.toBe(firstPulse);
+    expect(screen.getByTestId('hub-nav-bar').style.animation).toContain('rcNavBarPop');
+  });
+
+  it('a press does not interfere with the item\'s own click handler firing (remount-safe)', () => {
+    const onGames = vi.fn();
+    render(<HubToolbar onGames={onGames} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} />);
+    fireEvent.pointerDown(screen.getByTestId('hub-nav-games'));
+    fireEvent.click(screen.getByTestId('hub-nav-games')); // re-queried after the pointerDown-driven remount
+    expect(onGames).toHaveBeenCalledTimes(1);
+  });
+
+  it('the transition-colors class is gone from ToolbarItem\'s rendered className (prototype: instant color swap, no fade)', () => {
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} active="games" />);
+    for (const label of ['menu', 'games', 'account', 'rewards', 'chat']) {
+      expect(screen.getByTestId(`hub-nav-${label}`).className).not.toContain('transition-colors');
+    }
+    // The separate, already-known hover-class issue (tracked elsewhere) stays untouched.
+    expect(screen.getByTestId('hub-nav-account').className).toContain('hover:text-[var(--rc-text)]');
+  });
+
+  it('regression: nav clicks still route to the right callback after the press-feel change', () => {
+    const onGames = vi.fn();
+    const onAccount = vi.fn();
+    const onRewards = vi.fn();
+    const onMenu = vi.fn();
+    const onChat = vi.fn();
+    render(<HubToolbar onGames={onGames} onAccount={onAccount} onRewards={onRewards} onMenu={onMenu} onChat={onChat} />);
+    fireEvent.click(screen.getByTestId('hub-nav-games'));
+    fireEvent.click(screen.getByTestId('hub-nav-account'));
+    fireEvent.click(screen.getByTestId('hub-nav-rewards'));
+    fireEvent.click(screen.getByTestId('hub-nav-chat'));
+    fireEvent.click(screen.getByTestId('hub-nav-menu'));
+    expect(onGames).toHaveBeenCalledTimes(1);
+    expect(onAccount).toHaveBeenCalledTimes(1);
+    expect(onRewards).toHaveBeenCalledTimes(1);
+    expect(onChat).toHaveBeenCalledTimes(1);
+    expect(onMenu).toHaveBeenCalledTimes(1);
+  });
+
+  it('regression: the Menu button\'s mount-time rect reporting (ticket 2026-09-13#2) is unaffected', () => {
+    const rect = { left: 1, top: 2, width: 3, height: 4, bottom: 6, right: 4, x: 1, y: 2, toJSON: () => ({}) } as DOMRect;
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(rect);
+    try {
+      const reportAnchorRect = vi.fn();
+      render(
+        <HubToolbar
+          onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()}
+          onMenu={vi.fn()} reportAnchorRect={reportAnchorRect} onChat={vi.fn()}
+        />,
+      );
+      expect(reportAnchorRect).toHaveBeenCalledTimes(1);
+      expect(reportAnchorRect).toHaveBeenCalledWith({ left: 1, top: 2, width: 3, height: 4 });
+    } finally {
+      rectSpy.mockRestore();
+    }
+  });
+});
