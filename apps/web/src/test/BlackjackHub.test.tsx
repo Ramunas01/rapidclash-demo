@@ -263,7 +263,7 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
     // searching, the decorative scan must draw only from other players — never the current alias,
     // which would read as being matched against yourself.
     const ch = (matchId: string, ownerName: string): OpenChallenge => ({
-      matchId, ownerName, stake: 50, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'none',
+      matchId, ownerName, ownerTier: 'Unranked', stake: 50, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'none',
     });
     render(
       <BlackjackHubScreen

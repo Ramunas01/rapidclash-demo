@@ -1,5 +1,5 @@
 import { randomUUID, randomBytes } from 'node:crypto';
-import type { GameModule, GameState, LedgerEntry, PlayerId, Rng, Move, ApplyResult, Outcome, OpenChallenge, PlayerClocks } from '@rapidclash/shared';
+import type { GameModule, GameState, LedgerEntry, PlayerId, Rng, Move, ApplyResult, Outcome, OpenChallenge, PlayerClocks, VipTier } from '@rapidclash/shared';
 import { IllegalMove, UNTIMED_TIME_CONTROL } from '@rapidclash/shared';
 import type { Ledger } from './ledger.js';
 import type { MatchHistory } from './match-history.js';
@@ -237,6 +237,12 @@ export interface MatchmakingOptions {
   turnTimeoutMs?: number;
   /** Resolve a playerId → display username for challenge owner names. */
   lookupUsername?: UsernameLookup;
+  /** Resolve a playerId → VIP tier for challenge owner rows (ticket 2026-09-13#6 item 3) — same
+   *  injectable-callback shape as `lookupUsername` above. Missing/undefined resolves every
+   *  owner to `'Unranked'` (matching `resolveTier`'s own "no row → Unranked" contract), so a
+   *  Matchmaking instance with no tier data available (e.g. the guest world, which never has a
+   *  `rewards` table) still produces a valid `OpenChallenge` without special-casing. */
+  lookupTier?: (playerId: string) => VipTier;
   /** Injectable clock (testing). Default: Date.now. */
   now?: () => number;
   /** Fired once per real settlement (after the ledger settle + standings write), never on the
@@ -330,6 +336,7 @@ export function createMatchmaking(
   // Active-match move timeout (#31) — independent of socket state.
   const turnTimeoutMs = options.turnTimeoutMs ?? intEnv('MATCH_TURN_TIMEOUT_MS', 120_000);
   const lookupUsername = options.lookupUsername;
+  const lookupTier = options.lookupTier;
   const nowFn = options.now ?? (() => Date.now());
   const onSettled = options.onSettled;
   const onPlayerSettled = options.onPlayerSettled;
@@ -593,6 +600,7 @@ export function createMatchmaking(
     const entries: OpenChallenge[] = eligible.slice(0, listCap).map((e) => ({
       matchId: e.matchId,
       ownerName: lookupUsername?.(e.playerId) ?? e.playerId,
+      ownerTier: lookupTier?.(e.playerId) ?? 'Unranked',
       stake: e.stake,
       openedAt: e.since,
       expiresAt: e.expiresAt,

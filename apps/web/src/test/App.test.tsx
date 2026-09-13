@@ -305,6 +305,7 @@ describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
       matchId: 'pub-1',
       gameId: 'coinflip',
       ownerName: 'zed',
+      ownerTier: 'Unranked',
       stake: 10,
       openedAt: 100,
       expiresAt: Date.now() + 30_000,

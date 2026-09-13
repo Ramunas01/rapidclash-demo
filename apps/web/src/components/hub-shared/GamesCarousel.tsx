@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type UIEvent } from 'react';
-import type { OpenChallenge, PublicOpenChallenge } from '@rapidclash/shared';
+import type { OpenChallenge, PublicOpenChallenge, VipTier } from '@rapidclash/shared';
 import { api } from '../../api.js';
+import { useTheme } from '../../lib/theme.js';
+import { useCurSel } from '../../lib/currency.js';
 import { TILE_ART, titleCase } from './tiles.js';
 import { Avatar } from './Avatar.js';
 import { mergeChallengesByGame, insufficientBalanceNotice, PUBLIC_POLL_MS, type FeedRow } from './OpenGames.js';
 import { RcIcon } from './RcIcon.js';
+import { TierIcon } from './vipTier.js';
+import { CurrencyIcon } from '../hub-chrome/CurrencyPicker.js';
+import { OPEN_CURS } from '../hub-chrome/currencyData.js';
 
 /**
  * Games-page "Open Games" carousel (issue #305, `docs/COMMS/from-advisor/games-and-rewards.md`
@@ -15,8 +20,11 @@ import { RcIcon } from './RcIcon.js';
  * Facts transcribed here so they survive the design-ref worktree being gitignored/removed, per
  * `WORKING_AGREEMENT.md`'s gitignored-artifact rule:
  *
- * - Tabs: `TABS = ['OPEN GAMES', '24H RACE', 'WEEKLY RACE', 'RANK']`, `state.tab` picks one;
- *   picking a tab also resets `boardLimit` to 10.
+ * - Tabs: `TABS = ['OPEN GAMES', '24H RACE', 'WEEKLY RACE', 'LEADERBOARDS']` (ticket
+ *   2026-09-13#6 item 1 fixed a transcription bug: this used to read 'RANK', which appears
+ *   nowhere in the prototype's own `TABS` array — the internal `'rank'` board-kind string
+ *   `buildBoardRows` uses is just a discriminator, not user-facing, and is unaffected), `state.tab`
+ *   picks one; picking a tab also resets `boardLimit` to 10.
  * - OPEN GAMES motion (verbatim, not retuned): `ROW = 76`, `VISIBLE = 11`, a 1900ms
  *   `setInterval` tick. Each tick prepends a fresh row and drops the oldest, then plays a
  *   two-`requestAnimationFrame` slide-in: frame 1 snaps the wrapper to `translateY(-ROW)` with
@@ -58,12 +66,15 @@ import { RcIcon } from './RcIcon.js';
  *    asset audit) — they're placeholder references the design tool itself never resolved. Reused
  *    this app's existing derived-color `Avatar` component (already the "no real image" fallback
  *    used everywhere else a user is shown) instead of fabricating new placeholder art.
- * 5. **Stake/prize/XP numerals show a plain numeral beside a green "RC" coin glyph** (`RcIcon`,
- *    now the shared `hub-shared/RcIcon.tsx` component — issue #324 generalized this component's
- *    original transcribed glyph into the sitewide credits display, so every visible credits
- *    figure in the app now reads this way, not just this carousel) — for a *logged-out* viewer.
- *    A registered (`loggedIn`) viewer instead sees the Owner-approved `$` skin (`CHARTER.md` #4)
- *    at all three spots, via the `AmountFigure` helper below (2026-09-11#8 item B.2).
+ * 5. **Stake/prize/XP numerals always show a `$`-prefixed amount** (ticket 2026-09-13#6 item 2,
+ *    correcting 2026-09-11#8 item B.2 with more precise Designer detail: that ticket's own green
+ *    "RC" coin glyph for logged-out viewers is retired here — every row, logged in or out, reads
+ *    `$amount`), with a small decorative currency-symbol icon next to it (`CurrencyIcon`, reused
+ *    from `hub-chrome/CurrencyPicker.tsx` rather than rebuilt) via the `AmountFigure` helper
+ *    below. A registered viewer's icon matches the wallet's shared, app-wide selected currency
+ *    (`lib/currency.ts`'s `curSel` singleton); a logged-out viewer's icon is picked per row from
+ *    `OPEN_CURS`, stable (hashed off the row's own identity — `matchId` for the live feed, the
+ *    board row's own `key` for the static RACE/RANK boards — never re-randomized on re-render).
  * 6. **Interactive elements are real `<button>`s**, not the design's plain `<div>`/`<span>` with
  *    `onClick` — matching this codebase's existing precedent for every other design-transcribed
  *    interactive control (`HomeHub.tsx`'s `CategoryTabs`/`GridControls`, etc.). Unlike the
@@ -73,7 +84,7 @@ import { RcIcon } from './RcIcon.js';
  *    one.
  */
 
-const TABS = ['OPEN GAMES', '24H RACE', 'WEEKLY RACE', 'RANK'];
+const TABS = ['OPEN GAMES', '24H RACE', 'WEEKLY RACE', 'LEADERBOARDS'];
 
 // Carousel motion constants — transcribed verbatim (decoded template lines 1293-1341). Do not
 // retune: 1900ms tick, 76px row height, an 11-row rolling window, 620ms slide-in.
@@ -175,6 +186,19 @@ function useNowTick(intervalMs: number): number {
   return now;
 }
 
+/** `railMask(l, r)` — transcribed verbatim (ticket 2026-09-13#6 item 1, `Full Spec.html:3503-
+ *  3508`). Replaces the tab rail's old two-overlay-div fade technique (mismatched with this
+ *  rail's own spec, which is `mask-image`-based — the overlay-div technique belongs to the
+ *  category rail, 2026-09-13#1, a different rail entirely) with a single gradient applied as the
+ *  scroller's own `mask-image`/`-webkit-mask-image`, computed from the same `leftFade`/
+ *  `rightFade` (0-1) state `onTabScroll` already tracks. */
+function railMask(l: number, r: number): string {
+  const a = Math.round(Math.max(0, Math.min(1, l || 0)) * 34);
+  const b = Math.round(Math.max(0, Math.min(1, r ?? 1)) * 34);
+  if (!a && !b) return 'none';
+  return `linear-gradient(to right, rgba(0,0,0,0) 0px, #000 ${a}px, #000 calc(100% - ${b}px), rgba(0,0,0,0) 100%)`;
+}
+
 interface BoardRow {
   key: string;
   username: string;
@@ -215,21 +239,21 @@ function buildBoardRows(src: BoardTuple[], kind: 'race' | 'rank'): BoardRow[] {
 /** One rolling row in the OPEN GAMES carousel — the design's synthetic `make()` return shape
  *  (decoded lines 1305-1317), with real data substituted for `POOL`/`STAKES` per issue #305.
  *
- *  No tier field (2026-09-11#8 item B.3, VIP-tier badge next to the username — confirmed
- *  genuinely unimplemented, not a partial feature): `OpenChallenge`/`PublicOpenChallenge`
- *  (`packages/shared/src/protocol.ts:96-112`) carry no tier data over the wire for this feed, so
- *  there's nothing to read client-side. Chat's `resolveTier`/`tierForXp` (`apps/server/src/ws/
- *  gateway.ts`) and `#441`'s `opponentTier` (`RecentMatchEntry`, protocol.ts:385-391) both add
- *  tier as a small, purpose-built addition to an existing payload rather than a new round-trip —
- *  the open-challenges feed would need the same treatment (`OpenChallenge` gaining an
- *  `ownerTier`, resolved server-side same as `resolveTier`). Left as a follow-up per the ticket's
- *  own instruction not to scope-creep a server change into this PR; not implemented here. */
+ *  `ownerTier` (ticket 2026-09-13#6 item 3, Owner-decided): `OpenChallenge`/`PublicOpenChallenge`
+ *  (`packages/shared/src/protocol.ts`) now carry a server-resolved `ownerTier` field for every
+ *  row — 2026-09-11#8 item B.3's "no tier field over the wire" gap is closed. Rendered via
+ *  `TierIcon`, for every host, bot or human alike (the Owner's explicit call: bots are real
+ *  funded accounts per ADR-010, so a bot's own real, if typically low, tier is meaningful to
+ *  show — no fake tier needed). This REPLACES the 🤖 disclosure emoji that used to sit in front
+ *  of a bot's `@handle` — see `displayHostName` below for why that emoji is now stripped from
+ *  what's rendered (the underlying `ownerName` data itself is untouched). */
 interface CarouselRow {
   uid: number;
   matchId: string;
   gameId: string;
   gameName: string;
   host: string;
+  ownerTier: VipTier;
   stake: number;
   /** `uid % 2 === 0` — the design's alternating "elevated pill" background (decoded line 1314). */
   zebra: boolean;
@@ -268,32 +292,33 @@ function useOpenChallengesPool(challengesByGame: Record<string, OpenChallenge[]>
  * LIVE count) the design's always-full synthetic POOL never had to handle.
  */
 /**
- * Docs/COMMS/ADVISOR_TO_PM.md 2026-09-11#8 item B.1: fixes the doubled-`@` display bug. Bot-crowd's
- * own display names already embed an `@` by construction (`BOT_PREFIX = '🤖'`,
- * `tools/bot-crowd/src/config.ts:226-233` builds names as `` `${BOT_PREFIX}@sweeper` ``, i.e. the
- * stored `ownerName` is literally `"🤖@sweeper"`), while a real human's stored username
- * (`packages/core/src/identity.ts`'s `register`) never contains an `@` anywhere. Unconditionally
- * prepending `@` produced `"@🤖@sweeper"` for bots — two `@` in the string, the Owner's reported
- * bug — while `"@alice"` (a plain human handle) was already correct.
+ * Docs/COMMS/ADVISOR_TO_PM.md 2026-09-11#8 item B.1 fixed a doubled-`@` display bug here; ticket
+ * 2026-09-13#6 item 3 (Owner-decided) now ALSO strips the leading 🤖 disclosure emoji from what's
+ * RENDERED, replacing it with a `TierIcon` next to the (now emoji-free) `@handle` — for every
+ * host, bot or human alike. This is a display-only change: bot-crowd's own stored `ownerName`
+ * (`` `${BOT_PREFIX}@sweeper` ``, `tools/bot-crowd/src/config.ts`) is read here but never
+ * mutated anywhere in this component — `tools/bot-crowd`'s own `isTakeable`/naming logic, which
+ * depends on the RAW `ownerName` starting with `BOT_PREFIX`, keeps working exactly as today.
  *
- * The ticket's own suggested one-liner — strip a *leading* `@` before prepending (`ownerName.
- * replace(/^@/, '')`) — does NOT actually fix the bot case: the bot's embedded `@` sits AFTER the
- * leading 🤖 emoji, not at the start of the string, so `/^@/` never matches and the output is
- * unchanged (`"@🤖@sweeper"`, still two `@`). Re-derived here instead: `ownerName` containing an
- * `@` *anywhere* is itself the "this is already a fully-formed display name" signal (true for
- * every bot name, true for no real human username today) — so only prepend `@` when there isn't
- * one already. This collapses to exactly one `@` for both shapes:
- *   - bot:   "🤖@sweeper" → already has one → displayed as-is → "🤖@sweeper" (🤖 disclosure intact)
- *   - human: "alice"      → has none       → prepend one     → "@alice"
+ * Previously (see git history) this function deliberately preserved the 🤖 emoji, citing
+ * ADR-010's informed-consent requirement: a real player choosing whether to JOIN a bot-hosted
+ * match should be able to tell. The Owner's explicit call on this ticket supersedes that for THIS
+ * screen specifically: ADR-010's real-world informed-consent requirement doesn't meaningfully
+ * apply to a pure investor demo with no real games, and bots are real funded accounts in this
+ * system anyway (ADR-010 itself: "bots are ordinary 🤖-labelled clients") — so a bot's own real
+ * (if typically low) VIP tier is a meaningful, honest thing to show in the emoji's place, not a
+ * silent removal of the disclosure. Deliberately dropped from the `aria-label` too (`:~651`), not
+ * just the visible text — the reasoning above is "this disclosure doesn't carry real stakes on
+ * this demo screen," which applies equally to sighted and AT users; keeping it in one but not the
+ * other would be an inconsistent half-measure, not a deliberate choice.
  *
- * Deliberately NOT a reuse of `ProfileHub.tsx`'s `normalizeOpponentName` (`:190-198`, issue #441)
- * — that helper also strips the leading 🤖 emoji itself, which is correct for its own personal
- * match-history context (its doc comment says so explicitly) but wrong here: ADR-010's
- * informed-consent labeling requires the 🤖 disclosure to stay visible specifically on this
- * open-challenges/live-activity feed, where a human is choosing whether to JOIN.
+ * The stripping logic below is now equivalent to `ProfileHub.tsx`'s own `normalizeOpponentName`
+ * (issue #441) — the two helpers used to differ specifically because of the ADR-010 reasoning
+ * this comment just walked back for this screen; now that the reasoning no longer applies here
+ * either, converging on the same shape is expected, not a coincidence.
  */
 function displayHostName(ownerName: string): string {
-  return ownerName.includes('@') ? ownerName : `@${ownerName}`;
+  return `@${ownerName.replace(/^🤖\s*/, '').replace(/^@/, '')}`;
 }
 
 function useOpenGamesCarousel(pool: FeedRow[], nameByGame: Map<string, string>) {
@@ -314,6 +339,7 @@ function useOpenGamesCarousel(pool: FeedRow[], nameByGame: Map<string, string>) 
       gameId: row.gameId,
       gameName: nameByGameRef.current.get(row.gameId) ?? titleCase(row.gameId),
       host: displayHostName(row.c.ownerName),
+      ownerTier: row.c.ownerTier,
       stake: row.c.stake,
       zebra: uid % 2 === 0,
     };
@@ -378,35 +404,47 @@ function useOpenGamesCarousel(pool: FeedRow[], nameByGame: Map<string, string>) 
   return { items, offset, dur };
 }
 
+/** A small, deterministic string hash (djb2-ish) — used ONLY to pick a stable, non-reshuffling
+ *  `OPEN_CURS` index for a logged-out row's decorative currency icon (ticket 2026-09-13#6 item 2),
+ *  the same role the prototype's own numeric `it.uid` plays in `OPEN_CURS[it.uid % OPEN_CURS.
+ *  length]`. This component's own `uid` field can't be reused for that: it's a monotonically
+ *  increasing per-TICK slot counter (`nRef.current++` in `make()`), so the SAME underlying
+ *  challenge gets a DIFFERENT `uid` every time it cycles back into the rolling window — using it
+ *  here would make the icon reshuffle on every tick, exactly what Designer's spec forbids. Hashing
+ *  a row's own stable string identity (`matchId` for the live feed, a board row's own `key` for
+ *  the static RACE/RANK boards) instead keeps the same row always mapping to the same icon. */
+function stableIndex(id: string, mod: number): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return Math.abs(h) % mod;
+}
+
+/** Which currency symbol a row's decorative icon should show (ticket 2026-09-13#6 item 2,
+ *  prototype's own `cur: loggedIn ? curSel : OPEN_CURS[it.uid % OPEN_CURS.length]`, confirmed via
+ *  grep): a registered viewer sees the SAME symbol on every row, matching the wallet's shared,
+ *  app-wide `curSel` (`lib/currency.ts`) so picking a currency there updates this carousel too; a
+ *  logged-out viewer sees a stable per-row symbol from `OPEN_CURS` (see `stableIndex` above). */
+function curForRow(rowId: string, loggedIn: boolean, curSel: string): string {
+  return loggedIn ? curSel : OPEN_CURS[stableIndex(rowId, OPEN_CURS.length)];
+}
+
 /**
- * Docs/COMMS/ADVISOR_TO_PM.md 2026-09-11#8 item B.2: the Owner-approved `$` skin (`CHARTER.md`
- * #4) for registered users, applied to this carousel's three `RcIcon size={15}` numeral spots
- * (OPEN GAMES stake, and the static RANK/RACE board's XP and PRIZE figures) — none of which T9
- * (`GameHub.tsx`'s bet panel, issue #522) touched, since T9 only covered the bet-preset buttons.
- * Same fix shape: bypass `<Credits>`/`RcIcon` with an inline `$`-formatted string for a registered
- * viewer, unchanged (still the play-money RC-coin glyph) otherwise.
- *
- * T9 gated on a `isGuest` prop threaded through `GameHub.tsx`'s own `PlayPanel`. This component
- * has no such prop, and doesn't need a new one: it already receives an equivalent "is this a
- * registered viewer" signal via `loggedIn` (both real callers — `GameHub.tsx` and `HomeHub.tsx` —
- * already pass it). The two concepts aren't the same thing (`GameHub.tsx`'s curated `isGuest`
- * demo persona never even renders this component — it renders `GuestBotWaiters` instead per that
- * file's own `isGuest ? <GuestBotWaiters/> : <GamesCarousel loggedIn={loggedIn}/>` branch), but
- * `loggedIn` is the right registered-vs-not signal for a component that (unlike `GameHub.tsx`)
- * also has a real, live logged-out audience (the public/anonymous poll, `useOpenChallengesPool`).
- * This mirrors `HubRibbon.tsx`'s own `loggedIn`-gated wallet chip precedent (T2, issue #489/#530):
- * `loggedIn` true → `$`; `loggedIn` false → no `$` at all (there, no balance; here, the play-money
- * glyph), never the guest-mode `isGuest` branch, which this component structurally can't reach.
+ * Docs/COMMS/ADVISOR_TO_PM.md 2026-09-11#8 item B.2 first gave registered viewers a `$` amount
+ * (no icon) and logged-out viewers the green "RC" coin glyph (`RcIcon`) + bare number. Ticket
+ * 2026-09-13#6 item 2 corrects this with more precise Designer detail, confirmed against the
+ * prototype's own `stake: '$' + STAKES[...]`: EVERY row, logged in or out, shows a `$`-prefixed
+ * amount, with a small decorative currency-symbol icon next to it — reusing `CurrencyPicker.tsx`'s
+ * already-built `CurrencyIcon` component (and its `OPEN_CURS` list) rather than a new sprite. The
+ * `cur` prop is computed once per row by the caller via `curForRow` above, so this component
+ * itself doesn't need to know `loggedIn`/row-identity at all — it just renders `$value` next to
+ * whichever symbol it's told.
  */
-function AmountFigure({ value, loggedIn, testId }: { value: string; loggedIn: boolean; testId?: string }) {
+function AmountFigure({ value, cur, testId }: { value: string; cur: string; testId?: string }) {
   const numeralStyle = { fontFamily: "'Space Grotesk', Arial, Helvetica, sans-serif", fontSize: '16px', fontWeight: 700, color: '#34D399', whiteSpace: 'nowrap' as const };
-  if (loggedIn) {
-    return <span data-testid={testId} style={numeralStyle}>${value}</span>;
-  }
   return (
     <>
-      <RcIcon size={15} />
-      <span data-testid={testId} style={numeralStyle}>{value}</span>
+      <CurrencyIcon sym={cur} size={15} />
+      <span data-testid={testId} style={numeralStyle}>{`$${value}`}</span>
     </>
   );
 }
@@ -420,8 +458,9 @@ export interface GamesCarouselProps {
   /** Logged-out JOIN: captures the row's game+stake so the caller's auth wall can resume the
    *  take after sign-in. */
   onTakePublicChallenge?(c: { matchId: string; gameId: string; stake: number }): void;
-  /** Also doubles as the registered-vs-not signal for the `$`-skin numerals (`AmountFigure`
-   *  above, 2026-09-11#8 item B.2). */
+  /** Also doubles as the registered-vs-not signal for `AmountFigure`'s currency icon
+   *  (`curForRow` above, ticket 2026-09-13#6 item 2): logged in → the shared wallet `curSel`;
+   *  logged out → a stable per-row `OPEN_CURS` pick. */
   loggedIn: boolean;
   /** Grey out every row's JOIN while the viewer is already mid-commitment (issue #316) — a real
    *  guard, not decorative: `GameHub.tsx` passes `phase === 'in-match' || phase === 'waiting'` so a
@@ -440,6 +479,9 @@ export function GamesCarousel({ challengesByGame, nameByGame, balance, onTake, o
   const pool = useOpenChallengesPool(challengesByGame, loggedIn);
   const { items, offset, dur } = useOpenGamesCarousel(pool, nameByGame);
   const liveCount = pool.length; // judgment call #3: real count, not the design's synthetic cycle
+  const { resolved } = useTheme();
+  const light = resolved === 'light';
+  const { curSel } = useCurSel();
 
   const [tab, setTab] = useState(0);
   const [boardLimit, setBoardLimit] = useState(10);
@@ -458,6 +500,32 @@ export function GamesCarousel({ challengesByGame, nameByGame, balance, onTake, o
     const max = el.scrollWidth - el.clientWidth;
     setLeftFade(Math.min(1, el.scrollLeft / 24));
     setRightFade(max <= 0 ? 0 : Math.min(1, (max - el.scrollLeft) / 24));
+  }
+
+  /** `centerPill()`, transcribed verbatim (ticket 2026-09-13#6 item 1, `Full Spec.html:3492-3501`).
+   *  Walks UP from the clicked pill past the non-scrolling inner track div (`tabRailBg`) to find
+   *  the actual scrollable ancestor — this rail has one more nesting level than `HomeHub.tsx`'s
+   *  `CategoryTabs`/`selectAndCenter` (issue #501), whose pill's own parent IS the scroller, so
+   *  that simpler version can't be reused as-is here. */
+  function centerPill(pill: HTMLElement) {
+    let rail: HTMLElement | null = pill.parentElement;
+    while (rail && rail.scrollWidth <= rail.clientWidth + 1) rail = rail.parentElement;
+    if (!rail) return;
+    const pr = pill.getBoundingClientRect();
+    const rr = rail.getBoundingClientRect();
+    const target = rail.scrollLeft + (pr.left - rr.left) - (rr.width - pr.width) / 2;
+    const max = rail.scrollWidth - rail.clientWidth;
+    // Optional call: jsdom (the unit-test DOM) doesn't implement Element.scrollTo at all — every
+    // real browser does, same test-environment-only guard as HomeHub.tsx's own selectAndCenter.
+    rail.scrollTo?.({ left: Math.max(0, Math.min(max, target)), behavior: 'smooth' });
+  }
+
+  function pickAndCenterTab(i: number, pill: HTMLElement) {
+    pickTab(i);
+    // Matches the prototype's own `setState({tab, boardLimit}, () => requestAnimationFrame(() =>
+    // this.centerPill(pill)))` — the rAF gives the browser a frame to commit this render's DOM
+    // (background/box-shadow flip) before measuring the pill's own now-current position.
+    requestAnimationFrame(() => centerPill(pill));
   }
 
   function boardMore() {
@@ -493,58 +561,53 @@ export function GamesCarousel({ challengesByGame, nameByGame, balance, onTake, o
   return (
     <section data-testid="games-carousel" aria-label="Open games, races and rank">
       <div style={{ margin: '6px 16px 0 16px', padding: '16px 0 14px 0' }}>
-        {/* Tab bar — verbatim (decoded lines 483-491) */}
+        {/* Tab bar (ticket 2026-09-13#6 item 1) — a shared-track rail: an outer `mask-image`-
+            bearing scroller wrapping an inner non-scrolling track div (the `tabRailBg` pill
+            background), NOT a single flat scroller. Structure/values transcribed verbatim from
+            `Full Spec.html:250-256` + `renderVals()`. */}
         <div style={{ position: 'relative', marginTop: '14px' }}>
           <div
             role="tablist"
             aria-label="Games leaderboard tabs"
             onScroll={onTabScroll}
             className="no-scrollbar"
-            style={{ display: 'flex', flexWrap: 'nowrap', gap: '9px', overflowX: 'auto', padding: '0 2px' }}
+            style={{
+              display: 'flex', overflowX: 'auto', WebkitOverflowScrolling: 'touch',
+              maskImage: railMask(leftFade, rightFade), WebkitMaskImage: railMask(leftFade, rightFade),
+            }}
           >
-            {TABS.map((label, i) => (
-              <button
-                key={label}
-                type="button"
-                role="tab"
-                aria-selected={i === tab}
-                data-testid={`games-carousel-tab-${i}`}
-                onClick={() => pickTab(i)}
-                style={{
-                  background: i === tab ? '#8B45F0' : '#1A1A2E',
-                  borderRadius: '999px',
-                  padding: '11px 16px',
-                  fontFamily: 'Arial, Helvetica, sans-serif',
-                  fontSize: '12px',
-                  fontWeight: 'bold',
-                  letterSpacing: '0.8px',
-                  color: '#FFFFFF',
-                  flex: '0 0 auto',
-                  whiteSpace: 'nowrap',
-                  cursor: 'pointer',
-                  border: 'none',
-                }}
-              >
-                {label}
-              </button>
-            ))}
+            <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '9px', width: 'max-content', background: light ? '#DEDEE8' : '#12121A', borderRadius: '999px', padding: '6px 6px 11px 6px' }}>
+              {TABS.map((label, i) => (
+                <button
+                  key={label}
+                  type="button"
+                  role="tab"
+                  aria-selected={i === tab}
+                  data-testid={`games-carousel-tab-${i}`}
+                  onClick={(e) => pickAndCenterTab(i, e.currentTarget)}
+                  className="active:translate-y-[3px]"
+                  style={{
+                    background: i === tab ? '#8B45F0' : 'var(--rc-surface)',
+                    color: i === tab ? '#FFFFFF' : 'var(--rc-text)',
+                    boxShadow: i === tab ? 'var(--rc-theme-toggle-active-shadow)' : 'var(--rc-theme-toggle-inactive-shadow)',
+                    borderRadius: '999px',
+                    padding: '11px 16px',
+                    fontFamily: 'Arial, Helvetica, sans-serif',
+                    fontSize: '12px',
+                    fontWeight: 'bold',
+                    letterSpacing: '0.8px',
+                    flex: '0 0 auto',
+                    whiteSpace: 'nowrap',
+                    cursor: 'pointer',
+                    border: 'none',
+                    transition: 'background 200ms ease, box-shadow 200ms ease, transform 120ms ease',
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
-          <div
-            aria-hidden="true"
-            style={{
-              position: 'absolute', top: '-1px', bottom: '-1px', left: '-2px', width: '38px',
-              pointerEvents: 'none', opacity: leftFade, transition: 'opacity 180ms ease',
-              background: 'linear-gradient(to right, rgba(11,11,11,1) 0%, rgba(11,11,11,1) 12%, rgba(11,11,11,0.7) 58%, rgba(11,11,11,0) 100%)',
-            }}
-          />
-          <div
-            aria-hidden="true"
-            style={{
-              position: 'absolute', top: '-1px', bottom: '-1px', right: '-2px', width: '54px',
-              pointerEvents: 'none', opacity: rightFade, transition: 'opacity 180ms ease',
-              background: 'linear-gradient(to left, rgba(11,11,11,1) 0%, rgba(11,11,11,1) 12%, rgba(11,11,11,0.7) 58%, rgba(11,11,11,0) 100%)',
-            }}
-          />
         </div>
 
         {/* Header row — verbatim (decoded lines 493-538) */}
@@ -633,14 +696,20 @@ export function GamesCarousel({ challengesByGame, nameByGame, balance, onTake, o
                       <div data-testid={`games-carousel-game-${g.uid}`} style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '14px', fontWeight: 'bold', letterSpacing: '0.4px', color: '#F2F2F6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {g.gameName}
                       </div>
-                      <div style={{ fontFamily: 'Arial, Helvetica, sans-serif', marginTop: '3px', fontSize: '12px', fontWeight: 'bold', letterSpacing: '0.4px', color: '#FFFFFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {g.host}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
+                        <TierIcon tier={g.ownerTier} size={14} />
+                        <span
+                          data-testid={`games-carousel-host-${g.uid}`}
+                          style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '12px', fontWeight: 'bold', letterSpacing: '0.4px', color: '#FFFFFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                        >
+                          {g.host}
+                        </span>
                       </div>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', flex: '0 0 auto' }}>
                       <span style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '9px', fontWeight: 'bold', letterSpacing: '1.2px', color: '#FFFFFF' }}>STAKE:</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <AmountFigure value={g.stake.toLocaleString('en-US')} loggedIn={loggedIn} testId={`games-carousel-stake-${g.uid}`} />
+                        <AmountFigure value={g.stake.toLocaleString('en-US')} cur={curForRow(g.matchId, loggedIn, curSel)} testId={`games-carousel-stake-${g.uid}`} />
                       </div>
                     </div>
                     <button
@@ -648,6 +717,10 @@ export function GamesCarousel({ challengesByGame, nameByGame, balance, onTake, o
                       data-testid={`games-carousel-join-${g.uid}`}
                       onClick={() => handleJoinRow(g)}
                       disabled={joinDisabled}
+                      // Deliberately uses the display name (🤖-free) here too, not the raw
+                      // `ownerName` — see `displayHostName`'s own doc comment for why the ADR-010
+                      // disclosure is dropped consistently (visible text AND aria-label), not kept
+                      // in one but not the other.
                       aria-label={`Join ${g.host}'s ${g.stake} credit ${g.gameName} game`}
                       style={{ flex: '0 0 auto', background: '#8B45F0', borderRadius: '999px', padding: '11px 16px 11px 17px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: joinDisabled ? 'not-allowed' : 'pointer', opacity: joinDisabled ? 0.4 : 1, border: 'none' }}
                     >
@@ -686,7 +759,7 @@ export function GamesCarousel({ challengesByGame, nameByGame, balance, onTake, o
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', flex: '0 0 auto' }}>
                       <span style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '9px', fontWeight: 'bold', letterSpacing: '1.2px', color: '#FFFFFF' }}>{b.label}</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <AmountFigure value={b.value} loggedIn={loggedIn} />
+                        <AmountFigure value={b.value} cur={curForRow(b.key, loggedIn, curSel)} />
                       </div>
                     </div>
                   )}
@@ -694,7 +767,7 @@ export function GamesCarousel({ challengesByGame, nameByGame, balance, onTake, o
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', flex: '0 0 auto' }}>
                       <span style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '9px', fontWeight: 'bold', letterSpacing: '1.2px', color: '#FFFFFF' }}>PRIZE</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <AmountFigure value={b.pill} loggedIn={loggedIn} />
+                        <AmountFigure value={b.pill} cur={curForRow(b.key, loggedIn, curSel)} />
                       </div>
                     </div>
                   )}

@@ -33,7 +33,7 @@ function baseProps(over: Partial<Props> = {}): Props {
 }
 
 const challenge = (matchId: string, ownerName: string, stake: number, openedAt: number): OpenChallenge => ({
-  matchId, ownerName, stake, openedAt, expiresAt: Date.now() + 30_000, timeControlId: 'none',
+  matchId, ownerName, ownerTier: 'Unranked', stake, openedAt, expiresAt: Date.now() + 30_000, timeControlId: 'none',
 });
 
 describe('HomeHubScreen', () => {
@@ -290,7 +290,7 @@ describe('HomeHubScreen — no-art game handling (#148)', () => {
 describe('HomeHubScreen (logged out)', () => {
   // A public open-challenge as returned by GET /open-challenges (carries gameId).
   const pub = (matchId: string, gameId: string, ownerName: string, stake: number) => ({
-    matchId, gameId, ownerName, stake, openedAt: 100, expiresAt: Date.now() + 30_000, timeControlId: 'none',
+    matchId, gameId, ownerName, ownerTier: 'Unranked' as const, stake, openedAt: 100, expiresAt: Date.now() + 30_000, timeControlId: 'none',
   });
   // Default mock: public endpoints succeed; the open-challenges snapshot is empty unless overridden.
   function stubFetch(openChallenges: unknown[] = []) {
@@ -325,7 +325,8 @@ describe('HomeHubScreen (logged out)', () => {
     // Real rows from GET /open-challenges (never fabricated).
     await waitFor(() => expect(document.querySelector('[data-match-id="p1"]')).toBeInTheDocument());
     const p1Row = document.querySelector('[data-match-id="p1"]') as HTMLElement;
-    expect(within(p1Row).getByText('15')).toBeInTheDocument();
+    // Ticket 2026-09-13#6 item 2: every row (logged in or out) now shows a $-prefixed amount.
+    expect(within(p1Row).getByText('$15')).toBeInTheDocument();
     expect(document.querySelector('[data-match-id="p2"]')).toBeInTheDocument();
 
     // A JOIN tap passes the row's matchId + gameId + stake so the auth wall can resume the take.

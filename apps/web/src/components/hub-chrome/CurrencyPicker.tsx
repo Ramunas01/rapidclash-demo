@@ -1,5 +1,6 @@
 import { useId, useState } from 'react';
 import { useTheme } from '../../lib/theme.js';
+import { useCurSel } from '../../lib/currency.js';
 import { CUR_BAL, CUR_CRYPTO, CUR_NAME, OPEN_CURS } from './currencyData.js';
 
 interface Props {
@@ -39,7 +40,12 @@ export function CurrencyPicker({ balance }: Props) {
   const light = resolved === 'light';
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [curSel, setCurSel] = useState('USD');
+  // Promoted to app-wide shared state (ticket 2026-09-13#6 item 2) — `lib/currency.ts`, the same
+  // module-level-singleton shape as `lib/theme.ts` — so `GamesCarousel.tsx`'s logged-in stake
+  // rows reflect this exact selection too, kept in sync without either component knowing about
+  // the other. This is a storage-location change only: every other behavior in this file
+  // (search/filter, fiat toggle, hide-zero, the USD-always-shows-real-balance rule) is unchanged.
+  const { curSel, setCurSel } = useCurSel();
   const [fiatOn, setFiatOn] = useState(true);
   const [hideZero, setHideZero] = useState(false);
 

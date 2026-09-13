@@ -150,6 +150,39 @@ describe('OC8 — open-challenges feed over the WS gateway', () => {
     expect(upd.added).toBeTruthy();
     expect(upd.added!.ownerName).toBe('alice'); // username-joined
     expect(upd.added!.stake).toBe(10);
+    // Ticket 2026-09-13#6 item 3: a fresh account (0 XP) resolves to 'Unranked', same contract
+    // as chat's own `resolveTier` (`chat.gateway.test.ts`: "fresh account, 0 XP — not the
+    // smuggled 'Diamond'").
+    expect(upd.added!.ownerTier).toBe('Unranked');
+  });
+
+  it('ticket 2026-09-13#6 item 3: ownerTier reflects a seeded XP value, at BOTH construction sites — the incremental `added` push (gateway.ts\'s openChallengeOf) AND the initial subscribe snapshot (matchmaking.ts\'s listOpenChallenges via the real Matchmaking instance\'s injected lookupTier)', async () => {
+    // Bronze starts at 5,000 XP lifetime (packages/core/src/rewards.ts's VIP_ROWS).
+    services.db
+      .prepare(`INSERT INTO rewards (account_id, xp_lifetime, xp_monthly_reset_at) VALUES (?, ?, ?)`)
+      .run(aliceId, 5_000, new Date().toISOString());
+
+    // Alice rests a bet, then bob subscribes AFTER it's rested — bob's `challenges.list` snapshot
+    // exercises matchmaking.ts's own `listOpenChallenges`/`lookupTier` path.
+    const alice = await openSocket(port, aliceToken);
+    sockets.push(alice);
+    alice.send('queue.join', { gameId: 'rps', stake: 10 });
+    // Let the bet actually rest (CHALLENGE_MIN_REST_MS is 0 in this suite, but give the server a
+    // moment to process the join before bob subscribes).
+    await new Promise((r) => setTimeout(r, 20));
+
+    const bob = await openSocket(port, bobToken);
+    sockets.push(bob);
+    bob.send('challenges.subscribe', { gameId: 'rps' });
+    const list = (await bob.waitFor('challenges.list')).payload as ChallengesListPayload;
+    expect(list.entries).toHaveLength(1);
+    expect(list.entries[0].ownerTier).toBe('Bronze');
+
+    // A second challenge posted AFTER bob is already subscribed exercises gateway.ts's own
+    // `openChallengeOf` (the `added` push path) for the same seeded account.
+    alice.send('queue.join', { gameId: 'rps', stake: 20 });
+    const upd = (await bob.waitFor('challenges.update')).payload as ChallengesUpdatePayload;
+    expect(upd.added!.ownerTier).toBe('Bronze');
   });
 
   it('challenge.take forms exactly one match and pushes {removed: taken} to subscribers', async () => {

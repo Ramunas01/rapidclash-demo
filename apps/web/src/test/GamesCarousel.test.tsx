@@ -1,8 +1,17 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, within, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, within, waitFor, act } from '@testing-library/react';
 import { GamesCarousel } from '../components/hub-shared/GamesCarousel.js';
-import type { OpenChallenge } from '@rapidclash/shared';
+import { setCurSel } from '../lib/currency.js';
+import type { OpenChallenge, VipTier } from '@rapidclash/shared';
+
+/** Some `CurrencyIcon` symbols (e.g. SOL's gradient) use `useId()` for an internal `<defs>` id,
+ *  so two separate instances of the SAME symbol render byte-different `outerHTML` even though
+ *  they're visually identical. Strip generated ids/refs before comparing two icons for "is this
+ *  the same symbol", so these tests aren't coupled to which symbol a given hash happens to pick. */
+function normalizeSvg(html: string | null | undefined): string {
+  return (html ?? '').replace(/id="[^"]*"/g, 'id="X"').replace(/url\(#[^)]*\)/g, 'url(#X)');
+}
 
 // Issue #305 — Games-page Open Games carousel. Motion constants transcribed verbatim from the
 // decoded design template: 1900ms tick, ROW=76, VISIBLE=11, 620ms slide-in.
@@ -12,8 +21,14 @@ const SLIDE_MS = 620;
 
 const nameByGame = new Map([['coinflip', 'Coinflip'], ['mines', 'Mines'], ['chess', 'Chess']]);
 
-function challenge(matchId: string, ownerName: string, stake: number, openedAt: number): OpenChallenge {
-  return { matchId, ownerName, stake, openedAt, expiresAt: Date.now() + 30_000, timeControlId: 'none' };
+function challenge(
+  matchId: string,
+  ownerName: string,
+  stake: number,
+  openedAt: number,
+  ownerTier: VipTier = 'Unranked',
+): OpenChallenge {
+  return { matchId, ownerName, ownerTier, stake, openedAt, expiresAt: Date.now() + 30_000, timeControlId: 'none' };
 }
 
 /** N sequential coinflip challenges (g1 oldest .. gN newest). */
@@ -47,7 +62,12 @@ function baseProps(over: Partial<Parameters<typeof GamesCarousel>[0]> = {}): Par
   };
 }
 
-beforeEach(() => stubRaf());
+// `curSel` is app-wide shared state (`lib/currency.ts`, ticket 2026-09-13#6 item 2) — reset it
+// before every test so a test that picks a non-default currency can't leak into the next one.
+beforeEach(() => {
+  stubRaf();
+  setCurSel('USD');
+});
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
@@ -55,10 +75,10 @@ afterEach(() => {
 });
 
 describe('GamesCarousel — tabs', () => {
-  it('renders all 4 tabs verbatim, OPEN GAMES active by default', () => {
+  it('renders all 4 tabs verbatim (ticket 2026-09-13#6 item 1: the 4th tab is LEADERBOARDS, not the old wrong "RANK" label), OPEN GAMES active by default', () => {
     render(<GamesCarousel {...baseProps()} />);
     const tabs = screen.getAllByRole('tab');
-    expect(tabs.map((t) => t.textContent)).toEqual(['OPEN GAMES', '24H RACE', 'WEEKLY RACE', 'RANK']);
+    expect(tabs.map((t) => t.textContent)).toEqual(['OPEN GAMES', '24H RACE', 'WEEKLY RACE', 'LEADERBOARDS']);
     expect(screen.getByTestId('games-carousel-tab-0')).toHaveAttribute('aria-selected', 'true');
   });
 
@@ -123,7 +143,7 @@ describe('GamesCarousel — OPEN GAMES tab: real data (signed in)', () => {
     expect(screen.getByTestId('games-carousel-notice').textContent).toMatch(/not enough/i);
   });
 
-  it('2026-09-11#8 item B.2: registered (loggedIn) viewers see the Owner-approved $ skin, not the RC-coin glyph (CHARTER.md #4)', () => {
+  it('ticket 2026-09-13#6 item 2: every row shows a $-prefixed amount, logged in or out (supersedes 2026-09-11#8 item B.2\'s RC-coin-for-guests half)', () => {
     const { container } = render(<GamesCarousel {...baseProps({ challengesByGame: manyChallenges(3) })} />);
     expect(container.textContent ?? '').toMatch(/\$/);
   });
@@ -136,14 +156,25 @@ describe('GamesCarousel — OPEN GAMES tab: real data (signed in)', () => {
     expect(within(row).queryByText(/@@/)).toBeNull();
   });
 
-  it('2026-09-11#8 item B.1: a bot-crowd username (already embeds its own @) renders with exactly one @ and keeps the 🤖 ADR-010 disclosure — not doubled, not stripped', () => {
+  it('ticket 2026-09-13#6 item 3 (Owner-decided): a bot-crowd username renders with exactly one @ and NO visible 🤖 — the raw ownerName data is untouched, only the display strips it', () => {
     // Real shape bot-crowd posts (tools/bot-crowd/src/config.ts:226-233): BOT_PREFIX ('🤖') + '@' + handle.
-    const challengesByGame = { mines: [challenge('m1', '🤖@sweeper', 25, 100)] };
+    const rawOwnerName = '🤖@sweeper';
+    const challengesByGame = { mines: [challenge('m1', rawOwnerName, 25, 100, 'Bronze')] };
     render(<GamesCarousel {...baseProps({ challengesByGame })} />);
     const row = rowByMatchId('m1');
-    expect(within(row).getByText('🤖@sweeper')).toBeInTheDocument(); // exactly one @, 🤖 intact
-    expect(within(row).queryByText(/@🤖@sweeper/)).toBeNull(); // not doubled
-    expect(within(row).queryByText(/^@/)).toBeNull(); // no extra leading @ prepended on top
+    // Visible text: emoji stripped, exactly one @.
+    const hostEl = within(row).getByTestId(/^games-carousel-host-/);
+    expect(hostEl.textContent).toBe('@sweeper');
+    expect(within(row).queryByText(/🤖/)).toBeNull();
+    expect(within(row).queryByText(/@@/)).toBeNull();
+    // A tier icon (an <svg>, TierIcon's own root element) renders immediately before the host
+    // text — in the old emoji's place.
+    expect(hostEl.previousElementSibling?.tagName.toLowerCase()).toBe('svg');
+    // Underlying data untouched: the same bot-crowd-style check `tools/bot-crowd`'s own
+    // `isTakeable` uses (`!ownerName.startsWith(BOT_PREFIX)`) still correctly identifies this as
+    // a bot row from the RAW string — proving nothing stripped the data, only the render path.
+    const BOT_PREFIX = '🤖';
+    expect(rawOwnerName.startsWith(BOT_PREFIX)).toBe(true);
   });
 });
 
@@ -163,14 +194,15 @@ describe('GamesCarousel — OPEN GAMES tab: real data (logged out)', () => {
     expect(onTakePublicChallenge).toHaveBeenCalledWith({ matchId: 'p1', gameId: 'coinflip', stake: 15 });
   });
 
-  it('2026-09-11#8 item B.2: logged-out viewers keep the play-money RC-coin glyph — no $ leaks in for the public/unregistered audience', () => {
-    // The static RANK board's XP/PRIZE figures don't depend on the network-polled open-challenges
-    // feed, so this exercises the $-gating in isolation. Stubbed fetch just avoids a real network
-    // call from the (unrelated, still-active) public-poll effect this component also runs.
+  it('ticket 2026-09-13#6 item 2: logged-out viewers ALSO see a $-prefixed amount now (supersedes 2026-09-11#8 item B.2\'s RC-coin-for-guests half)', () => {
+    // The static LEADERBOARDS board's XP/PRIZE figures don't depend on the network-polled
+    // open-challenges feed, so this exercises the $-gating in isolation. Stubbed fetch just
+    // avoids a real network call from the (unrelated, still-active) public-poll effect this
+    // component also runs.
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => [] }) as Response));
     const { container } = render(<GamesCarousel {...baseProps({ loggedIn: false })} />);
-    fireEvent.click(screen.getByTestId('games-carousel-tab-3')); // RANK — XP figures
-    expect(container.textContent ?? '').not.toMatch(/\$/);
+    fireEvent.click(screen.getByTestId('games-carousel-tab-3')); // LEADERBOARDS — XP figures
+    expect(container.textContent ?? '').toMatch(/\$/);
     expect(screen.getAllByText('XP:').length).toBeGreaterThan(0);
   });
 });
@@ -274,5 +306,152 @@ describe('GamesCarousel — 24H RACE / WEEKLY RACE / RANK: static placeholder, z
     fireEvent.click(screen.getByTestId('games-carousel-tab-2'));
     fireEvent.click(screen.getByTestId('games-carousel-tab-3'));
     expect(onTake).not.toHaveBeenCalled();
+  });
+});
+
+describe('GamesCarousel — tab rail (ticket 2026-09-13#6 item 1: shared track, shadows, mask-image fade)', () => {
+  it('the pills share one non-scrolling track div, nested inside the mask-image scroller — not a single flat scroller', () => {
+    render(<GamesCarousel {...baseProps()} />);
+    const pill = screen.getByTestId('games-carousel-tab-0');
+    const track = pill.parentElement as HTMLElement;
+    const scroller = track.parentElement as HTMLElement;
+    expect(track.style.borderRadius).toBe('999px');
+    expect(track.style.padding).toBe('6px 6px 11px 6px');
+    expect(scroller.getAttribute('role')).toBe('tablist');
+    expect(scroller.style.overflowX).toBe('auto');
+    expect(scroller.style.maskImage).toBeTruthy();
+  });
+
+  it('the shared track background is theme-aware (dark vs light values differ)', async () => {
+    const { setThemeChoice } = await import('../lib/theme.js');
+    setThemeChoice('dark');
+    const { unmount } = render(<GamesCarousel {...baseProps()} />);
+    const darkBg = (screen.getByTestId('games-carousel-tab-0').parentElement as HTMLElement).style.background;
+    unmount();
+
+    setThemeChoice('light');
+    render(<GamesCarousel {...baseProps()} />);
+    const lightBg = (screen.getByTestId('games-carousel-tab-0').parentElement as HTMLElement).style.background;
+
+    expect(darkBg).toBeTruthy();
+    expect(lightBg).toBeTruthy();
+    expect(darkBg).not.toBe(lightBg);
+    setThemeChoice('dark'); // restore — theme.ts is a module-level singleton shared across tests
+  });
+
+  it('active pill gets the shared purple/active-ledge tokens; inactive pill gets the shared inactive-ledge token (same tokens as the Menu Dark/Light control)', () => {
+    render(<GamesCarousel {...baseProps()} />);
+    const active = screen.getByTestId('games-carousel-tab-0');
+    const inactive = screen.getByTestId('games-carousel-tab-1');
+    expect(active.style.boxShadow).toBe('var(--rc-theme-toggle-active-shadow)');
+    expect(inactive.style.boxShadow).toBe('var(--rc-theme-toggle-inactive-shadow)');
+    expect(active.style.background).toMatch(/#8b45f0|139, 69, 240/i);
+    expect(inactive.style.background).toBe('var(--rc-surface)');
+  });
+
+  it('the mask-image is scroll-driven, not a fixed value', () => {
+    render(<GamesCarousel {...baseProps()} />);
+    const scroller = screen.getByRole('tablist', { name: 'Games leaderboard tabs' });
+    const initial = scroller.style.maskImage;
+    Object.defineProperty(scroller, 'scrollWidth', { value: 300, configurable: true });
+    Object.defineProperty(scroller, 'clientWidth', { value: 200, configurable: true });
+    Object.defineProperty(scroller, 'scrollLeft', { value: 50, configurable: true });
+    fireEvent.scroll(scroller);
+    expect(scroller.style.maskImage).not.toBe(initial);
+    expect(scroller.style.maskImage).toContain('linear-gradient');
+    // Note: NOT asserting `.style.webkitMaskImage` here — jsdom's CSSOM (`cssstyle`) doesn't
+    // implement the non-standard `-webkit-mask-image` property at all (same class of gap as this
+    // session's already-confirmed `PointerEvent` absence), so it always reads back `undefined`
+    // regardless of what's set. The component sets both `maskImage` and `WebkitMaskImage` from
+    // the same `railMask(...)` call (see the JSX) — real Safari is what needs the prefix.
+  });
+
+  it('pressing a tab centers it — centerPill walks up past the non-scrolling track to the real scrollable ancestor', async () => {
+    render(<GamesCarousel {...baseProps()} />);
+    const pill = screen.getByTestId('games-carousel-tab-1');
+    const track = pill.parentElement as HTMLElement;
+    const scroller = track.parentElement as HTMLElement;
+
+    // The track is content-sized (`width:max-content`) — never itself scrollable.
+    Object.defineProperty(track, 'scrollWidth', { value: 400, configurable: true });
+    Object.defineProperty(track, 'clientWidth', { value: 400, configurable: true });
+    // The outer scroller IS scrollable — this is the ancestor centerPill must find.
+    Object.defineProperty(scroller, 'scrollWidth', { value: 400, configurable: true });
+    Object.defineProperty(scroller, 'clientWidth', { value: 200, configurable: true });
+    Object.defineProperty(scroller, 'scrollLeft', { value: 0, configurable: true });
+    scroller.scrollTo = vi.fn();
+
+    const rect = (l: number, w: number): DOMRect =>
+      ({ left: l, right: l + w, width: w, top: 0, bottom: 0, height: 0, x: l, y: 0, toJSON: () => ({}) }) as DOMRect;
+    pill.getBoundingClientRect = () => rect(150, 50);
+    scroller.getBoundingClientRect = () => rect(0, 200);
+
+    fireEvent.click(pill);
+    await new Promise((r) => setTimeout(r, 10)); // let the stubbed rAF (stubRaf: setTimeout(cb,0)) fire
+
+    expect(screen.getByTestId('games-carousel-tab-1')).toHaveAttribute('aria-selected', 'true');
+    // target = scrollLeft(0) + (pillLeft(150) - railLeft(0)) - (railWidth(200) - pillWidth(50))/2
+    //        = 150 - 75 = 75; max = 400-200 = 200 → clamp(0,200,75) = 75.
+    expect(scroller.scrollTo).toHaveBeenCalledWith({ left: 75, behavior: 'smooth' });
+  });
+});
+
+describe('GamesCarousel — stake currency icon (ticket 2026-09-13#6 item 2)', () => {
+  it('logged-in: every row shows the SAME currency icon, matching the shared curSel', () => {
+    setCurSel('BTC');
+    const challengesByGame = { coinflip: [challenge('c1', 'alice', 5, 100)], mines: [challenge('m1', 'bob', 25, 50)] };
+    render(<GamesCarousel {...baseProps({ challengesByGame })} />);
+    const c1Icon = within(rowByMatchId('c1')).getByTestId(/^games-carousel-stake-/).previousElementSibling as Element;
+    const m1Icon = within(rowByMatchId('m1')).getByTestId(/^games-carousel-stake-/).previousElementSibling as Element;
+    expect(c1Icon.tagName.toLowerCase()).toBe('svg');
+    expect(normalizeSvg(c1Icon.outerHTML)).toBe(normalizeSvg(m1Icon.outerHTML)); // same symbol on every row
+  });
+
+  it('changing curSel updates every logged-in row\'s icon together', () => {
+    setCurSel('USD');
+    const challengesByGame = { coinflip: [challenge('c1', 'alice', 5, 100)] };
+    render(<GamesCarousel {...baseProps({ challengesByGame })} />);
+    const before = within(rowByMatchId('c1')).getByTestId(/^games-carousel-stake-/).previousElementSibling?.outerHTML;
+    act(() => setCurSel('SOL'));
+    const after = within(rowByMatchId('c1')).getByTestId(/^games-carousel-stake-/).previousElementSibling?.outerHTML;
+    expect(normalizeSvg(after)).not.toBe(normalizeSvg(before));
+  });
+
+  it('logged-out: the same matchId keeps the same icon across different rolling-window slots (stable, not re-randomized by the slot\'s own changing uid)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => [{ ...challenge('p1', 'zed', 15, 0), gameId: 'coinflip' }],
+    }) as Response));
+    render(<GamesCarousel {...baseProps({ loggedIn: false })} />);
+    await waitFor(() => expect(document.querySelectorAll('[data-match-id="p1"]').length).toBeGreaterThan(1));
+    const rows = Array.from(document.querySelectorAll('[data-match-id="p1"]')) as HTMLElement[];
+    const icons = rows.map((r) => normalizeSvg(within(r).getByTestId(/^games-carousel-stake-/).previousElementSibling?.outerHTML));
+    expect(new Set(icons).size).toBe(1); // every slot showing this same challenge agrees on the icon
+  });
+
+  it('every row (logged in or out) shows a $-prefixed amount', () => {
+    const challengesByGame = { coinflip: [challenge('c1', 'alice', 5, 100)] };
+    render(<GamesCarousel {...baseProps({ challengesByGame })} />);
+    expect(within(rowByMatchId('c1')).getByTestId(/^games-carousel-stake-/).textContent).toBe('$5');
+  });
+});
+
+describe('GamesCarousel — curSel is wired to the same shared state as CurrencyPicker (ticket 2026-09-13#6 item 2)', () => {
+  it('picking a currency in CurrencyPicker updates GamesCarousel\'s logged-in stake icon too, without either component knowing about the other', async () => {
+    const { HubRibbon } = await import('../components/hub-chrome/HubRibbon.js');
+    const challengesByGame = { coinflip: [challenge('c1', 'alice', 5, 100)] };
+    render(
+      <>
+        <HubRibbon balance={100} onLogo={vi.fn()} onWallet={vi.fn()} loggedIn />
+        <GamesCarousel {...baseProps({ challengesByGame })} />
+      </>,
+    );
+    const iconBefore = within(rowByMatchId('c1')).getByTestId(/^games-carousel-stake-/).previousElementSibling?.outerHTML;
+
+    fireEvent.click(screen.getByTestId('hub-currency-chip'));
+    fireEvent.click(screen.getByTestId('currency-picker-row-BTC'));
+
+    const iconAfter = within(rowByMatchId('c1')).getByTestId(/^games-carousel-stake-/).previousElementSibling?.outerHTML;
+    expect(iconAfter).not.toBe(iconBefore);
   });
 });

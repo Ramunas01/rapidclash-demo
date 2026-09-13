@@ -4,7 +4,7 @@ import { render, screen, fireEvent, waitFor, within, act } from '@testing-librar
 import confetti from 'canvas-confetti';
 import { ChessHubScreen } from '../screens/ChessHub.js';
 import type { ChessView, ChessMove, GameView } from '../App.js';
-import type { PlayerClocks, GameMeta } from '@rapidclash/shared';
+import type { PlayerClocks, GameMeta, OpenChallenge } from '@rapidclash/shared';
 
 // canvas-confetti needs a real <canvas> (absent in jsdom) — mock it (matches the other hub tests).
 vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
@@ -302,8 +302,8 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
   });
 
   it('Feed: a chess open-challenge shows in the shared GamesCarousel (game + stake)', async () => {
-    const challenge = {
-      matchId: 'c1', ownerName: 'rival', stake: 10, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'blitz5',
+    const challenge: OpenChallenge = {
+      matchId: 'c1', ownerName: 'rival', ownerTier: 'Unranked', stake: 10, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'blitz5',
     };
     render(<ChessHubScreen {...baseProps({ challengesByGame: { chess: [challenge] } })} />);
     // The hub uses the same GamesCarousel the Home page renders (no per-row time-control chip).
@@ -424,7 +424,7 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
   });
 
   // ── Bug 1: JOIN gating — Open Games allows JOIN in the settled result view (match already deleted) ──
-  const CHALLENGE = { matchId: 'j1', ownerName: 'rival', stake: 10, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'blitz5' };
+  const CHALLENGE: OpenChallenge = { matchId: 'j1', ownerName: 'rival', ownerTier: 'Unranked', stake: 10, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'blitz5' };
 
   it('Bug 1: the settled post-game result view still allows JOIN on Open Games', async () => {
     // The match is settled/deleted server-side once ended, so idling on the result board must NOT
