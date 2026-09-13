@@ -2,9 +2,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { ProfileHubScreen } from '../screens/ProfileHub.js';
-import type { RecentMatchEntry, RewardsSnapshot } from '@rapidclash/shared';
+import type { GameMeta, RecentMatchEntry, RewardsSnapshot } from '@rapidclash/shared';
 
 type Props = Parameters<typeof ProfileHubScreen>[0];
+
+// Ticket 2026-09-13#8 item 6: /games fixture for the real-display-name test — same META helper
+// shape HomeHub.test.tsx already uses. 'chess' is deliberately OMITTED from this list so the
+// fallback-to-titleCase path (a match whose gameId the /games response doesn't cover) stays
+// exercised too.
+const META = (id: string, displayName: string): GameMeta => ({
+  id, displayName, minPlayers: 2, maxPlayers: 2,
+  ranking: { kind: 'net_winnings' }, bet: { minStake: 1, maxStake: 100, symmetricStake: true },
+  averageDurationSec: 10, rakeRate: 0.025,
+});
+const GAMES: GameMeta[] = [META('coinflip', 'Coinflip'), META('rps', 'Rock Paper Scissors')];
 
 const REWARDS: RewardsSnapshot = {
   xpLifetime: 17_800,
@@ -49,6 +60,7 @@ function stubDefaultFetch(walletBalance = 1009) {
     if (u.includes('/rewards')) return { ok: true, json: async () => REWARDS } as Response;
     if (u.includes('/matches/recent')) return { ok: true, json: async () => matchesFetchResponse(u) } as Response;
     if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: walletBalance, entries: [] }) } as Response;
+    if (u.includes('/games')) return { ok: true, json: async () => GAMES } as Response;
     return { ok: true, json: async () => ({}) } as Response;
   }));
 }
@@ -222,17 +234,44 @@ describe('ProfileHubScreen', () => {
   });
 
   describe('recent games', () => {
-    it('renders rows from /matches/recent with win (green) vs loss (muted) coloring', async () => {
+    // Ticket 2026-09-13#8 item 2: the RC-coin <Credits> glyph is gone — a $-prefixed numeral +
+    // a currency icon now, same sign/magnitude behavior as before (a real fix), but the
+    // win/loss/draw COLOR logic itself is unchanged (a confirmed-already-correct finding, not
+    // touched by this ticket) — asserted here as a regression guard.
+    it('renders rows from /matches/recent with a $-prefixed amount, win (green) vs loss (muted) coloring UNCHANGED', async () => {
       render(<ProfileHubScreen {...baseProps()} />);
       await waitFor(() => expect(screen.getByTestId('profile-match-m1')).toBeInTheDocument());
-      // m1: win, delta 101 → green, signed '+'.
+      // m1: win, delta 101 → '+$101', green — same magnitude/sign the old <Credits showSign />
+      // produced, just $-prefixed instead of the RC coin.
       const win = screen.getByTestId('profile-match-m1-amount');
-      expect(win.textContent).toContain('+101');
-      expect(win.getAttribute('style')).toContain('color: var(--rc-green)'); // issue #491: RC.green now aliases the shared token
-      // m2: loss, delta -52 → muted, no leading '+'.
+      expect(win.textContent).toContain('+$101');
+      expect(win.getAttribute('style')).toContain('color: var(--rc-green)'); // issue #491: RC.green now aliases the shared token — UNCHANGED by this ticket
+      // m2: loss, delta -52 → '-$52', muted.
       const loss = screen.getByTestId('profile-match-m2-amount');
-      expect(loss.textContent).toContain('-52');
-      expect(loss.getAttribute('style')).toContain('color: var(--rc-muted)'); // issue #491: RC.muted now aliases the shared token
+      expect(loss.textContent).toContain('-$52');
+      expect(loss.getAttribute('style')).toContain('color: var(--rc-muted)'); // issue #491: RC.muted now aliases the shared token — UNCHANGED by this ticket
+    });
+
+    it('amount no longer renders the RC-coin <Credits> glyph — a currency icon instead', async () => {
+      render(<ProfileHubScreen {...baseProps()} />);
+      await waitFor(() => expect(screen.getByTestId('profile-match-m1')).toBeInTheDocument());
+      const win = screen.getByTestId('profile-match-m1-amount');
+      // The old RcIcon glyph rendered an "RC" <text> node inside its <svg>; the new CurrencyIcon
+      // (USD) never does — it's a $ roundel instead.
+      expect(within(win).queryByText('RC')).toBeNull();
+      expect(win.querySelector('svg')).toBeInTheDocument();
+    });
+
+    // m3 is a draw (delta 0) — the old <Credits amount={0} showSign /> rendered a bare "0" (its
+    // `sign = amount > 0 ? '+' : ''` never fires for a non-positive amount). The new $-prefixed
+    // rendering must reproduce that: no leading '+' or '-' for a draw.
+    it('a draw (delta 0) renders with no leading sign', async () => {
+      render(<ProfileHubScreen {...baseProps()} />);
+      await waitFor(() => expect(screen.getByTestId('profile-match-m3')).toBeInTheDocument());
+      const draw = screen.getByTestId('profile-match-m3-amount');
+      expect(draw.textContent).toContain('$0');
+      expect(draw.textContent).not.toContain('+$0');
+      expect(draw.textContent).not.toContain('-$0');
     });
 
     it('collapsed view shows a VIEW MORE pill; expanding reveals numbered page pills + VIEW LESS', async () => {
@@ -247,11 +286,37 @@ describe('ProfileHubScreen', () => {
       expect(screen.getByTestId('profile-matches-page-2')).toBeInTheDocument();
       expect(screen.getByTestId('profile-matches-page-3')).toBeInTheDocument();
       expect(screen.getByTestId('profile-matches-view-less')).toBeInTheDocument();
-      expect(screen.queryByTestId('profile-matches-view-more')).toBeNull();
+      // Ticket 2026-09-13#8 item 4: VIEW MORE stays MOUNTED (not unmounted) once expanded — it's
+      // hidden via opacity/pointer-events instead of a conditional unmount now.
+      expect(screen.getByTestId('profile-matches-view-more')).toBeInTheDocument();
 
       fireEvent.click(screen.getByTestId('profile-matches-view-less'));
       expect(screen.getByTestId('profile-matches-view-more')).toBeInTheDocument();
       expect(screen.queryByTestId('profile-matches-page-1')).toBeNull();
+    });
+
+    // Ticket 2026-09-13#8 item 4: the fade+button element used to conditionally mount/unmount on
+    // `!matchesExpanded`, popping in/out abruptly. It must now stay mounted the whole time
+    // `hasMorePages` is true, with visibility driven purely by opacity/pointerEvents — a real
+    // behavioral test (not a style snapshot).
+    it('VIEW MORE has the 4px ledge + press-sink class, and stays mounted (opacity/pointerEvents-hidden, not unmounted) once expanded', async () => {
+      render(<ProfileHubScreen {...baseProps()} />);
+      await waitFor(() => expect(screen.getByTestId('profile-match-m1')).toBeInTheDocument());
+
+      const button = screen.getByTestId('profile-matches-view-more');
+      // The 4px ledge (Full Spec.html:4539 `moreShadow`) — distinct from the 5px ledge used
+      // elsewhere; dark-mode default in this test environment (no light theme forced).
+      expect(button.getAttribute('style')).toContain('box-shadow: 0 4px 0 #1E1E33');
+      expect(button.className).toContain('active:translate-y-[3px]');
+      expect(button.getAttribute('style')).toContain('opacity: 1');
+      expect(button.getAttribute('style')).toContain('pointer-events: auto');
+
+      fireEvent.click(button);
+      // Still in the DOM — not unmounted — but now hidden via opacity/pointer-events.
+      const sameButton = screen.getByTestId('profile-matches-view-more');
+      expect(sameButton).toBe(button);
+      expect(sameButton.getAttribute('style')).toContain('opacity: 0');
+      expect(sameButton.getAttribute('style')).toContain('pointer-events: none');
     });
 
     it('clicking a page pill re-fetches that offset', async () => {
@@ -274,16 +339,29 @@ describe('ProfileHubScreen', () => {
       expect(calledOffset5).toBe(true);
     });
 
-    it('shows an empty state and no VIEW MORE when there are no matches yet', async () => {
+    // Ticket 2026-09-13#8 item 1: the empty state's copy AND styling both changed to match
+    // HomeHub.tsx's own `home-events-empty` treatment verbatim (Full Spec.html:244-246) — the
+    // established correct precedent for this exact pattern, which this row never got before.
+    it('shows the new empty-state copy/styling (item 1) and no VIEW MORE when there are no matches yet', async () => {
       vi.stubGlobal('fetch', vi.fn(async (url: string) => {
         const u = String(url);
         if (u.includes('/rewards')) return { ok: true, json: async () => REWARDS } as Response;
         if (u.includes('/matches/recent')) return { ok: true, json: async () => ({ matches: [], limit: 5, offset: 0, total: 0 }) } as Response;
         if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: 1009, entries: [] }) } as Response;
+        if (u.includes('/games')) return { ok: true, json: async () => GAMES } as Response;
         return { ok: true, json: async () => ({}) } as Response;
       }));
       render(<ProfileHubScreen {...baseProps()} />);
-      await waitFor(() => expect(screen.getByText(/No matches yet/)).toBeInTheDocument());
+      const empty = await screen.findByTestId('profile-matches-empty');
+      expect(within(empty).getByText('No recent games yet.')).toBeInTheDocument();
+      // Same className shape as HomeHub.tsx's own home-events-empty block (px-4 py-[54px]
+      // pb-2.5 wrapper; text-sm font-semibold tracking-[0.02em] text-[var(--rc-text)] label).
+      expect(empty.className).toContain('py-[54px]');
+      expect(empty.className).toContain('pb-2.5');
+      const label = within(empty).getByText('No recent games yet.');
+      expect(label.className).toContain('text-sm');
+      expect(label.className).toContain('font-semibold');
+      expect(label.className).toContain('tracking-[0.02em]');
       expect(screen.queryByTestId('profile-matches-view-more')).toBeNull();
     });
   });
@@ -372,10 +450,9 @@ describe('ProfileHubScreen', () => {
       render(<ProfileHubScreen {...baseProps()} />);
       await waitFor(() => expect(screen.getByTestId('profile-match-z1')).toBeInTheDocument());
       const row = screen.getByTestId('profile-match-z1');
-      // None of these fixture rows carry `opponentTier` — the row's only two <svg>s are the
-      // opponent's default-avatar glyph (`Avatar`'s `PersonGlyph`) and the credits `RcIcon` next
-      // to the settlement delta; neither is a tier icon, and no third <svg> (a `TierIcon`) exists.
-      expect(row.querySelectorAll('svg')).toHaveLength(2);
+      // Ticket 2026-09-13#8 item 3: the opponent Avatar circle is gone from this row entirely —
+      // the row's only <svg> now is the amount's CurrencyIcon; no tier icon, no opponent avatar.
+      expect(row.querySelectorAll('svg')).toHaveLength(1);
     });
 
     // Forward-compat: once #440 lands `opponentTier` on the real `RecentMatchEntry`/wire
@@ -393,9 +470,74 @@ describe('ProfileHubScreen', () => {
       render(<ProfileHubScreen {...baseProps()} />);
       await waitFor(() => expect(screen.getByTestId('profile-match-z-ranked')).toBeInTheDocument());
       const row = screen.getByTestId('profile-match-z-ranked');
-      // Avatar glyph + RcIcon (both present in the Unranked case above) + one more for the tier
-      // icon = 3.
-      expect(row.querySelectorAll('svg')).toHaveLength(3);
+      // CurrencyIcon (present in the Unranked case above) + one more for the tier icon = 2.
+      expect(row.querySelectorAll('svg')).toHaveLength(2);
+    });
+
+    // Ticket 2026-09-13#8 item 3: the prototype's opponent row is `VS → tier icon → @username`,
+    // no avatar element at all — a real behavioral assertion (not just an svg count) that the
+    // shared `Avatar` component never renders inside a match row.
+    it('never renders an opponent Avatar in a match row (item 3)', async () => {
+      stubZebraFetch();
+      render(<ProfileHubScreen {...baseProps()} />);
+      await waitFor(() => expect(screen.getByTestId('profile-match-z1')).toBeInTheDocument());
+      for (const id of ['z1', 'z2', 'z3', 'z4']) {
+        const row = screen.getByTestId(`profile-match-${id}`);
+        expect(within(row).queryByTestId('avatar')).toBeNull();
+      }
+    });
+
+    // Ticket 2026-09-13#8 item 5: formatMatchTime must call the locale-formatting APIs with an
+    // EXPLICIT 'en-US' locale + hour12:true, not `undefined` (which lets the browser/OS locale
+    // dictate day-first/24-hour output) — asserted by spying on the actual calls, which is
+    // deterministic regardless of the test runner's own OS/CI locale.
+    it('formats match timestamps with an explicit en-US locale + hour12 (item 5), independent of the runner\'s own locale', async () => {
+      const dateSpy = vi.spyOn(Date.prototype, 'toLocaleDateString');
+      const timeSpy = vi.spyOn(Date.prototype, 'toLocaleTimeString');
+      stubZebraFetch();
+      render(<ProfileHubScreen {...baseProps()} />);
+      await waitFor(() => expect(screen.getByTestId('profile-match-z1')).toBeInTheDocument());
+      expect(dateSpy).toHaveBeenCalledWith('en-US', { month: 'short', day: 'numeric' });
+      expect(timeSpy).toHaveBeenCalledWith('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      dateSpy.mockRestore();
+      timeSpy.mockRestore();
+    });
+  });
+
+  describe('recent games — real game display names (item 6)', () => {
+    const RPS_MATCH: RecentMatchEntry = {
+      matchId: 'rps1', gameId: 'rps', opponentId: 'p9', opponentDisplayName: 'rival9',
+      opponentAvatarId: 'default', opponentTier: 'Unranked', outcome: 'win', delta: 10,
+      settledAt: '2026-08-05T09:00:00Z',
+    };
+
+    it('renders the real GameMeta.displayName once /games resolves, not titleCase', async () => {
+      vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes('/rewards')) return { ok: true, json: async () => REWARDS } as Response;
+        if (u.includes('/matches/recent')) return { ok: true, json: async () => ({ matches: [RPS_MATCH], limit: 5, offset: 0, total: 1 }) } as Response;
+        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: 1009, entries: [] }) } as Response;
+        if (u.includes('/games')) return { ok: true, json: async () => GAMES } as Response; // GAMES includes rps → 'Rock Paper Scissors'
+        return { ok: true, json: async () => ({}) } as Response;
+      }));
+      render(<ProfileHubScreen {...baseProps()} />);
+      const row = await screen.findByTestId('profile-match-rps1');
+      expect(within(row).getByText('Rock Paper Scissors')).toBeInTheDocument();
+      expect(within(row).queryByText('Rps')).toBeNull();
+    });
+
+    it('falls back to titleCase(gameId) when the /games fetch fails/is empty', async () => {
+      vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes('/rewards')) return { ok: true, json: async () => REWARDS } as Response;
+        if (u.includes('/matches/recent')) return { ok: true, json: async () => ({ matches: [RPS_MATCH], limit: 5, offset: 0, total: 1 }) } as Response;
+        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: 1009, entries: [] }) } as Response;
+        if (u.includes('/games')) return { ok: false, status: 500, statusText: 'boom', json: async () => ({ error: 'boom' }) } as Response;
+        return { ok: true, json: async () => ({}) } as Response;
+      }));
+      render(<ProfileHubScreen {...baseProps()} />);
+      const row = await screen.findByTestId('profile-match-rps1');
+      expect(within(row).getByText('Rps')).toBeInTheDocument();
     });
   });
 
@@ -438,13 +580,18 @@ describe('ProfileHubScreen', () => {
     });
   });
 
-  it('is sanitized: no $ leaks into the game body (the header wallet chip legitimately shows the Owner-approved $ skin — CHARTER.md #4, issue #484)', async () => {
+  // Ticket 2026-09-13#8 item 2 legitimately introduces a $ into this screen's body (the Recent
+  // Games amount column) — CHARTER.md #4's Owner-approved cosmetic $ wallet skin applies to the
+  // whole registered/investor demo, not just the header chip, and ProfileHubScreen is an
+  // auth-only screen (no guest path) so there's no guest branch to keep sanitized here. This
+  // replaces the old "no $ anywhere in the body" assertion, which predates that Owner approval.
+  it('T9: registered users legitimately see the Owner-approved $ skin in Recent Games too, not just the header wallet chip (CHARTER.md #4)', async () => {
     const { container } = render(<ProfileHubScreen {...baseProps()} />);
     await waitFor(() => expect(screen.getByTestId('profile-xp').textContent).toBe('17,800'));
     await waitFor(() => expect(screen.getByTestId('profile-match-m1')).toBeInTheDocument());
     const header = container.querySelector('header');
     const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');
-    expect(bodyText).not.toMatch(/\$/);
+    expect(bodyText).toMatch(/\$/);
   });
 
   it('renders the shared footer (#323), wired to Games/Rewards, replacing the old inline footer', async () => {
