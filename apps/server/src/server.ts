@@ -32,6 +32,7 @@ import { registerGuestAuthRoutes } from './routes/guest-auth.js';
 import { registerRewardsRoutes } from './routes/rewards.js';
 import { registerWsGateway } from './ws/gateway.js';
 import { createGuestServices, type GuestServices } from './guest/index.js';
+import { createTierResolver } from './tier.js';
 
 export interface AppOptions {
   /** Set to false to skip seeding the admin account (useful in tests that manage their own data). */
@@ -220,8 +221,15 @@ export function createServices(
   // Rewards (issue #306) — own table in the same `db`, wired to the REAL matchmaking
   // instance's per-player settlement hook only (never guest's, below).
   const rewards = createRewards(db, ledger);
+  // Sibling per-entry VIP-tier lookup for the open-challenges feed's `ownerTier` (ticket
+  // 2026-09-13#6 item 3) — the SAME resolver `ws/gateway.ts` uses for chat, so a player's tier
+  // reads identically everywhere it's shown. Bots included: they're real funded accounts (per
+  // ADR-010), so a missing/never-earned `rewards` row (true for both bots and guests) simply
+  // resolves to `'Unranked'`, same as a genuinely low-tier human.
+  const lookupTier = createTierResolver(db);
   const matchmaking = createMatchmaking(ledger, gameModules, matchHistory, {
     lookupUsername,
+    lookupTier,
     onSettled: opts.onSettled,
     onPlayerSettled: ({ playerId, stake, feeRate, outcome }) => {
       rewards.recordMatchSettlement(playerId, stake, feeRate, outcome);

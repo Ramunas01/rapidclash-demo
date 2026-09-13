@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within, act, cleanup } from '@testing-library/react';
 import { CoinflipHubScreen } from '../screens/CoinflipHub.js';
 import type { CoinflipView } from '../App.js';
+import type { OpenChallenge } from '@rapidclash/shared';
 
 // canvas-confetti needs a real <canvas> (absent in jsdom) — mock it (matches Result/CoinflipPlay tests).
 vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
@@ -84,9 +85,10 @@ function baseProps(over: Partial<Props> = {}): Props {
   };
 }
 
-const CHALLENGE = {
+const CHALLENGE: OpenChallenge = {
   matchId: 'c1',
   ownerName: 'rival',
+  ownerTier: 'Unranked',
   stake: 50,
   openedAt: 0,
   expiresAt: Date.now() + 30_000,

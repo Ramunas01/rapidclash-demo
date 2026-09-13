@@ -96,6 +96,13 @@ export interface ChallengeTakePayload {
 export interface OpenChallenge {
   matchId: string;
   ownerName: string;
+  /** The host's VIP tier (ticket 2026-09-13#6 item 3, Owner-decided: shown for EVERY host, bot
+   *  or human alike — bots are real funded accounts, per ADR-010, so their own real tier is a
+   *  meaningful thing to display, not a fake placeholder). Resolved server-side the same way
+   *  chat's `resolveTier` already works: a missing/never-earned account (including every bot/
+   *  guest id) simply reads as `'Unranked'`. Required, not optional — every construction site
+   *  (the authenticated WS feed, the public poll, the guest world) can populate it. */
+  ownerTier: VipTier;
   stake: number;
   openedAt: number; // server ms when the bet was placed
   expiresAt: number; // server ms when it auto-expires

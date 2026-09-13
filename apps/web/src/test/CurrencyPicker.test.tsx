@@ -1,15 +1,23 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { CUR_BAL, CUR_CRYPTO, CUR_NAME, OPEN_CURS } from '../components/hub-chrome/currencyData.js';
+import { setCurSel } from '../lib/currency.js';
 
 /**
  * Currency picker tests (issue #530, `docs/COMMS/ADVISOR_TO_PM.md` 2026-09-11#5). Rendered
  * through `HubRibbon` (registered, non-guest) rather than in isolation — that's how it's actually
  * mounted in the app, and it lets the "real balance is never touched" invariant be checked against
  * the exact prop `HubRibbon` receives.
+ *
+ * `curSel` is now app-wide shared state (`lib/currency.ts`, ticket 2026-09-13#6 item 2), a
+ * module-level singleton that persists across `it` blocks within this file — reset it to the
+ * default before every test so each test's expectations stay independent of execution order,
+ * same hygiene `CurrencyPicker — theming`'s own light-mode test already applies to `theme.ts`'s
+ * singleton (`setThemeChoice('dark')` at its end).
  */
+beforeEach(() => setCurSel('USD'));
 function renderRibbon(balance: number | null = 1642) {
   const onLogo = vi.fn();
   const onWallet = vi.fn();

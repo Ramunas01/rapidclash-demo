@@ -11,7 +11,7 @@ import type { PublicOpenChallenge } from '@rapidclash/shared';
 // path it does use: a plain `GET /guest/open-challenges` fetch, nothing else.
 
 function row(gameId: string, stake: number, matchId = `${gameId}-${stake}`): PublicOpenChallenge {
-  return { gameId, matchId, ownerName: 'Demo Opponent 🤖', stake, openedAt: Date.now() - 10_000, expiresAt: Date.now() + 60_000, timeControlId: 'none' };
+  return { gameId, matchId, ownerName: 'Demo Opponent 🤖', ownerTier: 'Unranked', stake, openedAt: Date.now() - 10_000, expiresAt: Date.now() + 60_000, timeControlId: 'none' };
 }
 
 function stubFetch(rows: PublicOpenChallenge[] | unknown) {

@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import { RpsHubScreen } from '../screens/RpsHub.js';
 import type { RpsView } from '../App.js';
+import type { OpenChallenge } from '@rapidclash/shared';
 
 // canvas-confetti needs a real <canvas> (absent in jsdom) — mock it (matches the other hub tests).
 vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
@@ -21,7 +22,7 @@ function baseProps(over: Partial<Props> = {}): Props {
   };
 }
 
-const CHALLENGE = { matchId: 'c1', ownerName: 'rival', stake: 50, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'none' };
+const CHALLENGE: OpenChallenge = { matchId: 'c1', ownerName: 'rival', ownerTier: 'Unranked', stake: 50, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'none' };
 
 describe('RpsHubScreen (GameHub + RpsPanel)', () => {
   beforeEach(() => {

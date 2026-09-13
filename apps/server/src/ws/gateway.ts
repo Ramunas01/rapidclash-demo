@@ -6,12 +6,12 @@ import {
   ChallengeError,
   usesPlayerTimers,
   usesScheduledDeadlines,
-  tierForXp,
   createChatTransport,
   CHAT_MAX_MESSAGE_LENGTH,
 } from '@rapidclash/core';
 import { IllegalMove, isDemoBotId } from '@rapidclash/shared';
 import type { GuestServices } from '../guest/index.js';
+import { createTierResolver } from '../tier.js';
 import type {
   Envelope,
   QueueJoinPayload,
@@ -34,7 +34,6 @@ import type {
   ChatSendPayload,
   ChatMessagePayload,
   ChatHistoryPayload,
-  VipTier,
 } from '@rapidclash/shared';
 import type { GameModule } from '@rapidclash/shared';
 
@@ -181,30 +180,16 @@ export function registerWsGateway(
     return guest?.usernameFor(id) ?? identity.getUsername(id) ?? id;
   }
 
-  /** Read-only VIP-tier lookup for ANY playerId, backing chat's `resolveTier` — mirrors
-   *  `match-history.ts`'s own `xpLifetimeStmt`/`tierFor` idiom (`packages/core/src/match-
-   *  history.ts:209-229`) EXACTLY, for the same reasons: `rewards` is owned/created lazily by
-   *  `rewards.ts` and may not exist yet on every db this gateway is stood up against (tests,
-   *  guest-only setups) — the prepare is wrapped, not bare. Deliberately NOT `Rewards.getSnapshot`
-   *  (the route-layer API `apps/server/src/routes/rewards.ts` uses): that call INSERTs a fresh
-   *  all-zero row for every never-before-seen account, and chat sees guest ids on every send —
-   *  using it here would silently leak ephemeral guest identities into the durable `rewards`
-   *  table. This is a plain, read-only SELECT: a missing row (including every guest id, which
-   *  never has one) simply reads as 0 XP, which `tierForXp` correctly maps to 'Unranked'. */
-  let stmtXpLifetime: Database.Statement<[string], { xp_lifetime: number }> | null | undefined;
-  function resolveTier(playerId: string): VipTier {
-    if (stmtXpLifetime === undefined) {
-      try {
-        stmtXpLifetime = db.prepare<[string], { xp_lifetime: number }>(
-          `SELECT xp_lifetime FROM rewards WHERE account_id = ?`,
-        );
-      } catch {
-        stmtXpLifetime = null; // no `rewards` table on this db — every sender reads as 0 XP.
-      }
-    }
-    const xpLifetime = stmtXpLifetime?.get(playerId)?.xp_lifetime ?? 0;
-    return tierForXp(xpLifetime).tier;
-  }
+  /** Read-only VIP-tier lookup for ANY playerId, backing chat's `resolveTier` AND (ticket
+   *  2026-09-13#6 item 3) the open-challenges feed's `ownerTier` (`openChallengeOf` below).
+   *  Deliberately NOT `Rewards.getSnapshot` (the route-layer API `apps/server/src/routes/
+   *  rewards.ts` uses): that call INSERTs a fresh all-zero row for every never-before-seen
+   *  account, and both chat and the open-challenges feed see guest/bot ids constantly — using it
+   *  here would silently leak ephemeral guest identities into the durable `rewards` table.
+   *  Extracted to `../tier.js` so `createServices` can hand the exact same resolver to the real
+   *  `Matchmaking` instance's `lookupTier` option, rather than a second, potentially-drifting
+   *  copy of this logic. */
+  const resolveTier = createTierResolver(db);
 
   // One global, in-memory chat transport (issue #439/ticket 2026-09-11#7a) — created exactly
   // once here, since `registerWsGateway` itself only ever runs once per `buildApp()` call (see
@@ -231,7 +216,7 @@ export function registerWsGateway(
     }
   }
 
-  /** Build the wire shape for a newly-rested challenge (owner name resolved once, here). */
+  /** Build the wire shape for a newly-rested challenge (owner name + tier resolved once, here). */
   function openChallengeOf(
     matchId: string,
     ownerId: string,
@@ -240,7 +225,15 @@ export function registerWsGateway(
     expiresAt: number,
     timeControlId: string,
   ): OpenChallenge {
-    return { matchId, ownerName: resolveUsername(ownerId), stake, openedAt, expiresAt, timeControlId };
+    return {
+      matchId,
+      ownerName: resolveUsername(ownerId),
+      ownerTier: resolveTier(ownerId),
+      stake,
+      openedAt,
+      expiresAt,
+      timeControlId,
+    };
   }
 
   /**
