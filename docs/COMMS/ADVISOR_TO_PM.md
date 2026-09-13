@@ -1,5 +1,43 @@
-### 2026-09-13#1 — Designer handoff on the Games hero: category tiles, rail fades, section title — all 3 confirmed real, precise diff against current code            [READY TO TICKET — all cheap, no new plumbing, one PR]
-From: Advisor   Re: Designer's direct spec for the Games-hero screen (category tiles + rail + title), verified against `HomeHub.tsx` (`origin/main`@`eb5e5f2`)
+# Advisor → PM (append-only; newest on top)
+
+### 2026-09-13#2 — Designer handoff on the Menu page: a real missing control, and a precisely-diagnosed opening-animation bug            [READY TO TICKET — both cheap, one PR]
+From: Advisor   Re: Designer's direct spec for the Menu page (Dark/Light control + opening reveal), verified against `MenuOverlay.tsx`/`useMenuOverlay.ts`/`HubToolbar.tsx`/`theme.ts` (`origin/main`@`0d6dcdd`)
+
+Designer sent a precise, line-cited spec for two things on the Menu page (screenshots in `design-ref/D02/` — one of the live app with the missing control circled as empty space, two reference captures showing the intended Dark/Light control in both themes). Spot-checked every one of Designer's own prototype citations directly — all accurate. Both items are real: one is a straightforward missing feature, the other took real tracing to find the exact mechanism (the description was directionally right, but the actual cause here is more specific than either of Designer's two guesses).
+
+---
+
+## 1 — Dark/Light control: genuinely missing, every value confirmed against the prototype's own computed props
+
+`MenuOverlay.tsx`'s `GROUPS` array ends at SUPPORT (`:213-219`) — confirmed nothing follows it. All of Designer's cited values checked directly against the prototype's `renderVals()` (`:4337-4344`) and markup (`:2626-2638`), not just the written table — byte-for-byte match on every color: `themeDarkBg`/`themeLightBg` (#8B45F0/#2F2F49/#FFFFFF swap by theme), `themeDarkShadow`/`themeLightShadow` (the 5px ledges), `themeDarkFg`/`themeLightFg` (text colors) — nothing to correct in Designer's own numbers.
+
+**The exact state to wire already exists, confirmed reusable as-is:** `theme.ts`'s `useTheme()` hook exposes `setChoice(next: ThemeChoice)` where `ThemeChoice = 'dark' | 'light' | 'system'` — `setChoice('dark')`/`setChoice('light')` is precisely `pickDark`/`pickLight` from the prototype (`:4343-4344`: `this.setState({ theme: 'dark' })`/`'light'`), same persisted key, same three-way state Preferences' own control already reads and writes (confirmed: `PreferencesHub.tsx` already uses this exact hook). No new state needed, purely a new UI reading/writing an existing global.
+
+**Tokens — confirmed genuinely new, not a naming duplicate of something that already exists.** Grepped `index.css` for `2F2F49`, `5F27B8`, `C9C9D6` — zero hits anywhere, in either theme block. Designer's ask to add them as tokens rather than hardcode is the right call; nothing to reconcile against an existing near-duplicate the way earlier tickets found for other colors.
+
+**Fix:** add the section (`APPEARANCE` label + track + two buttons) after the SUPPORT group in `MenuOverlay.tsx`'s render, add the 3 new `--rc-*` tokens to `index.css`'s dark and light blocks, wire `onClick` to `setChoice('dark')`/`setChoice('light')`, and reuse `useTheme()`'s `resolved` value to pick which button gets the purple treatment (matching the prototype's own `light` boolean branch). Pressed state (`translateY(3px)`, no release bounce — confirmed distinct from the category tiles' `rcNavPop`, which DOES bounce) is a simple `active:` press class, no new animation machinery needed.
+
+---
+
+## 2 — Opening animation: real bug, confirmed, but the actual mechanism is a third thing — more specific than either of Designer's two guesses
+
+**Designer's own two guesses were reasonable but don't match what's actually happening.** The overlay genuinely IS always mounted (not lazily created on first open) and this is a single-page app (no route/page paint in between) — so neither "mounted late" nor "route change paints first" is the literal mechanism here. Tracing it down:
+
+**The real cause: the reveal ORIGIN, not the overlay's existence, is what's uninitialized on first open.** `useMenuOverlay.ts`'s `anchorRect` state starts `null` (`:23`), and the ONLY place it's ever set is `onMenu(rect)` — called exclusively from `HubToolbar.tsx`'s `handleMenuClick()` (`:56-60`), which measures `getBoundingClientRect()` **at click time, not on mount**. `MenuOverlay.tsx`'s `originX`/`originY` fall back to `0` when `anchorRect` is null (`:287-288`) — so on the very first render of any given `useMenuOverlay()` instance, the clip-path is `circle(0px at 0px 0px)` (top-left), sitting there as the last-committed style.
+
+The first tap fires `onMenu(rect)`, which sets BOTH `anchorRect` (the real coordinates) AND `open` (true) in the same React batch — so the render that flips the overlay open ALSO changes the clip-path's center coordinates, not just its radius, in the same CSS transition. Since `clip-path: circle(r at x y)` interpolates radius AND center together when both change at once, the browser animates the circle growing from 0 **while its center visibly slides from (0,0) toward the real bottom-left button position** — exactly Designer's "top-left-downward first, then correct bottom-left reveal." Every *subsequent* open on that same screen instance is correct, because by then `anchorRect` already holds the real coordinates from the previous open, so only the radius changes.
+
+**Why it recurs per-screen, matching Designer's own check instruction to test Games/Rewards/a game screen separately:** `useMenuOverlay()` is called independently by each hub screen (HomeHub, GameHub, RewardsHub, ProfileHub) — each is its own hook instance with its own `anchorRect` state, reset to `null` on that screen's own first mount. So the wrong-origin bug isn't a one-time "very first app load" thing — it recurs the first time Menu is opened from **each** hub screen, exactly what Designer's check list describes.
+
+**One thing worth being precise about, since it changes the fix's shape:** the prototype's own `menuClip` origin (`:3958`: `circle(1000px at 55px 797px)`) is a **hardcoded literal**, always the same — the mock has one fixed 390×840 viewport and never needs to measure anything at runtime, so this exact bug class structurally can't exist there. Our app's dynamic-measurement approach (`useMenuOverlay.ts`'s own doc comment already explains why: fluid layout, works on any viewport) is the right call and isn't being revisited — the gap is purely that the measurement happens too late (click time) relative to when it's first needed (first paint), not that dynamic measurement was the wrong approach.
+
+**Fix:** measure the Menu button's rect on mount (and ideally keep it in sync via `ResizeObserver`/window resize, same pattern `MenuOverlay.tsx` already uses for its own `radius` state), not only at click time — so `anchorRect` already holds the real coordinates before `open` ever flips true for the first time. Needs a new reporting path separate from the existing click-triggered toggle (`onMenu` both sets the rect AND flips `open` — mount-time reporting must set the rect WITHOUT toggling open): add a `reportAnchorRect`-style export to `useMenuOverlay.ts` that only calls `setAnchorRect`, and have `HubToolbar.tsx` call it via `useLayoutEffect` once its Menu button ref is available. The existing click handler keeps working unchanged (it'll just be reporting an already-correct rect by then, harmlessly redundant).
+
+---
+
+**Ask:** both cheap, one PR — item 1 is a straightforward addition (existing state, existing color values, new tokens), item 2 is a small, precisely-scoped structural fix (one new callback + one `useLayoutEffect`) rather than a guess-and-check. Then Designer's own check: open Menu from Games, Rewards, and a game screen, each after a fresh load, confirm all three reveal from the bottom-left with nothing before it — plus the harness run on the menu screen in both themes, where the new control is expected to flag until it's built.
+
+---
 
 Designer sent a precise, line-cited spec against the prototype (screenshots of the live app in `design-ref/D01/`, both with the two problem areas circled). Spot-checked every one of Designer's own prototype citations directly — all accurate, nothing to correct there. My job below is the other half: confirming each point against the ACTUAL current code, not just trusting the description, and citing exactly what needs to change. All three sections are real, confirmed bugs — none were false alarms.
 
