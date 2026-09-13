@@ -11,7 +11,7 @@ describe('AuthModal', () => {
       if (u.includes('/auth/register'))
         return { ok: true, json: async () => ({ token: 'T', playerId: 'P', balance: 1000, username: body.username, avatarId: 'default' }) } as Response;
       if (u.includes('/auth/login'))
-        return { ok: true, json: async () => ({ token: 'T2', playerId: 'P2', balance: 42, username: body.username, avatarId: 'boy-dark' }) } as Response;
+        return { ok: true, json: async () => ({ token: 'T2', playerId: 'P2', balance: 42, username: body.username, avatarId: 'rc-04' }) } as Response;
       return { ok: false, json: async () => ({ error: 'nope' }) } as Response;
     }));
   });
@@ -33,7 +33,7 @@ describe('AuthModal', () => {
     fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'trinity' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'pw' } });
     fireEvent.click(screen.getByTestId('auth-submit'));
-    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith('T2', 'P2', 42, 'trinity', 'boy-dark'));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith('T2', 'P2', 42, 'trinity', 'rc-04'));
   });
 
   it('surfaces a server error and does not resolve', async () => {

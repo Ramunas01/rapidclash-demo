@@ -118,13 +118,13 @@ describe('createMatchHistory', () => {
 
   it('resolves each entry\'s avatarId via the shared avatar lookup, "default" as fallback', () => {
     const lookup = (id: string) => (id === 'alice-id' ? 'Alice' : undefined);
-    const avatar = (id: string) => (id === 'alice-id' ? ('boy-light' as const) : ('default' as const));
+    const avatar = (id: string) => (id === 'alice-id' ? ('rc-01' as const) : ('default' as const));
     const mh = createMatchHistory(freshDb(), new Map(), lookup, avatar);
     mh.recordResult('m1', 'rps', ['alice-id', 'bob-id'], 'win', 'alice-id', 100);
 
     const board = winRateBoard(mh, 'rps');
     const byId = Object.fromEntries(board.map((e) => [e.playerId, e.avatarId]));
-    expect(byId['alice-id']).toBe('boy-light'); // resolved
+    expect(byId['alice-id']).toBe('rc-01'); // resolved
     expect(byId['bob-id']).toBe('default'); // unknown → default
   });
 
@@ -415,7 +415,7 @@ describe('createMatchHistory — getRecentMatches', () => {
     const db = freshDb();
     const ledger = createLedger(db);
     const lookupName = (id: string) => (id === 'bob' ? 'Bobby' : undefined);
-    const lookupAvatar = (id: string) => (id === 'bob' ? ('boy-light' as const) : ('default' as const));
+    const lookupAvatar = (id: string) => (id === 'bob' ? ('rc-01' as const) : ('default' as const));
     const mh = createMatchHistory(db, new Map([['rps', RPS_WIN_RATE]]), lookupName, lookupAvatar);
     ledger.grant('alice');
     ledger.grant('bob');
@@ -423,7 +423,7 @@ describe('createMatchHistory — getRecentMatches', () => {
 
     const [row] = mh.getRecentMatches('alice').matches;
     expect(row.opponentDisplayName).toBe('Bobby');
-    expect(row.opponentAvatarId).toBe('boy-light');
+    expect(row.opponentAvatarId).toBe('rc-01');
   });
 
   it('reframes outcome from the viewer\'s own perspective: win, loss, and draw', () => {

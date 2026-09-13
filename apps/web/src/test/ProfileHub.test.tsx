@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { ProfileHubScreen } from '../screens/ProfileHub.js';
+import { PRESETS } from '../components/hub-shared/Avatar.js';
 import type { GameMeta, RecentMatchEntry, RewardsSnapshot } from '@rapidclash/shared';
 
 type Props = Parameters<typeof ProfileHubScreen>[0];
@@ -157,35 +158,16 @@ describe('ProfileHubScreen', () => {
   });
 
   it('profile card renders the player\'s OWN avatar preset (avatarId prop)', () => {
-    render(<ProfileHubScreen {...baseProps({ avatarId: 'boy-brown' })} />);
+    render(<ProfileHubScreen {...baseProps({ avatarId: 'rc-03' })} />);
     const card = within(screen.getByTestId('profile-card'));
-    expect(card.getByTestId('avatar').getAttribute('data-avatar-id')).toBe('boy-brown');
+    expect(card.getByTestId('avatar').getAttribute('data-avatar-id')).toBe('rc-03');
     expect(card.getByTestId('avatar-img')).toBeInTheDocument(); // a preset image, not the glyph
   });
 
-  describe('avatar picker (Advisor #12 ii)', () => {
-    it('tapping the avatar opens the bg-surface overlay with the default + 6 presets', () => {
-      render(<ProfileHubScreen {...baseProps()} />);
-      expect(screen.queryByTestId('avatar-picker')).toBeNull();
-      fireEvent.click(screen.getByTestId('profile-avatar-button'));
-      const picker = screen.getByTestId('avatar-picker');
-      expect(picker).toBeInTheDocument();
-      expect(picker.querySelector('.bg-surface')).not.toBeNull();
-      for (const id of ['default', 'boy-light', 'girl-light', 'boy-brown', 'boy-dark', 'hooded-mono', 'hooded-degen']) {
-        expect(screen.getByTestId(`avatar-option-${id}`)).toBeInTheDocument();
-      }
-    });
-
-    it('selecting a preset shows the purple ring-brand selection ring', () => {
-      render(<ProfileHubScreen {...baseProps({ avatarId: 'default' })} />);
-      fireEvent.click(screen.getByTestId('profile-avatar-button'));
-      const option = screen.getByTestId('avatar-option-boy-dark');
-      fireEvent.click(option);
-      expect(option.getAttribute('aria-pressed')).toBe('true');
-      expect(option.className).toContain('ring-brand');
-    });
-
-    it('Save calls api.setAvatar, bubbles the id via onAvatarChange, and closes the overlay', async () => {
+  // Ticket 2026-09-13#7 items 1+2: the old `fixed inset-0` centered-modal picker is rebuilt as an
+  // inline-expanding strip inside the profile card itself — no portal/overlay, no Save step.
+  describe('avatar picker — inline strip (2026-09-13#7)', () => {
+    function stubAvatarFetch() {
       const setAvatarCalls: string[] = [];
       vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
         const u = String(url);
@@ -199,16 +181,108 @@ describe('ProfileHubScreen', () => {
         if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: 1009, entries: [] }) } as Response;
         return { ok: true, json: async () => ({}) } as Response;
       }));
-      const onAvatarChange = vi.fn();
-      render(<ProfileHubScreen {...baseProps({ avatarId: 'default', onAvatarChange })} />);
+      return setAvatarCalls;
+    }
+
+    it('tapping the avatar circle toggles the strip open/closed (always mounted, collapsed via grid-template-rows)', () => {
+      render(<ProfileHubScreen {...baseProps()} />);
+      const wrapper = screen.getByTestId('avatar-strip-wrapper');
+      // Always mounted — collapsed via `gridTemplateRows: '0fr'`, not unmounted/hidden.
+      expect(wrapper.getAttribute('style')).toContain('grid-template-rows: 0fr');
 
       fireEvent.click(screen.getByTestId('profile-avatar-button'));
-      fireEvent.click(screen.getByTestId('avatar-option-girl-light'));
-      fireEvent.click(screen.getByTestId('avatar-picker-save'));
+      expect(screen.getByTestId('avatar-strip-wrapper').getAttribute('style')).toContain('grid-template-rows: 1fr');
 
-      await waitFor(() => expect(setAvatarCalls).toEqual(['girl-light']));
-      expect(onAvatarChange).toHaveBeenCalledWith('girl-light');
-      await waitFor(() => expect(screen.queryByTestId('avatar-picker')).toBeNull());
+      fireEvent.click(screen.getByTestId('profile-avatar-button'));
+      expect(screen.getByTestId('avatar-strip-wrapper').getAttribute('style')).toContain('grid-template-rows: 0fr');
+    });
+
+    it('when open, the XP readout is gone and a SELECT button renders instead; tapping SELECT closes the strip', () => {
+      render(<ProfileHubScreen {...baseProps()} />);
+      expect(screen.getByTestId('profile-xp')).toBeInTheDocument();
+      expect(screen.queryByTestId('profile-avatar-select')).toBeNull();
+
+      fireEvent.click(screen.getByTestId('profile-avatar-button'));
+      expect(screen.queryByTestId('profile-xp')).toBeNull();
+      const select = screen.getByTestId('profile-avatar-select');
+      expect(select).toBeInTheDocument();
+
+      fireEvent.click(select);
+      expect(screen.getByTestId('avatar-strip-wrapper').getAttribute('style')).toContain('grid-template-rows: 0fr');
+      expect(screen.getByTestId('profile-xp')).toBeInTheDocument();
+    });
+
+    it('tapping a preset tile immediately calls api.setAvatar with the right id — no separate Save action exists anymore', async () => {
+      const setAvatarCalls = stubAvatarFetch();
+      const onAvatarChange = vi.fn();
+      render(<ProfileHubScreen {...baseProps({ avatarId: 'default', onAvatarChange })} />);
+      expect(screen.queryByTestId('avatar-picker-save')).toBeNull(); // the old Save button is gone
+
+      fireEvent.click(screen.getByTestId('profile-avatar-button'));
+      fireEvent.click(screen.getByTestId('avatar-option-rc-02'));
+
+      await waitFor(() => expect(setAvatarCalls).toEqual(['rc-02']));
+      expect(onAvatarChange).toHaveBeenCalledWith('rc-02');
+      // The strip stays open — only SELECT (or the avatar circle) closes it, not a tile tap.
+      expect(screen.getByTestId('avatar-strip-wrapper').getAttribute('style')).toContain('grid-template-rows: 1fr');
+    });
+
+    it('tapping the default-reset tile immediately calls api.setAvatar("default")', async () => {
+      const setAvatarCalls = stubAvatarFetch();
+      const onAvatarChange = vi.fn();
+      render(<ProfileHubScreen {...baseProps({ avatarId: 'rc-03', onAvatarChange })} />);
+
+      fireEvent.click(screen.getByTestId('profile-avatar-button'));
+      fireEvent.click(screen.getByTestId('avatar-option-default'));
+
+      await waitFor(() => expect(setAvatarCalls).toEqual(['default']));
+      expect(onAvatarChange).toHaveBeenCalledWith('default');
+    });
+
+    // Owner's item-3 decision: the picker's own "reset to default" tile is a UI control, not a
+    // rendered identity — it stays fixed purple + white glyph regardless of username, WITHOUT
+    // that fixed treatment extending to how the actual default avatar renders anywhere else (the
+    // header circle keeps this app's own per-user disc color). This is a deliberate divergence,
+    // not an accidental inconsistency — this test proves both halves at once.
+    it('the default-reset tile is always fixed purple + white glyph, while the header circle default avatar keeps the per-user disc color', () => {
+      render(<ProfileHubScreen {...baseProps({ username: 'zara', avatarId: 'default' })} />);
+      const headerAvatar = within(screen.getByTestId('profile-header')).getByTestId('avatar');
+      const headerDisc = headerAvatar.getAttribute('data-disc');
+      // The header circle's default avatar is the per-user derived disc — NOT the fixed purple.
+      expect(headerDisc).toMatch(/^hsl\(\d+, 55%, 90%\)$/);
+      expect(headerDisc).not.toBe('#8B45F0');
+
+      fireEvent.click(screen.getByTestId('profile-avatar-button'));
+      const resetTile = screen.getByTestId('avatar-option-default');
+      // The reset tile itself is fixed purple, regardless of the disc color computed above.
+      // jsdom normalizes hex → rgb() in serialized style strings, so match either form.
+      expect(resetTile.style.background).toMatch(/#8B45F0|rgb\(139,\s*69,\s*240\)/i);
+      const glyph = resetTile.querySelector('svg');
+      expect(glyph).toBeTruthy();
+      expect(glyph?.style.color ?? '').toMatch(/#fff|rgb\(255,\s*255,\s*255\)/i);
+    });
+
+    it('all 10 new rc-01..rc-10 ids are selectable and render their correct image; none of the 6 old named ids render as tiles', () => {
+      render(<ProfileHubScreen {...baseProps()} />);
+      fireEvent.click(screen.getByTestId('profile-avatar-button'));
+
+      expect(screen.getByTestId('avatar-option-default')).toBeInTheDocument();
+      for (const id of ['rc-01', 'rc-02', 'rc-03', 'rc-04', 'rc-05', 'rc-06', 'rc-07', 'rc-08', 'rc-09', 'rc-10'] as const) {
+        const tile = screen.getByTestId(`avatar-option-${id}`);
+        expect(tile).toBeInTheDocument();
+        expect(tile.getAttribute('style') ?? '').toContain(PRESETS[id]);
+      }
+      for (const id of ['boy-light', 'girl-light', 'boy-brown', 'boy-dark', 'hooded-mono', 'hooded-degen']) {
+        expect(screen.queryByTestId(`avatar-option-${id}`)).toBeNull();
+      }
+    });
+
+    it('a selected preset tile shows the purple selection ring', () => {
+      render(<ProfileHubScreen {...baseProps({ avatarId: 'rc-05' })} />);
+      fireEvent.click(screen.getByTestId('profile-avatar-button'));
+      const option = screen.getByTestId('avatar-option-rc-05');
+      expect(option.getAttribute('aria-pressed')).toBe('true');
+      expect(option.getAttribute('style')).toContain('var(--rc-green)');
     });
   });
 

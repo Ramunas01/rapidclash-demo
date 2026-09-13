@@ -56,7 +56,7 @@ describe('AuthScreen', () => {
     const onLogin = vi.fn();
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ token: 'tok9', playerId: 'pid9', balance: 500, username: 'bob', avatarId: 'girl-light' }),
+      json: async () => ({ token: 'tok9', playerId: 'pid9', balance: 500, username: 'bob', avatarId: 'rc-02' }),
     } as Response);
 
     render(<AuthScreen onLogin={onLogin} />);
@@ -69,7 +69,7 @@ describe('AuthScreen', () => {
     fireEvent.click(screen.getByText('Sign In'));
 
     await waitFor(() => {
-      expect(onLogin).toHaveBeenCalledWith('tok9', 'pid9', 500, 'bob', 'girl-light');
+      expect(onLogin).toHaveBeenCalledWith('tok9', 'pid9', 500, 'bob', 'rc-02');
     });
     // The login endpoint was hit (data layer unchanged).
     expect(vi.mocked(fetch).mock.calls[0][0]).toContain('/auth/login');
