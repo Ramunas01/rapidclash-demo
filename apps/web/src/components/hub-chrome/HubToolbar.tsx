@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode, type Ref } from 'react';
+import { useLayoutEffect, useRef, type ReactNode, type Ref } from 'react';
 import { cn } from '@/lib/utils';
 import type { MenuAnchorRect } from './useMenuOverlay.js';
 
@@ -60,17 +60,27 @@ interface Props {
  */
 export function HubToolbar({ onGames, onAccount, onRewards, onMenu, reportAnchorRect, onChat, active = 'games' }: Props) {
   const menuBtnRef = useRef<HTMLButtonElement>(null);
-  // Ticket 2026-09-13#3: the prototype's shared nav bar pops with a one-shot `rcNavBarPop`
-  // animation whenever ANY of the 5 items is pressed — all 5 share the literal `data-nav="nav"`
-  // key in the prototype's markup (`navPress`/`navPulse`, Full Spec.html:3963-3973), so one press
-  // pulses the whole shared bar, not just the tapped item. The prototype retriggers via a
-  // null-then-set state trick (needed because React won't restart a CSS animation just by setting
-  // the same non-null value twice); we use the more idiomatic React equivalent instead — bump a
-  // counter on every press and key the animated bar container on it, forcing a fresh element
-  // instance (and thus a fresh animation) on every press, including rapid repeats.
-  const [pulseKey, setPulseKey] = useState(0);
+  // Ticket 2026-09-13#3 (fixed in 2026-09-13#9 — see below): the prototype's shared nav bar pops
+  // with a one-shot `rcNavBarPop` animation whenever ANY of the 5 items is pressed — all 5 share
+  // the literal `data-nav="nav"` key in the prototype's markup (`navPress`/`navPulse`, Full
+  // Spec.html:3963-3973), so one press pulses the whole shared bar, not just the tapped item.
+  //
+  // Ticket 2026-09-13#9: the original fix keyed the bar container on a bumped counter, forcing a
+  // fresh element instance (and thus a fresh CSS animation) on every press — but that key lived on
+  // the div wrapping all 5 buttons, not a decorative element, so every `pointerDown` unmounted and
+  // remounted the exact button the user's finger was on, before the browser had finished
+  // delivering that same gesture's `click`. Fixed by driving the animation imperatively via a ref
+  // instead of a key-forced remount — the bar's DOM identity (and every button's) never changes,
+  // so nothing can interfere with click delivery for that gesture. Setting `animation: 'none'` and
+  // forcing a synchronous reflow (`el.offsetHeight`) before reassigning the animation is what lets
+  // this retrigger cleanly on rapid repeated presses, the same problem the counter used to solve.
+  const barRef = useRef<HTMLDivElement>(null);
   function firePulse() {
-    setPulseKey((k) => k + 1);
+    const el = barRef.current;
+    if (!el) return;
+    el.style.animation = 'none';
+    void el.offsetHeight;
+    el.style.animation = 'rcNavBarPop 420ms cubic-bezier(0.22,0.61,0.36,1)';
   }
   function handleMenuClick() {
     const el = menuBtnRef.current;
@@ -126,16 +136,13 @@ export function HubToolbar({ onGames, onAccount, onRewards, onMenu, reportAnchor
       />
       <nav aria-label="Primary" className="fixed bottom-0 left-1/2 z-20 w-full max-w-md -translate-x-1/2 bg-transparent px-3 pb-[calc(0.5rem_+_env(safe-area-inset-bottom))] pt-1">
       {/* Prototype `~2724`: `border-radius:26px; background:var(--rc-surface); box-shadow:0 -6px
-          18px rgba(0,0,0,0.45), 0 -1px 0 rgba(255,255,255,0.06); padding:12px 6px`. Keyed on
-          `pulseKey` (ticket 2026-09-13#3) so every press remounts this element, restarting the
-          `rcNavBarPop` animation from scratch — including on rapid repeated presses. The `> 0`
-          guard keeps the very first mount (before anything has been pressed) from playing the
-          animation unprompted. */}
+          18px rgba(0,0,0,0.45), 0 -1px 0 rgba(255,255,255,0.06); padding:12px 6px`. `firePulse`
+          (ticket 2026-09-13#9) drives the `rcNavBarPop` animation directly on this node via
+          `barRef` — no key, no remount, DOM identity never changes so a press can't interfere
+          with its own click delivery. */}
       <div
-        key={pulseKey}
+        ref={barRef}
         data-testid="hub-nav-bar"
-        data-pulse-key={pulseKey}
-        style={pulseKey > 0 ? { animation: 'rcNavBarPop 420ms cubic-bezier(0.22,0.61,0.36,1)' } : undefined}
         className="flex items-center justify-between rounded-[26px] bg-surface px-1.5 py-3 shadow-[0_-6px_18px_rgba(0,0,0,0.45),0_-1px_0_rgba(255,255,255,0.06)]"
       >
         <ToolbarItem label="Menu" active={active === 'menu'} onClick={handleMenuClick} onPress={firePulse} icon={ICON_MENU} btnRef={menuBtnRef} />

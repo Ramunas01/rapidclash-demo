@@ -400,16 +400,20 @@ describe('HubToolbar — reportAnchorRect (ticket 2026-09-13#2, item 2: first-op
 // Ticket 2026-09-13#3: the prototype's shared nav bar pops with a one-shot `rcNavBarPop`
 // animation whenever ANY of the 5 items is pressed — all 5 share the literal `data-nav="nav"` key
 // in the prototype's markup, so one press pulses the whole shared bar, not just the tapped item.
-// Implemented here via a `pulseKey` counter bumped on `onPointerDown`, keying the bar container so
-// every press remounts it (restarting the CSS animation) rather than the prototype's own
-// null-then-set `navPulse` state trick.
-describe('HubToolbar — bottom-nav bar press feel (ticket 2026-09-13#3)', () => {
+//
+// Ticket 2026-09-13#9: originally implemented via a `pulseKey` counter keying the bar container,
+// forcing a full remount on every press — but that remounted the exact button under the user's
+// finger before the browser finished delivering that gesture's `click`, causing a real double-tap
+// bug in production. Fixed via `firePulse` driving `el.style.animation` directly on a ref, with a
+// forced reflow (`el.offsetHeight`) in between to let the animation retrigger on rapid repeated
+// presses — no state, no remount, DOM identity never changes.
+describe('HubToolbar — bottom-nav bar press feel (ticket 2026-09-13#3, fixed 2026-09-13#9)', () => {
   it('pressing any one of the 5 nav items triggers the shared bar container\'s pop animation', () => {
     render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} />);
+    const bar = screen.getByTestId('hub-nav-bar');
     // Before any press: no animation running yet.
-    expect(screen.getByTestId('hub-nav-bar').style.animation).toBe('');
+    expect(bar.style.animation).toBe('');
     fireEvent.pointerDown(screen.getByTestId('hub-nav-games'));
-    const bar = screen.getByTestId('hub-nav-bar'); // re-query: the press may have remounted it
     expect(bar.style.animation).toContain('rcNavBarPop');
     expect(bar.style.animation).toContain('420ms');
   });
@@ -424,22 +428,32 @@ describe('HubToolbar — bottom-nav bar press feel (ticket 2026-09-13#3)', () =>
 
   it('a second press shortly after the first still produces a fresh pop (the retrigger case)', () => {
     render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} />);
+    const bar = screen.getByTestId('hub-nav-bar');
+    // The forced-reflow read is what lets the animation restart on a rapid second press (setting
+    // the same non-empty string twice, with no reset in between, would not retrigger a CSS
+    // animation) — spying on the getter proves that code path actually runs on every press, not
+    // just the first.
+    const reflowSpy = vi.spyOn(window.HTMLElement.prototype, 'offsetHeight', 'get');
     fireEvent.pointerDown(screen.getByTestId('hub-nav-games'));
-    const firstPulse = screen.getByTestId('hub-nav-bar').getAttribute('data-pulse-key');
-    expect(firstPulse).not.toBeNull();
+    expect(reflowSpy).toHaveBeenCalledTimes(1);
     fireEvent.pointerDown(screen.getByTestId('hub-nav-account'));
-    const secondPulse = screen.getByTestId('hub-nav-bar').getAttribute('data-pulse-key');
-    // The retrigger mechanism's own value must actually change between presses — not just be
-    // present both times — otherwise a rapid second press wouldn't restart the CSS animation.
-    expect(secondPulse).not.toBe(firstPulse);
-    expect(screen.getByTestId('hub-nav-bar').style.animation).toContain('rcNavBarPop');
+    expect(reflowSpy).toHaveBeenCalledTimes(2);
+    expect(bar.style.animation).toContain('rcNavBarPop');
+    reflowSpy.mockRestore();
   });
 
-  it('a press does not interfere with the item\'s own click handler firing (remount-safe)', () => {
+  it('a press does not remount the bar or the pressed button, so it cannot interfere with the click delivered by the same gesture', () => {
     const onGames = vi.fn();
     render(<HubToolbar onGames={onGames} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} />);
-    fireEvent.pointerDown(screen.getByTestId('hub-nav-games'));
-    fireEvent.click(screen.getByTestId('hub-nav-games')); // re-queried after the pointerDown-driven remount
+    const barBefore = screen.getByTestId('hub-nav-bar');
+    const gamesBefore = screen.getByTestId('hub-nav-games');
+    fireEvent.pointerDown(gamesBefore);
+    // Same DOM node references, not merely equal test ids — a remount would produce a *new*
+    // element that happens to carry the same testid, which `toBe` (reference equality) catches
+    // and `toEqual`/re-querying by testid would not.
+    expect(screen.getByTestId('hub-nav-bar')).toBe(barBefore);
+    expect(screen.getByTestId('hub-nav-games')).toBe(gamesBefore);
+    fireEvent.click(gamesBefore);
     expect(onGames).toHaveBeenCalledTimes(1);
   });
 
