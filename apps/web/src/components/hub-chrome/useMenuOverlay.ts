@@ -29,6 +29,18 @@ export function useMenuOverlay() {
     setOpen((prev) => !prev);
   }, []);
 
+  // Ticket 2026-09-13#2, item 2: `anchorRect` used to be set ONLY by `onMenu` above, which also
+  // flips `open` in the same call — so on a fresh instance's very first open, the render that
+  // reveals the overlay ALSO moves the clip-path's center away from MenuOverlay's `(0,0)`
+  // fallback, in the same CSS transition (a visible slide-then-correct-reveal instead of a clean
+  // grow-from-the-right-spot). `reportAnchorRect` is a rect-only path that never touches `open`,
+  // so `HubToolbar` can report the Menu button's real position on MOUNT — before `open` is ever
+  // flipped true for the first time — leaving the existing click-triggered `onMenu` path (which
+  // still both measures and toggles) completely unchanged for every open after that.
+  const reportAnchorRect = useCallback((rect: MenuAnchorRect) => {
+    setAnchorRect(rect);
+  }, []);
+
   const close = useCallback(() => setOpen(false), []);
 
   // Tapping any OTHER nav item (Games/Account/Rewards) must also close the overlay (issue #414's
@@ -40,5 +52,5 @@ export function useMenuOverlay() {
   // to `<HubToolbar>` guarantees the close happens regardless of what navigation actually does.
   const wrap = useCallback((fn: () => void) => () => { setOpen(false); fn(); }, []);
 
-  return { open, anchorRect, onMenu, close, wrap };
+  return { open, anchorRect, onMenu, reportAnchorRect, close, wrap };
 }

@@ -866,6 +866,7 @@ export function GameHub(props: GameHubProps) {
           onAccount={navTo(onOpenWallet)}
           onRewards={navTo(onOpenRewards)}
           onMenu={(rect) => { chat.close(); menu.onMenu(rect); }}
+          reportAnchorRect={menu.reportAnchorRect}
           onChat={openChat}
           active={chat.open ? 'chat' : menu.open ? 'menu' : 'games'}
         />

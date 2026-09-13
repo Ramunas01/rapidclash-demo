@@ -327,3 +327,60 @@ describe('HubToolbar — T2 rebuild (issue #484): prototype pill styling + light
     expect(screen.getByTestId('hub-nav-fill').className).not.toContain('bg-background');
   });
 });
+
+// Ticket 2026-09-13#2, item 2: the Menu button's rect must be reported on MOUNT, not only at
+// click time — otherwise `useMenuOverlay`'s `anchorRect` stays null until the first click, and
+// the very first open's clip-path reveal slides in from (0,0) instead of growing cleanly from the
+// real button. jsdom has no real layout, so `getBoundingClientRect` is mocked the same way
+// DiceHub.test.tsx's own bar-slide tests already do (a `vi.spyOn(HTMLElement.prototype, ...)`
+// stub, restored in `finally`).
+describe('HubToolbar — reportAnchorRect (ticket 2026-09-13#2, item 2: first-open reveal origin)', () => {
+  it('reports the Menu button\'s real rect via useLayoutEffect on mount, before any click', () => {
+    const rect = { left: 12, top: 34, width: 56, height: 78, bottom: 112, right: 68, x: 12, y: 34, toJSON: () => ({}) } as DOMRect;
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(rect);
+    try {
+      const reportAnchorRect = vi.fn();
+      const onMenu = vi.fn();
+      render(
+        <HubToolbar
+          onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()}
+          onMenu={onMenu} reportAnchorRect={reportAnchorRect} onChat={vi.fn()}
+        />,
+      );
+      // Fired on mount — before the Menu button has ever been clicked.
+      expect(reportAnchorRect).toHaveBeenCalledTimes(1);
+      expect(reportAnchorRect).toHaveBeenCalledWith({ left: 12, top: 34, width: 56, height: 78 });
+      expect(onMenu).not.toHaveBeenCalled();
+    } finally {
+      rectSpy.mockRestore();
+    }
+  });
+
+  it('the existing click-triggered onMenu path keeps working unchanged alongside the new mount-time report', () => {
+    const rect = { left: 5, top: 6, width: 7, height: 8, bottom: 14, right: 12, x: 5, y: 6, toJSON: () => ({}) } as DOMRect;
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(rect);
+    try {
+      const reportAnchorRect = vi.fn();
+      const onMenu = vi.fn();
+      render(
+        <HubToolbar
+          onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()}
+          onMenu={onMenu} reportAnchorRect={reportAnchorRect} onChat={vi.fn()}
+        />,
+      );
+      expect(reportAnchorRect).toHaveBeenCalledTimes(1); // mount-time report only so far
+      fireEvent.click(screen.getByTestId('hub-nav-menu'));
+      expect(onMenu).toHaveBeenCalledTimes(1);
+      expect(onMenu).toHaveBeenCalledWith({ left: 5, top: 6, width: 7, height: 8 });
+    } finally {
+      rectSpy.mockRestore();
+    }
+  });
+
+  it('without reportAnchorRect wired (e.g. a plain render that does not care), mounting does not throw and onMenu still works', () => {
+    const onMenu = vi.fn();
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={onMenu} onChat={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('hub-nav-menu'));
+    expect(onMenu).toHaveBeenCalledTimes(1);
+  });
+});

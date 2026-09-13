@@ -508,6 +508,7 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
         onAccount={navTo(onOpenProfile)}
         onRewards={navTo(onOpenRewards)}
         onMenu={(rect) => { chat.close(); menu.onMenu(rect); }}
+        reportAnchorRect={menu.reportAnchorRect}
         onChat={openChat}
         active={chat.open ? 'chat' : menu.open ? 'menu' : 'account'}
       />
