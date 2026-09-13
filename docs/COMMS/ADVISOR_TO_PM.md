@@ -1,4 +1,57 @@
-# Advisor → PM (append-only; newest on top)
+### 2026-09-13#1 — Designer handoff on the Games hero: category tiles, rail fades, section title — all 3 confirmed real, precise diff against current code            [READY TO TICKET — all cheap, no new plumbing, one PR]
+From: Advisor   Re: Designer's direct spec for the Games-hero screen (category tiles + rail + title), verified against `HomeHub.tsx` (`origin/main`@`eb5e5f2`)
+
+Designer sent a precise, line-cited spec against the prototype (screenshots of the live app in `design-ref/D01/`, both with the two problem areas circled). Spot-checked every one of Designer's own prototype citations directly — all accurate, nothing to correct there. My job below is the other half: confirming each point against the ACTUAL current code, not just trusting the description, and citing exactly what needs to change. All three sections are real, confirmed bugs — none were false alarms.
+
+---
+
+## 1 — Category tiles: background bug confirmed exactly as described, plus ledge/press entirely missing
+
+**The most visible bug, confirmed byte-for-byte:** `CategoryTabs` (`HomeHub.tsx:390-393`): `active ? 'bg-brand/10' : 'bg-surface'`. The prototype's own computed value (`Full Spec.html:3880`: `bg: 'var(--rc-surface)'`, applied unconditionally to `c0`-`c4` regardless of `on`/selected state) never varies tile background by selection — **every tile is always `--rc-surface`, full stop.** Our code substitutes a faint 10%-opacity brand tint for the selected tile instead, which is why the selected ORIGINALS tile reads as backgroundless in the screenshot (a 10%-opacity purple wash over a near-black background is barely perceptible) — exactly Designer's complaint. **Fix: `bg-surface` unconditionally, drop the `active ?` ternary on background entirely.**
+
+**Ledge shadow — confirmed completely absent, not approximated.** Grepped the whole `apps/web` tree for `"0 7px 0"` and `box-shadow.*7px` — zero hits anywhere. Prototype (`:3882`): `shadow: light ? '0 7px 0 #BEBECB' : '0 7px 0 #1E1E33'`, applied to every tile unconditionally (again, not selection-gated). **Fix: add `boxShadow` (theme-aware, matching `useTheme()`'s existing light/dark read pattern already used elsewhere in this file) to every tile.**
+
+**Press feel — confirmed completely absent.** Grepped for `"translateY(4px)"` and `"rcNavPop"` — zero hits anywhere in `apps/web`. Current tile only has `transition-colors`, no transform/animation logic at all. Prototype: `style-active="transform:translateY(4px);"` (pointer-down sink) plus a one-shot `rcNavPop 420ms cubic-bezier(0.22,0.61,0.36,1)` release animation (`:66`, keyframes confirmed verbatim: `scale(1)` → `scale(0.84)` at 30% → `scale(1.06)` at 62% → `scale(1)`). **Fix: add a pressed-state class (`active:translate-y-1` or equivalent, ~4px) plus a keyframe animation fired on release** — this needs a small amount of new CSS (a `@keyframes` block, since Tailwind has no built-in equivalent to this exact 3-keypoint overshoot curve) but no new state/logic beyond a brief "just released" flag.
+
+**Two more small, confirmed mismatches, lower priority than the above three:**
+- Icon size: current uses `h-[26px] w-[26px]` uniformly (`:395`). Prototype: 29px for the ORIGINALS bolt specifically (`:187`, confirmed `width="29" height="29"`), 25px for the other four (`:191/195/199/203`, confirmed `width="25" height="25"` on all four).
+- Icon-label gap: current `gap-2.5` = 10px (`:391`). Prototype: `gap:9px` (`:186`, confirmed on all five tiles). Rail's own top padding: current `pt-1` = 4px (`:378`); prototype's rail padding is `0 16px 9px 16px` (`:185`) — top should be 0, not 4px.
+
+**Already correct, no change needed:** tile size (76×77px, `:391` matches `:186` exactly), radius (14px, matches), tap-to-center scroll behavior (`selectAndCenter`, `:366-376`, already ported from the prototype's own `pick` handler per this file's own citation and comment — confirmed still accurate).
+
+---
+
+## 2 — Category rail edge fades: confirmed entirely absent, not a simplified/static version
+
+Grepped `HomeHub.tsx` for `"fade"`/`"gradient"` — the only hits are an unrelated tile-art fallback background, nothing on the rail. **No fade overlay elements exist on the rail at all** — the screenshots show exactly what that produces: a hard-clipped "EV…" tile at the right edge with no visual cue there's more to scroll.
+
+Prototype (`:207-208`): two absolutely-positioned divs inside the rail's `position:relative` wrapper (`:184`) — left fade `left:0; width:38px`, right fade `right:0; width:28px`, both `top:-1px; bottom:-1px; pointer-events:none`, gradient using `color-mix(in srgb, var(--rc-bg) …, transparent)` stops at 0%/12%/58%/100% (themes automatically via `--rc-bg`, confirmed both fades reference the same CSS variable, not a hardcoded color). Opacity is **not fixed** — driven by scroll position (`:3856-3864`): `catLeftFade = min(1, scrollLeft / 24)`, `catRightFade = maxScroll <= 0 ? 0 : min(1, (maxScroll - scrollLeft) / 24)`, both transitioning `opacity 180ms ease`. At rest (scrollLeft=0): left fade invisible, right fade fully on; scroll 24px and the left fade is fully in.
+
+**Fix:** add the two overlay divs to `CategoryTabs`'s wrapper (needs promoting to a `position:relative` wrapper around the existing `overflow-x-auto` rail, since the rail div itself doesn't have one today), track `scrollLeft`/`scrollWidth`/`clientWidth` via an `onScroll` handler (React state, same idiom as this file's other scroll-driven UI), and drive each fade's `opacity` from the exact formulas above. **Worth flagging explicitly per Designer's own closing note: this must be scroll-driven, not a static gradient** — a fixed-opacity version would look right in a still screenshot (and might even pass a first glance) but wrong the moment anyone actually scrolls the rail, since the left fade should start invisible and the right fade should go to 0 once nothing more is scrollable.
+
+---
+
+## 3 — Section title: wrong icon AND wrong font, both confirmed
+
+**Icon — confirmed wrong, not approximated.** `HomeHub.tsx:215`: `<img src={boltMark} .../>` — a **static import**, rendered unconditionally regardless of `cat`. This is literally always the same two-tone brand-logo bolt (the same asset used in the top-left `HubRibbon` logo), never changing with category — matches Designer's complaint precisely and matches what's circled in the second screenshot. Prototype (`:231-235`): the title icon is **the selected category's own icon** — five `sc-if` blocks, one per category, each a plain single-fill `#8B45F0` SVG using the exact same path data as that category's own rail tile (bolt/spade/die/crosshair/trophy), swapped via `isCat0`...`isCat4`. Size 26px on all five (confirmed `width="26" height="26"` on every `sc-if` block). **Fix:** replace the static `<img>` with a switch on `cat` rendering the matching category SVG at solid `#8B45F0` fill, 26px — the tile rail already has these exact SVGs (`CATEGORY_ICON` map, `HomeHub.tsx:348-354`) as React components; reuse them directly rather than re-deriving the paths, just force the fill to the fixed `#8B45F0` (never `text-brand`'s CSS-variable indirection, never theme-conditional, since the prototype's title-icon fill is a hardcoded literal in both themes) instead of the tile's own selected/muted color logic.
+
+**Font — confirmed wrong on every axis.** Current (`:216`): `text-[15px] font-black uppercase tracking-[0.04em]`, no explicit `font-family` (falls back to the app's default sans stack, not Arial). Prototype (`:236`): `font-family:Arial, Helvetica, sans-serif; font-size:21px; font-weight:bold; letter-spacing:0.4px`. Three real mismatches: size (15px vs 21px — six points off, not a rounding difference), weight (`font-black` is typically 900, prototype wants standard bold/700), and family (unset/inherited vs explicit Arial stack). Designer's own cross-reference checks out: Rewards' `YOUR REWARDS` headline (`:1007`, confirmed `font-size:19px; font-weight:bold; letter-spacing:0.6px`) is the same family/weight at 19px — the games title is deliberately 2pt larger, not the same size. **Fix:** `font-family: Arial, Helvetica, sans-serif; font-size: 21px; font-weight: 700; letter-spacing: 0.4px` — drop `font-black`/`uppercase` (the `CATEGORY_TITLE` strings are already stored uppercase, so the class was redundant, not wrong, but worth dropping alongside this fix for cleanliness).
+
+**Row layout — already correct, no change needed:** `mt-[26px] flex items-center gap-3 px-4` (`:214`) matches the prototype's `margin:26px 16px 0 16px; gap:12px` (`:230`) on every axis that matters (top offset, side inset, icon-title gap).
+
+---
+
+**Designer's own "check when done" list, translated to what's actually true right now (all FAIL, confirming every finding above, none are false alarms):**
+- `grep -rn "0 7px 0"` → **zero hits**, needs adding
+- `grep -rn "translateY(4px)"` → **zero hits**, needs adding
+- `grep -rn "rcNavPop"` → **zero hits**, needs adding (new keyframes)
+- Two fade overlays, scroll-bound opacity, `--rc-bg`-based → **don't exist**, needs adding
+- Title icon renders five SVGs across categories → **renders one static image always**, needs the swap
+- No hex literal for tile background → **currently is one, effectively** (`bg-brand/10` on selection), needs removing
+
+**Ask:** all three sections are cheap, well-scoped CSS/markup changes to one file (`HomeHub.tsx`) plus its shared `categories.ts` icon map (already exists, just needs reuse in the title row) — no new state machinery beyond the rail's own scroll-position tracking for the fades. Recommend one PR covering all three, then the design-fidelity harness run Designer asked for on this screen in both themes to confirm.
+
+---
 
 ### 2026-09-12#5 — HIGH PRIORITY: the live board vanishes on result for BOTH Dice and Mines — a shared bug in #558 AND already-shipped #555, plus 2 more real Dice gaps, plus a full Mines live-HUD text survey            [READY TO TICKET — item 1 first, it affects two shipped PRs; item 4 is a survey, needs Owner calls before any dispatch]
 From: Advisor   Re: Owner's live post-merge Dice pass (#558)
