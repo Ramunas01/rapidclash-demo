@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from 'react';
 import type { GameMeta, OpenChallenge } from '@rapidclash/shared';
 import { api } from '../api.js';
 import { cn } from '@/lib/utils';
+import { useTheme } from '../lib/theme.js';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
 import { MenuOverlay } from '../components/hub-chrome/MenuOverlay.js';
@@ -26,7 +27,6 @@ import hero1 from '../assets/banners/hero-1.webp';
 import hero2 from '../assets/banners/hero-2.webp';
 // Third slide of the Designer's final 3-banner set (trophy / "Win Real Rivals' Stakes").
 import heroFront from '../assets/banners/hero-front.webp';
-import boltMark from '../assets/brand/bolt-mark.webp';
 
 /** A unified grid entry — a live playable game (from /games) or a coming-soon breadth tile. */
 interface Tile {
@@ -195,6 +195,10 @@ export function HomeHubScreen({
     }, RANDOM_TOTAL_MS);
   }
 
+  // Ticket 2026-09-13#1 §3: section-title icon tracks the active category — reuses the same
+  // CATEGORY_ICON map as the tile rail (below) rather than re-deriving the paths.
+  const TitleIcon = CATEGORY_ICON[cat];
+
   return (
     <div className={HUB_SHELL}>
       <HubRibbon balance={loggedIn ? liveBalance : null} onLogo={onHome} onWallet={onOpenWallet} loggedIn={loggedIn} />
@@ -212,8 +216,17 @@ export function HomeHubScreen({
               onRandom={handleRandom} randSpinning={randSpinning}
             />
             <div className="mb-3 mt-[26px] flex items-center gap-3 px-4">
-              <img src={boltMark} alt="" aria-hidden="true" className="h-[26px] w-[26px] -translate-y-[3px] object-contain" />
-              <h2 data-testid="home-section-title" className="text-[15px] font-black uppercase leading-none tracking-[0.04em]">
+              {/* Ticket 2026-09-13#1 §3: the selected category's own icon (Full Spec.html:231-235,
+                  `sc-if isCat0`..`isCat4`), not the static brand bolt-mark — the icon must change
+                  with `cat`. Fill is a hardcoded `#8B45F0` literal in BOTH themes (the prototype's
+                  own raw `fill="#8B45F0"`, not `text-brand`'s CSS-variable indirection). */}
+              <TitleIcon className="h-[26px] w-[26px] text-[#8B45F0]" />
+              <h2
+                data-testid="home-section-title"
+                // Full Spec.html:236 — Arial/Helvetica, 21px, weight 700, 0.4px tracking. CATEGORY_TITLE
+                // strings are already stored uppercase (categories.ts), so no `uppercase` class needed.
+                style={{ fontFamily: ARIAL, fontSize: 21, fontWeight: 700, letterSpacing: '0.4px' }}
+              >
                 {CATEGORY_TITLE[cat]}
               </h2>
             </div>
@@ -353,7 +366,38 @@ const CATEGORY_ICON: Record<CategoryId, (props: { className?: string }) => React
   events: EventsIcon,
 };
 
+/** Prototype-exact Arial font stack (Full Spec.html:236) — same local-const convention as
+ *  RpsHub.tsx's/DiceHub.tsx's own `ARIAL`/`SPACE_GROTESK`. Used by the section title (§3). */
+const ARIAL = 'Arial, Helvetica, sans-serif';
+
 function CategoryTabs({ cat, onChange }: { cat: CategoryId; onChange(c: CategoryId): void }) {
+  // Ticket 2026-09-13#1 §1: the ledge shadow (Full Spec.html:186, `light ? '0 7px 0 #BEBECB' :
+  // '0 7px 0 #1E1E33'`) is unconditional — every tile, not selection-gated — same theme read
+  // already used elsewhere in this file's sibling screens (RpsHub.tsx/MinesHub.tsx).
+  const { resolved } = useTheme();
+  const light = resolved === 'light';
+
+  // §1 press feel: `style-active="transform:translateY(4px);"` is handled purely via the
+  // `active:translate-y-1` Tailwind pseudo-class below (no JS needed). The one-shot release
+  // animation (`rcNavPop 420ms cubic-bezier(0.22,0.61,0.36,1)`, Full Spec.html:66/3974-3978) needs
+  // a brief "just released" flag per tile, fired on pointer-up and cleared when the animation ends.
+  const [popId, setPopId] = useState<CategoryId | null>(null);
+
+  // §2 rail edge fades — scroll-driven, NOT a fixed gradient (Designer's explicit warning: a
+  // static version looks right in a screenshot and wrong the instant anyone scrolls the rail).
+  // Right starts at 1, matching the prototype's own initial state (`catRightFade: ... == null ?
+  // 1 : ...`, Full Spec.html:3857).
+  const [fade, setFade] = useState({ left: 0, right: 1 });
+  // Exact formula from Full Spec.html:3861-3863.
+  function handleScroll(e: UIEvent<HTMLDivElement>) {
+    const el = e.currentTarget;
+    const max = el.scrollWidth - el.clientWidth;
+    setFade({
+      left: Math.min(1, el.scrollLeft / 24),
+      right: max <= 0 ? 0 : Math.min(1, (max - el.scrollLeft) / 24),
+    });
+  }
+
   // Issue #501: the prototype's own category-pill click handler (`c{i}.pick`, `design/prototype/
   // RapidClash Full Spec.html` ~line 3888) doesn't just flip the active tab — it also re-centers
   // the clicked pill within the rail's own horizontal scroll (`tile.offsetLeft - (rail.clientWidth
@@ -375,30 +419,71 @@ function CategoryTabs({ cat, onChange }: { cat: CategoryId; onChange(c: Category
     rail.scrollTo?.({ left: Math.max(0, Math.min(max, target)), behavior: 'smooth' });
   }
   return (
-    <div className="no-scrollbar flex gap-2.5 overflow-x-auto px-4 pt-1 pb-[9px]" role="tablist" aria-label="Game categories">
-      {CATEGORY_IDS.map((id) => {
-        const active = cat === id;
-        const Icon = CATEGORY_ICON[id];
-        return (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            data-testid={`home-cat-${id}`}
-            onClick={(e) => selectAndCenter(id, e.currentTarget)}
-            className={cn(
-              'flex h-[77px] w-[76px] shrink-0 flex-col items-center justify-center gap-2.5 rounded-[14px] px-1 text-center transition-colors focus:outline-none',
-              active ? 'bg-brand/10' : 'bg-surface',
-            )}
-          >
-            <Icon className={cn('block h-[26px] w-[26px]', active ? 'text-brand drop-shadow-[0_0_5px_hsl(var(--primary)/0.6)]' : 'text-[var(--rc-muted)]')} />
-            <span className={cn('text-[11px] font-extrabold leading-[1.25]', active ? 'text-brand' : 'text-[var(--rc-muted)]')}>
-              {CATEGORY_TAB_LABEL[id]}
-            </span>
-          </button>
-        );
-      })}
+    <div className="relative">
+      <div
+        className="no-scrollbar flex gap-2.5 overflow-x-auto px-4 pb-[9px]"
+        role="tablist"
+        aria-label="Game categories"
+        onScroll={handleScroll}
+      >
+        {CATEGORY_IDS.map((id) => {
+          const active = cat === id;
+          const Icon = CATEGORY_ICON[id];
+          const big = id === 'originals'; // Full Spec.html:187 — 29px for ORIGINALS, 25px for the rest
+          return (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              data-testid={`home-cat-${id}`}
+              onClick={(e) => selectAndCenter(id, e.currentTarget)}
+              onPointerUp={() => setPopId(id)}
+              onAnimationEnd={() => setPopId((cur) => (cur === id ? null : cur))}
+              style={{
+                boxShadow: light ? '0 7px 0 #BEBECB' : '0 7px 0 #1E1E33',
+                animation: popId === id ? 'rcNavPop 420ms cubic-bezier(0.22,0.61,0.36,1)' : undefined,
+              }}
+              className={cn(
+                'flex h-[77px] w-[76px] shrink-0 flex-col items-center justify-center gap-[9px] rounded-[14px] bg-surface px-1 text-center transition-colors focus:outline-none active:translate-y-1',
+              )}
+            >
+              <Icon
+                className={cn(
+                  'block',
+                  big ? 'h-[29px] w-[29px]' : 'h-[25px] w-[25px]',
+                  active ? 'text-brand drop-shadow-[0_0_5px_hsl(var(--primary)/0.6)]' : 'text-[var(--rc-muted)]',
+                )}
+              />
+              <span className={cn('text-[11px] font-extrabold leading-[1.25]', active ? 'text-brand' : 'text-[var(--rc-muted)]')}>
+                {CATEGORY_TAB_LABEL[id]}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {/* §2 edge fades (Full Spec.html:207-208) — geometry/gradient stops copied verbatim;
+          opacity is scroll-driven state (`fade`), never a fixed value. */}
+      <div
+        aria-hidden="true"
+        data-testid="home-rail-fade-left"
+        className="pointer-events-none absolute -inset-y-px left-0 w-[38px] transition-opacity duration-[180ms] ease"
+        style={{
+          opacity: fade.left,
+          background:
+            'linear-gradient(to right, color-mix(in srgb, var(--rc-bg) 100%, transparent) 0%, color-mix(in srgb, var(--rc-bg) 100%, transparent) 12%, color-mix(in srgb, var(--rc-bg) 70%, transparent) 58%, color-mix(in srgb, var(--rc-bg) 0%, transparent) 100%)',
+        }}
+      />
+      <div
+        aria-hidden="true"
+        data-testid="home-rail-fade-right"
+        className="pointer-events-none absolute -inset-y-px right-0 w-[28px] transition-opacity duration-[180ms] ease"
+        style={{
+          opacity: fade.right,
+          background:
+            'linear-gradient(to left, color-mix(in srgb, var(--rc-bg) 100%, transparent) 0%, color-mix(in srgb, var(--rc-bg) 100%, transparent) 12%, color-mix(in srgb, var(--rc-bg) 70%, transparent) 58%, color-mix(in srgb, var(--rc-bg) 0%, transparent) 100%)',
+        }}
+      />
     </div>
   );
 }

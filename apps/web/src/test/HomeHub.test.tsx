@@ -409,6 +409,95 @@ describe('HomeHubScreen — category rail, SEARCH, SORT, RANDOM (issue #465)', (
     }
   });
 
+  it('Ticket 2026-09-13#1 §1: every tile — selected or not — shares the same background treatment (no bg-brand tint)', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    const selected = screen.getByTestId('home-cat-originals'); // active by default
+    const unselected = screen.getByTestId('home-cat-card');
+    expect(selected.className).not.toMatch(/bg-brand/);
+    expect(unselected.className).not.toMatch(/bg-brand/);
+    expect(selected.className).toContain('bg-surface');
+    expect(unselected.className).toContain('bg-surface');
+  });
+
+  it('Ticket 2026-09-13#1 §1: every tile has the ledge box-shadow, unconditionally (selected and unselected alike)', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    const selected = screen.getByTestId('home-cat-originals');
+    const unselected = screen.getByTestId('home-cat-card');
+    // Dark by default (no light-theme toggle in this test) — Full Spec.html:186's dark value.
+    expect(selected.style.boxShadow).toBe('0 7px 0 #1E1E33');
+    expect(unselected.style.boxShadow).toBe('0 7px 0 #1E1E33');
+  });
+
+  it('Ticket 2026-09-13#1 §1: ORIGINALS icon renders at 29px, other tiles at 25px', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    const originalsIcon = screen.getByTestId('home-cat-originals').querySelector('svg');
+    const cardIcon = screen.getByTestId('home-cat-card').querySelector('svg');
+    expect(originalsIcon?.getAttribute('class')).toContain('h-[29px]');
+    expect(originalsIcon?.getAttribute('class')).toContain('w-[29px]');
+    expect(cardIcon?.getAttribute('class')).toContain('h-[25px]');
+    expect(cardIcon?.getAttribute('class')).toContain('w-[25px]');
+  });
+
+  it('Ticket 2026-09-13#1 §2: rail edge fades exist and are scroll-driven, not fixed opacity', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    const left = screen.getByTestId('home-rail-fade-left');
+    const right = screen.getByTestId('home-rail-fade-right');
+    expect(left).toBeInTheDocument();
+    expect(right).toBeInTheDocument();
+    // At rest (no scroll yet): left fade invisible, right fade fully on — matches the prototype's
+    // own initial state (Full Spec.html:3856-3857).
+    expect(left.style.opacity).toBe('0');
+    expect(right.style.opacity).toBe('1');
+
+    const rail = screen.getByRole('tablist', { name: 'Game categories' });
+    // maxScroll = scrollWidth - clientWidth = 48; scrollLeft = 12.
+    // Formula (Full Spec.html:3861-3863): left = min(1, scrollLeft/24) = 0.5,
+    // right = min(1, (max - scrollLeft)/24) = min(1, 36/24) = 1 (clamped).
+    Object.defineProperty(rail, 'scrollWidth', { value: 148, configurable: true });
+    Object.defineProperty(rail, 'clientWidth', { value: 100, configurable: true });
+    Object.defineProperty(rail, 'scrollLeft', { value: 12, configurable: true });
+    fireEvent.scroll(rail);
+    expect(left.style.opacity).toBe('0.5');
+    expect(right.style.opacity).toBe('1');
+
+    // Scroll further so the right-fade formula produces a value below the clamp (not just 1s and 0s).
+    Object.defineProperty(rail, 'scrollLeft', { value: 30, configurable: true });
+    fireEvent.scroll(rail);
+    // left = min(1, 30/24) = 1 (clamped); right = min(1, (48-30)/24) = min(1, 0.75) = 0.75.
+    expect(left.style.opacity).toBe('1');
+    expect(right.style.opacity).toBe('0.75');
+  });
+
+  it('Ticket 2026-09-13#1 §3: section title icon changes with the active category, and the old static bolt-mark image is gone', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    const titleRow = screen.getByTestId('home-section-title').parentElement!;
+
+    // No <img> in the title row at all, for any category (the old boltMark asset is gone).
+    expect(titleRow.querySelector('img')).toBeNull();
+    const originalsIconPath = titleRow.querySelector('svg')?.outerHTML;
+
+    fireEvent.click(screen.getByTestId('home-cat-card'));
+    expect(titleRow.querySelector('img')).toBeNull();
+    const cardIconPath = titleRow.querySelector('svg')?.outerHTML;
+    // A distinct icon renders for a distinct category (ORIGINALS' bolt vs CARD's spade).
+    expect(cardIconPath).not.toBe(originalsIconPath);
+  });
+
+  it('Ticket 2026-09-13#1 §3: section title uses the prototype-exact Arial/21px/700/0.4px font', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    const title = screen.getByTestId('home-section-title');
+    expect(title.style.fontFamily).toBe('Arial, Helvetica, sans-serif');
+    expect(title.style.fontSize).toBe('21px');
+    expect(title.style.fontWeight).toBe('700');
+    expect(title.style.letterSpacing).toBe('0.4px');
+  });
+
   it('section title shows RAPIDCLASH ORIGINALS by default and switches per active category', async () => {
     render(<HomeHubScreen {...baseProps()} />);
     await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
