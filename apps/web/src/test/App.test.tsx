@@ -362,7 +362,9 @@ describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
     await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('hub-nav-rewards'));
     await waitFor(() => expect(screen.getByTestId('rewards-hub')).toBeInTheDocument());
-    expect(screen.queryByTestId('auth-modal')).toBeNull();
+    // AuthModal is always mounted now (ticket 2026-09-13#4, item 3 -- same "always mounted,
+    // translated off-screen" fix already applied to the Menu overlay), so it's present but closed.
+    expect(screen.getByTestId('auth-modal')).toHaveAttribute('aria-hidden', 'true');
   });
 
   it('JOIN a public challenge while logged-out → auth modal → on register the user LANDS on that hub with the stake armed and nothing auto-fires', async () => {
@@ -374,8 +376,11 @@ describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
     const pubRow = document.querySelector('[data-match-id="pub-1"]') as HTMLElement;
     fireEvent.click(within(pubRow).getByTestId(/^games-carousel-join-/));
 
-    // The auth wall fires — JOIN is gated even though browsing the feed is open.
-    expect(await screen.findByTestId('auth-modal')).toBeInTheDocument();
+    // The auth wall fires — JOIN is gated even though browsing the feed is open. AuthModal is
+    // always mounted (ticket 2026-09-13#4: `BottomSheet` translates off-screen rather than
+    // conditionally unmounting), so presence alone no longer proves it's open — check its
+    // `aria-hidden` visibility flag instead.
+    await waitFor(() => expect(screen.getByTestId('auth-modal')).toHaveAttribute('aria-hidden', 'false'));
 
     // Register → token stored + WS connects.
     fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'neo' } });
@@ -394,7 +399,8 @@ describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
       .filter((m: { type: string }) => m.type === 'challenge.take' || m.type === 'queue.join');
     expect(fired).toHaveLength(0); // no take / no join — nothing auto-fires post-sign-in
 
-    expect(screen.queryByTestId('auth-modal')).toBeNull(); // modal dismissed on success
+    // Modal dismissed on success — still mounted (BottomSheet is always-mounted), now hidden.
+    expect(screen.getByTestId('auth-modal')).toHaveAttribute('aria-hidden', 'true');
     // Landed on the Coinflip hub with the stake armed → PLAY is ready to commit.
     await waitFor(() => expect(screen.getByTestId('hub-play')).toBeEnabled());
   });
@@ -409,9 +415,9 @@ describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
     fireEvent.click(screen.getByTestId('hub-bet-10'));
     fireEvent.click(screen.getByTestId('hub-play'));
 
-    // The auth wall fires only here.
-    const modal = await screen.findByTestId('auth-modal');
-    expect(modal).toBeInTheDocument();
+    // The auth wall fires only here. AuthModal is always mounted (ticket 2026-09-13#4), so check
+    // its `aria-hidden` visibility flag rather than presence.
+    await waitFor(() => expect(screen.getByTestId('auth-modal')).toHaveAttribute('aria-hidden', 'false'));
 
     // Register → token stored + WS connects.
     fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'neo' } });
@@ -430,7 +436,8 @@ describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
       .filter((m: { type: string }) => m.type === 'queue.join');
     expect(joins).toHaveLength(0); // nothing auto-fires post-sign-in
 
-    expect(screen.queryByTestId('auth-modal')).toBeNull(); // modal dismissed on success
+    // Modal dismissed on success — still mounted (BottomSheet is always-mounted), now hidden.
+    expect(screen.getByTestId('auth-modal')).toHaveAttribute('aria-hidden', 'true');
     // Landed back on the Coinflip hub with the 10 stake armed → PLAY is ready.
     await waitFor(() => expect(screen.getByTestId('hub-play')).toBeEnabled());
   });
@@ -864,17 +871,18 @@ describe('App — guest mode never gets stuck on an uncurated hub (issue #283)',
     localStorage.clear();
     sessionStorage.clear();
     vi.unstubAllGlobals();
+    window.history.pushState({}, '', '/'); // undo the `?mode=guest` URL entry below
   });
 
-  /** Land a fresh guest session on the curated Coinflip hub via the real "Play as guest" flow.
-   *  Post-#279, guest-auth success lands on the guest game picker first (not directly in a hub) —
-   *  pick the Coinflip tile to reach the same hub this suite's pre-#279 assertions exercise. */
+  /** Land a fresh guest session on the curated Coinflip hub. Ticket 2026-09-13#4 removed
+   *  AuthModal's own in-sheet "Play as guest instead" link (its only prior in-app trigger) — guest
+   *  auth is now reached exclusively via the `?mode=guest` URL entry point (issue #284,
+   *  `GUEST_MODE_CONTRACT.md` §1), so that's what this helper drives instead. Post-#279, guest-auth
+   *  success lands on the guest game picker first (not directly in a hub) — pick the Coinflip tile
+   *  to reach the same hub this suite's pre-#279 assertions exercise. */
   async function enterAsGuest() {
+    window.history.pushState({}, '', '/?mode=guest');
     render(<App />);
-    await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
-    fireEvent.click(screen.getByTestId('hub-signin-chip'));
-    await waitFor(() => expect(screen.getByTestId('auth-modal')).toBeInTheDocument());
-    fireEvent.click(screen.getByTestId('auth-guest'));
     await waitFor(() => expect(screen.getByTestId('guest-game-picker')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('guest-picker-coinflip'));
     await waitFor(() => expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument());

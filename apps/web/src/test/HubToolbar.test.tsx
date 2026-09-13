@@ -326,6 +326,18 @@ describe('HubToolbar — T2 rebuild (issue #484): prototype pill styling + light
     expect(screen.getByTestId('hub-nav-fade').className).not.toContain('hsl(var(--background))');
     expect(screen.getByTestId('hub-nav-fill').className).not.toContain('bg-background');
   });
+
+  // Ticket 2026-09-13#4, item 4: `hover:text-[var(--rc-text)]` on an inactive item is a classic
+  // "sticky mobile hover" bug — the class sticks active after a tap on touch devices, making the
+  // icon read as permanently "activated" (near-white) until the user taps elsewhere. The prototype
+  // itself has no hover/pressed treatment on the nav-item color switch at all — dropped entirely,
+  // not media-gated, matching it exactly.
+  it('inactive items carry no hover: color variant at all (dropped, not media-gated — matches the prototype exactly)', () => {
+    render(<HubToolbar onGames={vi.fn()} onAccount={vi.fn()} onRewards={vi.fn()} onMenu={vi.fn()} onChat={vi.fn()} active="games" />);
+    for (const label of ['account', 'rewards', 'chat', 'menu']) {
+      expect(screen.getByTestId(`hub-nav-${label}`).className).not.toMatch(/hover:text-/);
+    }
+  });
 });
 
 // Ticket 2026-09-13#2, item 2: the Menu button's rect must be reported on MOUNT, not only at
@@ -436,8 +448,10 @@ describe('HubToolbar — bottom-nav bar press feel (ticket 2026-09-13#3)', () =>
     for (const label of ['menu', 'games', 'account', 'rewards', 'chat']) {
       expect(screen.getByTestId(`hub-nav-${label}`).className).not.toContain('transition-colors');
     }
-    // The separate, already-known hover-class issue (tracked elsewhere) stays untouched.
-    expect(screen.getByTestId('hub-nav-account').className).toContain('hover:text-[var(--rc-text)]');
+    // Ticket 2026-09-13#4, item 4 fixed the sticky-mobile-hover issue this test used to document
+    // as "tracked elsewhere, stays untouched" — the hover class is gone too now (see the dedicated
+    // test at line ~330 for full coverage of that fix).
+    expect(screen.getByTestId('hub-nav-account').className).not.toContain('hover:text-[var(--rc-text)]');
   });
 
   it('regression: nav clicks still route to the right callback after the press-feel change', () => {

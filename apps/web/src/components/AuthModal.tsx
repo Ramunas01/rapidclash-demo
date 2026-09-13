@@ -1,46 +1,84 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { motion } from 'framer-motion';
-import { AlertCircle, Loader2, Lock, User, X } from 'lucide-react';
+import { AlertCircle, Loader2 } from 'lucide-react';
 import type { AvatarId } from '@rapidclash/shared';
 import { api } from '../api.js';
-import { cn } from '@/lib/utils';
+import { BottomSheet } from './hub-chrome/BottomSheet.js';
 
 interface Props {
+  /** Mirrors `BottomSheet`'s own `open` — this component is always mounted (see `App.tsx`'s
+   *  render call) so the sheet's drag/settle transitions have something to animate FROM the very
+   *  first time a session opens the auth wall, not just on the 2nd+ open (ticket 2026-09-13#4,
+   *  item 3 — the same "nothing to animate from on first open" gap 2026-09-13#2 already fixed for
+   *  the Menu overlay, second occurrence in a week). */
+  open: boolean;
   /** Same shape as AuthScreen.onLogin — App stores the token and connects the WS. After sign-in
    *  the user lands on the intent's hub with the stake armed and presses PLAY to commit.
-   *  `avatarId` is the player's own stored avatar (redaction-safe: own-session only). */
+   *  `avatarId` is the player's own stored avatar (redaction-safe: own-session only). The caller
+   *  (`App.tsx`'s `handleAuthSuccess`) is what actually closes the sheet (`setAuthOpen(false)`) —
+   *  this component only clears its own local form fields on a successful submit, since it no
+   *  longer unmounts on close and stale text would otherwise persist into the next open. */
   onSuccess(token: string, playerId: string, balance: number, username: string, avatarId: AvatarId): void;
-  /** "Play as guest" (CHARTER.md's guest-mode exception, issue #267) — a separate callback, not
-   *  onSuccess with extra args, so it never changes onSuccess's existing call shape. Guest
-   *  responses have a fixed username ('Guest') and avatarId ('default'), so neither is passed. */
-  onGuestSuccess(token: string, playerId: string, balance: number): void;
   onClose(): void;
 }
 
 /**
- * Compact register-or-login step shown as a MODAL over the current hub (not a full-screen
- * detour) — the auth wall that fires only at the commit-to-play action. Reuses Auth.tsx's
- * alias+password → token logic (api.register / api.login); on success the App stores the token
- * and connects the WS, then lands the user on the game with the stake armed (they press PLAY to
- * commit — nothing auto-fires). A new registrant gets the 1000-credit grant.
+ * The auth wall (register/login), rebuilt as a bottom sheet (ticket 2026-09-13#4) against the
+ * prototype's own citations (`Full Spec.html:2452-2472`) — a full structural rebuild, not a
+ * restyle: the previous shell was a centered `fixed inset-0 flex items-center justify-center`
+ * modal, architecturally a different shape from a sheet. Reuses `BottomSheet` (drag-to-dismiss,
+ * fixed 70% height, asymmetric 34/52px radius) — the same shared component `AffiliateHub.tsx`'s
+ * `CreateCampaignSheet` now also sits on.
+ *
+ * Six items confirmed present in the previous shell and removed here, matching the prototype's
+ * own markup exactly (no equivalent for any of them): the "Create an account or Login" heading,
+ * the close X button, the `User`/`Lock` icons inside the inputs, the "Play as guest instead" link,
+ * and the disclaimer paragraph.
+ *
+ * Guest mode itself (CHARTER.md's documented exception, issue #267) is NOT removed — only this
+ * component's own in-sheet discovery link is gone. Guest auth remains fully reachable via the
+ * separate, deliberate `?mode=guest` URL entry point (`App.tsx`'s `isGuestModeUrl()` /
+ * `GUEST_MODE_CONTRACT.md` §1, issue #284), which calls `api.guestAuth()` directly and never
+ * routed through this component's own `onGuestSuccess` callback in the first place — so this
+ * component no longer needs that prop at all (removed, not left dead).
+ *
+ * Stacking order — preserved, not reintroduced as a regression: this sheet passes `zIndexClassName
+ * ="z-10"` to `BottomSheet`, keeping it BELOW `HubToolbar`'s persistent nav (`z-20`,
+ * `hub-chrome/HubToolbar.tsx`) and `HubRibbon`'s header (`z-20`) — issue #497. This used to be
+ * `z-40` (above both), which let this sheet's scrim paint over the fixed bottom nav whenever the
+ * auth wall was open. The prototype's own auth-sheet scrim (`Full Spec.html` ~line 2452,
+ * `z-index:7`) is the SAME z-index as its nav bar (~line 2724, also `z-index:7`) but is declared
+ * EARLIER in the markup, so same-z DOM order puts the nav on top, undimmed — the persistent tab
+ * bar stays legible/tappable while the login sheet is up. The design-fidelity harness's
+ * `account-login-sheet.nav` diff (`tools/design-fidelity/`) caught the app diverging from that —
+ * see the original fix's history for the full story. Dropping below the nav/header (rather than
+ * raising the nav above every other current overlay, which would wrongly uncover it from sheets
+ * that SHOULD stay on top, like HomeHub's sort sheet) matches the prototype's specific choice for
+ * just this sheet without touching any other overlay's stack position.
+ *
+ * Submit toast ("ACCOUNT CREATED" / "LOGGED IN", `Full Spec.html:4210-4212`): this app has no
+ * app-level toast primitive to hook into cleanly (MenuOverlay's/AffiliateHub's own toasts are each
+ * local, screen-scoped copies, not a shared mechanism) — not added here per the ticket's own
+ * "don't add a new toast system" guidance; the structural rebuild is the priority.
  */
-export function AuthModal({ onSuccess, onGuestSuccess, onClose }: Props) {
+export function AuthModal({ open, onSuccess, onClose }: Props) {
   const [tab, setTab] = useState<'register' | 'login'>('register');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [guestLoading, setGuestLoading] = useState(false);
 
-  // On the body-scroll layout (#142) the page scrolls behind a fixed overlay; lock body
-  // scroll while the auth wall is open so the form can't drift under the user.
+  // On the body-scroll layout (#142) the page scrolls behind a fixed overlay; lock body scroll
+  // while the auth wall is open so the form can't drift under the user. Now gated on `open`
+  // (rather than running unconditionally on mount) since this component no longer unmounts on
+  // close — it must release the lock when the sheet closes, not just when it's destroyed.
   useEffect(() => {
+    if (!open) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
       document.body.style.overflow = prev;
     };
-  }, []);
+  }, [open]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -50,6 +88,8 @@ export function AuthModal({ onSuccess, onGuestSuccess, onClose }: Props) {
       const res = tab === 'register'
         ? await api.register({ username, password })
         : await api.login({ username, password });
+      setUsername('');
+      setPassword('');
       onSuccess(res.token, res.playerId, res.balance, res.username, res.avatarId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
@@ -58,145 +98,103 @@ export function AuthModal({ onSuccess, onGuestSuccess, onClose }: Props) {
     }
   }
 
-  async function handleGuest() {
+  function pickTab(next: 'register' | 'login') {
+    setTab(next);
     setError('');
-    setGuestLoading(true);
-    try {
-      const res = await api.guestAuth();
-      onGuestSuccess(res.token, res.playerId, res.balance);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
-    } finally {
-      setGuestLoading(false);
-    }
   }
 
   return (
-    <div
-      // z-10, BELOW HubToolbar's persistent nav (z-20, hub-chrome/HubToolbar.tsx) and HubRibbon's
-      // header (z-20) — issue #497. This used to be z-40 (above both), which let this backdrop's
-      // `bg-black/70 backdrop-blur-sm` paint over the fixed bottom nav whenever the auth sheet was
-      // open. The prototype's own auth-sheet scrim (`RapidClash Full Spec.html` ~line 2452,
-      // `z-index:7`) is the SAME z-index as its nav bar (~line 2724, also `z-index:7`) but is
-      // declared EARLIER in the markup, so same-z DOM order puts the nav on top, undimmed — the
-      // persistent tab bar stays legible/tappable while the login sheet is up. The design-fidelity
-      // harness's `account-login-sheet.nav` diff (`tools/design-fidelity/`) caught the app
-      // diverging from that: with this backdrop above the nav, the nav pill was rendering
-      // dimmed+blurred behind it, which barely shows in dark theme (dark-on-near-black is a tiny
-      // delta) but reads as a severe mismatch in light theme (light-on-near-black is a huge delta)
-      // — a pixel-identical HubToolbar in both themes (verified directly: capturing the nav with no
-      // modal open gives matching layouts in both themes) was being misread as a light-only
-      // "vertical rhythm"/doubling bug in the diff image, when the actual cause was this stacking
-      // order, not HubToolbar's own layout or any `--rc-*` token. Dropping below the nav/header
-      // (rather than raising the nav above every current z-40+ overlay, which would also — wrongly
-      // — uncover it from sheets that SHOULD stay on top, like HomeHub's sort sheet) matches the
-      // prototype's specific choice for just this sheet without touching any other overlay's stack
-      // position.
-      className="fixed inset-0 z-10 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Sign in"
-      data-testid="auth-modal"
-      onClick={onClose}
+    <BottomSheet
+      open={open}
+      onClose={onClose}
+      zIndexClassName="z-10"
+      scrimTestId="auth-modal-scrim"
+      sheetTestId="auth-modal"
+      handleTestId="auth-modal-handle"
+      aria-label={tab === 'register' ? 'Sign up' : 'Login'}
     >
-      <motion.div
-        initial={{ opacity: 0, y: -12, scale: 0.96 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-        onClick={(ev) => ev.stopPropagation()}
-        className="w-full max-w-sm rounded-2xl bg-surface p-6 shadow-2xl"
-      >
-        <div className="mb-4 flex items-center justify-between">
-          <span className="flex items-center gap-2 text-base font-bold">
-            Create an account or Login
-          </span>
-          <button type="button" onClick={onClose} aria-label="Dismiss" className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:text-foreground">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+      <h2 data-testid="auth-title" className="text-[22px] font-bold text-[var(--rc-text)]">
+        {tab === 'register' ? 'Sign up' : 'Login'}
+      </h2>
 
-        <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-background p-1">
-          <button
-            type="button"
-            onClick={() => { setTab('register'); setError(''); }}
-            aria-pressed={tab === 'register'}
-            data-testid="auth-tab-register"
-            className={cn('rounded-lg py-2 text-sm font-semibold transition-all', tab === 'register' ? 'bg-brand text-white' : 'text-muted-foreground hover:text-foreground')}
-          >
-            Sign up
-          </button>
-          <button
-            type="button"
-            onClick={() => { setTab('login'); setError(''); }}
-            aria-pressed={tab === 'login'}
-            data-testid="auth-tab-login"
-            className={cn('rounded-lg py-2 text-sm font-semibold transition-all', tab === 'login' ? 'bg-brand text-white' : 'text-muted-foreground hover:text-foreground')}
-          >
-            Login
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="relative">
-            <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Username"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              required
-              autoComplete="username"
-              aria-label="Username"
-              className="w-full rounded-xl border border-border bg-background py-3 pl-10 pr-3 text-sm text-foreground placeholder:text-muted-foreground outline-none transition-colors focus:border-brand"
-            />
-          </div>
-          <div className="relative">
-            <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-              autoComplete={tab === 'register' ? 'new-password' : 'current-password'}
-              aria-label="Password"
-              className="w-full rounded-xl border border-border bg-background py-3 pl-10 pr-3 text-sm text-foreground placeholder:text-muted-foreground outline-none transition-colors focus:border-brand"
-            />
-          </div>
-
-          {error && (
-            <p className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert" data-testid="auth-error">
-              <AlertCircle className="h-4 w-4 flex-shrink-0" />
-              {error}
-            </p>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            data-testid="auth-submit"
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand py-3 text-sm font-bold text-white shadow-lg shadow-brand/20 transition-all hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {loading ? (<><Loader2 className="h-4 w-4 animate-spin" /> Please wait…</>) : tab === 'register' ? 'Create Account' : 'Sign In'}
-          </button>
-        </form>
-
-        {/* Guest mode (CHARTER.md's documented exception): no form fields — mints an anonymous,
-         *  ephemeral session and drops the visitor straight into the curated Coinflip preview
-         *  against the honestly-labelled Demo Opponent. A link, not a third tab — deliberately
-         *  secondary to signing up for the real platform. */}
+      {/* Mode toggle — colors/shadows identical to the Menu's own Dark/Light control
+          (`MenuOverlay.tsx`'s `menu-appearance-dark`/`-light` buttons, ticket 2026-09-13#2), reusing
+          the SAME `--rc-theme-toggle-*` tokens rather than adding duplicates. The prototype's own
+          mode-toggle/submit buttons carry `onPointerDown="{{ navPress }}"` but no `data-nav`
+          attribute — `navPress` no-ops without a `data-nav` key, so these buttons deliberately do
+          NOT join the shared nav-bar-pop mechanism; they only get their own simple
+          `translateY(3px)` press-sink, same family as the Menu's Dark/Light buttons. */}
+      <div className="mt-5 flex gap-[10px] rounded-[24px] bg-surface p-1.5 pb-[11px]">
         <button
           type="button"
-          onClick={handleGuest}
-          disabled={guestLoading}
-          data-testid="auth-guest"
-          className="mt-3 flex w-full items-center justify-center gap-2 text-xs font-semibold text-muted-foreground underline decoration-dotted underline-offset-4 transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+          data-testid="auth-tab-register"
+          aria-pressed={tab === 'register'}
+          onClick={() => pickTab('register')}
+          className="flex h-[50px] flex-1 items-center justify-center rounded-[18px] text-sm font-semibold active:translate-y-[3px]"
+          style={{
+            background: tab === 'register' ? 'var(--brand-purple)' : 'var(--rc-theme-toggle-inactive-bg)',
+            boxShadow: tab === 'register' ? 'var(--rc-theme-toggle-active-shadow)' : 'var(--rc-theme-toggle-inactive-shadow)',
+            color: tab === 'register' ? '#FFFFFF' : 'var(--rc-muted)',
+            transition: 'background 240ms ease, box-shadow 240ms ease, transform 120ms ease',
+          }}
         >
-          {guestLoading ? (<><Loader2 className="h-3.5 w-3.5 animate-spin" /> Starting demo…</>) : 'Play as guest instead'}
+          Sign up
         </button>
+        <button
+          type="button"
+          data-testid="auth-tab-login"
+          aria-pressed={tab === 'login'}
+          onClick={() => pickTab('login')}
+          className="flex h-[50px] flex-1 items-center justify-center rounded-[18px] text-sm font-semibold active:translate-y-[3px]"
+          style={{
+            background: tab === 'login' ? 'var(--brand-purple)' : 'var(--rc-theme-toggle-inactive-bg)',
+            boxShadow: tab === 'login' ? 'var(--rc-theme-toggle-active-shadow)' : 'var(--rc-theme-toggle-inactive-shadow)',
+            color: tab === 'login' ? '#FFFFFF' : 'var(--rc-muted)',
+            transition: 'background 240ms ease, box-shadow 240ms ease, transform 120ms ease',
+          }}
+        >
+          Login
+        </button>
+      </div>
 
-        <p className="mt-4 text-center text-xs text-foreground">Play-money demo credits only, no real-money wagering.</p>
-      </motion.div>
-    </div>
+      <form onSubmit={handleSubmit} className="mt-5 flex flex-col gap-3">
+        <input
+          type="text"
+          placeholder="Username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          required
+          autoComplete="username"
+          aria-label="Username"
+          className="h-[50px] w-full rounded-full bg-[var(--rc-bg)] px-5 text-sm font-semibold text-[var(--rc-text)] outline-none placeholder:text-[var(--rc-muted)]"
+        />
+        <input
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+          autoComplete={tab === 'register' ? 'new-password' : 'current-password'}
+          aria-label="Password"
+          className="h-[50px] w-full rounded-full bg-[var(--rc-bg)] px-5 text-sm font-semibold text-[var(--rc-text)] outline-none placeholder:text-[var(--rc-muted)]"
+        />
+
+        {error && (
+          <p className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert" data-testid="auth-error">
+            <AlertCircle className="h-4 w-4 flex-shrink-0" />
+            {error}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={loading}
+          data-testid="auth-submit"
+          className="mt-1 flex h-[50px] w-full flex-none items-center justify-center gap-2 rounded-full bg-brand text-[13px] font-bold uppercase tracking-[1px] text-white disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {loading ? (<><Loader2 className="h-4 w-4 animate-spin" /> Please wait…</>) : tab === 'register' ? 'Create Account' : 'Sign In'}
+        </button>
+      </form>
+    </BottomSheet>
   );
 }

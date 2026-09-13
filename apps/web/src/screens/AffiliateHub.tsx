@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode, type UIEvent 
 import { cn } from '@/lib/utils';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
+import { BottomSheet } from '../components/hub-chrome/BottomSheet.js';
 import { MenuOverlay } from '../components/hub-chrome/MenuOverlay.js';
 import { useMenuOverlay } from '../components/hub-chrome/useMenuOverlay.js';
 import { ChatSheet } from '../components/hub-chrome/ChatSheet.js';
@@ -906,77 +907,61 @@ function CreateCampaignSheet({
   const trimmed = name.trim();
   const error = touched && trimmed === '';
   return (
-    <>
-      <div
-        data-testid="affiliate-create-sheet-scrim"
-        aria-hidden={!open}
-        onClick={onClose}
-        className="fixed inset-0 z-30 bg-black/60"
-        style={{ opacity: open ? 1 : 0, pointerEvents: open ? 'auto' : 'none', transition: 'opacity 320ms ease' }}
-      />
-      <div
-        data-testid="affiliate-create-sheet"
-        role="dialog"
-        aria-modal={open}
-        aria-label="Create campaign"
-        className="fixed inset-x-0 bottom-0 z-30 flex max-h-[64vh] flex-col overflow-y-auto rounded-t-[34px] bg-surface px-5 pb-8 pt-3 shadow-[0_-8px_30px_rgba(0,0,0,0.4)]"
-        style={{ transform: open ? 'translateY(0)' : 'translateY(104%)', transition: 'transform 440ms cubic-bezier(0.22,0.61,0.36,1)', pointerEvents: open ? 'auto' : 'none' }}
-      >
-        <button
-          type="button"
-          data-testid="affiliate-create-sheet-handle"
-          onClick={onClose}
-          aria-label="Close"
-          className="mx-auto mb-5 h-[5px] w-14 flex-none rounded-full bg-[var(--rc-muted)]/40"
-        />
-        <h2 className="text-[22px] font-bold text-[var(--rc-text)]">Create campaign</h2>
+    <BottomSheet
+      open={open}
+      onClose={onClose}
+      scrimTestId="affiliate-create-sheet-scrim"
+      sheetTestId="affiliate-create-sheet"
+      handleTestId="affiliate-create-sheet-handle"
+      aria-label="Create campaign"
+    >
+      <h2 className="text-[22px] font-bold text-[var(--rc-text)]">Create campaign</h2>
 
-        <label className="mt-5 block text-[11px] font-bold uppercase tracking-[1px] text-[var(--rc-text)]" htmlFor="affiliate-campaign-name">
-          Campaign name
-        </label>
-        <input
-          id="affiliate-campaign-name"
-          data-testid="affiliate-campaign-name-input"
-          value={name}
-          onChange={(e) => onChangeName(e.target.value)}
-          onBlur={onBlurName}
-          placeholder="Enter campaign name"
-          className={cn(
-            'mt-2 h-[50px] w-full rounded-full bg-[var(--rc-bg)] px-5 text-[14px] font-semibold text-[var(--rc-text)] outline-none',
-            error ? 'border-[1.5px] border-[var(--rc-danger)]' : 'border-[1.5px] border-transparent',
-          )}
-        />
-        {error && (
-          <p data-testid="affiliate-campaign-name-error" className="mt-1.5 text-[12.5px] font-bold text-[var(--rc-danger)]">
-            Campaign name is required
-          </p>
+      <label className="mt-5 block text-[11px] font-bold uppercase tracking-[1px] text-[var(--rc-text)]" htmlFor="affiliate-campaign-name">
+        Campaign name
+      </label>
+      <input
+        id="affiliate-campaign-name"
+        data-testid="affiliate-campaign-name-input"
+        value={name}
+        onChange={(e) => onChangeName(e.target.value)}
+        onBlur={onBlurName}
+        placeholder="Enter campaign name"
+        className={cn(
+          'mt-2 h-[50px] w-full rounded-full bg-[var(--rc-bg)] px-5 text-[14px] font-semibold text-[var(--rc-text)] outline-none',
+          error ? 'border-[1.5px] border-[var(--rc-danger)]' : 'border-[1.5px] border-transparent',
         )}
+      />
+      {error && (
+        <p data-testid="affiliate-campaign-name-error" className="mt-1.5 text-[12.5px] font-bold text-[var(--rc-danger)]">
+          Campaign name is required
+        </p>
+      )}
 
-        <div className="mt-4">
-          <span className="block text-[11px] font-bold uppercase tracking-[1px] text-[var(--rc-text)]">Code (campaign ID)</span>
-          <div
-            data-testid="affiliate-campaign-code-preview"
-            className="mt-2 flex h-[50px] w-full items-center rounded-full bg-[var(--rc-bg)] px-5 text-[14px] font-bold tracking-[1px] text-[var(--rc-muted)]"
-            style={{ fontFamily: SPACE_GROTESK }}
-          >
-            {code || '—'}
-          </div>
-        </div>
-
-        <button
-          type="button"
-          data-testid="affiliate-create-sheet-submit"
-          disabled={trimmed === ''}
-          onClick={onSubmit}
-          className={cn(
-            'mt-6 flex h-[50px] w-full flex-none items-center justify-center rounded-full text-[13px] font-bold uppercase tracking-[1px]',
-            trimmed === '' ? 'bg-[var(--rc-bg)] text-[var(--rc-muted)]' : 'bg-brand text-white',
-          )}
+      <div className="mt-4">
+        <span className="block text-[11px] font-bold uppercase tracking-[1px] text-[var(--rc-text)]">Code (campaign ID)</span>
+        <div
+          data-testid="affiliate-campaign-code-preview"
+          className="mt-2 flex h-[50px] w-full items-center rounded-full bg-[var(--rc-bg)] px-5 text-[14px] font-bold tracking-[1px] text-[var(--rc-muted)]"
+          style={{ fontFamily: SPACE_GROTESK }}
         >
-          Create campaign
-        </button>
+          {code || '—'}
+        </div>
       </div>
-    </>
+
+      <button
+        type="button"
+        data-testid="affiliate-create-sheet-submit"
+        disabled={trimmed === ''}
+        onClick={onSubmit}
+        className={cn(
+          'mt-6 flex h-[50px] w-full flex-none items-center justify-center rounded-full text-[13px] font-bold uppercase tracking-[1px]',
+          trimmed === '' ? 'bg-[var(--rc-bg)] text-[var(--rc-muted)]' : 'bg-brand text-white',
+        )}
+      >
+        Create campaign
+      </button>
+    </BottomSheet>
   );
 }
 
