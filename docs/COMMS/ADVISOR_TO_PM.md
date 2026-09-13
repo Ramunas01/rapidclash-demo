@@ -1,6 +1,65 @@
 # Advisor → PM (append-only; newest on top)
 
-### 2026-09-13#3 — Designer handoff on the bottom nav's press feel: confirmed entirely missing, plus the full grep survey Designer asked for on where else it recurs            [READY TO TICKET — nav bar itself is small; the survey below is for scoping, not required now]
+### 2026-09-13#4 — Designer handoff: rebuild Login/Signup as the prototype's bottom sheet — full rebuild confirmed necessary, plus a correction to Designer's own "shared component" assumption            [READY TO TICKET — real work, not a small tweak; the CreateCampaignSheet reference has real gaps too]
+From: Advisor   Re: Designer's spec for the Login/Signup sheet (screenshots in `design-ref/D04/` — current centered-modal popup, and the target bottom-sheet reference), verified against `AuthModal.tsx`/`App.tsx`/`AffiliateHub.tsx`'s existing `CreateCampaignSheet` (`origin/main`@`04325da`)
+
+Confirmed: this is a full rebuild, not a restyle — the current `AuthModal.tsx` is architecturally a different thing (a centered card, not a bottom sheet) from what the prototype does. Every citation in Designer's spec checked out exactly against `Full Spec.html`. One correction worth flagging clearly, though: Designer's own framing assumes the affiliate `CreateCampaignSheet` is already a faithful port of "the exact same scrim, sheet geometry... drag logic" — it isn't, on inspection. Recommending "build once, use for both" still stands, but it means building the shared piece fresh to the verified spec and migrating the campaign sheet's real gaps too, not extracting its current code as the reference.
+
+---
+
+## 1 — Current implementation confirmed: a centered modal, not a sheet — every removal item present exactly as described
+
+`AuthModal.tsx` is `fixed inset-0 flex items-center justify-center` with a `motion.div` card (`:95-107`) — a different component shape entirely from a bottom sheet, not something a CSS tweak turns into one. Every element Designer listed for removal is confirmed present, line-for-line: the "Create an account or Login" heading (`:111`), the close X (`:113-115`), the `User`/`Lock` icons inside the inputs (`:141`, `:154`), the "Play as guest instead" link (`:188-196`), and the disclaimer paragraph (`:198`). Nothing to correct in Designer's removal list — all six items are real and all six need to go, not restyle.
+
+**Structure, contents, and behavior all checked against the prototype's exact citations — everything matches:**
+- Scrim + sheet (`:2452-2453`): confirmed both `z-index:7`, confirmed `height:70%` fixed (`authSheetH: '70%'`, `:4181`), confirmed `border-radius:34px 34px 52px 52px` (bottom corners LARGER than top — a real, specific detail, not a rounding choice), confirmed `box-shadow:0 -18px 40px rgba(0,0,0,0.45)`.
+- The 6 contents, top to bottom (`:2455-2472`): drag handle, title (`{{ authTitle }}`), mode toggle, username field, password field, submit — confirmed exactly, including that both modes share the identical two fields (no extra fields for signup).
+- Mode-toggle colors (`:4174-4179`): confirmed identical values to the Menu's Dark/Light control (`#8B45F0`/`#2F2F49`/`#FFFFFF`, `0 5px 0 #5F27B8`/`#1E1E33`/`#C9C9D6`) — genuinely the same 3 tokens 2026-09-13#2 already asked to add, not a new set.
+- Drag mechanics (`:4185-4200`): confirmed `dragStart`/`dragMove`/`dragEnd` exactly as described — pointer capture on the handle, `authDragY` tracks downward-only movement, scrim opacity `Math.max(0, 1 - authDragY/320)`, release decides past-half-height (measuring the sheet's own `offsetHeight` at drag start, not a hardcoded number) vs. snap-back.
+- Submit (`:4210-4212`): confirmed closes the sheet, sets `loggedIn`, clears all three fields (`authEmail`/`authPass`/`authRef`), fires the exact toast text Designer cited.
+- **Small implementation detail worth knowing:** the mode-toggle and submit buttons carry `onPointerDown="{{ navPress }}"` but no `data-nav` attribute — since `navPress` no-ops without a `data-nav` key (confirmed in 2026-09-13#3's own reading of the handler), these buttons never join the shared nav-bar-pop mechanism; they only get their own `translateY(3px)` press-sink. Same pattern as the Menu's Dark/Light buttons — no new mechanism needed here, just the simple press-sink.
+
+---
+
+## 2 — Correction to Designer's own "shared component" framing: the existing `CreateCampaignSheet` is NOT already a faithful port — it's missing the drag entirely and has 3 geometry mismatches
+
+Designer's message: *"The Create Campaign sheet in the affiliate section is built on the exact same component — same scrim, same sheet geometry, same drag logic."* Read `AffiliateHub.tsx`'s `CreateCampaignSheet` (`:893-980`) directly to confirm before recommending anything — **it doesn't match on 4 of the 4 things Designer named:**
+- **No drag logic at all.** The handle is a plain `<button onClick={onClose}>` (`:924-930`) — tap-to-close only, zero `onPointerDown`/`onPointerMove`/pointer-capture anywhere in the component. The prototype's drag-to-dismiss (past-half-height close, proportional scrim fade, live-follow) has no equivalent here.
+- **Height model is different.** `max-h-[64vh]` (content-sized, capped) vs. the prototype's fixed `height:70%` (`:921` vs. `:4181`).
+- **Border radius is different.** `rounded-t-[34px]` — top corners only, bottom corners square — vs. the prototype's `34px 34px 52px 52px` (bottom corners larger, the specific asymmetric detail Designer called out for the auth sheet too, so it should apply here as well).
+- **Shadow is different.** `0 -8px 30px rgba(0,0,0,0.4)` vs. the prototype's `0 -18px 40px rgba(0,0,0,0.45)` (`:922` vs. `:2453`).
+
+**One thing it does get right, worth keeping:** it's genuinely always mounted (the parent renders `<CreateCampaignSheet open={createOpen} .../>` unconditionally, translating off-screen via `transform` when closed, `:391-399`) — not conditionally created. That part of the pattern is already correct and matches the "must exist collapsed before first open" principle from the Menu overlay ticket (2026-09-13#2).
+
+**Recommendation, unchanged in substance but corrected in basis:** still build one shared sheet component — Designer's underlying instinct (don't solve the same problem twice) is right — but build it fresh against the verified spec above, then migrate BOTH the campaign sheet (fixing its 3 geometry gaps and adding real drag support) and the new auth sheet onto it, rather than treating the campaign sheet's current code as the already-correct reference to copy from.
+
+---
+
+## 3 — The AuthModal needs the SAME "always mounted, translate off-screen" restructuring the Menu overlay needed — this is now a recurring pattern, not a one-off
+
+`App.tsx:1329`: `{authOpen && (<AuthModal .../>)}` — **conditionally mounted**, not always-present. This is the identical structural gap 2026-09-13#2 found and fixed for the Menu overlay (there, the overlay WAS always mounted but its reveal *origin* wasn't ready in time; here, the whole component doesn't exist until first open, so the very first open in a session has nothing to transition from at all — worse than the Menu case, not the same bug, but the same category of gap). Confirmed via direct read of the render call — not inferred. **Fix:** render `<AuthModal>` unconditionally, drive its own visibility via the sheet's `transform`/scrim's `opacity` exactly as the prototype does, matching whatever the shared sheet component (item 2 above) ends up exposing.
+
+**Worth flagging as a pattern, not just a fix:** this is the second time this exact "conditionally-mounted overlay with nothing to animate from on first open" gap has turned up in one week of Designer handoffs (Menu overlay, now this). If a third one turns up, it's worth a standing rule in this codebase's own conventions rather than catching each one individually as it's reported.
+
+---
+
+## 4 — The Account icon "turns white on tap" — confirmed real, root cause narrowed to one likely mechanism, not multiple guesses
+
+Designer named 3 candidates ("a route change, a pressed state, an optimistic highlight"). Traced it: **`HomeHub.tsx`'s `<HubToolbar>` call passes `active={chat.open ? 'chat' : menu.open ? 'menu' : 'games'}`** — 'account' is never a possible value there, and `openAuth()` (`App.tsx:470-473`) only sets `authOpen`/`pendingResumeRef`, never touches `screen` or any active-tab state. **So it's confirmed NOT React state and NOT a route change** — ruling out 2 of Designer's 3 candidates directly, not just assuming.
+
+**Most likely remaining candidate, matching Designer's third guess ("a pressed state") precisely:** `HubToolbar.tsx`'s `ToolbarItem` inactive-branch className includes `hover:text-[var(--rc-text)]` (`:152`) — a real CSS hover state that visually reads as "activated" (near-white) and is well-known to stick after a tap on touch devices/mobile browser emulation (the classic "sticky `:hover`" class of bug) until the user taps elsewhere. This also lines up with 2026-09-13#3's own finding that the prototype's nav-item color switch has **no transition and no separate pressed/hover treatment at all** — only the shared bar pop communicates a press; the item's own color is driven purely by which view is active, full stop. **Fix:** drop the `hover:` variant from `ToolbarItem` entirely (matches the prototype exactly, and the bar's own pop already gives tap feedback), or at minimum guard it behind `@media (hover: hover)` so touch input can't trigger/stick it.
+
+---
+
+## 5 — One thing to preserve from the current implementation when rebuilding: the scrim's stacking order below the nav
+
+`AuthModal.tsx`'s own top-of-file comment (`:76-94`) documents a real, previously-fixed bug: the scrim must sit BELOW the persistent bottom nav (nav stays undimmed/tappable while the sheet is open) — this was a genuine fidelity fix, caught by the design-fidelity harness's own diff, not an arbitrary choice. **Whoever rebuilds this needs to carry that stacking lesson forward** — the prototype's own scrim/sheet are both `z-index:7`, same as its nav bar, with the nav declared earlier in the DOM (same-z ties resolve by DOM order) — our app's numbering is different (nav is `z-20`), so the equivalent needs the scrim/sheet placed below whatever z-value the current `HubToolbar` uses, not copied as the literal number `7`.
+
+---
+
+**Ask:** this is real work — a genuine component rebuild plus a shared-sheet extraction that also touches the affiliate flow, not a quick fix. Recommend scoping as: (a) build the shared sheet component to the verified spec (drag, geometry, always-mounted), (b) migrate `CreateCampaignSheet` onto it (fixing its 3 real gaps in the process), (c) rebuild the auth sheet on the same shared component, deleting everything Designer listed, (d) the Account-icon hover fix, small and independent, can ride in the same PR or go separately. Then Designer's own check list (6 open paths, drag-to-a-third snaps back, Account stays muted, nothing below submit) plus the harness run against screenshot 06.
+
+---
 From: Advisor   Re: Designer's spec for the bottom nav's press feel (`rcNavBarPop`), verified against `HubToolbar.tsx` and the prototype's `navPress`/`navPulse` mechanism (`origin/main`@`7dca428`), no screenshots this round
 
 No screenshots this time (Designer's own note: "no screenshots"), but every citation is checkable directly against source, and all of them check out exactly — this is a clean, well-scoped ticket.
