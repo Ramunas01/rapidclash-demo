@@ -1,6 +1,56 @@
 # Advisor → PM (append-only; newest on top)
 
-### 2026-09-13#5 — Designer handoff on Rewards: the logged-out gate bug is real and confirmed, but the fix is bigger than "remove a gate" — RewardsHubScreen has zero guest-awareness today            [READY TO TICKET — item 1 (the gate) is small; item 2 (guest-safe rendering) is the real work]
+### 2026-09-13#6 — Designer handoff on Open Games: tab rail + stake display confirmed and cheap (icons already exist elsewhere!), host tier icon is a real conflict with ADR-010 that needs an explicit Owner call, not a silent swap            [READY TO TICKET — items 1+2 cheap; item 3 STOP, needs a decision before any code]
+From: Advisor   Re: Designer's spec for the Open Games tab rail, stake display, and host row (screenshots in `design-ref/D06/`), verified against `GamesCarousel.tsx`/`currencyData.ts`/`CurrencyPicker.tsx` (`origin/main`@`f1253e5`)
+
+Two of three items are real, well-scoped, and cheaper than they look — the currency-icon sprite Designer says to "copy verbatim" already exists in this codebase, built for a different screen. The third item is a genuine conflict: doing exactly what Designer describes would remove a disclosure this codebase deliberately added for a compliance reason (ADR-010), and the data to do it properly doesn't exist yet either. Flagging that one clearly rather than either silently implementing it or silently skipping it.
+
+---
+
+## 1 — Tab rail: confirmed exactly as described, plus one technique mismatch and one wrong label
+
+**Free-floating pills confirmed** — `GamesCarousel.tsx:505-530` renders each tab as its own `<button>` with `background: i === tab ? '#8B45F0' : '#1A1A2E'`, no shared track, no ledge, no press state. Matches the screenshot exactly (circled). Prototype's track color (`tabRailBg: light ? '#DEDEE8' : '#12121A'`) and per-pill values (`bg`/`color`/`shadow`, all confirmed exact matches to Designer's own numbers) checked directly — nothing to correct in the color spec.
+
+**Scroll-to-center confirmed absent** — `pickTab()` (`:451-454`) only sets state, no scroll call at all. Prototype's `centerPill()` (confirmed via direct read) walks up to the actual scrollable ancestor, computes the pill's centered target position, clamps to `[0, maxScroll]`, and smooth-scrolls — fired from each tab's own `pick` handler on the next animation frame after the state update. None of this exists today.
+
+**One real technique mismatch, not just a missing feature:** the edge fades here are currently built as two absolutely-positioned overlay `<div>`s with gradient backgrounds (`:532-547`) — **the same technique used for the category rail** (2026-09-13#1). But Designer's own spec for THIS rail explicitly says `mask-image`, and I confirmed it precisely: the prototype's `railMask(l, r)` function returns a single `linear-gradient(...)` string used as a `mask-image` on the scroller itself, not two overlay elements — a genuinely different technique from the category rail's own overlay-div approach, confirmed by reading both mechanisms side by side in the prototype's own source. Whoever ported this rail copied the category rail's technique instead of reading this rail's own (different) one. **Fix:** replace the two overlay divs with a single `mask-image`/`-webkit-mask-image` on the scroller, computed from the same `leftFade`/`rightFade` state already being tracked.
+
+**One small, separate, confirmed bug: wrong tab label.** `GamesCarousel.tsx:76`: `const TABS = [..., 'RANK']` — the prototype's own `TABS` array (confirmed via grep) is `['OPEN GAMES', '24H RACE', 'WEEKLY RACE', 'LEADERBOARDS']`. "RANK" doesn't appear anywhere in the prototype's tab set — matches Designer's own message, which names the fourth tab "LEADERBOARDS" throughout. **Fix:** rename the constant and its associated `tab === 3` board-kind branch to match (`buildBoardRows`'s `'rank'` internal type name can stay, it's just an internal string, not user-facing).
+
+---
+
+## 2 — Stake display: `$`-always confirmed, and the currency-icon work Designer asks for already exists in this codebase — reuse, don't rebuild
+
+**Real correction to already-shipped work, not a new gap:** `AmountFigure` (`GamesCarousel.tsx:401-412`, from 2026-09-11#8 item B.2) currently shows the green "RC" coin + a bare number for logged-out viewers, and `$amount` (no icon) for logged-in viewers. Designer's spec is different from both: **every row always gets a `$` amount** (`stake: '$' + STAKES[...]`, confirmed in the prototype), and the icon next to it is a decorative currency glyph, not the RC coin, ever. This directly supersedes the "RC coin for guests" half of the earlier B.2 decision for this specific screen — same shape as the RPS `ownBarResult` correction, a genuine update from more precise information, not a mistake in the original work (B.2 didn't have this level of per-row-currency detail to work from at the time).
+
+**Good news: the sprite Designer says to "copy verbatim" is already built and in use elsewhere.** `currencyData.ts` already exports `OPEN_CURS` (`['SOL','BTC','USDT','ETH','LTC','USDC','XRP']`, byte-identical to the prototype's own array, confirmed by grep) and `CurrencyPicker.tsx` already exports a reusable `CurrencyIcon({ sym, size })` component with one icon function per currency (`IconSOL`/`IconBTC`/etc.) — built for the wallet chip's own currency picker (`HubRibbon.tsx`/`GameHub.tsx`). **This is direct reuse, not new SVG work** — the whole "copy the sprite" ask is already done, just not imported here yet.
+
+**The one real piece of new plumbing: `curSel` (the selected wallet currency) is local component state today, not shared.** `CurrencyPicker.tsx:42`: `const [curSel, setCurSel] = useState('USD')` — scoped to that one component instance, resets on remount, nothing else in the app can read it. Designer's spec requires it to be **global, persisted, shared state** ("change the wallet currency and every row in the list switches together") — the same shape as `theme.ts`'s module-level singleton (`getThemeChoice`/`setThemeChoice`/`subscribeTheme`), not a prop drilled from one screen. This is genuinely new work, though a small, well-precedented amount of it — `theme.ts` is a direct, already-proven template to copy the shape of.
+
+**Per-row logic for logged-out, confirmed exact:** prototype's `cur: loggedIn ? curSel : OPEN_CURS[it.uid % OPEN_CURS.length]` (confirmed via grep) — stable per row (keyed by the row's own `uid`, not re-randomized on re-render/scroll, matching Designer's explicit "must not reshuffle" requirement) — maps directly onto this component's existing `uid` field, no new state needed for the logged-out half.
+
+---
+
+## 3 — STOP: host row tier icon conflicts with ADR-010's informed-consent requirement, and the data doesn't exist yet either. Needs an explicit Owner call before any code.
+
+**What Designer's asking for, confirmed accurately described:** replace the 🤖 emoji before `@username` with the host's VIP tier icon (bronze/silver/gold/emerald/diamond — confirmed the exact same 5 SVGs already used on the Rewards VIP table, `RewardsHub.tsx`'s `TierIcon`). Straightforward as a pure design ask.
+
+**The conflict:** `GamesCarousel.tsx`'s own `displayHostName()` (`:270-297`) exists specifically to keep the 🤖 disclosure emoji visible on bot-hosted rows — its own extensive comment cites **ADR-010's informed-consent requirement**: a real player choosing whether to JOIN a match must be able to tell they'd be facing a bot. This was a deliberate, previously-reasoned decision (distinct from `ProfileHub.tsx`'s own name-normalizing helper, which DOES strip the emoji — correctly, for its own personal-match-history context where the distinction doesn't carry the same stakes). **Replacing the emoji with a tier icon for bot-hosted rows would remove that disclosure** — a real player could no longer tell a bot-hosted row from a human one before joining.
+
+**The data gap, independent of the conflict above:** `GamesCarousel.tsx`'s own file header (`:218-226`) already documents that `OpenChallenge`/`PublicOpenChallenge` carry **no tier field over the wire at all** — this was explicitly scoped out of an earlier ticket as a follow-up requiring a server-side protocol change (adding `ownerTier`, resolved server-side the same way `resolveTier` already works for chat). So even setting the ADR-010 question aside, implementing tier icons here is not a frontend-only change — it needs the same kind of server addition already deferred once.
+
+**Not picking a side — three real options, need an Owner call:**
+- (a) Follow Designer exactly: tier icon for every host, bots included. Requires deciding what a bot's "tier" even is (bots don't earn real XP), and means accepting the ADR-010 disclosure gap on this specific screen — same category of call as the RPS reveal info-leak Owner already accepted once this week, but worth Owner making that call explicitly for THIS gap too, not inheriting it silently from a different ticket's precedent.
+- (b) Hybrid: tier icon for real human hosts, keep the 🤖 emoji for bot hosts. Preserves the disclosure, deviates from Designer's literal spec (mixed treatment across rows) — needs Designer's sign-off, not just ours.
+- (c) Flag back to Designer/Owner directly: did the spec account for ADR-010 when it was written, or is this a genuine oversight worth a design update instead of a code compromise?
+
+**Either way, (a) and (b) both need the new server-side `ownerTier` field first** — that part isn't optional regardless of which visual option is chosen.
+
+---
+
+**Ask:** items 1+2 are ready to dispatch as one PR — real, cheap, and item 2 gets a real assist from `currencyData.ts`/`CurrencyPicker.tsx` already existing. **Item 3 needs an Owner decision before any ticket is written for it**, let alone code — recommend surfacing the three options above rather than picking one.
+
+---
 From: Advisor   Re: Designer's spec for Rewards' logged-out state, the tier ring, and claim-button 3D (screenshots in `design-ref/D05/`), verified against `RewardsHub.tsx`/`App.tsx` (`origin/main`@`23a8256`)
 
 Confirmed real, but with a scope correction: Designer's framing implies mostly "unblock the page and flip 4 switches." On inspection, `RewardsHubScreen` currently has **no concept of a logged-out visitor at all** — its `Props` require a `token: string`, it fetches authenticated data unconditionally on mount, and the render call passes `token!` (a type-only assertion, not a real guarantee). Removing the nav-level gate alone would send a guest into a component built assuming they have an account. Three of Designer's four "things that switch" turn out to already work correctly for a different reason (a happy accident, not by design) — worth knowing precisely which is which before scoping the fix.
