@@ -81,7 +81,9 @@ describe('App — ?mode=guest URL entry point (issue #284)', () => {
     // handleGuestSuccess (called verbatim by this URL-entry path) lands on the guest game
     // picker rather than jumping straight into a hub — the picker itself IS the guest surface.
     await waitFor(() => expect(screen.getByTestId('guest-game-picker')).toBeInTheDocument());
-    expect(screen.queryByTestId('auth-modal')).toBeNull();
+    // AuthModal is always mounted (ticket 2026-09-13#4: `BottomSheet` translates off-screen
+    // rather than conditionally unmounting) — check its `aria-hidden` visibility flag, not presence.
+    expect(screen.getByTestId('auth-modal')).toHaveAttribute('aria-hidden', 'true');
     expect(screen.queryByTestId('home-hub')).toBeNull(); // never rendered at any point
   });
 
@@ -93,20 +95,21 @@ describe('App — ?mode=guest URL entry point (issue #284)', () => {
     expect(screen.queryByTestId('hub-guest-badge')).toBeNull();
   });
 
-  it('the existing "Play as guest" button flow is unchanged (regression guard)', async () => {
+  // Ticket 2026-09-13#4, item 4: AuthModal's own in-sheet "Play as guest instead" link is
+  // deliberately REMOVED (a full rebuild onto `BottomSheet`, not a restyle) — this used to be a
+  // second, in-app entry point alongside the URL one this file otherwise covers. Guest auth is
+  // now reachable exclusively via `?mode=guest` (the other tests in this file); this test
+  // confirms the removal, replacing the old "flow is unchanged" regression guard (which asserted
+  // the opposite — that the button DID still work — now correctly obsolete).
+  it('the auth sheet no longer offers an in-app "Play as guest" link — reachable only via ?mode=guest', async () => {
     stubGuestAuthFetch();
     render(<App />);
     await waitFor(() => screen.getByTestId('home-hub'));
 
     fireEvent.click(screen.getByTestId('hub-signin-chip'));
-    await waitFor(() => screen.getByTestId('auth-guest'));
-    fireEvent.click(screen.getByTestId('auth-guest'));
-
-    // Lands on the guest picker (issue #279), same as the ?mode=guest URL-entry path above —
-    // both drive the same handleGuestSuccess. A hub only follows a tile pick.
-    await waitFor(() => expect(screen.getByTestId('guest-game-picker')).toBeInTheDocument());
-    fireEvent.click(screen.getByTestId('guest-picker-coinflip'));
-    await waitFor(() => expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId('auth-modal')).toHaveAttribute('aria-hidden', 'false'));
+    expect(screen.queryByTestId('auth-guest')).toBeNull();
+    expect(screen.queryByText('Play as guest instead')).toBeNull();
   });
 
   it('an already-signed-in visitor is never hijacked by ?mode=guest — lands on their own session, no guest-auth call', async () => {

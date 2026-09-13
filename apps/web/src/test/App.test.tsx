@@ -362,7 +362,9 @@ describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
     await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('hub-nav-rewards'));
     await waitFor(() => expect(screen.getByTestId('rewards-hub')).toBeInTheDocument());
-    expect(screen.queryByTestId('auth-modal')).toBeNull();
+    // AuthModal is always mounted now (ticket 2026-09-13#4, item 3 -- same "always mounted,
+    // translated off-screen" fix already applied to the Menu overlay), so it's present but closed.
+    expect(screen.getByTestId('auth-modal')).toHaveAttribute('aria-hidden', 'true');
   });
 
   it('JOIN a public challenge while logged-out → auth modal → on register the user LANDS on that hub with the stake armed and nothing auto-fires', async () => {

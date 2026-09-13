@@ -78,14 +78,15 @@ describe('App — guest game picker (issue #279)', () => {
     localStorage.clear();
     sessionStorage.clear();
     vi.unstubAllGlobals();
+    window.history.pushState({}, '', '/'); // undo the `?mode=guest` URL entry above
   });
 
   async function enterAsGuest() {
+    // Ticket 2026-09-13#4 removed AuthModal's in-sheet "Play as guest instead" link (its only
+    // prior in-app trigger) — guest auth is now reached exclusively via the `?mode=guest` URL
+    // entry point (issue #284, GUEST_MODE_CONTRACT.md §1), so that's what this drives instead.
+    window.history.pushState({}, '', '/?mode=guest');
     render(<App />);
-    await waitFor(() => screen.getByTestId('home-hub'));
-    fireEvent.click(screen.getByTestId('hub-signin-chip'));
-    await waitFor(() => screen.getByTestId('auth-guest'));
-    fireEvent.click(screen.getByTestId('auth-guest'));
     await waitFor(() => screen.getByTestId('guest-game-picker'));
   }
 
@@ -160,11 +161,8 @@ describe('App — guest game picker (issue #279)', () => {
     }
     vi.stubGlobal('ResizeObserver', FakeResizeObserver as unknown as typeof ResizeObserver);
 
+    window.history.pushState({}, '', '/?mode=guest');
     render(<App />, { container: rootDiv });
-    await waitFor(() => screen.getByTestId('home-hub'));
-    fireEvent.click(screen.getByTestId('hub-signin-chip'));
-    await waitFor(() => screen.getByTestId('auth-guest'));
-    fireEvent.click(screen.getByTestId('auth-guest'));
     await waitFor(() => screen.getByTestId('guest-game-picker'));
 
     expect(observed).toContain(rootDiv);
