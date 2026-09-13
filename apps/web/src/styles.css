@@ -180,6 +180,20 @@ p  { color: var(--muted); margin-bottom: 12px; }
   100% { transform: scale(1); }
 }
 
+/* Ticket 2026-09-13#3 — HubToolbar.tsx's bottom-nav bar "press feel", ported verbatim from the
+ * prototype's own global keyframes (`design/prototype/RapidClash Full Spec.html:67`). All 5 nav
+ * items share the literal `data-nav="nav"` key in the prototype, so a press on ANY one of them
+ * pulses the shared bar container, not just the tapped item. Applied inline (`animation:
+ * 'rcNavBarPop 420ms cubic-bezier(0.22,0.61,0.36,1)'`) to the bar container, re-triggered via a
+ * `key`-driven remount (a counter bumped on every press) rather than the prototype's own
+ * null-then-set `navPulse` state trick — this block just needs to exist once, globally. */
+@keyframes rcNavBarPop {
+  0%   { transform: scale(1) translateY(0); }
+  32%  { transform: scale(0.975) translateY(2px); }
+  66%  { transform: scale(1.012) translateY(-1px); }
+  100% { transform: scale(1) translateY(0); }
+}
+
 .outcome-win  { color: #4ade80; font-size: 1.6rem; font-weight: bold; text-align: center; margin: 20px 0 8px; }
 .outcome-lose { color: var(--accent); font-size: 1.6rem; font-weight: bold; text-align: center; margin: 20px 0 8px; }
 .outcome-draw { color: #facc15; font-size: 1.6rem; font-weight: bold; text-align: center; margin: 20px 0 8px; }

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, type ReactNode, type Ref } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode, type Ref } from 'react';
 import { cn } from '@/lib/utils';
 import type { MenuAnchorRect } from './useMenuOverlay.js';
 
@@ -60,6 +60,18 @@ interface Props {
  */
 export function HubToolbar({ onGames, onAccount, onRewards, onMenu, reportAnchorRect, onChat, active = 'games' }: Props) {
   const menuBtnRef = useRef<HTMLButtonElement>(null);
+  // Ticket 2026-09-13#3: the prototype's shared nav bar pops with a one-shot `rcNavBarPop`
+  // animation whenever ANY of the 5 items is pressed — all 5 share the literal `data-nav="nav"`
+  // key in the prototype's markup (`navPress`/`navPulse`, Full Spec.html:3963-3973), so one press
+  // pulses the whole shared bar, not just the tapped item. The prototype retriggers via a
+  // null-then-set state trick (needed because React won't restart a CSS animation just by setting
+  // the same non-null value twice); we use the more idiomatic React equivalent instead — bump a
+  // counter on every press and key the animated bar container on it, forcing a fresh element
+  // instance (and thus a fresh animation) on every press, including rapid repeats.
+  const [pulseKey, setPulseKey] = useState(0);
+  function firePulse() {
+    setPulseKey((k) => k + 1);
+  }
   function handleMenuClick() {
     const el = menuBtnRef.current;
     if (!el) return;
@@ -114,13 +126,23 @@ export function HubToolbar({ onGames, onAccount, onRewards, onMenu, reportAnchor
       />
       <nav aria-label="Primary" className="fixed bottom-0 left-1/2 z-20 w-full max-w-md -translate-x-1/2 bg-transparent px-3 pb-[calc(0.5rem_+_env(safe-area-inset-bottom))] pt-1">
       {/* Prototype `~2724`: `border-radius:26px; background:var(--rc-surface); box-shadow:0 -6px
-          18px rgba(0,0,0,0.45), 0 -1px 0 rgba(255,255,255,0.06); padding:12px 6px`. */}
-      <div className="flex items-center justify-between rounded-[26px] bg-surface px-1.5 py-3 shadow-[0_-6px_18px_rgba(0,0,0,0.45),0_-1px_0_rgba(255,255,255,0.06)]">
-        <ToolbarItem label="Menu" active={active === 'menu'} onClick={handleMenuClick} icon={ICON_MENU} btnRef={menuBtnRef} />
-        <ToolbarItem label="Games" active={active === 'games'} onClick={onGames} icon={ICON_GAMES} />
-        <ToolbarItem label="Account" active={active === 'account'} onClick={onAccount} icon={ICON_ACCOUNT} />
-        <ToolbarItem label="Rewards" active={active === 'rewards'} onClick={onRewards} icon={ICON_REWARDS} />
-        <ToolbarItem label="Chat" active={active === 'chat'} onClick={onChat} icon={ICON_CHAT} />
+          18px rgba(0,0,0,0.45), 0 -1px 0 rgba(255,255,255,0.06); padding:12px 6px`. Keyed on
+          `pulseKey` (ticket 2026-09-13#3) so every press remounts this element, restarting the
+          `rcNavBarPop` animation from scratch — including on rapid repeated presses. The `> 0`
+          guard keeps the very first mount (before anything has been pressed) from playing the
+          animation unprompted. */}
+      <div
+        key={pulseKey}
+        data-testid="hub-nav-bar"
+        data-pulse-key={pulseKey}
+        style={pulseKey > 0 ? { animation: 'rcNavBarPop 420ms cubic-bezier(0.22,0.61,0.36,1)' } : undefined}
+        className="flex items-center justify-between rounded-[26px] bg-surface px-1.5 py-3 shadow-[0_-6px_18px_rgba(0,0,0,0.45),0_-1px_0_rgba(255,255,255,0.06)]"
+      >
+        <ToolbarItem label="Menu" active={active === 'menu'} onClick={handleMenuClick} onPress={firePulse} icon={ICON_MENU} btnRef={menuBtnRef} />
+        <ToolbarItem label="Games" active={active === 'games'} onClick={onGames} onPress={firePulse} icon={ICON_GAMES} />
+        <ToolbarItem label="Account" active={active === 'account'} onClick={onAccount} onPress={firePulse} icon={ICON_ACCOUNT} />
+        <ToolbarItem label="Rewards" active={active === 'rewards'} onClick={onRewards} onPress={firePulse} icon={ICON_REWARDS} />
+        <ToolbarItem label="Chat" active={active === 'chat'} onClick={onChat} onPress={firePulse} icon={ICON_CHAT} />
       </div>
     </nav>
     </>
@@ -128,11 +150,16 @@ export function HubToolbar({ onGames, onAccount, onRewards, onMenu, reportAnchor
 }
 
 function ToolbarItem({
-  label, icon, onClick, active = false, comingSoon = false, btnRef,
+  label, icon, onClick, onPress, active = false, comingSoon = false, btnRef,
 }: {
   label: string;
   icon: ReactNode;
   onClick?: () => void;
+  /** Ticket 2026-09-13#3: fired on `onPointerDown`, ahead of `onClick`'s own action — bumps the
+   *  shared bar's pulse counter so the bar container remounts and its `rcNavBarPop` animation
+   *  restarts, matching the prototype's shared `data-nav="nav"` behavior (any of the 5 items
+   *  pulses the whole bar, not just the tapped item). */
+  onPress?: () => void;
   active?: boolean;
   comingSoon?: boolean;
   /** Set on the rendered `<button>` DOM node (not on ToolbarItem itself, so no forwardRef
@@ -164,11 +191,14 @@ function ToolbarItem({
       ref={btnRef}
       type="button"
       onClick={onClick}
+      onPointerDown={onPress}
       aria-label={label}
       aria-current={active ? 'page' : undefined}
       data-testid={testid}
       className={cn(
-        'flex flex-1 flex-col items-center gap-1.5 py-0.5 transition-colors focus:outline-none',
+        // Ticket 2026-09-13#3: prototype's active-color switch is an instant swap, no transition
+        // (was `transition-colors`, giving it a ~150ms Tailwind default fade it shouldn't have).
+        'flex flex-1 flex-col items-center gap-1.5 py-0.5 focus:outline-none',
         active ? 'text-brand drop-shadow-[var(--rc-nav-active-glow)]' : 'text-[var(--rc-muted)] hover:text-[var(--rc-text)]',
       )}
     >
