@@ -1130,13 +1130,6 @@ export function App() {
     else openAuth(null);
   }, [loggedIn, goToProfile, openAuth]);
 
-  // Rewards tab (issue #307): the VIP/Rewards hub when signed in — GET /rewards is auth-only,
-  // same gate as the Account tab — the sign-in modal when logged out.
-  const onRewardsTap = useCallback(() => {
-    if (loggedIn) goToRewards();
-    else openAuth(null);
-  }, [loggedIn, goToRewards, openAuth]);
-
   function renderScreen() {
     switch (screen) {
       case 'auth':
@@ -1152,7 +1145,7 @@ export function App() {
           onTakePublicChallenge={handleTakePublicChallenge}
           onSelectGame={handleSelectGame}
           onOpenWallet={onAccountTap}
-          onOpenRewards={onRewardsTap}
+          onOpenRewards={goToRewards}
           onOpenAffiliate={goToAffiliate}
           onHome={goToHome}
           loggedIn={loggedIn}
@@ -1185,7 +1178,8 @@ export function App() {
         />;
       case 'rewards':
         return <RewardsHubScreen
-          token={token!}
+          token={token}
+          loggedIn={loggedIn}
           username={username}
           balance={balance}
           onHome={goToHome}
@@ -1272,7 +1266,7 @@ export function App() {
           onUntrackChallenges={handleUntrackChallenges}
           onSelectGame={handleSelectGame}
           onOpenWallet={onAccountTap}
-          onOpenRewards={onRewardsTap}
+          onOpenRewards={goToRewards}
           onOpenAffiliate={goToAffiliate}
           onOpenGameList={goToHome}
           onResultDismiss={handleHubResultDismiss}

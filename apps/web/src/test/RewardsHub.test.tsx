@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { RewardsHubScreen } from '../screens/RewardsHub.js';
+import { api } from '../api.js';
 import type { RewardsSnapshot } from '@rapidclash/shared';
 
 type Props = Parameters<typeof RewardsHubScreen>[0];
@@ -9,6 +10,7 @@ type Props = Parameters<typeof RewardsHubScreen>[0];
 function baseProps(over: Partial<Props> = {}): Props {
   return {
     token: 'tok',
+    loggedIn: true,
     username: 'Bobbylee',
     balance: 1642,
     onHome: vi.fn(),
@@ -289,5 +291,92 @@ describe('RewardsHubScreen', () => {
     const contentDiv = main.firstElementChild;
     expect(contentDiv).not.toBeNull();
     expect(contentDiv?.className).not.toMatch(/pb-\[calc/);
+  });
+});
+
+// Ticket 2026-09-13#5, item 2 — RewardsHubScreen must be guest-safe: `token: null` renders the
+// neutral fallback content without ever attempting an authenticated fetch.
+describe('RewardsHubScreen — guest-safe (token: null, ticket 2026-09-13#5)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('renders without throwing and never calls api.wallet/api.rewards when token is null', async () => {
+    const walletSpy = vi.spyOn(api, 'wallet');
+    const rewardsSpy = vi.spyOn(api, 'rewards');
+    expect(() =>
+      render(<RewardsHubScreen {...baseProps({ token: null, loggedIn: false, username: null })} />)
+    ).not.toThrow();
+
+    // Give any accidental fetch a tick to fire before asserting it never did.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(walletSpy).not.toHaveBeenCalled();
+    expect(rewardsSpy).not.toHaveBeenCalled();
+    walletSpy.mockRestore();
+    rewardsSpy.mockRestore();
+  });
+
+  it('renders the honest neutral guest fallback content: @Player, 0 XP, Unranked tier', () => {
+    render(<RewardsHubScreen {...baseProps({ token: null, loggedIn: false, username: null })} />);
+    expect(screen.getByTestId('rewards-username').textContent).toBe('@Player');
+    expect(screen.getByTestId('rewards-xp').textContent).toBe('0');
+    expect(screen.getByTestId('rewards-tier-current').textContent).toContain('UNRANKED');
+  });
+});
+
+// Ticket 2026-09-13#5, item 3 — the VIP card's blur wrapper.
+describe('RewardsHubScreen — VIP card guest blur (ticket 2026-09-13#5, item 3)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('blurs the VIP card content when loggedIn is false', () => {
+    render(<RewardsHubScreen {...baseProps({ token: null, loggedIn: false, username: null })} />);
+    expect(screen.getByTestId('rewards-vip-card-blur').style.filter).toBe('blur(7px)');
+  });
+
+  it('shows the VIP card content unblurred when loggedIn is true', async () => {
+    stubFetch(BOBBYLEE_SNAPSHOT);
+    render(<RewardsHubScreen {...baseProps({ loggedIn: true })} />);
+    await waitFor(() => expect(screen.getByTestId('rewards-xp').textContent).toBe('17,800'));
+    expect(screen.getByTestId('rewards-vip-card-blur').style.filter).toBe('none');
+  });
+});
+
+// Ticket 2026-09-13#5, item 4 — the Rakeback lock condition is explicit (`!loggedIn || Unranked`),
+// tested as two independent paths rather than one combined OR case.
+describe('RewardsHubScreen — Rakeback lock condition is explicit (ticket 2026-09-13#5, item 4)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('locks when loggedIn is false, regardless of tier (a guest never has a real tier)', () => {
+    render(<RewardsHubScreen {...baseProps({ token: null, loggedIn: false, username: null })} />);
+    expect(screen.getByTestId('rewards-rakeback-locked')).toBeInTheDocument();
+    expect(screen.queryByTestId('rewards-claim-button')).toBeNull();
+  });
+
+  it('also locks when loggedIn is true but tier is Unranked (issue #435, unchanged)', async () => {
+    stubFetch(UNRANKED_SNAPSHOT);
+    render(<RewardsHubScreen {...baseProps({ loggedIn: true })} />);
+    await waitFor(() => expect(screen.getByTestId('rewards-rakeback-locked')).toBeInTheDocument());
+    expect(screen.queryByTestId('rewards-claim-button')).toBeNull();
+  });
+});
+
+// Ticket 2026-09-13#5, item 5 — claim-button 3D ledge + press-sink, both cards, both states.
+describe('RewardsHubScreen — claim-button 3D ledge (ticket 2026-09-13#5, item 5)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('the active CLAIM button has the purple ledge shadow and the press-sink class', async () => {
+    stubFetch(WOOD_SNAPSHOT);
+    render(<RewardsHubScreen {...baseProps()} />);
+    const btn = await screen.findByTestId('rewards-claim-button');
+    expect(btn.style.boxShadow).toBe('var(--rc-theme-toggle-active-shadow)');
+    expect(btn.className).toContain('active:translate-y-[3px]');
+  });
+
+  it('LockedClaimRow has the dark-theme lock ledge shadow and the press-sink class by default', async () => {
+    stubFetch(UNRANKED_SNAPSHOT);
+    render(<RewardsHubScreen {...baseProps()} />);
+    const rows = await screen.findAllByTestId('rewards-locked-claim');
+    for (const row of rows) {
+      expect(row.style.boxShadow).toBe('var(--rc-claim-lock-shadow)');
+      expect(row.className).toContain('active:translate-y-[3px]');
+    }
   });
 });

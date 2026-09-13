@@ -59,10 +59,23 @@ const RC = {
   green: 'var(--rc-green)',
   danger: 'var(--rc-danger)',
   purple: 'var(--brand-purple)',
+  // Claim-button 3D ledge (ticket 2026-09-13#5, item 5 — `Full Spec.html:1043`/`:1047`,
+  // `claimShadow`/`claimLockShadow`). `claimShadow` reuses the SAME purple ledge value already
+  // added for the Menu's Dark button (`--rc-theme-toggle-active-shadow`) rather than a duplicate
+  // token — both are `0 5px 0 #5F27B8`, theme-invariant. `claimLockShadow` is a genuinely new
+  // light/dark-swapped token (`--rc-claim-lock-shadow`, index.css) — distinct from `RC.sunken`,
+  // which already correctly drives the locked button's *background* right next to this.
+  claimShadow: 'var(--rc-theme-toggle-active-shadow)',
+  claimLockShadow: 'var(--rc-claim-lock-shadow)',
 };
 
 interface Props {
-  token: string;
+  /** `null` for a logged-out visitor (ticket 2026-09-13#5) — the authenticated fetch below is
+   *  guarded on this; a guest never calls `api.wallet`/`api.rewards`. */
+  token: string | null;
+  /** Explicit, passed down from `App.tsx`'s own `loggedIn` (not re-derived from `token` here) so
+   *  this component's contract states plainly what drives its guest-safe treatment. */
+  loggedIn: boolean;
   username: string | null;
   balance: number;
   /** Logo / Games nav → Home. */
@@ -134,7 +147,7 @@ const VOLUME_MILESTONES: Record<'Emerald' | 'Diamond', number[]> = {
  *     actually is. No duplicate "RC WAGERED" stat is added to the Rewards page itself; the real
  *     figure ships once, on ProfileHub, per that addition.
  */
-export function RewardsHubScreen({ token, username, balance, onHome, onOpenProfile, onOpenRewards, onOpenAffiliate }: Props) {
+export function RewardsHubScreen({ token, loggedIn, username, balance, onHome, onOpenProfile, onOpenRewards, onOpenAffiliate }: Props) {
   const [liveBalance, setLiveBalance] = useState(balance);
   // Issue #414: the Menu overlay's own open/close/reveal-origin state.
   const menu = useMenuOverlay();
@@ -153,6 +166,10 @@ export function RewardsHubScreen({ token, username, balance, onHome, onOpenProfi
   useEffect(() => { setLiveBalance(balance); }, [balance]);
 
   useEffect(() => {
+    // Ticket 2026-09-13#5, item 2: a guest (`token === null`) has no account to fetch — the
+    // snapshot simply stays at its `null` initial value, which every read below already treats
+    // as the neutral/guest-safe default. No new state, no fetch attempt.
+    if (token === null) return;
     let alive = true;
     api.wallet(token).then((w) => { if (alive) setLiveBalance(w.balance); }).catch(() => {});
     api.rewards(token).then((r) => { if (alive) setSnapshot(r); }).catch(() => {});
@@ -160,7 +177,7 @@ export function RewardsHubScreen({ token, username, balance, onHome, onOpenProfi
   }, [token]);
 
   async function handleClaim() {
-    if (claiming || !snapshot || snapshot.claimableBalance <= 0) return;
+    if (claiming || !token || !snapshot || snapshot.claimableBalance <= 0) return;
     setClaiming(true);
     setClaimError('');
     try {
@@ -193,6 +210,16 @@ export function RewardsHubScreen({ token, username, balance, onHome, onOpenProfi
 
             {/* ── Header: avatar (static #304 placeholder) / username / lifetime XP — real. ── */}
             <div style={{ marginTop: '14px', background: RC.surface, borderRadius: '22px', padding: '18px 16px 20px 16px' }}>
+            {/* Guest blur (ticket 2026-09-13#5, item 3 — `Full Spec.html:958`/`:3904-3906`,
+                `vipBlur`/`vipSelect`). Wraps the card's real content (avatar/username/XP row +
+                progress bar + tier labels) — NOT the "VIP PROGRAM" heading above the card, which
+                stays legible in both states. A logged-out visitor's underlying values are already
+                the honest neutral fallbacks (`@Player`/`0`/`Unranked`) rather than fabricated
+                content — see the module doc comment's item-2/3 note. */}
+            <div
+              data-testid="rewards-vip-card-blur"
+              style={{ filter: loggedIn ? 'none' : 'blur(7px)', userSelect: loggedIn ? 'auto' : 'none', transition: 'filter 260ms ease' }}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingBottom: '16px' }}>
                 <div
                   style={{
@@ -239,12 +266,14 @@ export function RewardsHubScreen({ token, username, balance, onHome, onOpenProfi
                 </span>
               </div>
             </div>
+            </div>
 
             {/* ── YOUR REWARDS — rakeback (real, claimable) + volume bonus (real progress). ── */}
             <SectionHeading icon={<RewardsShieldIcon />}>YOUR REWARDS</SectionHeading>
             <div style={{ marginTop: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               <RakebackCard
                 tier={tier}
+                loggedIn={loggedIn}
                 claimableBalance={snapshot?.claimableBalance ?? 0}
                 claiming={claiming}
                 onClaim={handleClaim}
@@ -311,15 +340,21 @@ export function RewardsHubScreen({ token, username, balance, onHome, onOpenProfi
 /* ── Rakeback card — locked at Unranked (verbatim locked treatment), real claimable above it. ── */
 
 function RakebackCard({
-  tier, claimableBalance, claiming, onClaim,
+  tier, loggedIn, claimableBalance, claiming, onClaim,
 }: {
-  tier: VipTier; claimableBalance: number; claiming: boolean; onClaim(): void;
+  tier: VipTier; loggedIn: boolean; claimableBalance: number; claiming: boolean; onClaim(): void;
 }) {
   // Unranked earns a 0% rakeback rate (`packages/core/src/rewards.ts`), so `claimableBalance` can
   // only ever be 0 at this tier — nothing can accrue and nothing can ever be claimed. Render the
   // design's locked treatment (issue #435) instead of a live-looking purple CLAIM that could never
   // pay out. Everything from Wood up is a paying tier and keeps today's active card exactly.
-  const locked = tier === 'Unranked';
+  //
+  // `!loggedIn` is explicit here (ticket 2026-09-13#5, item 4) rather than relying on a guest's
+  // `tier` coincidentally also defaulting to 'Unranked' once the fetch above is guarded — a real
+  // Unranked-tier logged-in player and a logged-out guest are conceptually different states that
+  // happen to collapse to the same tier value; explicit is safer than coincidental as this code
+  // evolves.
+  const locked = !loggedIn || tier === 'Unranked';
   return (
     <div style={{ background: RC.surface, borderRadius: '22px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
       <div>
@@ -346,10 +381,12 @@ function RakebackCard({
           data-testid="rewards-claim-button"
           onClick={onClaim}
           disabled={claiming || claimableBalance <= 0}
+          className="active:translate-y-[3px]"
           style={{
             background: RC.purple, borderRadius: '999px', padding: '11px 0', display: 'flex',
             alignItems: 'center', justifyContent: 'center', cursor: 'pointer', border: 'none',
-            opacity: claimableBalance <= 0 ? 0.5 : 1,
+            opacity: claimableBalance <= 0 ? 0.5 : 1, boxShadow: RC.claimShadow,
+            transition: 'box-shadow 200ms ease, transform 120ms ease',
           }}
         >
           <span style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '13px', lineHeight: '13px', fontWeight: 'bold', letterSpacing: '0.8px', color: RC.text }}>
@@ -409,7 +446,15 @@ function CardStatusRow({ testid, text }: { testid: string; text: string }) {
  *  every state it appears in (see VolumeBonusCard's note on the single pooled claimable balance). */
 function LockedClaimRow() {
   return (
-    <div data-testid="rewards-locked-claim" style={{ position: 'relative', background: RC.sunken, borderRadius: '999px', padding: '11px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+    <div
+      data-testid="rewards-locked-claim"
+      className="active:translate-y-[3px]"
+      style={{
+        position: 'relative', background: RC.sunken, borderRadius: '999px', padding: '11px 0',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+        boxShadow: RC.claimLockShadow, transition: 'box-shadow 200ms ease, transform 120ms ease',
+      }}
+    >
       <svg width="13" height="13" viewBox="0 0 24 24" fill={RC.muted} style={{ display: 'block', position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }}>
         <path d="M12 2.5A4.7 4.7 0 0 0 7.3 7.2v2.4h2.4V7.2a2.3 2.3 0 0 1 4.6 0v2.4h2.4V7.2A4.7 4.7 0 0 0 12 2.5z" />
         <rect x="5" y="9.6" width="14" height="11.9" rx="2.6" />
