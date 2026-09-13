@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
 import { MenuOverlay } from '../components/hub-chrome/MenuOverlay.js';
 import { useMenuOverlay } from '../components/hub-chrome/useMenuOverlay.js';
 import { HUB_BODY, HUB_FIXED_TOP } from '../components/hub-chrome/layout.js';
 import type { CategoryId } from '../components/hub-shared/categories.js';
+import { setThemeChoice } from '../lib/theme.js';
 
 /** A minimal stand-in for how every real hub screen wires `useMenuOverlay` + `HubToolbar` +
  *  `MenuOverlay` together (see HomeHub.tsx/GameHub.tsx/RewardsHub.tsx/ProfileHub.tsx) — issue
@@ -25,6 +26,7 @@ function Harness({
         onAccount={menu.wrap(vi.fn())}
         onRewards={menu.wrap(onRewards)}
         onMenu={menu.onMenu}
+        reportAnchorRect={menu.reportAnchorRect}
         onChat={vi.fn()}
         active={menu.open ? 'menu' : 'games'}
       />
@@ -44,6 +46,14 @@ function Harness({
 function isOpen(overlay: HTMLElement) {
   return overlay.getAttribute('aria-hidden') === 'false' && (overlay.style.pointerEvents === 'auto');
 }
+
+// lib/theme.ts is a module-level singleton shared across every test in this file (same reasoning
+// as PreferencesHub.test.tsx's own beforeEach) — reset it to a known baseline explicitly before
+// each test, since the APPEARANCE control's own tests below flip it.
+beforeEach(() => {
+  localStorage.clear();
+  setThemeChoice('dark');
+});
 
 describe('Menu overlay (issue #414) — open/close', () => {
   it('starts closed: aria-hidden, pointer-events none, Menu item not active', () => {
@@ -206,5 +216,60 @@ describe('Menu overlay (issue #465) — GAMES group category rows', () => {
     expect(onGames).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId('menu-placeholder-toast')).toBeNull();
     expect(screen.getByTestId('menu-overlay').getAttribute('aria-hidden')).toBe('true');
+  });
+});
+
+// Ticket 2026-09-13#2, item 1: the APPEARANCE Dark/Light pill control, previously missing
+// entirely (GROUPS ended at SUPPORT with nothing after it). Reuses the real lib/theme.ts module
+// (via setThemeChoice), same approach PreferencesHub.test.tsx already takes for its own
+// theme-dependent rendering — no mock, since the module IS the thing under test here.
+describe('Menu overlay (ticket 2026-09-13#2, item 1) — APPEARANCE Dark/Light control', () => {
+  it('renders the APPEARANCE label and both Dark/Light buttons', () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByTestId('hub-nav-menu'));
+    expect(screen.getByText('APPEARANCE')).toBeInTheDocument();
+    expect(screen.getByTestId('menu-appearance-dark')).toHaveTextContent('Dark');
+    expect(screen.getByTestId('menu-appearance-light')).toHaveTextContent('Light');
+  });
+
+  it('clicking Dark calls setChoice(\'dark\') — the same persisted global PreferencesHub.tsx reads', () => {
+    setThemeChoice('light');
+    render(<Harness />);
+    fireEvent.click(screen.getByTestId('hub-nav-menu'));
+    fireEvent.click(screen.getByTestId('menu-appearance-dark'));
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    expect(localStorage.getItem('rc_pref_theme')).toBe('dark');
+  });
+
+  it('clicking Light calls setChoice(\'light\')', () => {
+    render(<Harness />); // baseline theme is 'dark' (top-level beforeEach)
+    fireEvent.click(screen.getByTestId('hub-nav-menu'));
+    fireEvent.click(screen.getByTestId('menu-appearance-light'));
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+    expect(localStorage.getItem('rc_pref_theme')).toBe('light');
+  });
+
+  it('the currently-resolved theme\'s button gets the purple/brand background + active shadow; the other gets the neutral/inactive treatment', () => {
+    setThemeChoice('dark');
+    render(<Harness />);
+    fireEvent.click(screen.getByTestId('hub-nav-menu'));
+    const darkBtn = screen.getByTestId('menu-appearance-dark');
+    const lightBtn = screen.getByTestId('menu-appearance-light');
+    expect(darkBtn.style.background).toBe('var(--brand-purple)');
+    expect(darkBtn.style.boxShadow).toBe('var(--rc-theme-toggle-active-shadow)');
+    expect(lightBtn.style.background).toBe('var(--rc-theme-toggle-inactive-bg)');
+    expect(lightBtn.style.boxShadow).toBe('var(--rc-theme-toggle-inactive-shadow)');
+  });
+
+  it('flips which button reads active when the resolved theme flips to light', () => {
+    setThemeChoice('light');
+    render(<Harness />);
+    fireEvent.click(screen.getByTestId('hub-nav-menu'));
+    const darkBtn = screen.getByTestId('menu-appearance-dark');
+    const lightBtn = screen.getByTestId('menu-appearance-light');
+    expect(lightBtn.style.background).toBe('var(--brand-purple)');
+    expect(lightBtn.style.boxShadow).toBe('var(--rc-theme-toggle-active-shadow)');
+    expect(darkBtn.style.background).toBe('var(--rc-theme-toggle-inactive-bg)');
+    expect(darkBtn.style.boxShadow).toBe('var(--rc-theme-toggle-inactive-shadow)');
   });
 });

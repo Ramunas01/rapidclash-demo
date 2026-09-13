@@ -7,6 +7,7 @@ import {
   OriginalsIcon, CardGamesIcon, ChanceGamesIcon, SkillGamesIcon,
 } from '../hub-shared/categoryIcons.js';
 import type { CategoryId } from '../hub-shared/categories.js';
+import { useTheme } from '../../lib/theme.js';
 
 interface Props {
   /** Mirrors `useMenuOverlay()`'s `open` — the overlay is always mounted (see below) so the
@@ -237,6 +238,14 @@ const GROUPS: MenuGroup[] = [
  * brand-purple in both themes, same as everywhere else it's used.
  */
 export function MenuOverlay({ open, anchorRect, onClose, onOpenGames, onOpenRewards, onOpenAffiliate, onOpenGamesCategory }: Props) {
+  // APPEARANCE control (ticket 2026-09-13#2, item 1) — the same global persisted theme state
+  // PreferencesHub.tsx's own (differently-styled, dot/radio-row) Dark/Light/System control
+  // already reads and writes; `light` names the prototype's own `renderVals()` boolean directly
+  // (`resolved === 'light'`), matching the ticket's own naming for a 1:1 read against the six
+  // computed-prop formulas in index.css's doc comment above `--rc-theme-toggle-active-shadow`.
+  const { resolved, setChoice } = useTheme();
+  const light = resolved === 'light';
+
   // Lazy-mount the overlay's own content (including its `<HubFooter>`) only once Menu has
   // actually been tapped at least once. Every hub screen already renders its own page-level
   // `<HubFooter>` with the same hardcoded `data-testid="home-footer"` — mounting a SECOND one
@@ -333,6 +342,66 @@ export function MenuOverlay({ open, anchorRect, onClose, onOpenGames, onOpenRewa
                 </div>
               </section>
             ))}
+
+            {/* APPEARANCE — Dark/Light pill control (ticket 2026-09-13#2, item 1). Prototype
+                (`Full Spec.html:2626-2638`): a label + a visually distinct two-button segmented
+                pill, NOT another `GROUPS` row-list entry — rendered as its own static block
+                rather than folded into the data-driven `GROUPS.map` above. `onClick` writes the
+                SAME global persisted theme state PreferencesHub.tsx's own (differently-styled)
+                Dark/Light/System control already reads and writes via `lib/theme.ts`'s
+                `useTheme()` — no new state. Colors/shadows below are `index.css`'s
+                `--rc-theme-toggle-*` tokens (see the doc comment there for how the prototype's
+                six `themeDarkBg`/`themeDarkFg`/`themeDarkShadow`/`themeLightBg`/`themeLightFg`/
+                `themeLightShadow` computed props collapse into that token set). Press feel is a
+                plain `active:translate-y-[3px]` (no release bounce — confirmed distinct from the
+                category tiles' `rcNavPop`, which does bounce). */}
+            <div className="mt-[26px] flex flex-col gap-[11px]">
+              <span className="text-[12px] font-bold uppercase tracking-[1.4px] text-[var(--rc-text)]">APPEARANCE</span>
+              <div className="flex gap-[10px] rounded-[24px] bg-surface p-1.5 pb-[11px]">
+                <button
+                  type="button"
+                  data-testid="menu-appearance-dark"
+                  onClick={() => setChoice('dark')}
+                  className="flex h-[50px] flex-1 items-center justify-center gap-[10px] rounded-[18px] active:translate-y-[3px]"
+                  style={{
+                    background: light ? 'var(--rc-theme-toggle-inactive-bg)' : 'var(--brand-purple)',
+                    boxShadow: light ? 'var(--rc-theme-toggle-inactive-shadow)' : 'var(--rc-theme-toggle-active-shadow)',
+                    transition: 'background 240ms ease, box-shadow 240ms ease, transform 120ms ease',
+                  }}
+                >
+                  <svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M20.4 15.4A8.6 8.6 0 0 1 9.2 4.1 8.8 8.8 0 1 0 20.4 15.4z" fill={light ? 'var(--rc-muted)' : '#FFFFFF'} />
+                  </svg>
+                  <span className="text-sm font-semibold" style={{ color: light ? 'var(--rc-muted)' : '#FFFFFF' }}>Dark</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="menu-appearance-light"
+                  onClick={() => setChoice('light')}
+                  className="flex h-[50px] flex-1 items-center justify-center gap-[10px] rounded-[18px] active:translate-y-[3px]"
+                  style={{
+                    background: light ? 'var(--brand-purple)' : 'var(--rc-theme-toggle-inactive-bg)',
+                    boxShadow: light ? 'var(--rc-theme-toggle-active-shadow)' : 'var(--rc-theme-toggle-inactive-shadow)',
+                    transition: 'background 240ms ease, box-shadow 240ms ease, transform 120ms ease',
+                  }}
+                >
+                  <svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="4.6" fill={light ? '#FFFFFF' : 'var(--rc-muted)'} />
+                    <g fill={light ? '#FFFFFF' : 'var(--rc-muted)'}>
+                      <rect x="11" y="0.8" width="2" height="4.2" rx="1" />
+                      <rect x="11" y="19" width="2" height="4.2" rx="1" />
+                      <rect x="0.8" y="11" width="4.2" height="2" rx="1" />
+                      <rect x="19" y="11" width="4.2" height="2" rx="1" />
+                      <rect x="11" y="0.8" width="2" height="4.2" rx="1" transform="rotate(45 12 12)" />
+                      <rect x="11" y="19" width="2" height="4.2" rx="1" transform="rotate(45 12 12)" />
+                      <rect x="0.8" y="11" width="4.2" height="2" rx="1" transform="rotate(45 12 12)" />
+                      <rect x="19" y="11" width="4.2" height="2" rx="1" transform="rotate(45 12 12)" />
+                    </g>
+                  </svg>
+                  <span className="text-sm font-semibold" style={{ color: light ? '#FFFFFF' : 'var(--rc-muted)' }}>Light</span>
+                </button>
+              </div>
+            </div>
           </div>
 
           <HubFooter onGames={navigateGames} onRewards={navigateRewards} onPlaceholder={navigatePlaceholder} />

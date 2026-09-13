@@ -114,6 +114,31 @@
      * decorative addition). Keyed off selection, not theme, same as `--rc-theme-btn-shadow` above. */
     --rc-nav-active-glow: 0 0 5px rgba(139, 69, 240, 0.53);
 
+    /* MenuOverlay's APPEARANCE Dark/Light pill control (ticket 2026-09-13#2, item 1) — prototype's
+     * `renderVals()` (`Full Spec.html:4337-4344`) computes six props for this control
+     * (`themeDarkBg`/`themeDarkFg`/`themeDarkShadow`/`themeLightBg`/`themeLightFg`/
+     * `themeLightShadow`), keyed off its own `light` boolean. Worked out from all six formulas at
+     * once (not transcribed one-by-one), since two of them turn out to share a value across BOTH
+     * buttons:
+     *  - the currently-ACTIVE button (whichever one matches the resolved theme) is ALWAYS
+     *    `var(--brand-purple)` bg / white fg / `0 5px 0 #5F27B8` shadow, regardless of which
+     *    theme that is — `--rc-theme-toggle-active-shadow` below is that single, theme-invariant
+     *    shadow (same shape as `--rc-theme-btn-shadow`/`--rc-nav-active-glow` just above: one
+     *    value, no light-block override needed; bg/fg reuse the existing `--brand-purple`
+     *    token and a plain white literal, no new tokens needed for those two).
+     *  - the currently-INACTIVE button's bg and shadow each DO vary by the app's resolved theme
+     *    (not by which button it is): bg is `#FFFFFF` under light theme / `#2F2F49` under dark
+     *    theme (`--rc-theme-toggle-inactive-bg`), and shadow is `0 5px 0 #C9C9D6` under light
+     *    theme / `0 5px 0 #1E1E33` under dark theme (`--rc-theme-toggle-inactive-shadow`, the
+     *    same ledge-shadow pair used elsewhere in the prototype, e.g. category tiles/av-rail/
+     *    login-tabs). Both are real light/dark pairs, same shape as `--rc-surface`'s own. The
+     *    inactive fg in both cases is just the existing `var(--rc-muted)` token — no new token
+     *    needed there. Grepped this file for `2F2F49`/`5F27B8`/`C9C9D6`/`1E1E33` before adding —
+     *    zero hits on any of the four, confirmed genuinely new. */
+    --rc-theme-toggle-active-shadow: 0 5px 0 #5F27B8;
+    --rc-theme-toggle-inactive-bg: #2F2F49;
+    --rc-theme-toggle-inactive-shadow: 0 5px 0 #1E1E33;
+
     /* Shared card back (SVG/CSS component) — one source of truth (raw hex, used directly). */
     --card-back: #5956f6; /* flat blue-violet inset panel */
     --card-back-mark: #5351e2; /* the bolt watermark — tone-on-tone, a few shades darker */
@@ -177,6 +202,9 @@
     --rc-sort-sheet-bg: #1a1a2e;
     --rc-theme-btn-shadow: 0 0 10px 2px rgba(139, 69, 240, 0.55);
     --rc-nav-active-glow: 0 0 5px rgba(139, 69, 240, 0.53);
+    --rc-theme-toggle-active-shadow: 0 5px 0 #5F27B8;
+    --rc-theme-toggle-inactive-bg: #2F2F49;
+    --rc-theme-toggle-inactive-shadow: 0 5px 0 #1E1E33;
     --card-back: #5956f6;
     --card-back-mark: #5351e2;
     --coin-heads-face: #f2a63b;
@@ -200,6 +228,13 @@
    * light value here as of issue #485 (T3a) — it's aliased to `--rc-green` in every theme
    * block, so it just inherits whatever `--rc-green` resolves to; no separate line was needed
    * before because the alias itself is defined once, above, in `:root`/`.dark`.
+   *
+   * `--rc-theme-toggle-inactive-bg`/`--rc-theme-toggle-inactive-shadow` (ticket 2026-09-13#2,
+   * item 1) DO get light values here, same reasoning as `--rc-bg`/`--rc-surface` above — the
+   * MenuOverlay APPEARANCE control's inactive-button treatment is a real light/dark pair.
+   * `--rc-theme-toggle-active-shadow` is NOT overridden here, same reasoning as
+   * `--rc-theme-btn-shadow` just above it — the active button's shadow is one theme-invariant
+   * literal (`0 5px 0 #5F27B8`), so :root's declaration keeps applying under light theme too.
    */
   :root[data-theme='light'] {
     --rc-bg: #ffffff;
@@ -211,6 +246,8 @@
     --rc-green: #0b8f5a;
     --rc-danger: #c42b41;
     --rc-sort-sheet-bg: #d3d3dd;
+    --rc-theme-toggle-inactive-bg: #FFFFFF;
+    --rc-theme-toggle-inactive-shadow: 0 5px 0 #C9C9D6;
   }
 }
 

@@ -1,4 +1,4 @@
-import { useRef, type ReactNode, type Ref } from 'react';
+import { useLayoutEffect, useRef, type ReactNode, type Ref } from 'react';
 import { cn } from '@/lib/utils';
 import type { MenuAnchorRect } from './useMenuOverlay.js';
 
@@ -14,6 +14,13 @@ interface Props {
    *  clip-path reveal from the real button position — HubToolbar owns the button/ref, the caller
    *  owns the overlay, so the rect has to cross that boundary somehow. */
   onMenu(anchorRect: MenuAnchorRect): void;
+  /** Ticket 2026-09-13#2, item 2: reports the Menu button's rect on MOUNT (via `useLayoutEffect`
+   *  below), WITHOUT toggling the overlay open — a `useMenuOverlay()` instance's `anchorRect`
+   *  otherwise starts `null` until the first click, so the very first open's clip-path reveal
+   *  animates its center sliding in from `(0,0)` instead of growing cleanly from the real button.
+   *  Optional so callers that don't care about the first-open origin fix (e.g. a plain
+   *  `<HubToolbar>` render in a test) don't have to pass it. */
+  reportAnchorRect?(anchorRect: MenuAnchorRect): void;
   /** Chat → opens the chat sheet (ticket 2026-09-11#7b, `useChat.ts`/`ChatSheet.tsx`). Flips Chat
    *  from reserved/comingSoon to a live nav item, same treatment issue #414 gave Menu. */
   onChat(): void;
@@ -51,7 +58,7 @@ interface Props {
  * are this app's own brand-purple, fixed in both themes — matches the prototype's own
  * `navXColor` literal (`#8B45F0`), which never varies with `light` either.
  */
-export function HubToolbar({ onGames, onAccount, onRewards, onMenu, onChat, active = 'games' }: Props) {
+export function HubToolbar({ onGames, onAccount, onRewards, onMenu, reportAnchorRect, onChat, active = 'games' }: Props) {
   const menuBtnRef = useRef<HTMLButtonElement>(null);
   function handleMenuClick() {
     const el = menuBtnRef.current;
@@ -59,6 +66,19 @@ export function HubToolbar({ onGames, onAccount, onRewards, onMenu, onChat, acti
     const r = el.getBoundingClientRect();
     onMenu({ left: r.left, top: r.top, width: r.width, height: r.height });
   }
+  // Ticket 2026-09-13#2, item 2: report the button's real rect once on mount, before it's ever
+  // clicked — `useLayoutEffect` (not `useEffect`) so this runs before paint, same layout-timing
+  // precedent `MenuOverlay.tsx`'s own radius/clip-path measurement already follows. Purely
+  // additive: `handleMenuClick`'s own click-time measurement above is completely unchanged.
+  useLayoutEffect(() => {
+    const el = menuBtnRef.current;
+    if (!el || !reportAnchorRect) return;
+    const r = el.getBoundingClientRect();
+    reportAnchorRect({ left: r.left, top: r.top, width: r.width, height: r.height });
+    // Mount-only: this is a one-shot initial report, not a live resize sync (the ticket's fix is
+    // scoped to "before the first click", not general position tracking after that).
+    // eslint-disable-next-line -- run once on mount only; reportAnchorRect/ref are stable
+  }, []);
   return (
     <>
       {/* Scroll fade (#407): a 62px gradient dissolve sitting just above the solid mask below, so
