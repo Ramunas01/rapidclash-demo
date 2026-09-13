@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import { Check, X } from 'lucide-react';
-import type { AvatarId, RecentMatchEntry, RewardsSnapshot, VipTier } from '@rapidclash/shared';
+import type { AvatarId, GameMeta, RecentMatchEntry, RewardsSnapshot, VipTier } from '@rapidclash/shared';
 import { api } from '../api.js';
-import { Credits } from '../components/hub-shared/RcIcon.js';
 import { TierIcon, progressPercent } from '../components/hub-shared/vipTier.js';
 import { TILE_ART, titleCase } from '../components/hub-shared/tiles.js';
 import { cn } from '@/lib/utils';
@@ -16,6 +15,9 @@ import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
 import { Avatar } from '../components/hub-shared/Avatar.js';
 import { HUB_SHELL } from '../components/hub-chrome/layout.js';
+import { useTheme } from '../lib/theme.js';
+import { useCurSel } from '../lib/currency.js';
+import { CurrencyIcon } from '../components/hub-chrome/CurrencyPicker.js';
 
 interface Props {
   token: string;
@@ -184,8 +186,12 @@ const SECOND_GROUP: { key: string; label: string; icon: ReactNode }[] = [
 function formatMatchTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
-  const date = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  // Ticket 2026-09-13#8 item 5: explicit 'en-US' locale (this file's own convention, same
+  // reasoning as format.ts's header comment — "en-US for deterministic, locale-independent
+  // output") + explicit hour12, rather than relying on the browser/OS locale (`undefined`),
+  // which previously produced day-first/24-hour output on a non-US locale.
+  const date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   return `${date}, ${time}`;
 }
 
@@ -217,6 +223,11 @@ function opponentTierOf(m: RecentMatchEntry): VipTier {
  * row (same placeholder), and LOG OUT. Read-only / play-money — no hidden info.
  */
 export function ProfileHubScreen({ token, username, avatarId = 'default', onAvatarChange, balance, onLogout, onHome, onOpenProfile, onOpenRewards, onOpenPreferences, onOpenAffiliate }: Props) {
+  // Ticket 2026-09-13#8 item 4: the VIEW MORE ledge's light/dark boxShadow needs the resolved
+  // theme, same `useTheme()` call already established elsewhere in this codebase's small
+  // ledge-buttons (e.g. RewardsHub.tsx's CLAIM pill).
+  const { resolved } = useTheme();
+  const light = resolved === 'light';
   const [liveBalance, setLiveBalance] = useState(balance);
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -224,6 +235,13 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
   // #306/#307): tier, rakebackRate, nextTier are all already on the response, just unread here
   // before this ticket.
   const [snapshot, setSnapshot] = useState<RewardsSnapshot | null>(null);
+
+  // Ticket 2026-09-13#8 item 6: real game display names for the Recent Games list, matching the
+  // established per-screen-fetch pattern already used by HomeHub.tsx/GameHub.tsx (this screen
+  // never fetched `/games` before this ticket). Falls back to `titleCase(m.gameId)` (MatchRow's
+  // existing behavior) if this fetch is slow/fails, so a network hiccup never blanks the name.
+  const [games, setGames] = useState<GameMeta[]>([]);
+  const nameByGame = useMemo(() => new Map(games.map((g) => [g.id, g.displayName])), [games]);
 
   // Recent games — issue #400's paginated match history, replacing the ledger/leaderboard.
   const [matches, setMatches] = useState<RecentMatchEntry[]>([]);
@@ -268,6 +286,15 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
   useEffect(() => {
     let alive = true;
     api.rewards(token).then((r) => { if (alive) setSnapshot(r); }).catch(() => {});
+    return () => { alive = false; };
+  }, [token]);
+
+  // Ticket 2026-09-13#8 item 6: real display names (e.g. "Rock Paper Scissors" for 'rps') for
+  // the Recent Games rows — same api.games(token) call + Map-by-id pattern HomeHub.tsx already
+  // established for this exact purpose.
+  useEffect(() => {
+    let alive = true;
+    api.games(token).then((g) => { if (alive && Array.isArray(g)) setGames(g); }).catch(() => {});
     return () => { alive = false; };
   }, [token]);
 
@@ -393,20 +420,40 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
                   ))}
                 </div>
               ) : matches.length === 0 ? (
-                <p style={{ padding: '16px 0', textAlign: 'center', fontFamily: ARIAL, fontSize: 12, color: RC.muted }}>
-                  No matches yet — play a game to get started.
-                </p>
+                // Ticket 2026-09-13#8 item 1: copied verbatim from HomeHub.tsx's own
+                // `home-events-empty` treatment (Full Spec.html:244-246), the correct precedent
+                // for this exact "empty state" pattern — this row previously had its own
+                // divergent ad-hoc styling that matched the prototype on no axis.
+                <div data-testid="profile-matches-empty" className="flex items-center justify-center px-4 py-[54px] pb-2.5">
+                  <span className="text-sm font-semibold tracking-[0.02em] text-[var(--rc-text)]">No recent games yet.</span>
+                </div>
               ) : (
                 <>
-                  <div style={{ position: 'relative', overflow: matchesExpanded ? 'visible' : 'hidden', maxHeight: matchesExpanded ? 'none' : RECENT_PAGE_SIZE * 74, transition: 'max-height 320ms cubic-bezier(0.22, 0.61, 0.36, 1)' }}>
+                  <div
+                    style={{
+                      position: 'relative', overflow: matchesExpanded ? 'visible' : 'hidden', maxHeight: matchesExpanded ? 'none' : RECENT_PAGE_SIZE * 74,
+                      // Ticket 2026-09-13#8 item 4: 320ms → 520ms, the prototype's own value.
+                      transition: 'max-height 520ms cubic-bezier(0.22, 0.61, 0.36, 1)',
+                    }}
+                  >
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-                      {matches.map((m, i) => <MatchRow key={m.matchId} m={m} index={i} />)}
+                      {matches.map((m, i) => <MatchRow key={m.matchId} m={m} index={i} nameByGame={nameByGame} />)}
                     </div>
-                    {!matchesExpanded && hasMorePages && (
+                    {/* Ticket 2026-09-13#8 item 4: this fragment (fade + VIEW MORE) used to be
+                        conditionally mounted on `!matchesExpanded`, popping in/out abruptly
+                        instead of fading — the same "conditionally-mounted, no
+                        transition-from-nothing" gap already fixed twice elsewhere this week (the
+                        Menu overlay, the Auth sheet's BottomSheet extraction). Fix: gate MOUNTING
+                        only on `hasMorePages` (stays in the DOM across expand/collapse) and drive
+                        visibility via opacity + pointerEvents instead of a conditional unmount,
+                        matching the prototype's own `gamesFadeOpacity` + `opacity 380ms ease`. */}
+                    {hasMorePages && (
                       <>
                         <div
                           style={{
                             position: 'absolute', left: 0, right: 0, bottom: 0, height: 76, pointerEvents: 'none', borderRadius: '0 0 26px 26px',
+                            opacity: matchesExpanded ? 0 : 1,
+                            transition: 'opacity 380ms ease',
                             // Issue #491: this used to append a hex alpha suffix directly onto RC.sunken's
                             // own hex literal (`${RC.sunken}B8` etc.) — that trick only works on a raw hex
                             // string, not the `var(--rc-sunken)` reference RC.sunken is now. color-mix()
@@ -419,7 +466,17 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
                           type="button"
                           data-testid="profile-matches-view-more"
                           onClick={() => setMatchesExpanded(true)}
-                          style={{ position: 'absolute', right: 4, bottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: RC.surface, borderRadius: 999, padding: '8px 14px', border: 'none', cursor: 'pointer' }}
+                          className="active:translate-y-[3px]"
+                          style={{
+                            position: 'absolute', right: 4, bottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: RC.surface, borderRadius: 999, padding: '8px 14px', border: 'none', cursor: 'pointer',
+                            opacity: matchesExpanded ? 0 : 1,
+                            pointerEvents: matchesExpanded ? 'none' : 'auto',
+                            transition: 'opacity 380ms ease, box-shadow 200ms ease, transform 120ms ease',
+                            // Ticket 2026-09-13#8 item 4: the missing ledge (Full Spec.html:4539,
+                            // `moreShadow`) — the smaller 4px variant, distinct from the 5px ledge
+                            // used on bigger buttons shipped elsewhere this week.
+                            boxShadow: light ? '0 4px 0 #C9C9D6' : '0 4px 0 #1E1E33',
+                          }}
                         >
                           <span style={{ fontFamily: ARIAL, fontSize: 10, fontWeight: 'bold', letterSpacing: '0.8px', color: RC.text }}>VIEW MORE</span>
                         </button>
@@ -561,12 +618,17 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
  *  Open Games rows already use (`height: 74px`, alternating fill on even index, 26px radius on
  *  filled rows / 0px on transparent ones), replacing the old striped-table
  *  position-based-rounding convention (26px first/last, 6px interior, every row filled). */
-function MatchRow({ m, index }: { m: RecentMatchEntry; index: number }) {
+function MatchRow({ m, index, nameByGame }: { m: RecentMatchEntry; index: number; nameByGame: Map<string, string> }) {
   const art = TILE_ART[m.gameId];
   const win = m.outcome === 'win';
   const zebra = index % 2 === 0;
   const opponentTier = opponentTierOf(m);
   const vsColor = m.outcome === 'win' ? RC.green : m.outcome === 'loss' ? RC.text : RC.muted;
+  // Ticket 2026-09-13#8 item 2: the wallet's own selected currency symbol (`lib/currency.ts`'s
+  // global singleton, same source `GamesCarousel.tsx`/`CurrencyPicker.tsx` already read) — this
+  // screen requires a real `token` (auth-only, no guest path), so it's always `$`, no guest
+  // branch needed (unlike GamesCarousel's own AmountFigure).
+  const { curSel } = useCurSel();
   return (
     <div
       data-testid={`profile-match-${m.matchId}`}
@@ -583,11 +645,14 @@ function MatchRow({ m, index }: { m: RecentMatchEntry; index: number }) {
       />
       <div style={{ flex: '1 1 auto', minWidth: 0 }}>
         <div style={{ fontFamily: ARIAL, fontSize: 14, fontWeight: 'bold', letterSpacing: '0.4px', color: RC.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {titleCase(m.gameId)}
+          {/* Ticket 2026-09-13#8 item 6: the real GameMeta.displayName (e.g. "Rock Paper
+              Scissors"), falling back to the old titleCase(m.gameId) behavior only if the
+              /games fetch missed this id (slow/failed load — keeps today's behavior as a
+              safety net, doesn't regress). */}
+          {nameByGame.get(m.gameId) ?? titleCase(m.gameId)}
         </div>
         <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
           <span style={{ fontFamily: ARIAL, fontSize: 11, fontWeight: 'bold', letterSpacing: '1px', color: vsColor, flex: '0 0 auto' }}>VS</span>
-          <Avatar avatarId={m.opponentAvatarId} username={m.opponentDisplayName} size={16} />
           {opponentTier !== 'Unranked' && <TierIcon tier={opponentTier} size={14} />}
           <span style={{ fontFamily: ARIAL, fontSize: 12, fontWeight: 'bold', color: RC.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {normalizeOpponentName(m.opponentDisplayName)}
@@ -595,8 +660,18 @@ function MatchRow({ m, index }: { m: RecentMatchEntry; index: number }) {
         </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3, flex: '0 0 auto' }}>
-        <span data-testid={`profile-match-${m.matchId}-amount`} style={{ fontFamily: SPACE_GROTESK, fontSize: 17, fontWeight: 700, color: win ? RC.green : RC.muted }}>
-          <Credits amount={m.delta} showSign />
+        <span
+          data-testid={`profile-match-${m.matchId}-amount`}
+          style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: SPACE_GROTESK, fontSize: 17, fontWeight: 700, color: win ? RC.green : RC.muted }}
+        >
+          <CurrencyIcon sym={curSel} size={15} />
+          {/* Same sign/magnitude behavior as the old <Credits amount={m.delta} showSign />: a
+              '+' only for a strictly-positive delta, a '-' only for a strictly-negative one
+              (never both, and never either for a draw's 0 delta) — the old RcIcon component's
+              `sign = amount > 0 ? '+' : ''` plus toLocaleString's own leading '-' on negatives,
+              reproduced explicitly here since Math.abs() strips the sign toLocaleString used to
+              supply for a loss. */}
+          {m.delta > 0 ? '+' : m.delta < 0 ? '-' : ''}${Math.abs(m.delta).toLocaleString('en-US')}
         </span>
         <span style={{ fontFamily: SPACE_GROTESK, fontSize: 11, fontWeight: 500, color: RC.muted, whiteSpace: 'nowrap' }}>{formatMatchTime(m.settledAt)}</span>
       </div>
