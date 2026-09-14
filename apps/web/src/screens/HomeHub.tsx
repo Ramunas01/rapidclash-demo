@@ -215,7 +215,7 @@ export function HomeHubScreen({
               sort={sort} onSort={setSort}
               onRandom={handleRandom} randSpinning={randSpinning}
             />
-            <div className="mb-3 mt-[26px] flex items-center gap-3 px-4">
+            <div className="mt-[26px] flex items-center gap-3 px-4">
               {/* Ticket 2026-09-13#1 §3: the selected category's own icon (Full Spec.html:231-235,
                   `sc-if isCat0`..`isCat4`), not the static brand bolt-mark — the icon must change
                   with `cat`. Fill is a hardcoded `#8B45F0` literal in BOTH themes (the prototype's
@@ -225,20 +225,28 @@ export function HomeHubScreen({
                 data-testid="home-section-title"
                 // Full Spec.html:236 — Arial/Helvetica, 21px, weight 700, 0.4px tracking. CATEGORY_TITLE
                 // strings are already stored uppercase (categories.ts), so no `uppercase` class needed.
-                style={{ fontFamily: ARIAL, fontSize: 21, fontWeight: 700, letterSpacing: '0.4px' }}
+                // `margin: 0` overrides a stray global `h2 { margin-bottom: 8px }` (styles.css) that
+                // isn't reset by this component's own className — ticket 2026-09-14#1 item 3: that
+                // 8px bottom-only margin gets centered as part of the flex row's margin box, visually
+                // shifting the title's glyphs ~4px off-center from the icon.
+                style={{ fontFamily: ARIAL, fontSize: 21, fontWeight: 700, letterSpacing: '0.4px', margin: 0 }}
               >
                 {CATEGORY_TITLE[cat]}
               </h2>
             </div>
 
+            {/* Ticket 2026-09-14#1 item 4 (below): the 16px gap belongs to the element below the
+                title row, matching Full Spec.html's own `data-rc-grid` margin (`margin:16px 16px 0
+                16px`) — not to the title row's own bottom margin (dropped above, prototype's row
+                citation is top-only: `margin:26px 16px 0 16px`). */}
             {eventsEmpty ? (
-              <div data-testid="home-events-empty" className="flex items-center justify-center px-4 py-[54px] pb-2.5">
+              <div data-testid="home-events-empty" className="mt-4 flex items-center justify-center px-4 py-[54px] pb-2.5">
                 <span className="text-sm font-semibold tracking-[0.02em] text-[var(--rc-text)]">No events running</span>
               </div>
             ) : shownTiles.length === 0 ? (
-              <p className="px-4 py-6 text-center text-xs text-[var(--rc-muted)]">No games match — try a different search or category.</p>
+              <p className="mt-4 px-4 py-6 text-center text-xs text-[var(--rc-muted)]">No games match — try a different search or category.</p>
             ) : (
-              <div className="grid grid-cols-3 gap-2 px-4">
+              <div className="mt-4 grid grid-cols-3 gap-2 px-4">
                 {shownTiles.map((t) =>
                   t.playable && t.meta
                     ? <PlayableTile key={t.id} meta={t.meta} onSelect={onSelectGame} />

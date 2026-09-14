@@ -499,6 +499,30 @@ describe('HomeHubScreen — category rail, SEARCH, SORT, RANDOM (issue #465)', (
     expect(title.style.letterSpacing).toBe('0.4px');
   });
 
+  it('ticket 2026-09-14#1 item 3: section title has margin: 0, overriding the stray global h2 { margin-bottom: 8px } rule', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    const title = screen.getByTestId('home-section-title');
+    expect(title.style.margin).toBe('0px');
+  });
+
+  it('ticket 2026-09-14#1 item 4 (below): the row itself carries no bottom margin — the 16px gap lives on the element rendered below it instead', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    const titleRow = screen.getByTestId('home-section-title').parentElement!;
+    expect(titleRow.className).not.toContain('mb-3');
+    expect(titleRow.className).toContain('mt-[26px]');
+    const grid = screen.getByTestId('home-grid').querySelector('.grid.grid-cols-3')!;
+    expect(grid.className).toContain('mt-4');
+  });
+
+  it('ticket 2026-09-14#1 item 4 (below): the EVENTS empty state also carries the 16px top margin, not the title row', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('home-cat-events'));
+    expect(screen.getByTestId('home-events-empty').className).toContain('mt-4');
+  });
+
   it('section title shows RAPIDCLASH ORIGINALS by default and switches per active category', async () => {
     render(<HomeHubScreen {...baseProps()} />);
     await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
