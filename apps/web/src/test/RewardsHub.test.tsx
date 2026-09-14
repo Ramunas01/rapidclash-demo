@@ -127,18 +127,18 @@ describe('RewardsHubScreen', () => {
   it('the CLAIM button is wired to POST /rewards/claim, shows the real claimable balance, and zeroes it on success', async () => {
     stubFetch(BOBBYLEE_SNAPSHOT);
     render(<RewardsHubScreen {...baseProps()} />);
-    await waitFor(() => expect(screen.getByTestId('rewards-claimable').textContent).toBe('25'));
+    await waitFor(() => expect(screen.getByTestId('rewards-claimable').textContent).toBe('$25'));
     expect(screen.getByTestId('rewards-claim-button')).not.toBeDisabled();
 
     fireEvent.click(screen.getByTestId('rewards-claim-button'));
-    await waitFor(() => expect(screen.getByTestId('rewards-claimable').textContent).toBe('0'));
+    await waitFor(() => expect(screen.getByTestId('rewards-claimable').textContent).toBe('$0'));
     expect(screen.getByTestId('rewards-claim-button')).toBeDisabled();
   });
 
   it('a zero claimable balance renders the CLAIM button disabled (idempotent — nothing to claim)', async () => {
     stubFetch({ ...BOBBYLEE_SNAPSHOT, claimableBalance: 0 });
     render(<RewardsHubScreen {...baseProps()} />);
-    await waitFor(() => expect(screen.getByTestId('rewards-claimable').textContent).toBe('0'));
+    await waitFor(() => expect(screen.getByTestId('rewards-claimable').textContent).toBe('$0'));
     expect(screen.getByTestId('rewards-claim-button')).toBeDisabled();
   });
 
@@ -157,12 +157,12 @@ describe('RewardsHubScreen', () => {
   it('rakeback card is live again at the first paying tier (Wood, 1%) — real amount + working CLAIM', async () => {
     stubFetch(WOOD_SNAPSHOT);
     render(<RewardsHubScreen {...baseProps()} />);
-    await waitFor(() => expect(screen.getByTestId('rewards-claimable').textContent).toBe('12'));
+    await waitFor(() => expect(screen.getByTestId('rewards-claimable').textContent).toBe('$12'));
     expect(screen.getByTestId('rewards-claim-button')).not.toBeDisabled();
     expect(screen.queryByTestId('rewards-rakeback-locked')).toBeNull();
 
     fireEvent.click(screen.getByTestId('rewards-claim-button'));
-    await waitFor(() => expect(screen.getByTestId('rewards-claimable').textContent).toBe('0'));
+    await waitFor(() => expect(screen.getByTestId('rewards-claimable').textContent).toBe('$0'));
     expect(screen.getByTestId('rewards-claim-button')).toBeDisabled();
   });
 
@@ -244,13 +244,21 @@ describe('RewardsHubScreen', () => {
     expect(panel.style.gridTemplateRows).toBe('1fr');
   });
 
-  it('is sanitized: no $ leaks into the game body (the header wallet chip legitimately shows the Owner-approved $ skin — CHARTER.md #4, issue #484)', async () => {
+  // Ticket 2026-09-15#1 item 2 legitimately introduces a $ into this screen's body (the Rakeback
+  // claimable amount) — CHARTER.md #4's Owner-approved cosmetic $ wallet skin applies to the whole
+  // registered/investor demo, not just the header chip, matching the same flip this exact class of
+  // test already made on ProfileHub (`ProfileHub.test.tsx`'s own "T9" test, ticket 2026-09-13#8
+  // item 2) and GamesCarousel (ticket 2026-09-13#6 item 2). This replaces the old "no $ anywhere in
+  // the body" assertion, which predates that Owner approval — `NEW_DESIGN_MIGRATION.md`'s "Currency
+  // presentation" section names this exact class of test ("the ~8 'no $' tests... flip organically
+  // as the rebuild PRs touch those screens") as expected to update this way, not a regression.
+  it('registered users legitimately see the Owner-approved $ skin in the Rakeback claimable amount too, not just the header wallet chip (CHARTER.md #4)', async () => {
     stubFetch(BOBBYLEE_SNAPSHOT);
     const { container } = render(<RewardsHubScreen {...baseProps()} />);
     await waitFor(() => expect(screen.getByTestId('rewards-xp')).toBeInTheDocument());
     const header = container.querySelector('header');
     const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');
-    expect(bodyText).not.toMatch(/\$/);
+    expect(bodyText).toMatch(/\$/);
   });
 
   it('renders the shared footer (#323) between Bring a Rival and the bottom nav, wired to Games/Rewards', async () => {
@@ -291,6 +299,41 @@ describe('RewardsHubScreen', () => {
     const contentDiv = main.firstElementChild;
     expect(contentDiv).not.toBeNull();
     expect(contentDiv?.className).not.toMatch(/pb-\[calc/);
+  });
+});
+
+// Ticket 2026-09-15#1: avatar sync (item 1), currency-icon swap (item 2), claim-button shift
+// (item 3). Item 1 also retires the hardcoded Pepe-the-Frog placeholder image that was live here.
+describe('RewardsHubScreen — avatar sync, currency icon, claim-button height (ticket 2026-09-15#1)', () => {
+  it('item 1: the VIP card renders the real shared Avatar component with the passed avatarId, not a hardcoded placeholder', async () => {
+    stubFetch(BOBBYLEE_SNAPSHOT);
+    render(<RewardsHubScreen {...baseProps({ avatarId: 'rc-03' })} />);
+    await waitFor(() => expect(screen.getByTestId('avatar')).toBeInTheDocument());
+    expect(screen.getByTestId('avatar').getAttribute('data-avatar-id')).toBe('rc-03');
+  });
+
+  it('item 1: switching avatarId (e.g. after picking a new one on Account) updates the VIP card without a reload', async () => {
+    stubFetch(BOBBYLEE_SNAPSHOT);
+    const { rerender } = render(<RewardsHubScreen {...baseProps({ avatarId: 'default' })} />);
+    await waitFor(() => expect(screen.getByTestId('avatar').getAttribute('data-avatar-id')).toBe('default'));
+    rerender(<RewardsHubScreen {...baseProps({ avatarId: 'rc-07' })} />);
+    expect(screen.getByTestId('avatar').getAttribute('data-avatar-id')).toBe('rc-07');
+  });
+
+  it('item 2: the claimable amount renders with a $ prefix (currency icon, not the bare RC coin figure)', async () => {
+    stubFetch(BOBBYLEE_SNAPSHOT);
+    render(<RewardsHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('rewards-claimable').textContent).toBe('$25'));
+  });
+
+  it('item 3: the unlocked claimable row shares the exact same fixed-height wrapper as the locked "Wager to unlock" row', async () => {
+    stubFetch(BOBBYLEE_SNAPSHOT);
+    render(<RewardsHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('rewards-claimable-row')).toBeInTheDocument());
+    const claimableRow = screen.getByTestId('rewards-claimable-row');
+    const lockedVolume = screen.getByTestId('rewards-volume-progress'); // same tier here is Bronze — Volume Bonus stays locked
+    // Same component, same style object — not two divs whose fixed-size intent could drift apart.
+    expect(claimableRow.getAttribute('style')).toBe(lockedVolume.getAttribute('style'));
   });
 });
 
