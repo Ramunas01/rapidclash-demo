@@ -1181,6 +1181,7 @@ export function App() {
           token={token}
           loggedIn={loggedIn}
           username={username}
+          avatarId={avatarId}
           balance={balance}
           onHome={goToHome}
           onOpenProfile={goToProfile}

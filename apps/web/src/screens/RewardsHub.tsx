@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { RewardsSnapshot, VipTier } from '@rapidclash/shared';
+import type { AvatarId, RewardsSnapshot, VipTier } from '@rapidclash/shared';
 import { api } from '../api.js';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
@@ -9,10 +9,12 @@ import { ChatSheet } from '../components/hub-chrome/ChatSheet.js';
 import { useChat } from '../components/hub-chrome/useChat.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
+import { Avatar } from '../components/hub-shared/Avatar.js';
+import { CurrencyIcon } from '../components/hub-chrome/CurrencyPicker.js';
+import { useCurSel } from '../lib/currency.js';
 import { RcIcon } from '../components/hub-shared/RcIcon.js';
 import { HUB_SHELL } from '../components/hub-chrome/layout.js';
 import { TIER_ORDER, progressPercent, TierIcon } from '../components/hub-shared/vipTier.js';
-import avatarPlaceholder from '../assets/games-and-rewards/avatar-placeholder.jpg';
 
 /**
  * Design token references (issue #498, T3b "heavy group" light threading) — unlike `ProfileHub.tsx`
@@ -77,6 +79,11 @@ interface Props {
    *  this component's contract states plainly what drives its guest-safe treatment. */
   loggedIn: boolean;
   username: string | null;
+  /** The signed-in player's own stored avatar (ticket 2026-09-15#1 item 1) — the VIP card's avatar
+   *  circle, same shared `<Avatar>` component ProfileHub.tsx already uses for its own header disc.
+   *  `undefined` is fine (a guest, or before the App-level fetch resolves) — `Avatar` itself
+   *  defaults to `'default'`. */
+  avatarId?: AvatarId;
   balance: number;
   /** Logo / Games nav → Home. */
   onHome(): void;
@@ -147,7 +154,8 @@ const VOLUME_MILESTONES: Record<'Emerald' | 'Diamond', number[]> = {
  *     actually is. No duplicate "RC WAGERED" stat is added to the Rewards page itself; the real
  *     figure ships once, on ProfileHub, per that addition.
  */
-export function RewardsHubScreen({ token, loggedIn, username, balance, onHome, onOpenProfile, onOpenRewards, onOpenAffiliate }: Props) {
+export function RewardsHubScreen({ token, loggedIn, username, avatarId, balance, onHome, onOpenProfile, onOpenRewards, onOpenAffiliate }: Props) {
+  const { curSel } = useCurSel();
   const [liveBalance, setLiveBalance] = useState(balance);
   // Issue #414: the Menu overlay's own open/close/reveal-origin state.
   const menu = useMenuOverlay();
@@ -221,13 +229,11 @@ export function RewardsHubScreen({ token, loggedIn, username, balance, onHome, o
               style={{ filter: loggedIn ? 'none' : 'blur(7px)', userSelect: loggedIn ? 'auto' : 'none', transition: 'filter 260ms ease' }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingBottom: '16px' }}>
-                <div
-                  style={{
-                    width: '44px', height: '44px', borderRadius: '999px', flex: '0 0 44px',
-                    backgroundColor: RC.surface, backgroundImage: `url(${avatarPlaceholder})`,
-                    backgroundSize: 'cover', backgroundPosition: 'center',
-                  }}
-                />
+                {/* Ticket 2026-09-15#1 item 1: this screen never received the App-level `avatarId`
+                    state at all (unlike ProfileHub's own header disc) — the real shared `<Avatar>`
+                    component, same call shape ProfileHub.tsx already uses, replaces what had been
+                    a hardcoded placeholder image with no per-user logic whatsoever. */}
+                <Avatar avatarId={avatarId} username={username} size={44} />
                 <span
                   data-testid="rewards-username"
                   style={{ fontFamily: 'Arial, Helvetica, sans-serif', flex: '1 1 auto', fontSize: '20px', fontWeight: 'bold', letterSpacing: '0.4px', color: RC.text }}
@@ -277,6 +283,7 @@ export function RewardsHubScreen({ token, loggedIn, username, balance, onHome, o
                 claimableBalance={snapshot?.claimableBalance ?? 0}
                 claiming={claiming}
                 onClaim={handleClaim}
+                curSel={curSel}
               />
 
               <VolumeBonusCard tier={tier} xpMonthly={snapshot?.xpMonthly ?? 0} />
@@ -340,9 +347,9 @@ export function RewardsHubScreen({ token, loggedIn, username, balance, onHome, o
 /* ── Rakeback card — locked at Unranked (verbatim locked treatment), real claimable above it. ── */
 
 function RakebackCard({
-  tier, loggedIn, claimableBalance, claiming, onClaim,
+  tier, loggedIn, claimableBalance, claiming, onClaim, curSel,
 }: {
-  tier: VipTier; loggedIn: boolean; claimableBalance: number; claiming: boolean; onClaim(): void;
+  tier: VipTier; loggedIn: boolean; claimableBalance: number; claiming: boolean; onClaim(): void; curSel: string;
 }) {
   // Unranked earns a 0% rakeback rate (`packages/core/src/rewards.ts`), so `claimableBalance` can
   // only ever be 0 at this tier — nothing can accrue and nothing can ever be claimed. Render the
@@ -365,12 +372,21 @@ function RakebackCard({
         {locked ? (
           <CardStatusRow testid="rewards-rakeback-locked" text="Wager to unlock" />
         ) : (
-          <div style={{ marginTop: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
-            <RcIcon size={15} />
+          // Ticket 2026-09-15#1 items 2+3: the RC-coin+bare-number pair is now CurrencyIcon+$ (the
+          // same swap Open Games/#572 and Recent Games/#576 already made), and this row is routed
+          // through the SAME CardStatusRow the locked state uses instead of a second div that
+          // duplicated its height/marginTop without enforcing them — that duplication is exactly
+          // what let this row's real height drift off the shared 24px design target.
+          <CardStatusRow testid="rewards-claimable-row">
+            <CurrencyIcon sym={curSel} size={15} />
+            {/* `IconUSD` (CurrencyIcon's USD face) bakes its own literal "$" glyph into the SVG as
+                an actual <text> node — so the testid stays scoped to just this span (matching
+                GamesCarousel's own AmountFigure/ProfileHub's own amount-span convention), not the
+                row as a whole, or `.textContent` would read "$$25" for USD specifically. */}
             <span data-testid="rewards-claimable" style={{ fontFamily: "'Space Grotesk', Arial, Helvetica, sans-serif", fontSize: '20px', fontWeight: 700, color: RC.green }}>
-              {claimableBalance.toLocaleString('en-US')}
+              ${claimableBalance.toLocaleString('en-US')}
             </span>
-          </div>
+          </CardStatusRow>
         )}
       </div>
       {locked ? (
@@ -433,11 +449,14 @@ function VolumeBonusCard({ tier, xpMonthly }: { tier: VipTier; xpMonthly: number
 /* ── (issue #435), so duplicating this markup per card is exactly the drift to avoid. ── */
 
 /** The one-line status/unlock row under a card's illustration, at the design's fixed 24px height.
- *  Callers supply the copy (and their own testid) — locked cards both read "Wager to unlock". */
-function CardStatusRow({ testid, text }: { testid: string; text: string }) {
+ *  Callers supply either plain copy (`text` — both locked cards read "Wager to unlock") or their
+ *  own `children` (ticket 2026-09-15#1 item 3 — the Rakeback card's unlocked icon+amount row now
+ *  routes through this SAME wrapper instead of duplicating its `height`/`marginTop` in a second,
+ *  unenforced div, which is exactly what let that row's height drift off the shared 24px). */
+function CardStatusRow({ testid, text, children }: { testid: string; text?: string; children?: React.ReactNode }) {
   return (
-    <div data-testid={testid} style={{ marginTop: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '24px' }}>
-      <span style={{ fontSize: '13px', fontWeight: 600, color: RC.text, textAlign: 'center' }}>{text}</span>
+    <div data-testid={testid} style={{ marginTop: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', height: '24px' }}>
+      {children ?? <span style={{ fontSize: '13px', fontWeight: 600, color: RC.text, textAlign: 'center' }}>{text}</span>}
     </div>
   );
 }
