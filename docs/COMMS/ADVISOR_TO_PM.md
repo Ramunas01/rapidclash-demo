@@ -1,6 +1,48 @@
 # Advisor → PM (append-only; newest on top)
 
-### 2026-09-15#1 — Designer handoff on Rewards: avatar sync, RC→currency-icon, claim-button shift — all 3 confirmed real, plus a HIGH-PRIORITY finding that isn't in the ticket at all: a live Pepe image on the Rewards page            [READY TO TICKET — items 1-3 are all small; the Pepe finding needs Owner's eyes before anything else]
+### 2026-09-15#2 — Designer handoff on the footer in light mode: all 6 items confirmed real, one asset already sits in the repo unused, one item needs a scoping split, and the closing ask (repo-wide hex sweep) is real and bigger than this ticket — 15 files, not 1            [READY TO TICKET — 5 of 6 items are a clean single PR; the Events link and the repo-wide sweep both need their own follow-up]
+From: Advisor   Re: Designer's spec for the footer's light-mode theming (screenshots in `design-ref/D11/`), verified against `HubFooter.tsx`/`index.css`/`HubRibbon.tsx` (`origin/main`@`b0af5f8`)
+
+All 6 numbered items are confirmed real, exactly as described — this is the cleanest, most directly-actionable ticket of the batch so far, no corrections needed to Designer's own diagnosis anywhere. Two things worth flagging beyond the 6 items themselves: the "also" item (Events/Tournaments) has a real scoping wrinkle Designer's message doesn't fully spell out, and the closing ask (grep the whole tree for hardcoded hex) is a genuinely large, separate piece of work once actually run — 15 files, not the 1 this ticket touches.
+
+---
+
+## Items 1, 4, 5, 6 — confirmed, all the same shape: a hardcoded literal where a token belongs
+
+- **Item 1 (gradient band):** `HubFooter.tsx:128-136` — `linear-gradient(to bottom, rgba(26,26,46,0)...rgba(26,26,46,1))`. `26,26,46` is `#1A1A2E` — the DARK theme's `--rc-surface` value specifically, hardcoded as a literal RGB rather than reading the token, confirmed via direct comparison to `index.css`'s own `--rc-surface: #1a1a2e` (dark block). **Fix:** replace with `color-mix(in srgb, var(--rc-surface) X%, transparent)` at the same 4 stops Designer cites, matching the `color-mix()` pattern already used elsewhere in this codebase for identical fade gradients (e.g. `HubToolbar.tsx`'s own nav-fade, `ProfileHub.tsx`'s match-list fade).
+- **Item 4 (JOIN THE COMMUNITY heading):** `HubFooter.tsx:150` — `className="... text-white"`. **Fix:** `text-[var(--rc-text)]`.
+- **Item 5 (link text):** `HubFooter.tsx:177` — `className="... text-foreground"`. Traced `text-foreground` to its actual source: `index.css`'s `--foreground: 240 5% 96%` (`#f4f4f5`, confirmed) is defined identically at both its dark-mode declarations with **no `[data-theme='light']` override anywhere in the file** (confirmed via exhaustive grep — every `--foreground`/`*-foreground` token in this file is dark-only). This is the exact same "legacy shadcn token never re-themed" class of bug already fixed on `HubToolbar.tsx`/`HubRibbon.tsx` earlier this week — Designer's own framing ("the same class of bug we've had on the menu, the nav and the game hubs") is accurate. **Fix, matching established precedent exactly:** swap `text-foreground` → `text-[var(--rc-text)]` locally in this file, not a global edit to the `--foreground` token itself (that token is used elsewhere in the app too; re-theming it globally is a bigger, separate change than this ticket, and every prior fix of this exact bug class has been scoped to the one file/component actually affected, not the shared token).
+- **Item 6 (disclaimer/copyright/18+):** `HubFooter.tsx:196/202/210` — three separate `style={{ color: '#83838F' }}` literals. `#83838F` is `--rc-muted`'s DARK value specifically (confirmed) — light theme's `--rc-muted` is `#6e6e7a` (confirmed), a different value entirely, so this isn't even a "theme-invariant on purpose" case, it's the wrong literal for half the app's users. **Fix:** all three become `color: 'var(--rc-muted)'`.
+
+## Item 3 — logo swap: confirmed, and the dark-mode asset already exists in the repo, unused
+
+`HubFooter.tsx:146` renders a single hardcoded `<img src={wordmark} .../>` (`assets/brand/rapidclash-wordmark.webp`, the white-text variant) with no theme logic at all. **The exact fix already exists as a working pattern one file away:** `HubRibbon.tsx` (confirmed, `:2-5, 75-76`) already imports BOTH `rapidclash-wordmark.webp` (white) AND `rapidclash-wordmark-dark.png` (dark) — **the second asset is already sitting in `assets/brand/`, already committed, already used correctly in the header** — and swaps via `useTheme().resolved === 'light' ? <dark> : <light>`. **Fix:** copy this exact pattern into `HubFooter.tsx` verbatim (same two imports, same `useTheme()` call, same ternary) — zero new assets, zero new logic to design, pure reuse of an already-proven pattern in the sibling component Designer explicitly points at ("the header already switches correctly... reuse whatever it's doing").
+
+## Item 2 — footer background: confirmed already correct, no change needed
+
+Designer's own note: "Looks like this one is already right." Confirmed: `HubFooter.tsx:145` uses the `bg-surface` Tailwind class, which `tailwind.config.js` maps directly to `var(--rc-surface)` (no `hsl()` wrap, already theme-aware — same fact this session has confirmed multiple times for this exact class). Nothing to do here.
+
+---
+
+## "Also" — Tournaments → Events: the label fix is cheap, making it a real (functional) link is a separate, bigger piece of work
+
+Confirmed: `HubFooter.tsx:73` has `{ label: 'Tournaments' }` with no `real` marker (inert, matches every other placeholder link in this file). Designer's own citation (`goCat4`, opening the Events category) is a specific, technical reference to an actual working destination in the prototype — not just a copy note. **Splitting this into two pieces, since they're very different sizes of work:**
+- **Cheap, ships in the same PR as the 6 items above:** rename the label from "Tournaments" to "Events," keeping it inert (matching every other non-`real` link's current treatment) — a pure content correction against the prototype's own copy.
+- **Bigger, needs its own scoping, not silently bundled in:** making this an ACTUAL functional link (matching `goCat4`'s real behavior) requires new plumbing `HubFooter`'s two current `real` links (`games`/`rewards`) don't need, because those two already have a matching callback (`onGames`/`onRewards`) passed at every call site. An "Events category" destination has no equivalent callback threaded anywhere today — `HubFooter` is rendered from **6 different call sites** (`HomeHub`, `ProfileHub`, `RewardsHub`, `AffiliateHub`, `GameHub`, and `MenuOverlay`'s own footer instance), none of which currently pass anything category-aware. `MenuOverlay.tsx` already solved this exact problem for its own EARN-section rows via an `onOpenGamesCategory` prop — the same shape could extend to `HubFooter`, but that's a real, multi-call-site plumbing change, not a one-line addition. **Recommend:** ship the label fix now, scope "make Events real" as its own follow-up ticket.
+
+---
+
+## The closing ask — grep the whole tree for hardcoded hex — is real, and genuinely bigger than "the Footer": 15 files, not 1
+
+Ran Designer's own suggested grep (`#FFFFFF|#0B0B0B|#1A1A2E|#E9E9F0`) across every screen/component file, excluding the obvious SVG-icon-fill false positives (path/circle/rect fills, which legitimately stay fixed colors in both themes — e.g. the social icons' white glyphs on a fixed-purple background, which Designer's own ticket confirms should stay unchanged). **Even after excluding those, 41 real hits remain across 15 files:** `RpsHub.tsx`, `DiceHub.tsx`, `RewardsHub.tsx`, `ProfileHub.tsx`, `HubToolbar.tsx`, `GameHub.tsx`, `AffiliateHub.tsx`, `MenuOverlay.tsx`, `AuthModal.tsx` (now dead code, retired by the bottom-sheet rebuild — worth deleting rather than fixing), `vipTier.tsx`, `ChatSheet.tsx`, `CurrencyPicker.tsx`, `BringARival.tsx`, `GamesCarousel.tsx`, `HomeHub.tsx`.
+
+**Important caveat before anyone runs a mechanical find-replace across this list:** not every hit is a bug. Some of these are genuinely, deliberately theme-invariant — e.g. `DiceHub.tsx`'s own die-cube face colors, documented in that file's own comments as "a fixed light isometric gradient in EITHER theme (a physical die stays white)," a real, already-reasoned decision from earlier this migration, not an oversight. **This needs the same file-by-file human triage this ticket just did for the Footer, not a sweep-and-replace** — recommend scoping it as its own dedicated pass (one ticket, 15 files, each needs its own quick "is this a bug or a deliberate invariant?" read), separate from today's Footer fix, given the size.
+
+---
+
+**Ask:** items 1-6 (minus the "make Events real" half) are a clean, small, single PR — no corrections to Designer's own diagnosis needed anywhere in the numbered list. "Make Events real" and "the repo-wide hex sweep" both need their own follow-up tickets, sized very differently from the rest of this one.
+
+---
 From: Advisor   Re: Designer's spec for 3 Rewards fixes (screenshot in `design-ref/D10/`), verified against `RewardsHub.tsx`/`App.tsx` (`origin/main`@`02af50a`)
 
 All three of Designer's items are confirmed real, and two of them are direct reuse of patterns already built this week. But investigating item 1 (the stale avatar) surfaced something outside the scope of anything Designer asked about, more important than the ticket itself: **the Rewards VIP card's avatar isn't reading a stale copy of anything — it's a hardcoded, permanent image of Pepe the Frog**, live in production right now, on a page every registered user sees. Flagging this first and separately, since it's a real compliance/brand-risk question this codebase has explicitly reasoned about before (and excluded Pepe from, on purpose) — not a routine bug fix.
