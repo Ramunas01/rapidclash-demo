@@ -288,6 +288,25 @@ export const SCREENS: ScreenDef[] = [
     },
   },
   {
+    id: 'mines-related',
+    title: 'Mines — Related Games section (heading, arrows, rail), signed out',
+    // Ticket 2026-09-15#12 (D18): Designer's own closing ask — this section wasn't in the harness
+    // at all (the old related-rail implementation it's replacing had nothing worth capturing
+    // against). Unlike the searching/result states, no PLAY/login is needed — the prototype's own
+    // `openGame(k)` (unlike `startMines`/`startRps`/`startDice`) has no `loggedIn` gate at all, and
+    // the related-games markup itself sits outside every `sc-if` in the idle/live/result block, so
+    // it's already visible the moment the tile opens. `scrollFrames: true` below (not a manual
+    // scroll in here) — the section sits well below the fold (~1868px down a 3159px-tall page,
+    // confirmed via direct measurement), and the capture pipeline's own scroll-reset (`prototype.ts`,
+    // `[data-rc-scroll]?.scrollTo(0,0)`, right after every `driveProto` runs) would silently undo
+    // any scroll attempted here — `scrollFrames` is the harness's own supported mechanism for
+    // below-the-fold content (Rewards/Account already use it), not a driveProto-side workaround.
+    scrollFrames: true,
+    driveProto: async (page) => {
+      await openGameTile(page, 'game-mines');
+    },
+  },
+  {
     id: 'rps-idle',
     title: 'RPS — idle (pre-match), signed out',
     driveProto: async (page) => {
