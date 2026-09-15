@@ -413,6 +413,18 @@ describe('ProfileHubScreen', () => {
       expect(calledOffset5).toBe(true);
     });
 
+    // Ticket 2026-09-15#5: the collapsed-list fade above VIEW MORE faded to --rc-sunken instead
+    // of --rc-bg — a no-op bug in dark theme (the two tokens are byte-identical, #0b0b0b) that
+    // became visible once light mode gave them different values, matching the prototype's own
+    // `gamesFadeOpacity` fade (Full Spec.html:1451), which uses --rc-bg.
+    it('the collapsed-list fade above VIEW MORE reads var(--rc-bg), not var(--rc-sunken)', async () => {
+      render(<ProfileHubScreen {...baseProps()} />);
+      await waitFor(() => expect(screen.getByTestId('profile-match-m1')).toBeInTheDocument());
+      const fade = screen.getByTestId('profile-matches-fade');
+      expect(fade.style.background).toContain('var(--rc-bg)');
+      expect(fade.style.background).not.toContain('var(--rc-sunken)');
+    });
+
     // Ticket 2026-09-13#8 item 1: the empty state's copy AND styling both changed to match
     // HomeHub.tsx's own `home-events-empty` treatment verbatim (Full Spec.html:244-246) — the
     // established correct precedent for this exact pattern, which this row never got before.
