@@ -1,5 +1,40 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-15#5 — Account page's Recent Games fade in light mode: confirmed real, and the actual mechanism is more precise than "hardcoded grey" — it's the wrong TOKEN, not a literal, which is exactly why dark mode never caught it            [READY TO TICKET — one line, one file; closing ask (Rewards + elsewhere) checked, nothing else found]
+From: Advisor   Re: Designer's spec for the Account page's Recent Games fade in light mode (screenshots in `design-ref/D13/`), verified against `ProfileHub.tsx`/`index.css`
+
+Confirmed real, last item in the collection. Designer's own guess at the mechanism ("presumably the dark gradient with its alpha, or a hardcoded mid-tone") is reasonable but not quite it — there's no literal anywhere in this code. **It's a `color-mix()` gradient built from a token, exactly like the prototype's own construction — just the wrong token**, and the reason this has never been visible before is genuinely interesting: in dark mode, the wrong token and the right token happen to resolve to the identical value, so the bug has been a no-op until light mode existed to tell them apart.
+
+---
+
+## The bug: `ProfileHub.tsx:599` fades to `--rc-sunken`, not `--rc-bg` — and only light mode can tell the difference
+
+`ProfileHub.tsx:599`:
+```js
+background: `linear-gradient(to bottom, transparent 0%, color-mix(in srgb, ${RC.sunken} 72%, transparent) 34%, color-mix(in srgb, ${RC.sunken} 94%, transparent) 66%, color-mix(in srgb, ${RC.sunken} 99%, transparent) 100%)`,
+```
+`RC.sunken` is `var(--rc-sunken)` (`ProfileHub.tsx:73`). The prototype's own citation (`Full Spec.html:1448`, confirmed) fades to `var(--rc-bg)` instead — a different token. **Why this was invisible until now, confirmed via `index.css`:**
+- **Dark theme (`:81/83` and `:206/208`):** `--rc-bg: #0b0b0b` and `--rc-sunken: #0b0b0b` — **identical values.** Using the wrong token in dark mode produces a byte-identical gradient to using the right one. This is a genuine no-op bug, not a masked one.
+- **Light theme (`:257/259`):** `--rc-bg: #ffffff` (white) but `--rc-sunken: #d3d3dd` (light grey) — **these diverge for the first time**, and `#d3d3dd` is exactly the "grey" Designer's screenshot shows. The bug was always there; light mode is what made it visible.
+
+**One small correction to Designer's own citation, functionally immaterial:** the prototype's actual final gradient stop (`Full Spec.html:1448`) is `color-mix(in srgb, var(--rc-bg) 99%, transparent) 100%`, not literally `var(--rc-bg) 100%` as quoted in the ticket — a 1%-opacity difference from fully solid, imperceptible, and already exactly what this file's own 3 stops already do relative to `RC.sunken` (72%/94%/99%, matching the prototype's 72%/94%/99% exactly). The only real divergence is the token itself.
+
+**Fix:** add `bg: 'var(--rc-bg)'` to the `RC` object (`:71-79`, no such entry exists yet — every other token this file uses is already there), then swap all three `${RC.sunken}` references at `:599` to `${RC.bg}`. Dark mode is provably unaffected (identical values); light mode fades to white as the prototype specifies. The VIEW MORE button's own fade-in/out (opacity, 380ms) is untouched — confirmed already correct, matching Designer's own note.
+
+## The closing ask — checked Rewards and the rest of the tree; nothing else uses this pattern
+
+Searched for the same shape (`linear-gradient(to bottom` across every screen/component file): three hits total.
+- `ProfileHub.tsx:599` — this bug, above.
+- `HubFooter.tsx:147` — already fixed correctly in `#587` (fades via `var(--rc-surface)`, not `--rc-sunken`).
+- `GamesCarousel.tsx:656-657` — a different mechanism entirely (`mask-image`, solid black/alpha, not a background-color fade) for the Open Games list's own edge-fade; theme-invariant by construction, not a token bug.
+
+**`RewardsHub.tsx` has no collapsed-list/VIEW MORE affordance at all** — confirmed via direct read, no `hasMorePages`/`Expanded`/"VIEW MORE" pattern anywhere in that file. Designer's "check Rewards" ask doesn't apply; there's nothing there to have this bug in the first place.
+
+---
+
+**Ask:** one-line-plus-one-object-key fix, single file, no scoping questions. This closes out D01-D13 — no packages left unprocessed.
+
+---
 ### 2026-09-15#4 — Open Games section in light mode: same class of bug as the footer, 4 of 5 items confirmed exactly as diagnosed, item 5's tier-icon half is a real correction — it's not a color bug at all            [READY TO TICKET — one file, one PR; item 5's handle-color half folds into item 4, its tier-icon half needs nothing]
 From: Advisor   Re: Designer's spec for the Open Games section in light mode (screenshots in `design-ref/D12-2/`), verified against `GamesCarousel.tsx`/`vipTier.tsx` and the live deployed page directly (`https://rapidclash-65hoiaulbq-uc.a.run.app`, `origin/main`@`9ebf568`)
 
