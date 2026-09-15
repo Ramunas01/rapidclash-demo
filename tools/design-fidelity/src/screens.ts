@@ -88,6 +88,30 @@ export async function openGameTile(page: Page, needle: string): Promise<void> {
 }
 
 /**
+ * Arm the cheapest stake chip (`$1`, `data-rc-bettrack="1"`'s first child) then tap PLAY
+ * (`data-nav="play"`, shared across Mines/RPS/Dice) — the two real preconditions `startRps`/
+ * `startMines`/`startDice` check before a search can begin (`this.state.loggedIn` and
+ * `this.state.minesBet`; the caller must already be signed in via `signIn` above). Ticket
+ * 2026-09-15#9 (D16): needed to reach the `rpsMatch === 'searching'` state at all — none of the
+ * existing idle screens press PLAY, they only open the tile (`openGameTile`'s own comment).
+ */
+export async function armStakeAndPlay(page: Page): Promise<void> {
+  const chipClicked = await page.evaluate(() => {
+    const chip = document.querySelector<HTMLElement>('[data-rc-bettrack="1"] div[role="button"]');
+    if (chip) { chip.click(); return true; }
+    return false;
+  });
+  if (!chipClicked) throw new Error('design-fidelity: prototype bet chip ([data-rc-bettrack="1"] div[role=button]) not found');
+  await page.waitForTimeout(200);
+  const playClicked = await page.evaluate(() => {
+    const play = document.querySelector<HTMLElement>('[data-nav="play"]');
+    if (play) { play.click(); return true; }
+    return false;
+  });
+  if (!playClicked) throw new Error('design-fidelity: prototype PLAY button ([data-nav="play"]) not found');
+}
+
+/**
  * Sign in through the auth sheet. `submitAuth` in the prototype just sets `loggedIn: true`
  * unconditionally and closes the sheet — no validation — so we fill the fields for realism
  * then submit via the button next to the password input.
@@ -276,6 +300,25 @@ export const SCREENS: ScreenDef[] = [
       await page.getByTestId('home-tile-rps').click();
       await page.waitForSelector('[data-testid="hub-play"]', { timeout: 10_000 });
       await page.waitForTimeout(400);
+    },
+  },
+  {
+    id: 'rps-searching',
+    title: 'RPS — matchmaking search (blurred/scrambling opponent bar), signed in',
+    // Ticket 2026-09-15#9 (D16): Designer's own closing ask — this state wasn't in the eight
+    // screenshots the harness already had. `startRps` (`Full Spec.html:3291`) sets
+    // `rpsMatch:'searching'` synchronously on PLAY (blur + the 70ms name/avatar scramble start
+    // immediately, not after the 680ms the ticket text describes — that 680ms is the first leg of
+    // the nested setTimeout delaying the 'found' transition, 680+1700=2380ms total) and holds it
+    // until 'found' fires at that 2380ms mark. Captured well inside that window (armFreeze pins
+    // `Math.random`, so the scramble's own random picks are deterministic — the same reproducible
+    // frame every run, not a race against the live timers).
+    signedIn: true,
+    driveProto: async (page) => {
+      await signIn(page);
+      await openGameTile(page, 'game-rps');
+      await armStakeAndPlay(page);
+      await page.waitForTimeout(500); // inside the 0–2380ms searching window, comfortably clear of 'found'
     },
   },
   {
