@@ -1,5 +1,46 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-15#8 — Rakeback CLAIM button's dim looks two-toned: the visual complaint is plausible, but Designer's specific mechanism claim doesn't match the code, and there's no prototype reference for what "correctly dimmed" should even look like — flagging as an open question, not guessing at a fix            [NOT READY TO TICKET — need a design call before writing code, see below]
+From: Advisor   Re: Designer's D15 report (Rakeback CLAIM button reads as two shades when dimmed), verified against `RewardsHub.tsx`/`index.css` and the prototype's own source
+
+Checked precisely, because the two things Designer's message asserts as fact don't hold up: (1) that opacity is currently applied to the face only, not the ledge, and (2) that fixing this means "put the opacity on the outer element" — that's already exactly what the code does. What's real is the underlying visual observation (the button can look two-toned when dimmed) — but the mechanism is a genuine design question (two intentionally different purples, dimmed together, getting more visually distinct as they fade), not an implementation bug with an obvious fix.
+
+---
+
+## What the code actually does — opacity is already on the single outer element, confirmed live since `#570` (2026-09-13)
+
+`RewardsHub.tsx:397-406`, the Rakeback CLAIM `<button>`:
+```js
+style={{
+  background: RC.purple, borderRadius: '999px', padding: '11px 0', ...
+  opacity: claimableBalance <= 0 ? 0.5 : 1, boxShadow: RC.claimShadow,
+  transition: 'box-shadow 200ms ease, transform 120ms ease',
+}}
+```
+`opacity` is set once, on the SAME `<button>` element that owns both `background` and `boxShadow` — there's no inner face div, no overlay, nothing for the ledge to be excluded from. Confirmed via `git blame` this exact line has been unchanged since `aff9b84` (`2026-09-13#5`, `#570`) — live for two days before this report, not a recent regression. **CSS `opacity` on an element is defined to composite the ENTIRE rendered box as one group — background, box-shadow, borders, children — there's no mechanism by which a browser would apply it to a background fill but skip that same element's own box-shadow.** Re-applying "opacity on the outer element" as the fix would be a no-op; it's already there.
+
+## The real mechanism: face and ledge are two deliberately different purples, and dimming makes the gap between them more visible — not less
+
+`RC.purple` (the face) is `var(--brand-purple)` → `#8B45F0`. `RC.claimShadow` (the ledge) is `var(--rc-theme-toggle-active-shadow)` → `0 5px 0 #5F27B8` — a **different, darker purple**, confirmed via `index.css:138/217` (theme-invariant, identical in both blocks — Designer's "same in both themes" expectation already holds). This lighter-face/darker-ledge pairing is this app's standing 3D-button convention, used identically on JOIN (`GamesCarousel.tsx`), PLAY (`GameHub.tsx`'s own `PLAY_BTN_SHADOW = '0 5px 0 #5F27B8'`), and WALLET — not something invented for this button. **The hue gap between `#8B45F0` and `#5F27B8` is exactly as large at full opacity as it is at 50%** — opacity scales both toward the same backdrop (`RC.surface`) by the identical factor — but a fixed absolute color difference reads as a harder "seam" once both colors have moved much closer to a neutral, low-contrast state. That's a real, understandable perceptual effect. It is not evidence of an opacity-scoping bug.
+
+## The Volume Bonus comparison doesn't hold up as a reference — it's never the purple button at all
+
+Designer's check asks to compare against "the Volume Bonus button next to it, which is one consistent shade." Confirmed: `VolumeBonusCard` (`:419-445`) unconditionally renders `<LockedClaimRow />` in **every** state — a flat, dark `RC.sunken` (`#0B0B0B`-family) pill with a same-family shadow token, by explicit design (this file's own comment, `:437-441`, citing issue #435: a second independently-clickable CLAIM here would duplicate the one pooled `claimableBalance`, so Volume Bonus never gets its own live purple button at all). It's "one consistent shade" because it's a single-hue neutral component, structurally incapable of the two-hue seam a purple 3D button can show — not proof that the SAME two-hue button would look uniform if only the code were fixed.
+
+## No prototype reference exists for what "correctly dimmed" looks like — this is our own affordance, not a fidelity gap
+
+Checked the prototype's own claim button construction (`Full Spec.html:1043`, `claimShadow: '0 5px 0 #5F27B8'` at `:4537`): **there is no `opacity` or disabled/dimmed treatment anywhere in the prototype's own CLAIM markup** — it's a static export with one, always-active state. The "dim when `claimableBalance <= 0`" behavior is something this app added on its own (a reasonable real-product affordance: don't show a live-looking purple CLAIM that currently does nothing) — it has no prototype source to check the fix against, unlike almost everything else in this collection.
+
+---
+
+**This needs a design call, not a code guess.** Three real options, genuinely different outcomes:
+1. **Leave it as-is.** Once the mechanism is understood (two intentional purples, not a bug), the seam may read as an acceptable side-effect of a deliberately two-toned button — not every dimmed state needs to erase all internal contrast.
+2. **Give the disabled CLAIM its own flat, single-hue treatment** (matching `LockedClaimRow`'s pattern: one neutral color for both face and ledge, no purple hue-split) — a real visual change to the disabled button's identity, not just an opacity tweak.
+3. **Keep the purple family, but use the SAME hex for both face and shadow specifically in the disabled state** — cheapest code change, stays purple-toned, removes the seam by removing the hue gap rather than by changing opacity math.
+
+**Ask:** none of these is implied by the ticket as written (the described bug/fix doesn't match the code), so recommend routing this back through Owner/Designer with the corrected mechanism above before anyone writes code — picking one of the three unilaterally would be guessing at a design preference, not fixing a bug.
+
+---
 ### 2026-09-15#7 — Rewards shows the wallet pill while logged out: real, and the actual cause is neither of Designer's two guesses — it's a one-line missing prop, on a component whose default fails the wrong way            [READY TO TICKET — one line for the confirmed bug; a second, small hardening fix recommended alongside it]
 From: Advisor   Re: Designer's D14 report (Rewards header shows wallet+balance when logged out), verified against `HubRibbon.tsx`/`RewardsHub.tsx`/`App.tsx`
 

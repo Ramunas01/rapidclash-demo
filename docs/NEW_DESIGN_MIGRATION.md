@@ -262,9 +262,22 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 - **Races (24h / Weekly) + Leaderboards tab** — genuine new feature work (time-windowed leaderboard logic), sized separately from the lobby/stake-entry/play/result → single-screen-with-phases collapse.
 - **lobby / stake-entry / play / result → one screen, internal phases** — real architectural simplification (`App.tsx:1292-1317` today).
 
-## Status snapshot — 2026-09-15 (D01-D13 fully shipped, deployed, and closed; D14 — a new package, Rewards showing the wallet pill logged-out — now queued) — supersedes all earlier snapshots in this section
+## Status snapshot — 2026-09-15 (D01-D13 fully shipped, deployed, and closed; D14 — Rewards wallet pill while logged out — queued and ready; D15 — Rakeback CLAIM's two-toned dim — investigated, NOT ready to ticket, needs a design call first) — supersedes all earlier snapshots in this section
 
-**2026-09-15#7 — NEW, current top item, not yet dispatched. Designer's D14: the Rewards header shows the wallet pill + balance while logged out; it should show LOGIN/SIGNUP. Full detail: `ADVISOR_TO_PM.md` 2026-09-15#7.**
+**2026-09-15#8 — NEW, top item, NOT ready to ticket — needs a design decision before any code is written. Designer's D15: the Rakeback CLAIM button looks two-toned (lighter face, darker ledge) when dimmed. Full detail: `ADVISOR_TO_PM.md` 2026-09-15#8.**
+
+- **Designer's specific mechanism claim doesn't match the code.** The described bug (opacity applied to the face only, missing the box-shadow ledge) isn't what's happening — `opacity` is already set once, on the single `<button>` that owns both `background` and `boxShadow`, confirmed unchanged since `#570` (2026-09-13, two days before this report). CSS opacity composites an element's entire rendered box as one group; there's no way for a browser to apply it to a background fill while skipping that same element's own box-shadow. Re-applying "opacity on the outer element" would be a no-op — it's already there.
+- **The real mechanism: two intentionally different purples, dimmed together.** The face (`--brand-purple`, `#8B45F0`) and the ledge (`--rc-theme-toggle-active-shadow`, `#5F27B8`) are deliberately different shades — the same lighter-face/darker-ledge 3D-button convention used on JOIN, PLAY, and WALLET elsewhere in the app. The absolute hue gap is identical at full opacity and at 50% — dimming doesn't change it — but it becomes more visually prominent as a "seam" once both colors sit closer to the neutral surface.
+- **The Volume Bonus comparison doesn't hold up as a reference.** Confirmed: Volume Bonus's CLAIM is *never* the purple pill — it unconditionally renders the shared, flat, single-hue `LockedClaimRow` in every state (an explicit design decision, issue #435, since Volume Bonus has no independently-claimable balance of its own). It looks uniform because it's structurally a different, single-hue component, not proof the purple button can be made uniform by fixing an opacity bug.
+- **No prototype reference exists for this at all.** Checked the prototype's own CLAIM markup (`Full Spec.html:1043`) — it has no `opacity`/disabled treatment whatsoever; the dim-when-unclaimable behavior is this app's own added affordance, with no prototype source of truth to check a fix against.
+
+**Recommending 3 real options rather than guessing at one:** leave as-is (now that the mechanism is understood), give the disabled CLAIM its own flat single-hue treatment (a real visual change), or make face/shadow the same hex specifically in the disabled state (stays purple, removes the seam, cheapest change). **This needs an actual Designer/Owner call, not a unilateral pick** — routed back rather than ticketed.
+
+**Advisor next:** available, no open thread. **PM next:** nothing to dispatch on D15 until Owner/Designer picks an option; D14 (below) is ready to dispatch now.
+
+---
+
+**2026-09-15#7 — NEW, ready to ticket, not yet dispatched. Designer's D14: the Rewards header shows the wallet pill + balance while logged out; it should show LOGIN/SIGNUP. Full detail: `ADVISOR_TO_PM.md` 2026-09-15#7.**
 
 - **Confirmed real, and the actual cause is neither of Designer's two guesses (no second header, no mock-user leak).** `RewardsHub.tsx:210` simply never threads its already-available `loggedIn` prop into its `<HubRibbon>` call — `HubRibbon`'s own `loggedIn = true` default then silently renders the signed-in branch. The rest of the file uses `loggedIn` correctly (VIP blur, Rakeback lock, `CardStatusRow`); this one call was the only gap.
 - **Fix:** one prop, `loggedIn={loggedIn}`, matching how `HomeHub`/`GameHub` already call the same shared component.
