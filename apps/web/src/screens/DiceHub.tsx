@@ -312,10 +312,13 @@ function DiceBoard({ gameState, legalMoves, onMove, playerId, opponentId, histor
       <DiceTrack pos="opp" roll={oppRoll} numColor={oppNumColor} light={light} active />
       <DiceScaleRow />
       <DiceTrack pos="mine" roll={myRoll} numColor={myNumColor} light={light} active />
+      {/* Ticket 2026-09-15#10 item 1: a "You rolled higher!"/"Rolling…" status paragraph used to
+          render here — zero occurrences anywhere in the prototype's own source (confirmed by
+          direct grep), leftover copy this app added on its own. Removing it also frees up the
+          vertical space the history belt's pills needed — this fixed-266px box had 5 flex children
+          fighting for ~199px of content height with no shrink-0 guard; the status text was the
+          overflow culprit for the pills rendering under their intended 28px size. */}
       <DiceHistoryBelt history={history} light={light} />
-      <p data-testid="dice-status" className="text-center text-xs font-medium text-muted-foreground">
-        {resolved ? (meWon ? 'You rolled higher!' : oppWon ? 'Opponent rolled higher' : 'Tie') : 'Rolling…'}
-      </p>
     </div>
   );
 }

@@ -92,14 +92,22 @@ describe('DiceHubScreen', () => {
     const onMakeMove = vi.fn();
     render(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState: preRoll(), legalMoves: ['reveal'], onMakeMove })} />);
     expect(onMakeMove).toHaveBeenCalledWith('reveal'); // auto-fired
-    expect(screen.getByTestId('dice-status').textContent).toMatch(/rolling/i);
   });
 
-  it('Resolved: reveals both rolls and the winner', () => {
+  it('Resolved: reveals both rolls', () => {
     render(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState: resolved() })} />);
     expect(screen.getByTestId('hub-board').textContent).toContain('50.00'); // my roll
     expect(screen.getByTestId('hub-board').textContent).toContain('30.00'); // opponent
-    expect(screen.getByTestId('dice-status').textContent).toMatch(/you rolled higher/i);
+  });
+
+  // Ticket 2026-09-15#10 item 1: the "You rolled higher!"/"Rolling…" status paragraph is gone —
+  // zero occurrences anywhere in the prototype's own source, leftover copy this app added on its
+  // own. This replaces the old assertions on that element's text.
+  it('the "Rolling…"/"You rolled higher!" status text is gone — zero occurrences anywhere in the prototype', () => {
+    const { rerender } = render(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState: preRoll(), legalMoves: ['reveal'] })} />);
+    expect(screen.queryByTestId('dice-status')).toBeNull();
+    rerender(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState: resolved() })} />);
+    expect(screen.queryByTestId('dice-status')).toBeNull();
   });
 
   // Ticket 2026-09-12#5 item 3 (ADVISOR_TO_PM.md): the cube must be visible (not just a flash once
