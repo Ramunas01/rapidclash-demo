@@ -1745,7 +1745,6 @@ Dropped via `docs/COMMS/from-advisor/footer-gap-fix.md` (promoted verbatim). Con
 Fix: move `<HubFooter>` out of each page's gapped flex container to sit as a sibling after it (mirroring `HubToolbar`'s existing outside-the-gap pattern), drop the footer's own redundant `mt-4`. The gradient div's `mt-6` becomes the entire, single, page-independent leading gap — matching the design's one `margin-top:24px` value everywhere. Touches `HubFooter.tsx` + all 4 call sites (`HomeHub.tsx`, `GameHub.tsx`, `ProfileHub.tsx`, `RewardsHub.tsx`).
 
 Ask: one PR, 5 files. Ping once up — will check all four pages' gap against each other this time, not just against the design once.
->>>>>>> origin/main
 
 ### 2026-08-14#6 — Footer: 4 drift fixes            [OPEN — single file, single PR]
 From: Advisor   Re: Designer request, verified against the code + the original design transcription
