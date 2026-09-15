@@ -262,7 +262,7 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 - **Races (24h / Weekly) + Leaderboards tab** — genuine new feature work (time-windowed leaderboard logic), sized separately from the lobby/stake-entry/play/result → single-screen-with-phases collapse.
 - **lobby / stake-entry / play / result → one screen, internal phases** — real architectural simplification (`App.tsx:1292-1317` today).
 
-## Status snapshot — 2026-09-15 (D01-D13 shipped/deployed/closed; D14 shipped+deployed; D15 postponed; D16 shipped+deployed; D17 item 1 shipped+deployed, item 2 needed zero code; D18 shipped, deploy pending; D19 — bet-warning ring + Dice red correction — item 1 ready to ticket, item 2 needs an explicit Owner reconfirm before the loss-fill half is built, since it reverses D17's same-day answer) — supersedes all earlier snapshots in this section
+## Status snapshot — 2026-09-15 (D01-D13 shipped/deployed/closed; D14 shipped+deployed; D15 postponed; D16 shipped+deployed; D17 item 1 shipped+deployed, item 2 needed zero code; D18 shipped+deployed live at `rapidclash-00114-gbp`; D19 — bet-warning ring + Dice red correction — item 1 ready to ticket, item 2 needs an explicit Owner reconfirm before the loss-fill half is built, since it reverses D17's same-day answer) — supersedes all earlier snapshots in this section
 
 **2026-09-15#13 — NEW, top item. Designer's D19: the bet-warning ring wraps the whole panel instead of just the bet-track pill, plus a correction to Dice's loss colour (`#FF3E5E`, not the `#DC2626` D17 used). Full detail: `ADVISOR_TO_PM.md` 2026-09-15#13.**
 
@@ -277,7 +277,7 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 
 ---
 
-**2026-09-15#12 — shipped in `#608`, merged; not yet deployed (PM held it, checking with Owner on timing — real work, not urgent-urgent).** Designer's D18: the Related Games section needed a full rebuild — nothing in the prior version matched the prototype. Full detail: `ADVISOR_TO_PM.md` 2026-09-15#12.
+**2026-09-15#12 — shipped in `#608`, deployed live at `rapidclash-00114-gbp` (confirmed independently via `gcloud run services describe`, matching PM's report exactly).** Designer's D18: the Related Games section needed a full rebuild — nothing in the prior version matched the prototype. Full detail: `ADVISOR_TO_PM.md` 2026-09-15#12.
 
 - **Full rebuild shipped** — heading (bolt icon + standard headline style), two arrow buttons (safe `popId` press-pop, exact `nudgeRel`/mute-threshold math), snap-scroll rail, correctly-shaped cards with plain tile-art fills. PM independently re-verified every citation before implementing, including one detail worth double-checking that held up exactly: the mute threshold is strictly `scrollLeft > 20` for "active," matching the prototype's own source precisely.
 - **`relatedGamesFor(currentGameId, liveIds)` added to `gameSort.ts`** — the one genuinely new piece, a pure function unit-tested directly against all 3 of Designer's own worked examples (Mines/Dice/Chess) plus edge-case coverage (no dupes, current game always excluded, correct `playable` flag on both head and tail slots) — 6 tests, all green on the first attempt.
@@ -285,7 +285,7 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 - **The stale `COMING_SOON` 'dice' entry** flagged in the ticket was cleaned up in the same PR.
 - **Closing ask (harness capture)** — already done at ticket time, no further work needed.
 
-Held for Owner's timing call, same pattern as recent fixes. **Advisor next:** available, no open thread. **PM next:** deploy once Owner confirms timing.
+Deployed at Owner's request — took unusually long (~20+ min stuck on source upload specifically) but completed clean, no retry needed. **Advisor next:** available, no open thread. **PM next:** nothing pending on this ticket.
 
 ---
 
