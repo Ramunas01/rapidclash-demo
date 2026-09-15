@@ -262,7 +262,7 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 - **Races (24h / Weekly) + Leaderboards tab** — genuine new feature work (time-windowed leaderboard logic), sized separately from the lobby/stake-entry/play/result → single-screen-with-phases collapse.
 - **lobby / stake-entry / play / result → one screen, internal phases** — real architectural simplification (`App.tsx:1292-1317` today).
 
-## Status snapshot — 2026-09-15 (D01-D13 fully shipped, deployed, and closed; D14 — Rewards wallet pill while logged out — shipped in #598, merged, not yet deployed; D15 — Rakeback CLAIM's two-toned dim — forwarded to Designer by Owner, postponed) — supersedes all earlier snapshots in this section
+## Status snapshot — 2026-09-15 (D01-D13 fully shipped, deployed, and closed; D14 — Rewards wallet pill while logged out — shipped in #598, deployed live at `rapidclash-00112-2z8`; D15 — Rakeback CLAIM's two-toned dim — forwarded to Designer by Owner, postponed) — supersedes all earlier snapshots in this section
 
 **2026-09-15#8 — NEW, top item, NOT ready to ticket — needs a design decision before any code is written. Designer's D15: the Rakeback CLAIM button looks two-toned (lighter face, darker ledge) when dimmed. Full detail: `ADVISOR_TO_PM.md` 2026-09-15#8.**
 
@@ -277,14 +277,14 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 
 ---
 
-**2026-09-15#7 — shipped in `#598`, merged; not yet deployed (PM held it, checking with Owner on timing — real bug but not urgent-urgent).** Designer's D14: the Rewards header showed the wallet pill + balance while logged out. Full detail: `ADVISOR_TO_PM.md` 2026-09-15#7.
+**2026-09-15#7 — shipped in `#598`, deployed live at `rapidclash-00112-2z8` (confirmed independently via `gcloud run services describe`, matching PM's report exactly). Bot-crowd restarted, all bots online, `/open-challenges` verified live.** Designer's D14: the Rewards header showed the wallet pill + balance while logged out. Full detail: `ADVISOR_TO_PM.md` 2026-09-15#7.
 
 - **Confirmed real, and the actual cause was neither of Designer's two guesses (no second header, no mock-user leak).** `RewardsHub.tsx:210` never threaded its already-available `loggedIn` prop into its `<HubRibbon>` call — `HubRibbon`'s own `loggedIn = true` default silently rendered the signed-in branch. The rest of the file used `loggedIn` correctly (VIP blur, Rakeback lock, `CardStatusRow`); this one call was the only gap.
 - **Fix shipped:** `loggedIn={loggedIn}` added to that call, matching how `HomeHub`/`GameHub` already call the same shared component.
 - **The recommended hardening shipped too:** `HubRibbon.tsx:74`'s own default flipped `loggedIn = true` → `loggedIn = false` (fail closed, not fail open). PM independently traced `ProfileHub`/`AffiliateHub`'s own identical gap and confirmed both are structurally auth-only (`ProfileHub`'s `token: string` is non-nullable by type; `AffiliateHub` always shows a real balance unconditionally) — passed `loggedIn` explicitly at both so the default flip doesn't turn their dormant gap into an actual regression. **All 5 `<HubRibbon>` call sites in the app now pass `loggedIn` explicitly** — independently verified via diff, matches PM's report exactly.
 - **Closing ask (Games, Menu, Chat) confirmed clean** — no changes needed there.
 
-**Advisor next:** available, no open thread. **PM next:** deploy once Owner confirms timing.
+Deployed at Owner's request. Nothing else pending on this ticket.
 
 ---
 
