@@ -262,7 +262,7 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 - **Races (24h / Weekly) + Leaderboards tab** — genuine new feature work (time-windowed leaderboard logic), sized separately from the lobby/stake-entry/play/result → single-screen-with-phases collapse.
 - **lobby / stake-entry / play / result → one screen, internal phases** — real architectural simplification (`App.tsx:1292-1317` today).
 
-## Status snapshot — 2026-09-15 (D01-D13 fully shipped, deployed, and closed; D14 — Rewards wallet pill while logged out — queued and ready; D15 — Rakeback CLAIM's two-toned dim — investigated, NOT ready to ticket, needs a design call first) — supersedes all earlier snapshots in this section
+## Status snapshot — 2026-09-15 (D01-D13 fully shipped, deployed, and closed; D14 — Rewards wallet pill while logged out — shipped in #598, merged, not yet deployed; D15 — Rakeback CLAIM's two-toned dim — forwarded to Designer by Owner, postponed) — supersedes all earlier snapshots in this section
 
 **2026-09-15#8 — NEW, top item, NOT ready to ticket — needs a design decision before any code is written. Designer's D15: the Rakeback CLAIM button looks two-toned (lighter face, darker ledge) when dimmed. Full detail: `ADVISOR_TO_PM.md` 2026-09-15#8.**
 
@@ -271,20 +271,20 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 - **The Volume Bonus comparison doesn't hold up as a reference.** Confirmed: Volume Bonus's CLAIM is *never* the purple pill — it unconditionally renders the shared, flat, single-hue `LockedClaimRow` in every state (an explicit design decision, issue #435, since Volume Bonus has no independently-claimable balance of its own). It looks uniform because it's structurally a different, single-hue component, not proof the purple button can be made uniform by fixing an opacity bug.
 - **No prototype reference exists for this at all.** Checked the prototype's own CLAIM markup (`Full Spec.html:1043`) — it has no `opacity`/disabled treatment whatsoever; the dim-when-unclaimable behavior is this app's own added affordance, with no prototype source of truth to check a fix against.
 
-**Recommending 3 real options rather than guessing at one:** leave as-is (now that the mechanism is understood), give the disabled CLAIM its own flat single-hue treatment (a real visual change), or make face/shadow the same hex specifically in the disabled state (stays purple, removes the seam, cheapest change). **This needs an actual Designer/Owner call, not a unilateral pick** — routed back rather than ticketed.
+**Recommending 3 real options rather than guessing at one:** leave as-is (now that the mechanism is understood), give the disabled CLAIM its own flat single-hue treatment (a real visual change), or make face/shadow the same hex specifically in the disabled state (stays purple, removes the seam, cheapest change). **This needs an actual Designer/Owner call, not a unilateral pick** — routed back rather than ticketed. **Update: Owner forwarded the question to Designer directly and asked to keep it postponed — nothing for anyone to build until that answer comes back.**
 
-**Advisor next:** available, no open thread. **PM next:** nothing to dispatch on D15 until Owner/Designer picks an option; D14 (below) is ready to dispatch now.
+**Advisor next:** available, no open thread. **PM next:** nothing to do here until Designer answers.
 
 ---
 
-**2026-09-15#7 — NEW, ready to ticket, not yet dispatched. Designer's D14: the Rewards header shows the wallet pill + balance while logged out; it should show LOGIN/SIGNUP. Full detail: `ADVISOR_TO_PM.md` 2026-09-15#7.**
+**2026-09-15#7 — shipped in `#598`, merged; not yet deployed (PM held it, checking with Owner on timing — real bug but not urgent-urgent).** Designer's D14: the Rewards header showed the wallet pill + balance while logged out. Full detail: `ADVISOR_TO_PM.md` 2026-09-15#7.
 
-- **Confirmed real, and the actual cause is neither of Designer's two guesses (no second header, no mock-user leak).** `RewardsHub.tsx:210` simply never threads its already-available `loggedIn` prop into its `<HubRibbon>` call — `HubRibbon`'s own `loggedIn = true` default then silently renders the signed-in branch. The rest of the file uses `loggedIn` correctly (VIP blur, Rakeback lock, `CardStatusRow`); this one call was the only gap.
-- **Fix:** one prop, `loggedIn={loggedIn}`, matching how `HomeHub`/`GameHub` already call the same shared component.
-- **A second, recommended fix beyond what was asked:** `HubRibbon`'s own default (`loggedIn = true`) fails OPEN — the wrong direction for an auth-gated shared component. Two other call sites (`ProfileHub`/`AffiliateHub`) have the same missing-prop gap but aren't reachable while logged out today (confirmed via the actual nav gate, `App.tsx`'s `onAccountTap`) — rather than add new plumbing to harden two unreachable cases, recommended flipping the shared default to `loggedIn = false`, closing the whole failure class for any future call site at zero cost to today's behavior.
-- **Closing ask (Games, Menu, Chat) run:** Games already passes `loggedIn` explicitly on both hubs. Menu and Chat are pure overlays with no header or auth display of their own — nothing to check independently; they inherit whichever hub is mounted underneath them.
+- **Confirmed real, and the actual cause was neither of Designer's two guesses (no second header, no mock-user leak).** `RewardsHub.tsx:210` never threaded its already-available `loggedIn` prop into its `<HubRibbon>` call — `HubRibbon`'s own `loggedIn = true` default silently rendered the signed-in branch. The rest of the file used `loggedIn` correctly (VIP blur, Rakeback lock, `CardStatusRow`); this one call was the only gap.
+- **Fix shipped:** `loggedIn={loggedIn}` added to that call, matching how `HomeHub`/`GameHub` already call the same shared component.
+- **The recommended hardening shipped too:** `HubRibbon.tsx:74`'s own default flipped `loggedIn = true` → `loggedIn = false` (fail closed, not fail open). PM independently traced `ProfileHub`/`AffiliateHub`'s own identical gap and confirmed both are structurally auth-only (`ProfileHub`'s `token: string` is non-nullable by type; `AffiliateHub` always shows a real balance unconditionally) — passed `loggedIn` explicitly at both so the default flip doesn't turn their dormant gap into an actual regression. **All 5 `<HubRibbon>` call sites in the app now pass `loggedIn` explicitly** — independently verified via diff, matches PM's report exactly.
+- **Closing ask (Games, Menu, Chat) confirmed clean** — no changes needed there.
 
-**Advisor next:** available, no open thread. **PM next:** dispatch the fix.
+**Advisor next:** available, no open thread. **PM next:** deploy once Owner confirms timing.
 
 ---
 
