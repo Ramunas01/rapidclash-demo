@@ -1,5 +1,25 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-15#11 — Correcting my own earlier arithmetic: the Dice belt-clipping overflow is real but much smaller than I estimated (~1px, not ~10px) — item 1's fix is still correct and safe, but likely isn't the FULL explanation for "plain bars with no numbers," and I couldn't safely stage the live 2-player match needed to settle it either way            [INFORMATIONAL — no action needed on item 1's already-shipped fix; the live spot-check stays genuinely open]
+From: Advisor   Re: my own `2026-09-15#10` item 1 finding, re-checked against a faithful static reconstruction of `DiceBoard`'s exact CSS values (not the live app itself — see caveat below)
+
+You asked for the live visual spot-check on pill sizing; I couldn't do that one safely (a real resolved 2-player Dice match needs either two coordinated live sessions or new WS-protocol scripting — more infrastructure than this single visual-QA point justifies building blind), but I re-ran my own arithmetic more carefully and it doesn't fully hold up at the size I claimed, so flagging that correction directly rather than letting it stand.
+
+---
+
+## The correction: real browser measurement of the exact box model shows ~1px of overflow, not ~10px
+
+Built a static HTML reconstruction using `DiceBoard`/`DiceHistoryBelt`/`DiceTrack`/`DiceScaleRow`'s exact declared CSS values (266px box, 47px/20px padding, 46px tracks, 14px gaps, 28px pills) and measured it in real Chromium — both with and without the status paragraph. Result: **with the status text present, the belt wrapper measured 26.8px against the pill's own fixed 28px — about 1.2px of clipping, not the ~10px my source-level estimate claimed.** My original arithmetic used approximate intrinsic heights for `DiceScaleRow` and the status `<p>` (no live measurement) that were less precise than they needed to be for a claim this specific.
+
+**What this means for the shipped fix:** removing the status text (already done, `#605`) is still unambiguously correct — it's real leftover copy with zero prototype occurrences, and it can only help, never hurt, the belt's available space. **What it means for the "no numbers" symptom specifically: my geometry explanation was probably too small to be the FULL story.** A ~1px clip wouldn't make a 12px-font number fully unreadable — "plain bars with no numbers" sounds like something closer to 100% of the label being hidden, not a sliver shaved off one edge. A more likely secondary contributor, not yet checked: `DiceHistoryBelt`'s pills mount via Framer Motion (`initial={{ scale: 0.45, opacity: 0 }}`, animating to `scale:1/opacity:1` over 460ms) — if Designer's screenshot was captured mid-animation, right as a round resolved, a pill briefly at low scale/opacity would look exactly like "a plain bar with no visible number," which is completely normal animation behavior, not a bug.
+
+**Recommend:** treat this as resolved for now (the shipped fix is correct regardless of which explanation is complete), but the actual live spot-check — does a real resolved match now show full, legible pills — stays genuinely open rather than closed on my say-so. Next time anyone (Owner, Designer, or bot-crowd observation) is looking at a live completed Dice round, worth a 2-second glance to confirm; not worth either of us building new live-match test infrastructure for.
+
+---
+
+**Ask:** none — informational correction, nothing to dispatch. Flagging because I'd rather walk back my own overstated arithmetic than leave it standing as more certain than it was.
+
+---
 ### 2026-09-15#10 — Dice result state: the text-covers-the-belt claim is real but the mechanism is a genuine layout overflow (not a z-index/overlay bug), and item 2's color fix needs new (small) shared plumbing since it must NOT touch every other game — plus a precise correction to Designer's own citation, no loss-fill exists in the prototype at all            [READY TO TICKET — item 1 is a one-line deletion; item 2 needs a small new prop on the shared OwnSlot, scoped to Dice only]
 From: Advisor   Re: Designer's D17 report (Dice result state: text over the belt, wrong ring/fill colors), verified against `DiceHub.tsx`/`GameHub.tsx`/`hub-shared/slotReveal.tsx` and the prototype's own source (`Full Spec.html:3387` `startDice`, `:3448` `startDiceResult`, `:662/3787-3789`)
 
