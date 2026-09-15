@@ -386,7 +386,11 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
 
   return (
     <div className={HUB_SHELL}>
-      <HubRibbon balance={liveBalance} onLogo={onHome} onWallet={onOpenProfile} />
+      {/* Ticket 2026-09-15#7 hardening: HubRibbon's `loggedIn` default flipped to `false`
+          (fail closed). This screen's own `token: string` (non-nullable) prop already guarantees
+          it's only ever rendered for a real authenticated user, so `loggedIn` is always true here
+          — passed explicitly now that the default no longer fails open on our behalf. */}
+      <HubRibbon balance={liveBalance} onLogo={onHome} onWallet={onOpenProfile} loggedIn />
 
       <main data-testid="profile-hub">
         <div className="mx-auto flex max-w-md flex-col gap-5">

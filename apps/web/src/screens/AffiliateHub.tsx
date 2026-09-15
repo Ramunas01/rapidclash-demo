@@ -267,7 +267,11 @@ export function AffiliateHubScreen({ username, balance, onBack, onHome, onOpenPr
 
   return (
     <div className={HUB_SHELL}>
-      <HubRibbon balance={balance} onLogo={onHome} onWallet={onOpenProfile} />
+      {/* Ticket 2026-09-15#7 hardening: HubRibbon's `loggedIn` default flipped to `false`
+          (fail closed). This screen's own `balance: number` (a real figure, unconditionally
+          shown, same design intent as ProfileHub.tsx) means it's only ever meant for an
+          authenticated user — passed explicitly now that the default no longer fails open. */}
+      <HubRibbon balance={balance} onLogo={onHome} onWallet={onOpenProfile} loggedIn />
 
       <main data-testid="affiliate-hub">
         <div className="mx-auto flex max-w-md flex-col px-4 pb-8 pt-1.5">

@@ -363,6 +363,21 @@ describe('RewardsHubScreen — guest-safe (token: null, ticket 2026-09-13#5)', (
     expect(screen.getByTestId('rewards-xp').textContent).toBe('0');
     expect(screen.getByTestId('rewards-tier-current').textContent).toContain('UNRANKED');
   });
+
+  // Ticket 2026-09-15#7: the <HubRibbon> call here never threaded its own loggedIn prop through,
+  // so HubRibbon's old `loggedIn = true` default silently rendered the signed-in wallet pill for
+  // a logged-out guest — the header itself contradicted every other guest-safe signal on the page.
+  it('the header shows the LOGIN/SIGNUP pill for a guest, not the signed-in wallet balance', () => {
+    render(<RewardsHubScreen {...baseProps({ token: null, loggedIn: false, username: null })} />);
+    expect(screen.getByTestId('hub-login-chip')).toBeInTheDocument();
+    expect(screen.queryByTestId('hub-balance')).toBeNull();
+  });
+
+  it('the header shows the real wallet balance for a genuinely logged-in viewer', () => {
+    render(<RewardsHubScreen {...baseProps({ loggedIn: true })} />);
+    expect(screen.getByTestId('hub-balance')).toBeInTheDocument();
+    expect(screen.queryByTestId('hub-login-chip')).toBeNull();
+  });
 });
 
 // Ticket 2026-09-13#5, item 3 — the VIP card's blur wrapper.
