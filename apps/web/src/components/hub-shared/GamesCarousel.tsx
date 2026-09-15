@@ -630,13 +630,19 @@ export function GamesCarousel({ challengesByGame, nameByGame, balance, onTake, o
               </div>
             </div>
           )}
+          {/* Ticket 2026-09-15#4 item 1: was a hardcoded #FFFFFF — genuinely invisible (white-on-
+              white), not miscolored, once the rest of the app went light. */}
           {isNotRace && (
-            <span style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '19px', fontWeight: 'bold', letterSpacing: '0.6px', color: '#FFFFFF' }}>{title}</span>
+            <span data-testid="games-carousel-section-title" style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '19px', fontWeight: 'bold', letterSpacing: '0.6px', color: 'var(--rc-text)' }}>{title}</span>
           )}
+          {/* Ticket 2026-09-15#4 item 2: pill background/text were hardcoded #1A1A2E/#FFFFFF (the
+              DARK theme's --rc-surface/--rc-text values spelled out literally). The pulse dot's
+              #34D399 is left untouched — matches the prototype's own theme-invariant
+              var(--rc-green), same value in both themes, a deliberate status-green, not a miss. */}
           {isOpenGames && (
-            <div data-testid="games-carousel-live" style={{ display: 'flex', alignItems: 'center', gap: '7px', background: '#1A1A2E', borderRadius: '999px', padding: '6px 13px', flex: '0 0 auto', whiteSpace: 'nowrap' }}>
+            <div data-testid="games-carousel-live" style={{ display: 'flex', alignItems: 'center', gap: '7px', background: 'var(--rc-surface)', borderRadius: '999px', padding: '6px 13px', flex: '0 0 auto', whiteSpace: 'nowrap' }}>
               <span aria-hidden="true" className="animate-pulse" style={{ width: '7px', height: '7px', borderRadius: '999px', background: '#34D399', display: 'block', flex: '0 0 7px' }} />
-              <span style={{ fontFamily: "'Space Grotesk', Arial, Helvetica, sans-serif", fontSize: '12px', fontWeight: 700, color: '#FFFFFF', whiteSpace: 'nowrap' }}>{liveCount} LIVE</span>
+              <span style={{ fontFamily: "'Space Grotesk', Arial, Helvetica, sans-serif", fontSize: '12px', fontWeight: 700, color: 'var(--rc-text)', whiteSpace: 'nowrap' }}>{liveCount} LIVE</span>
             </div>
           )}
         </div>
@@ -668,25 +674,39 @@ export function GamesCarousel({ challengesByGame, nameByGame, balance, onTake, o
                     key={g.uid}
                     data-testid={`games-carousel-row-${g.uid}`}
                     data-match-id={g.matchId}
-                    style={{ height: '74px', boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: '11px', background: g.zebra ? '#1A1A2E' : 'transparent', borderRadius: g.zebra ? '26px' : '0px', padding: '0 16px', flex: '0 0 74px' }}
+                    // Ticket 2026-09-15#4 item 3: was g.zebra ? '#1A1A2E' : 'transparent' — the
+                    // DARK theme's --rc-surface literal, exact match to the prototype's own
+                    // `bg: i % 2 === 0 ? var(--rc-surface) : transparent`.
+                    style={{ height: '74px', boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: '11px', background: g.zebra ? 'var(--rc-surface)' : 'transparent', borderRadius: g.zebra ? '26px' : '0px', padding: '0 16px', flex: '0 0 74px' }}
                   >
+                    {/* #1B1B2E fallback thumbnail bg is a deliberate literal (Designer's own named
+                        exception, Full Spec.html:312) — left untouched. */}
                     <div style={{ width: '38px', height: '52px', borderRadius: '8px', flex: '0 0 38px', backgroundColor: '#1B1B2E', backgroundImage: TILE_ART[g.gameId] ? `url(${TILE_ART[g.gameId]})` : undefined, backgroundSize: 'cover', backgroundPosition: 'center' }} />
                     <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-                      <div data-testid={`games-carousel-game-${g.uid}`} style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '14px', fontWeight: 'bold', letterSpacing: '0.4px', color: '#F2F2F6', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {/* Ticket 2026-09-15#4 item 4: was hardcoded #F2F2F6 — a near-white grey
+                          Designer's own screenshot flagged, not literally #FFFFFF as first
+                          reported, but the same white-on-light failure either way. */}
+                      <div data-testid={`games-carousel-game-${g.uid}`} style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '14px', fontWeight: 'bold', letterSpacing: '0.4px', color: 'var(--rc-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {g.gameName}
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
                         <TierIcon tier={g.ownerTier} size={14} />
+                        {/* Ticket 2026-09-15#4 item 4/item 5's handle half: was hardcoded #FFFFFF.
+                            Item 5's "tier icon missing on striped rows" half above is NOT a color
+                            bug — TierIcon renders null for 'Unranked' hosts by design (2026-09-13#7
+                            precedent), unrelated to row striping; confirmed via live-DOM check
+                            across 11 rows, no code change needed for that half. */}
                         <span
                           data-testid={`games-carousel-host-${g.uid}`}
-                          style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '12px', fontWeight: 'bold', letterSpacing: '0.4px', color: '#FFFFFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                          style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '12px', fontWeight: 'bold', letterSpacing: '0.4px', color: 'var(--rc-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
                         >
                           {g.host}
                         </span>
                       </div>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', flex: '0 0 auto' }}>
-                      <span style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '9px', fontWeight: 'bold', letterSpacing: '1.2px', color: '#FFFFFF' }}>STAKE:</span>
+                      {/* Ticket 2026-09-15#4 item 4: was hardcoded #FFFFFF. */}
+                      <span style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '9px', fontWeight: 'bold', letterSpacing: '1.2px', color: 'var(--rc-text)' }}>STAKE:</span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                         <AmountFigure value={g.stake.toLocaleString('en-US')} cur={curForRow(g.matchId, loggedIn, curSel)} testId={`games-carousel-stake-${g.uid}`} />
                       </div>

@@ -178,6 +178,61 @@ describe('GamesCarousel — OPEN GAMES tab: real data (signed in)', () => {
   });
 });
 
+// Ticket 2026-09-15#4: the OPEN GAMES tab had #1A1A2E/#FFFFFF written in as literals instead of
+// var(--rc-surface)/var(--rc-text), the same bug class already fixed on the footer (2026-09-15#2).
+describe('GamesCarousel — OPEN GAMES section light-mode tokens (ticket 2026-09-15#4)', () => {
+  it('item 1: the OPEN GAMES section title reads var(--rc-text), not a hardcoded #FFFFFF', () => {
+    render(<GamesCarousel {...baseProps()} />);
+    const title = screen.getByTestId('games-carousel-section-title');
+    expect(title.textContent).toBe('OPEN GAMES');
+    expect(title.style.color).toBe('var(--rc-text)');
+  });
+
+  it('item 2: the LIVE pill background/text read the themed tokens; the pulse dot stays the fixed theme-invariant green', () => {
+    render(<GamesCarousel {...baseProps({ challengesByGame: manyChallenges(2) })} />);
+    const pill = screen.getByTestId('games-carousel-live');
+    expect(pill.style.background).toBe('var(--rc-surface)');
+    const countText = within(pill).getByText(/LIVE$/);
+    expect(countText.style.color).toBe('var(--rc-text)');
+    const dot = pill.querySelector('[aria-hidden="true"]') as HTMLElement;
+    expect(dot.style.background).toBe('rgb(52, 211, 153)'); // #34D399, unchanged
+  });
+
+  it('item 3: alternating rows read var(--rc-surface)/transparent, not the hardcoded #1A1A2E', () => {
+    render(<GamesCarousel {...baseProps({ challengesByGame: manyChallenges(4) })} />);
+    const rows = screen.getAllByTestId(/^games-carousel-row-/);
+    expect(rows.length).toBeGreaterThan(1);
+    const backgrounds = rows.map((r) => r.style.background);
+    expect(backgrounds).toContain('var(--rc-surface)');
+    expect(backgrounds).toContain('transparent');
+    expect(backgrounds.some((bg) => bg.includes('#1A1A2E') || bg.includes('26, 26, 46'))).toBe(false);
+  });
+
+  it('item 4 (+ item 5\'s handle half): game name, host handle, and STAKE label all read var(--rc-text), not hardcoded whites/near-whites', () => {
+    const challengesByGame = { coinflip: [challenge('c1', 'alice', 5, 100)] };
+    render(<GamesCarousel {...baseProps({ challengesByGame })} />);
+    const row = rowByMatchId('c1');
+    const gameName = within(row).getByTestId(/^games-carousel-game-/);
+    const host = within(row).getByTestId(/^games-carousel-host-/);
+    const stakeLabel = within(row).getByText('STAKE:');
+    for (const el of [gameName, host, stakeLabel]) {
+      expect(el.style.color).toBe('var(--rc-text)');
+    }
+  });
+
+  it('item 5: tier-icon presence tracks ownerTier, not row striping — Unranked correctly renders no icon regardless of zebra state (2026-09-13#7 precedent, not a color bug)', () => {
+    const challengesByGame = {
+      coinflip: [challenge('c1', 'alice', 5, 100, 'Unranked')],
+      mines: [challenge('m1', 'bob', 25, 100, 'Bronze')],
+    };
+    render(<GamesCarousel {...baseProps({ challengesByGame })} />);
+    const unrankedHost = within(rowByMatchId('c1')).getByTestId(/^games-carousel-host-/);
+    const rankedHost = within(rowByMatchId('m1')).getByTestId(/^games-carousel-host-/);
+    expect(unrankedHost.previousElementSibling?.tagName.toLowerCase()).not.toBe('svg');
+    expect(rankedHost.previousElementSibling?.tagName.toLowerCase()).toBe('svg');
+  });
+});
+
 describe('GamesCarousel — OPEN GAMES tab: real data (logged out)', () => {
   it('polls the public snapshot and JOIN captures matchId/gameId/stake for the auth wall', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({
