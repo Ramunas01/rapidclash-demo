@@ -22,7 +22,10 @@ export const TILE_ART: Record<string, string> = {
 /** Breadth: games not (yet) returned by /games render as dimmed, non-playable "coming soon"
  *  tiles. The whole house canon is a PvP-redefinition target (CHARTER / GAME_REDEFINITION) —
  *  never shown in house form, never a playable house route (invariant #1). */
-export const COMING_SOON = ['baccarat', 'keno', 'hilo', 'dice', 'roulette'];
+// Ticket 2026-09-15#12: 'dice' removed — stale, Dice has been fully playable all day this
+// session. Harmless while it lingered (every real consumer filters against the live roster, not
+// this list directly), but worth the one-line correction while in this exact area.
+export const COMING_SOON = ['baccarat', 'keno', 'hilo', 'roulette'];
 
 export function titleCase(id: string): string {
   return id.charAt(0).toUpperCase() + id.slice(1);

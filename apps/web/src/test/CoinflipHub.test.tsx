@@ -838,9 +838,12 @@ describe('CoinflipHubScreen — related rail (item 5: all games, coming-soon inc
   it('includes a live game (playable, routes) and a coming-soon game (dimmed, inert); excludes self', async () => {
     const onSelectGame = vi.fn();
     render(<CoinflipHubScreen {...baseProps({ onSelectGame })} />);
-    // Live PvP related → a button that routes via onSelectGame.
-    const blackjack = await screen.findByTestId('hub-related-blackjack');
-    expect(blackjack.tagName).toBe('BUTTON');
+    // Ticket 2026-09-15#12: Blackjack occupies a fixed rail slot unconditionally (Designer's own
+    // 3-slot head), so it renders immediately as a dimmed placeholder before the live /games fetch
+    // resolves, then upgrades to a real button once its playable status is confirmed — wait for
+    // that upgrade rather than asserting on the very first (pre-fetch) render.
+    await waitFor(() => expect(screen.getByTestId('hub-related-blackjack').tagName).toBe('BUTTON'));
+    const blackjack = screen.getByTestId('hub-related-blackjack');
     fireEvent.click(blackjack);
     expect(onSelectGame).toHaveBeenCalledWith(expect.objectContaining({ id: 'blackjack' }));
     // Coming-soon house game → present but NOT a button (inert), per the roster.
