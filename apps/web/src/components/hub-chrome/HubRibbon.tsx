@@ -11,7 +11,10 @@ interface Props {
   onLogo(): void;
   /** Tap the auth control → account / wallet (or the sign-in modal when logged out). */
   onWallet(): void;
-  /** When false, the control is a Login/Sign-up pill — never a fake balance (default true). */
+  /** When false, the control is a Login/Sign-up pill — never a fake balance.
+   *  Ticket 2026-09-15#7: default is `false` (fail closed, not fail open) — a caller that forgets
+   *  to thread this through renders the safe logged-out pill, not a fake signed-in balance for a
+   *  guest. Every call site must pass this explicitly for a logged-in render. */
   loggedIn?: boolean;
   /** Anonymous guest session (issue #267) — the balance control becomes a plain, non-tappable
    *  "Demo" badge (no real Wallet screen to open: nothing is persisted), and the logo becomes a
@@ -71,7 +74,7 @@ interface Props {
  * default (a deliberate PM call — see that component's own doc comment). The purple WALLET
  * sub-pill stays right here, unchanged, still calling `onWallet` directly.
  */
-export function HubRibbon({ balance, onLogo, onWallet, loggedIn = true, isGuest = false }: Props) {
+export function HubRibbon({ balance, onLogo, onWallet, loggedIn = false, isGuest = false }: Props) {
   const { resolved } = useTheme();
   const logoUrl = resolved === 'light' ? logoDarkBgUrl : logoLightBgUrl;
   return (

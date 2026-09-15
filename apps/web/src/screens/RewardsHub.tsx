@@ -207,7 +207,12 @@ export function RewardsHubScreen({ token, loggedIn, username, avatarId, balance,
 
   return (
     <div className={HUB_SHELL}>
-      <HubRibbon balance={liveBalance} onLogo={onHome} onWallet={onOpenProfile} />
+      {/* Ticket 2026-09-15#7: this call never threaded its own already-available `loggedIn` prop
+          through — HubRibbon's `loggedIn = true` default silently rendered the signed-in wallet
+          pill for a logged-out guest. Rewards is the only guest-accessible screen with this gap
+          (HomeHub/GameHub already pass it; ProfileHub/AffiliateHub's own gap is dormant since
+          both are auth-only, unreachable by a guest at all). */}
+      <HubRibbon balance={liveBalance} onLogo={onHome} onWallet={onOpenProfile} loggedIn={loggedIn} />
 
       <main data-testid="rewards-hub">
         <div className="mx-auto flex max-w-md flex-col">
