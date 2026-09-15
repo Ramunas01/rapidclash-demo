@@ -1,5 +1,33 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-15#4 — Open Games section in light mode: same class of bug as the footer, 4 of 5 items confirmed exactly as diagnosed, item 5's tier-icon half is a real correction — it's not a color bug at all            [READY TO TICKET — one file, one PR; item 5's handle-color half folds into item 4, its tier-icon half needs nothing]
+From: Advisor   Re: Designer's spec for the Open Games section in light mode (screenshots in `design-ref/D12-2/`), verified against `GamesCarousel.tsx`/`vipTier.tsx` and the live deployed page directly (`https://rapidclash-65hoiaulbq-uc.a.run.app`, `origin/main`@`9ebf568`)
+
+Same root cause as the footer ticket (`2026-09-15#2`): this component has `#1A1A2E`/`#FFFFFF` written into it as literals instead of `var(--rc-surface)`/`var(--rc-text)`, so light mode never applies. Items 1-4 are confirmed exactly as Designer described, all in one file (`GamesCarousel.tsx`), all the same fix. Item 5 needed a live-DOM check to settle: its "handle missing on plain rows" half is real (same bug as item 4), but its "tier icon missing on striped rows" half doesn't hold up — checked 11 live rows directly, tier-icon presence tracks `ownerTier === 'Unranked'` (which renders nothing, by long-standing, already-documented design), completely independent of which rows are striped. Not a color bug, nothing to fix there.
+
+---
+
+## Items 1-4 — confirmed exactly as described, all in `GamesCarousel.tsx`, all the same literal-instead-of-token bug
+
+- **Item 1 (OPEN GAMES heading gone):** `GamesCarousel.tsx:634` — `color: '#FFFFFF'` on the tab title span. Prototype (`Full Spec.html:297`): `color:var(--rc-text)`. Confirmed via the D12-2 screenshot: the heading isn't miscolored, it's genuinely invisible (white-on-white). **Fix:** `color: 'var(--rc-text)'`.
+- **Item 2 (LIVE pill dark):** `GamesCarousel.tsx:637/639` — pill `background: '#1A1A2E'`, text `color: '#FFFFFF'`. Prototype (`Full Spec.html:299-302`): `background:var(--rc-surface)`, text `color:var(--rc-text)`. The pulse dot's green (`#34D399`) is correctly left alone — matches the prototype's own `var(--rc-green)`, which resolves to the same value in both themes (confirmed elsewhere this migration; a status-green dot is a deliberate theme-invariant, not an oversight). **Fix:** pill background → `var(--rc-surface)`, text → `var(--rc-text)`, dot untouched.
+- **Item 3 (alternate rows navy):** `GamesCarousel.tsx:671` — `background: g.zebra ? '#1A1A2E' : 'transparent'`. Prototype (`Full Spec.html:3161`, exact match): `bg: i % 2 === 0 ? 'var(--rc-surface)' : 'transparent'`. **Fix:** `g.zebra ? 'var(--rc-surface)' : 'transparent'`.
+- **Item 4 (row text white):** three literals, one small correction to Designer's own hex — the game name isn't literally `#FFFFFF`, it's `#F2F2F6` (`GamesCarousel.tsx:675`), a near-white grey that reads the same as white against a light background and fails for the identical reason. Handle (`:682`) and STAKE label (`:689`) are both genuinely `#FFFFFF`. Prototype (`Full Spec.html:314/331/335`, all three): `color:var(--rc-text)`. **Fix:** all three → `var(--rc-text)`.
+
+## Item 5 — the handle-color half is real (same fix as item 4); the tier-icon half isn't a color bug, and isn't tied to row striping
+
+Designer's framing treats both halves as one "white-on-light" problem. Checked directly, they're not the same mechanism:
+
+- **Handle invisible on plain rows: real, but it's item 4's `:682` fix, not a separate bug.** No additional work beyond what's already scoped above.
+- **Tier icon "missing on striped rows": doesn't hold up under a live-DOM check.** `vipTier.tsx`'s `TierIcon` renders `null` for `'Unranked'` hosts — a real, already-documented precedent from `2026-09-13#7`'s own ticket ("`'Unranked'` renders nothing... there is no badge below [Wood]"), not new behavior. Queried 11 live rows directly (host container's own child `<svg>`, not just "first svg in the row" — that first pass mistakenly picked up the STAKE section's currency icon on rows where the tier icon was legitimately absent, which would have led to the wrong conclusion): icon presence is `true`/`false`/`true`/`false`/`true`/`false` alternating essentially at random against zebra state (e.g. row-0 zebra=true HAS an icon, row-10 zebra=true does NOT; row-9 plain HAS one, row-5 plain does NOT) — tier assignment, not row striping, decides it. **Every tier icon's own fill is a fixed physical-badge color already** (Bronze `#C46B34`, Silver `#9BA2AE`, Gold `#D9A21F`, etc. — confirmed byte-identical to the prototype's own hardcoded fills at `Full Spec.html:316-330`, same colors in both themes, a deliberate invariant like Dice's die-cube faces from `2026-09-15#2`'s own closing note). **Nothing to fix here** — what Designer's screenshot captured was a coincidental sample where several `Unranked` hosts happened to land on striped rows that day, not a systemic bug.
+
+---
+
+**What's already right, confirmed:** the tab rail track/pills, JOIN buttons (`#8B45F0`, correctly theme-invariant purple), the green stake amounts (`AmountFigure`'s `#34D399`, matches the prototype's own theme-invariant `var(--rc-green)` resolving identically in both themes), the currency icon, and the thumbnail's `#1B1B2E` fallback background (Designer's own named exception — confirmed still a deliberate literal in the prototype too, `Full Spec.html:312`, not a token).
+
+**Ask:** items 1-4 + item 5's handle half are one small, single-file PR (`GamesCarousel.tsx`), same shape as the footer fix — swap each literal for its token. Item 5's tier-icon half needs no code change; worth a one-line note back to Designer so the next light-mode sweep doesn't re-flag it.
+
+---
 ### 2026-09-15#2 — Designer handoff on the footer in light mode: all 6 items confirmed real, one asset already sits in the repo unused, one item needs a scoping split, and the closing ask (repo-wide hex sweep) is real and bigger than this ticket — 15 files, not 1            [READY TO TICKET — 5 of 6 items are a clean single PR; the Events link and the repo-wide sweep both need their own follow-up]
 From: Advisor   Re: Designer's spec for the footer's light-mode theming (screenshots in `design-ref/D11/`), verified against `HubFooter.tsx`/`index.css`/`HubRibbon.tsx` (`origin/main`@`b0af5f8`)
 
