@@ -262,7 +262,22 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 - **Races (24h / Weekly) + Leaderboards tab** — genuine new feature work (time-windowed leaderboard logic), sized separately from the lobby/stake-entry/play/result → single-screen-with-phases collapse.
 - **lobby / stake-entry / play / result → one screen, internal phases** — real architectural simplification (`App.tsx:1292-1317` today).
 
-## Status snapshot — 2026-09-15 (D01-D13 fully shipped, deployed, and closed; D14 — Rewards wallet pill while logged out — shipped in #598, deployed live at `rapidclash-00112-2z8`; D15 — Rakeback CLAIM's two-toned dim — forwarded to Designer by Owner, postponed) — supersedes all earlier snapshots in this section
+## Status snapshot — 2026-09-15 (D01-D13 fully shipped/deployed/closed; D14 shipped+deployed; D15 postponed pending Designer; D16 — opponent bar during matchmaking — investigated and ready to ticket, harness capture for the searching state built and verified) — supersedes all earlier snapshots in this section
+
+**2026-09-15#9 — NEW, top item, ready to ticket. Designer's D16: the opponent bar during matchmaking shows the wrong layout (no blur, no scramble, name inline with "Searching…" instead of split right). Full detail: `ADVISOR_TO_PM.md` 2026-09-15#9.**
+
+- **All 4 structural complaints confirmed real, in the ONE shared component every game already routes through** (`OpponentSlot`, `GameHub.tsx`) — so "same on rps, mines and dice" is automatic, not something needing separate verification per game.
+- **Layout:** "Searching…" and the scanned name currently render inline in one flex row — needs splitting into the prototype's own two-piece layout (name/avatar group left, "Searching…" absolutely positioned right).
+- **Blur:** completely missing today — no `filter` anywhere on the avatar or name during search. Needs a conditional `blur(4.5px)`, clearing once found.
+- **Avatar hashing — the one genuinely new piece of logic in this ticket:** the avatar never varies from the neutral default during search; the prototype flickers a mock portrait hashed from the currently-scanned name. The app already has everything needed except one missing function (a name→preset-avatar hash, alongside the existing `discColor`/`glyphColor` hash already in `Avatar.tsx`) — a small addition, not a rewire.
+- **A distinct extra bug found while tracing the scan source:** the robot emoji visible in the screenshot ("🤖@highroller") is the raw, undisclosed `ownerName` leaking through — this app already has the exact fix built and used everywhere else the same value shows up (`GamesCarousel.tsx`'s `displayHostName`, from `2026-09-13#6`) — `OpponentSlot`'s scan is just the one place still using the raw value. One-line fix, reusing existing, already-approved logic.
+- **Already correct, confirmed, no changes needed:** the muted→bright name-color transition, and no tier icon during search.
+- **A mechanism note, not a bug:** the app scrambles via React state on a 280ms interval, not the prototype's raw-DOM-ref-write at 70ms — recommended keeping the React-idiomatic approach (matches everything else in this codebase) rather than chasing the prototype's literal technique, since only the visual effect matters.
+- **Closing ask (harness capture for the searching state) — done, not just requested.** Added a new `rps-searching` screen definition to `tools/design-fidelity/src/screens.ts` (a small `armStakeAndPlay` helper, since no existing screen ever presses PLAY), ran the actual capture, and visually verified both theme outputs match Designer's own reference exactly — blurred flickering avatar, blurred scrambling name, "Searching…" alone on the right. Caught one small timing correction along the way: the search/blur/scramble start synchronously at t=0 on PLAY, not after the ticket's stated 680ms (that 680ms is the first leg of the nested delay before 'found' fires, at 2380ms total).
+
+**Advisor next:** available, no open thread. **PM next:** dispatch the fix (one shared component, one file, plus a small `Avatar.tsx` addition).
+
+---
 
 **2026-09-15#8 — NEW, top item, NOT ready to ticket — needs a design decision before any code is written. Designer's D15: the Rakeback CLAIM button looks two-toned (lighter face, darker ledge) when dimmed. Full detail: `ADVISOR_TO_PM.md` 2026-09-15#8.**
 

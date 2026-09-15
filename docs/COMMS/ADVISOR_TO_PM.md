@@ -1,5 +1,47 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-15#9 — Opponent bar during matchmaking: confirmed real on all 4 points, one genuinely new piece of logic (avatar hashing), one distinct extra bug found along the way (robot emoji leaking into the scan), harness capture for the searching state built and verified            [READY TO TICKET — one shared component, one file; applies identically to RPS/Mines/Dice]
+From: Advisor   Re: Designer's D16 report (opponent bar during search shows the wrong layout/no blur/no scramble), verified against `GameHub.tsx`'s shared `OpponentSlot`, `GamesCarousel.tsx`'s `displayHostName`, and the prototype's own source (`Full Spec.html:3291` `startRps`)
+
+All of Designer's structural complaints are confirmed real, in the ONE shared component every game routes through (`OpponentSlot`, `GameHub.tsx:949`) — so "same on rps, mines and dice" (the ticket's own check) is automatic, not something to verify three times. Found one extra, distinct bug while tracing the scan name's source: the robot emoji Designer explicitly says shouldn't appear during search is leaking in from a place that already has the fix built for it elsewhere in the app, just not called here. Also built and verified the harness capture Designer asked for in the closing note — the searching state wasn't in the eight screenshots, so I drove the actual prototype into it and confirmed the result matches the reference screenshot exactly, in both themes.
+
+---
+
+## 1 — Layout: "Searching…" is inline with the scan name today, not split right — confirmed
+
+`GameHub.tsx:978-982`, the `searching` branch: `Searching…` and the scanned name render as two `<span>`s inside ONE flex row (`gap-2`), side by side — exactly the "Searching... 🤖@highroller" the screenshot shows. Prototype (`Full Spec.html:446/461`): two structurally separate pieces — the avatar+name group on the left (`display:flex; gap:12px`), and `Searching…` as its own `position:absolute; right:14px; top:50%` element. **Fix:** pull `Searching…` out of the inline flex row into its own absolutely-positioned element on the bar, matching the prototype's own two-piece split.
+
+## 2 — Blur: completely missing today — confirmed
+
+Neither the avatar nor the scanned name has any `filter` applied anywhere in `OpponentSlot`. Prototype (`Full Spec.html:3800`, `oppBarBlur`): `filter:blur(4.5px)` on both while searching, `none` once found. **Fix:** apply a `blur-[4.5px]` (or explicit `filter: blur(4.5px)`) className/style to the avatar + name group, conditional on `searching`, with a transition so it clears smoothly once found — matches the prototype's own `transition:color 260ms ease` framing (name color is already correctly muted-while-searching/bright-once-found, see item 5 below — only the blur itself is missing, not the color logic).
+
+## 3 — Avatar doesn't hash/flicker from the scanned name — confirmed, and this is the one genuinely new piece of logic in the ticket
+
+`OpponentSlot` always renders `<Avatar avatarId="default" />` (`:977`), unconditionally, searching or not. Prototype's `avForName` (`Full Spec.html:3132`) hashes the currently-scanned name into one of its mock portrait set so the avatar flickers in sync with the scrambling name. **This app already has everything needed except the one missing piece:** `Avatar.tsx` already has a private `hashStr` (djb2, deterministic) used for `discColor`/`glyphColor`, and 10 real presets (`AVATAR_IDS`: `rc-01`–`rc-10`) already exist and are already wired into `Avatar`'s own `avatarId` prop. **What's missing is a small new function** — `avatarIdForName(name): AvatarId`, hashing a name string into one of the 10 preset ids — genuinely new logic, not a rewire, and worth calling out as the one piece of this ticket bigger than "flip a style prop." **Fix:** add that function (exported alongside `discColor`/`glyphColor`, same file), call it with the current `scan` value in `OpponentSlot`, feed the result into `Avatar`'s `avatarId` prop only while `searching` (falls back to `'default'` the rest of the time, unchanged).
+
+## 4 — Robot emoji leaking into the scan name — a distinct bug, not part of Designer's stated complaint, found while tracing where the scan text comes from
+
+The screenshot shows "🤖@highroller" during search — Designer's spec is explicit that search should show "No robot emoji, no tier icon." Traced the scan value: `GameHub.tsx:565`, `names.add(c.ownerName)` — the RAW `ownerName` (a bot's real, undisclosed-nowhere-but-here identity marker, per ADR-010), not stripped. **This app already has the exact fix built and used everywhere else this same raw value shows up**: `GamesCarousel.tsx:312-313`'s `displayHostName(ownerName)` strips the leading `🤖` and formats as `@handle` — the Owner-decided, already-shipped fix for this precise problem (`2026-09-13#6` item 3). `OpponentSlot`'s scan is simply the one place in the app that still uses the raw value. **Fix:** route `scanNames`/`scan` through `displayHostName` (or the stripping half of it) before display — a one-line change reusing an existing, already-approved function, not new logic.
+
+## 5 — What's already correct, confirmed, no changes needed
+
+- **Name color:** `text-muted-foreground` while searching, `text-foreground` once found (inMatch) — `:980-984` — already matches the prototype's `var(--rc-muted)`→`var(--rc-text)` spec exactly.
+- **No tier icon during search:** confirmed, `OpponentSlot`'s `searching` branch renders no `TierIcon` anywhere — matches Designer's explicit "no tier icon during search" requirement already.
+- **Applies identically to RPS/Mines/Dice:** all three route through this same `OpponentSlot` via `GameHub`'s shared `matchBarSlide` opt-in — no per-game divergence exists to check separately.
+
+## 6 — A mechanism note, not a bug: the scramble is React state at 280ms, not a raw DOM ref-write at 70ms
+
+Prototype's `startRps` (`:3302-3305`) writes `el.textContent` directly via a ref on a 70ms `setInterval`, bypassing React entirely. This app's `useNameScan` (`GameHub.tsx:934-943`) instead bumps a piece of React state on a 280ms interval — a different, but consistent-with-the-rest-of-this-codebase mechanism (nothing else here manipulates the DOM directly). **Recommend keeping the React-state approach** rather than switching to a raw-ref write to match the prototype's literal technique — the visual target (a scrambling name) doesn't require matching its implementation, only its effect. If the slower 280ms cadence reads as too sparse once blur is added, tightening the interval toward ~100ms is a cheap, independent tuning knob — not required by this ticket.
+
+## 7 — Closing ask: harness capture for the searching state — built, run, and verified in both themes
+
+Designer's own note: "Capture the searching state from the prototype for the harness — it isn't in the eight screenshots." Added a new `rps-searching` screen definition to `tools/design-fidelity/src/screens.ts` (a `armStakeAndPlay` helper — arm the `$1` chip, tap `data-nav="play"` — since none of the existing idle screens ever press PLAY), and actually ran `capture:prototype rps-searching`. **Verified both outputs directly** (`references/dark/rps-searching.png`, `references/light/rps-searching.png`): blurred flickering avatar + blurred scrambling name on the left, "Searching…" alone on the right, in both themes — matches Designer's own reference screenshot exactly. One precise timing correction along the way: the ticket's "680ms → search state begins" doesn't quite match the source — `rpsMatch:'searching'` (and the blur/scramble) start SYNCHRONOUSLY on PLAY, at t=0; the 680ms is actually the first leg of the nested timeout delaying the 'found' transition (680+1700=2380ms total). Captured at t≈500ms into that window, comfortably clear of 'found'. `driveApp` intentionally left unset (per this file's own convention — "absent = skipped") until the app-side fix above actually lands.
+
+---
+
+**Ask:** items 1-4 are one shared component, one file (`GameHub.tsx`, plus a small addition to `Avatar.tsx` for item 3 and reusing `displayHostName` for item 4) — safe as a single PR, applies to all 3 games automatically. Item 6 is a note, not an ask. Item 7 (harness capture) is already done, included in the same PR as a docs/tooling addition.
+
+---
 ### 2026-09-15#8 — Rakeback CLAIM button's dim looks two-toned: the visual complaint is plausible, but Designer's specific mechanism claim doesn't match the code, and there's no prototype reference for what "correctly dimmed" should even look like — flagging as an open question, not guessing at a fix            [NOT READY TO TICKET — need a design call before writing code, see below]
 From: Advisor   Re: Designer's D15 report (Rakeback CLAIM button reads as two shades when dimmed), verified against `RewardsHub.tsx`/`index.css` and the prototype's own source
 
