@@ -322,6 +322,24 @@ export const SCREENS: ScreenDef[] = [
     },
   },
   {
+    id: 'dice-result',
+    title: 'Dice — resolved result (ring + history belt), signed in',
+    // Ticket 2026-09-15#10 (D17): Designer's own closing ask — the resolved state wasn't in the
+    // harness. `startDice` (`Full Spec.html:3387`) chains through the SAME searching/found/split
+    // beat `rps-searching` above already documents, then a further 460ms to `runDiceRoll`'s start,
+    // its own 444ms roll animation, and a final 900ms hold before `startDiceResult` (`:3448`) sets
+    // `minesResult:'final'` and pushes the history pill — 680+1700+760+660+460+444+900 = 5604ms
+    // total from PLAY to resolved. Captured comfortably past that (armFreeze pins `Math.random`, so
+    // both rolls and the resulting win/lose outcome are deterministic every run).
+    signedIn: true,
+    driveProto: async (page) => {
+      await signIn(page);
+      await openGameTile(page, 'game-dice');
+      await armStakeAndPlay(page);
+      await page.waitForTimeout(6500); // comfortably past the 5604ms PLAY-to-result total
+    },
+  },
+  {
     id: 'dice-idle',
     title: 'Dice — idle (pre-match), signed out',
     driveProto: async (page) => {
