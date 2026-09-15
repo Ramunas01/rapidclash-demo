@@ -309,7 +309,9 @@ function useOpenChallengesPool(challengesByGame: Record<string, OpenChallenge[]>
  * this comment just walked back for this screen; now that the reasoning no longer applies here
  * either, converging on the same shape is expected, not a coincidence.
  */
-function displayHostName(ownerName: string): string {
+// Exported (ticket 2026-09-15#9 item 4) — GameHub.tsx's own OpponentSlot search-scan reuses this
+// exact stripping logic instead of duplicating it; see that file's own call site for why.
+export function displayHostName(ownerName: string): string {
   return `@${ownerName.replace(/^🤖\s*/, '').replace(/^@/, '')}`;
 }
 

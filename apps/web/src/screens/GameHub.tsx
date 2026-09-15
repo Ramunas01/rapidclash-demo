@@ -15,11 +15,11 @@ import { ChatSheet } from '../components/hub-chrome/ChatSheet.js';
 import { useChat } from '../components/hub-chrome/useChat.js';
 import { hubShellClass } from '../components/hub-chrome/layout.js';
 import { TILE_ART, COMING_SOON, titleCase } from '../components/hub-shared/tiles.js';
-import { GamesCarousel } from '../components/hub-shared/GamesCarousel.js';
+import { GamesCarousel, displayHostName } from '../components/hub-shared/GamesCarousel.js';
 import { GuestBotWaiters } from '../guest/GuestBotWaiters.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
-import { Avatar } from '../components/hub-shared/Avatar.js';
+import { Avatar, avatarIdForName } from '../components/hub-shared/Avatar.js';
 import { Credits, RcIcon } from '../components/hub-shared/RcIcon.js';
 import { CurrencyIcon } from '../components/hub-chrome/CurrencyPicker.js';
 import { useTheme } from '../lib/theme.js';
@@ -560,9 +560,14 @@ export function GameHub(props: GameHubProps) {
   // cross-game Open Games feed (any game). Never fabricated — an empty feed shows just "Searching…".
   // Excludes the current player's own resting challenges (name-based: OpenChallenge carries only
   // ownerName, no owner id — #149) so the scan can't flash the player against themselves.
+  // Ticket 2026-09-15#9 item 4: the comparison against `username` stays on the RAW ownerName (a
+  // human player's own username is never bot-prefixed, so this must not compare against the
+  // stripped/formatted display string) — only what actually gets ADDED to the scan set is run
+  // through `displayHostName`, the same already-approved ADR-010 stripper GamesCarousel.tsx uses
+  // (2026-09-13#6 item 3), so the bot-disclosure emoji never leaks into what's rendered here.
   const scanNames = useMemo(() => {
     const names = new Set<string>();
-    for (const list of Object.values(challengesByGame)) for (const c of list) if (c.ownerName && c.ownerName !== username) names.add(c.ownerName);
+    for (const list of Object.values(challengesByGame)) for (const c of list) if (c.ownerName && c.ownerName !== username) names.add(displayHostName(c.ownerName));
     return [...names];
   }, [challengesByGame, username]);
 
@@ -958,7 +963,7 @@ function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShif
       // for every other hub, so neither the attribute nor the inline style render there at all.
       data-rc-oppbar={barShiftY != null ? '1' : undefined}
       className={cn(
-        'flex items-center gap-2.5 rounded-full bg-surface px-3.5 py-2.5 transition-all duration-300',
+        'relative flex items-center gap-2.5 rounded-full bg-surface px-3.5 py-2.5 transition-all duration-300',
         // Ticket 2026-09-12#1 item 1 (ADVISOR_TO_PM.md): the prototype's `data-rc-oppbar`/
         // `data-rc-playerbar` carry an explicit `z-index:3` (`Full Spec.html:436`/`:660`) — above the
         // VS label's `z-index:2` (`:432`, this hub's own `hub-match-vs` above) and the un-indexed
@@ -973,16 +978,28 @@ function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShif
       )}
       style={barShiftY != null ? { transform: `translateY(${barShiftY}px)`, transition: 'transform 620ms cubic-bezier(0.3,0.9,0.32,1)' } : undefined}
     >
-      {/* NEUTRAL avatar — the in-match opponent stays redacted: never their name/avatar (Charter #2). */}
-      <Avatar avatarId="default" />
-      {searching ? (
-        <span className="flex min-w-0 flex-1 items-center gap-2 text-sm font-bold">
-          <span className="animate-pulse text-muted-foreground">Searching…</span>
-          {scan && <span data-testid="hub-search-scan" className="min-w-0 truncate text-muted-foreground/50">{scan}</span>}
-        </span>
-      ) : (
-        <span className={cn('min-w-0 flex-1 truncate text-sm font-bold', inMatch ? 'text-foreground' : 'text-muted-foreground')}>
-          {inMatch ? (opponentName || 'Opponent') : 'Opponent'}
+      {/* Ticket 2026-09-15#9 items 1-3: split into the prototype's own two-piece layout
+          (`Full Spec.html:446/461`) — the avatar+name group on the left, blurred while searching
+          (`oppBarBlur`, `:3800`), and "Searching…" as its own absolutely-positioned element on the
+          right, instead of one inline flex row with both pieces side by side. The avatar now
+          hashes from the (already ADR-010-stripped) scanned name while searching — matching the
+          prototype's own `avForName` flicker — instead of staying the neutral default throughout. */}
+      <span className={cn('flex min-w-0 flex-1 items-center gap-2.5 transition-[filter] duration-300', searching && 'blur-[4.5px]')}>
+        {/* NEUTRAL avatar outside search — the in-match opponent stays redacted: never their real
+            name/avatar (Charter #2). Only the DECORATIVE scan (never the real opponent) drives it
+            while actively searching. */}
+        <Avatar avatarId={searching && scan ? avatarIdForName(scan) : 'default'} />
+        {searching ? (
+          scan && <span data-testid="hub-search-scan" className="min-w-0 truncate text-sm font-bold text-muted-foreground/50">{scan}</span>
+        ) : (
+          <span className={cn('min-w-0 flex-1 truncate text-sm font-bold', inMatch ? 'text-foreground' : 'text-muted-foreground')}>
+            {inMatch ? (opponentName || 'Opponent') : 'Opponent'}
+          </span>
+        )}
+      </span>
+      {searching && (
+        <span className="absolute right-3.5 top-1/2 -translate-y-1/2 animate-pulse text-sm font-bold text-muted-foreground">
+          Searching…
         </span>
       )}
       {/* A per-game aside (e.g. chess clock) takes the right slot; otherwise the live "Playing…"

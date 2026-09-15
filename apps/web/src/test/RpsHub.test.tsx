@@ -460,3 +460,50 @@ describe('RpsHubScreen — search dwell floor restored (2026-09-11#9)', () => {
     }
   });
 });
+
+describe('RpsHubScreen — opponent bar during matchmaking (ticket 2026-09-15#9)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/games') || u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
+      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+    }));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('item 1: "Searching…" is its own absolutely-positioned element, split apart from the scanned name (not one inline row)', () => {
+    render(<RpsHubScreen {...baseProps({ initialStake: 10, waitingExpiresAt: Date.now() + 10_000, challengesByGame: { rps: [CHALLENGE] } })} />);
+    const opp = within(screen.getByTestId('hub-slot-opponent'));
+    const label = opp.getByText('Searching…');
+    expect(label.className).toContain('absolute');
+    const scan = opp.getByTestId('hub-search-scan');
+    // Not a descendant of "Searching…"'s own element, and not the other way around — two
+    // structurally separate pieces, matching the prototype's own two-piece split.
+    expect(label.contains(scan)).toBe(false);
+    expect(scan.contains(label)).toBe(false);
+  });
+
+  it('item 2: the avatar+name group blurs while searching', () => {
+    render(<RpsHubScreen {...baseProps({ initialStake: 10, waitingExpiresAt: Date.now() + 10_000, challengesByGame: { rps: [CHALLENGE] } })} />);
+    const opp = within(screen.getByTestId('hub-slot-opponent'));
+    const avatar = opp.getByTestId('avatar');
+    expect(avatar.parentElement?.className).toContain('blur-[4.5px]');
+  });
+
+  it('item 3: the avatar hashes from the scanned name while searching, not the neutral default', () => {
+    render(<RpsHubScreen {...baseProps({ initialStake: 10, waitingExpiresAt: Date.now() + 10_000, challengesByGame: { rps: [CHALLENGE] } })} />);
+    const opp = within(screen.getByTestId('hub-slot-opponent'));
+    const avatar = opp.getByTestId('avatar');
+    expect(avatar.getAttribute('data-avatar-id')).not.toBe('default');
+    expect(avatar.getAttribute('data-avatar-id')).toMatch(/^rc-\d\d$/);
+    expect(opp.getByTestId('avatar-img')).toBeInTheDocument(); // a real preset image, not the neutral glyph
+  });
+
+  it('item 4: the scanned name strips the bot-disclosure emoji, reusing GamesCarousel\'s displayHostName', () => {
+    const botChallenge: OpenChallenge = { matchId: 'c2', ownerName: '🤖@sweeper', ownerTier: 'Unranked', stake: 50, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'none' };
+    render(<RpsHubScreen {...baseProps({ initialStake: 10, waitingExpiresAt: Date.now() + 10_000, challengesByGame: { rps: [botChallenge] } })} />);
+    const scan = within(screen.getByTestId('hub-slot-opponent')).getByTestId('hub-search-scan');
+    expect(scan.textContent).toBe('@sweeper');
+    expect(scan.textContent).not.toContain('🤖');
+  });
+});

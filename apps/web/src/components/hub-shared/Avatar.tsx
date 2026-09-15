@@ -62,6 +62,16 @@ export function glyphColor(username?: string | null): string {
   return `hsl(${hashStr(username) % 360}, 45%, 40%)`;
 }
 
+/** Ticket 2026-09-15#9 item 3: hashes a name into one of the 10 real presets — the same djb2 hash
+ *  already used for discColor/glyphColor, applied to the preset id set instead of a hue. Used by
+ *  GameHub.tsx's OpponentSlot so the avatar flickers in sync with the scrambling scanned name
+ *  during matchmaking search, matching the prototype's own `avForName`. Deterministic per name
+ *  (the same name always hashes to the same preset), not random per render. */
+export function avatarIdForName(name: string): Exclude<AvatarId, 'default'> {
+  const ids = Object.keys(PRESETS) as Exclude<AvatarId, 'default'>[];
+  return ids[hashStr(name) % ids.length];
+}
+
 /** The person silhouette (relocated from GameHub). Takes a colour via `style.color` / `className`
  *  (fill="currentColor") so it is never hardcoded white — the default glyph must darken on the
  *  light disc, so a fixed white fill would vanish. */
