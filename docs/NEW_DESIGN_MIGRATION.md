@@ -262,7 +262,20 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 - **Races (24h / Weekly) + Leaderboards tab** — genuine new feature work (time-windowed leaderboard logic), sized separately from the lobby/stake-entry/play/result → single-screen-with-phases collapse.
 - **lobby / stake-entry / play / result → one screen, internal phases** — real architectural simplification (`App.tsx:1292-1317` today).
 
-## Status snapshot — 2026-09-15 (D01-D13, the ENTIRE Designer collection, fully shipped AND deployed live at `rapidclash-00111-pvt`; the one remaining open question — item 4's "above" spacing — is now CLOSED, Designer confirmed no change needed) — supersedes all earlier snapshots in this section
+## Status snapshot — 2026-09-15 (D01-D13 fully shipped, deployed, and closed; D14 — a new package, Rewards showing the wallet pill logged-out — now queued) — supersedes all earlier snapshots in this section
+
+**2026-09-15#7 — NEW, current top item, not yet dispatched. Designer's D14: the Rewards header shows the wallet pill + balance while logged out; it should show LOGIN/SIGNUP. Full detail: `ADVISOR_TO_PM.md` 2026-09-15#7.**
+
+- **Confirmed real, and the actual cause is neither of Designer's two guesses (no second header, no mock-user leak).** `RewardsHub.tsx:210` simply never threads its already-available `loggedIn` prop into its `<HubRibbon>` call — `HubRibbon`'s own `loggedIn = true` default then silently renders the signed-in branch. The rest of the file uses `loggedIn` correctly (VIP blur, Rakeback lock, `CardStatusRow`); this one call was the only gap.
+- **Fix:** one prop, `loggedIn={loggedIn}`, matching how `HomeHub`/`GameHub` already call the same shared component.
+- **A second, recommended fix beyond what was asked:** `HubRibbon`'s own default (`loggedIn = true`) fails OPEN — the wrong direction for an auth-gated shared component. Two other call sites (`ProfileHub`/`AffiliateHub`) have the same missing-prop gap but aren't reachable while logged out today (confirmed via the actual nav gate, `App.tsx`'s `onAccountTap`) — rather than add new plumbing to harden two unreachable cases, recommended flipping the shared default to `loggedIn = false`, closing the whole failure class for any future call site at zero cost to today's behavior.
+- **Closing ask (Games, Menu, Chat) run:** Games already passes `loggedIn` explicitly on both hubs. Menu and Chat are pure overlays with no header or auth display of their own — nothing to check independently; they inherit whichever hub is mounted underneath them.
+
+**Advisor next:** available, no open thread. **PM next:** dispatch the fix.
+
+---
+
+**D01-D13, the ENTIRE Designer collection, fully shipped AND deployed live at `rapidclash-00111-pvt`; the one remaining open question — item 4's "above" spacing — is CLOSED, Designer confirmed no change needed.**
 
 **The full D01-D13 collection is closed out: every item processed, every real fix merged, and — as of this deploy — every merged fix is confirmed live in production, not sitting in a merged-but-undeployed queue.** `#587` (footer), `#591` (Open Games), and `#593` (Recent Games fade) shipped together in one deploy at Owner's request, revision `rapidclash-00111-pvt` (confirmed independently via `gcloud run services describe`, matching PM's report exactly). Bot-crowd restarted, all bots online, `/open-challenges` verified live, no errors.
 

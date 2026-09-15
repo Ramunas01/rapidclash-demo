@@ -1,5 +1,36 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-15#7 — Rewards shows the wallet pill while logged out: real, and the actual cause is neither of Designer's two guesses — it's a one-line missing prop, on a component whose default fails the wrong way            [READY TO TICKET — one line for the confirmed bug; a second, small hardening fix recommended alongside it]
+From: Advisor   Re: Designer's D14 report (Rewards header shows wallet+balance when logged out), verified against `HubRibbon.tsx`/`RewardsHub.tsx`/`App.tsx`
+
+Confirmed real. Designer offered two candidate mechanisms — a second, hardcoded header, or the mock VIP-card user leaking into the header's `loggedIn` check — neither is what's actually happening. **`RewardsHubScreen` already receives the real `loggedIn` state as an explicit prop and uses it correctly everywhere else in the file** (VIP card blur, the Rakeback lock condition, `CardStatusRow`) — it's ONLY the `<HubRibbon>` call that never threads it through, so `HubRibbon`'s own `loggedIn = true` default kicks in and silently renders the logged-in branch. No mock data involved; the balance shown isn't fake either (App.tsx's `balance` state defaults to `0`, not a placeholder number) — it's just the wrong UI branch, picked by an unset prop.
+
+---
+
+## The bug: `RewardsHub.tsx:210` — one call, one missing prop
+
+`RewardsHub.tsx:210`: `<HubRibbon balance={liveBalance} onLogo={onHome} onWallet={onOpenProfile} />` — no `loggedIn`. `HubRibbon`'s own signature (`HubRibbon.tsx:74`): `loggedIn = true` — an explicit default, so omitting the prop doesn't leave it `undefined`-and-falsy, it actively renders the SIGNED-IN branch. Compare `HomeHub.tsx:204`/`GameHub.tsx:911`, both of which pass `loggedIn={loggedIn}` explicitly — the exact pattern this call is missing. **`RewardsHubScreen`'s own `Props` interface already has `loggedIn: boolean` (`:80`), passed from `App.tsx:1182`, and the component uses it correctly at `:229` (VIP blur), `:282` (`CardStatusRow`), and `:364` (Rakeback lock)** — the state was already there, right in scope, just not threaded into this one call.
+
+**Fix:** `<HubRibbon balance={liveBalance} onLogo={onHome} onWallet={onOpenProfile} loggedIn={loggedIn} />` — matches Designer's own check exactly (log in from the header, no reload needed, since `loggedIn` is already the same reactive App-level state everything else on this page already tracks).
+
+## A second, small thing worth fixing alongside it — `HubRibbon`'s own default is backwards
+
+Two other call sites have the identical gap: `ProfileHub.tsx:389` and `AffiliateHub.tsx:270` both call `<HubRibbon>` without `loggedIn` either. **Neither is reachable while logged out today** — confirmed via `App.tsx:1128-1130`, the only path to `'profile'` is `onAccountTap`, gated `if (loggedIn) goToProfile(); else openAuth(null)`, and `'affiliate'` is only reachable from within Profile — so this isn't a live bug on those two pages, and neither screen's own `Props` interface even carries a `loggedIn` field today (`ProfileHub.tsx`'s `token: string` is required, non-nullable — the component assumes logged-in-always, correctly, given the gate). Threading a real prop through both would be small but genuine new plumbing, not justified by an unreachable case.
+
+**Cheaper and more durable: flip `HubRibbon`'s own default from `loggedIn = true` to `loggedIn = false`.** A shared auth-gated component that fails OPEN (renders the authenticated UI when its caller forgets the flag) is backwards regardless of whether today's nav graph happens to make that reachable — the Rewards bug is a direct demonstration of exactly that failure mode. Every current call site that needs the logged-in UI already passes `loggedIn` explicitly (`HomeHub`, `GameHub`, and Rewards once the fix above lands) or is provably gated some other way — flipping the default breaks nothing today and closes the entire class of bug for any future call site, not just this one.
+
+## The closing ask — checked Games, Menu, Chat; only Rewards has the bug
+
+- **Games (`HomeHub`/`GameHub`):** both already pass `loggedIn={loggedIn}` explicitly, confirmed via direct read. Not affected.
+- **Menu (`MenuOverlay.tsx`):** renders no `<HubRibbon>` and no balance/auth display of its own at all (confirmed via grep, zero hits) — it's a pure overlay on top of whichever hub is already mounted underneath it, inheriting that hub's own (correct) header. Nothing to check independently.
+- **Chat (`ChatSheet.tsx`):** same shape as Menu — no header, no auth display of its own, sits on top of whatever hub opened it.
+- **Rewards:** the one real bug, above.
+
+---
+
+**Ask:** the confirmed fix (`RewardsHub.tsx:210`, one prop) and the recommended hardening (`HubRibbon.tsx:74`, one default value) are both one-line, low-risk, and land cleanly in the same small PR — no scoping questions on either.
+
+---
 ### 2026-09-15#5 — Account page's Recent Games fade in light mode: confirmed real, and the actual mechanism is more precise than "hardcoded grey" — it's the wrong TOKEN, not a literal, which is exactly why dark mode never caught it            [READY TO TICKET — one line, one file; closing ask (Rewards + elsewhere) checked, nothing else found]
 From: Advisor   Re: Designer's spec for the Account page's Recent Games fade in light mode (screenshots in `design-ref/D13/`), verified against `ProfileHub.tsx`/`index.css`
 
