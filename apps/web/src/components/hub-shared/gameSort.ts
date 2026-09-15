@@ -85,3 +85,32 @@ export const RANDOM_PLAYABLE_GAME_IDS = ['rps', 'dice', 'mines', 'coinflip', 'bl
 export const RANDOM_SPIN_KEYFRAME_MS = 1500;
 export const RANDOM_NAV_DELAY_MS = 60;
 export const RANDOM_TOTAL_MS = RANDOM_SPIN_KEYFRAME_MS + RANDOM_NAV_DELAY_MS; // 1560ms
+
+/** Related Games section selection (ticket 2026-09-15#12, Designer's D18 spec, `RelatedRail` in
+ *  `GameHub.tsx`). Pure ordering logic only — no `GameMeta`/display-name knowledge — so it's
+ *  directly unit-testable against Designer's own worked examples without constructing fake game
+ *  objects; the caller attaches name/meta per id. */
+export interface RelatedGameSlot {
+  id: string;
+  playable: boolean;
+}
+
+/** Fixed head order, before the current-game substitution rule below. */
+const RELATED_FIXED_HEAD = ['crash', 'blackjack', 'dice'];
+
+/**
+ * A fixed 3-slot head (Crash, Blackjack, Dice) — except the current game, if it's one of those
+ * three, is substituted IN PLACE by Mines (not appended after) — then every other game from the
+ * Originals roster in `GRID_ORDER`, excluding the current game and whatever's already in the head.
+ * `liveIds` drives `playable` per id — the real live roster (`GameHub.tsx`'s own `games` prop),
+ * not a hardcoded list, so a newly-shipped game becomes playable here the same way it does
+ * everywhere else in the app.
+ */
+export function relatedGamesFor(currentGameId: string, liveIds: ReadonlySet<string>): RelatedGameSlot[] {
+  const head = RELATED_FIXED_HEAD.map((id) => (id === currentGameId ? 'mines' : id));
+  const shown = new Set([...head, currentGameId]);
+  const tail = Object.keys(GRID_ORDER)
+    .filter((id) => !shown.has(id))
+    .sort((a, b) => GRID_ORDER[a] - GRID_ORDER[b]);
+  return [...head, ...tail].map((id) => ({ id, playable: liveIds.has(id) }));
+}

@@ -545,7 +545,11 @@ describe('App — hubs no longer auto-enter Searching on entry after another gam
     await waitFor(() => expect(screen.getByTestId('hub-waiting-countdown')).toBeInTheDocument());
 
     // Switch to the RPS hub via the related rail (handleSelectGame) while a search is in flight.
-    fireEvent.click(await screen.findByTestId('hub-related-rps'));
+    // Ticket 2026-09-15#12: the rail's tiles render immediately (fixed head + GRID-order tail),
+    // dimmed until the live /games fetch confirms each one playable — wait for that upgrade
+    // rather than clicking the very first (pre-fetch, non-interactive) render.
+    await waitFor(() => expect(screen.getByTestId('hub-related-rps').tagName).toBe('BUTTON'));
+    fireEvent.click(screen.getByTestId('hub-related-rps'));
 
     // The RPS hub opens clean: no leftover countdown, and the Coinflip queue was left (refund).
     await waitFor(() => expect(screen.queryByTestId('hub-waiting-countdown')).toBeNull());
@@ -743,9 +747,14 @@ describe('App — round-scoped state wiped as one unit on the destroy events (PL
     await enterAndFinish('coinflip', COINFLIP_DONE);
     expect(await screen.findByTestId('coin-own-pick')).toBeInTheDocument();
 
-    // Leave to the RPS hub, then back to Coinflip (both via the related rail).
-    fireEvent.click(await screen.findByTestId('hub-related-rps'));
-    fireEvent.click(await screen.findByTestId('hub-related-coinflip'));
+    // Leave to the RPS hub, then back to Coinflip (both via the related rail). Ticket
+    // 2026-09-15#12: each rail tile renders immediately, dimmed until its own hub's live /games
+    // fetch confirms it playable — wait for that upgrade before each click, same reasoning as the
+    // test above.
+    await waitFor(() => expect(screen.getByTestId('hub-related-rps').tagName).toBe('BUTTON'));
+    fireEvent.click(screen.getByTestId('hub-related-rps'));
+    await waitFor(() => expect(screen.getByTestId('hub-related-coinflip').tagName).toBe('BUTTON'));
+    fireEvent.click(screen.getByTestId('hub-related-coinflip'));
 
     expect(screen.queryByTestId('coin-own-pick')).toBeNull();
     expect(screen.queryByTestId('coin-opp-pick')).toBeNull();

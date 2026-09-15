@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from 'react';
 import { motion } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { Trophy, X } from 'lucide-react';
@@ -14,7 +14,9 @@ import { useMenuOverlay } from '../components/hub-chrome/useMenuOverlay.js';
 import { ChatSheet } from '../components/hub-chrome/ChatSheet.js';
 import { useChat } from '../components/hub-chrome/useChat.js';
 import { hubShellClass } from '../components/hub-chrome/layout.js';
-import { TILE_ART, COMING_SOON, titleCase } from '../components/hub-shared/tiles.js';
+import { TILE_ART, titleCase } from '../components/hub-shared/tiles.js';
+import { relatedGamesFor } from '../components/hub-shared/gameSort.js';
+import { OriginalsIcon } from '../components/hub-shared/categoryIcons.js';
 import { GamesCarousel, displayHostName } from '../components/hub-shared/GamesCarousel.js';
 import { GuestBotWaiters } from '../guest/GuestBotWaiters.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
@@ -594,12 +596,16 @@ export function GameHub(props: GameHubProps) {
     onCancel();
   }
 
-  // The related rail spans the whole roster (live + coming-soon), minus this game (D2/item 5).
+  // Ticket 2026-09-15#12: fixed 3-slot head (Crash/Blackjack/Dice, Mines-substituted in place
+  // when the current game is one of those 3) then the rest in GRID_ORDER — `relatedGamesFor` is
+  // the pure ordering logic (unit-tested directly), this just attaches name/meta per id.
   const related = useMemo(() => {
     const live = new Set(games.map((g) => g.id));
-    const playable = games.map((g) => ({ id: g.id, name: g.displayName, playable: true, meta: g as GameMeta }));
-    const soon = COMING_SOON.filter((id) => !live.has(id)).map((id) => ({ id, name: titleCase(id), playable: false, meta: undefined }));
-    return [...playable, ...soon].filter((t) => t.id !== gameId);
+    const metaById = new Map(games.map((g) => [g.id, g]));
+    return relatedGamesFor(gameId, live).map((slot) => {
+      const meta = metaById.get(slot.id);
+      return { id: slot.id, name: meta?.displayName ?? titleCase(slot.id), playable: slot.playable, meta };
+    });
   }, [games, gameId]);
 
   // A match is forming (the search dwell holds an already-paired match) or live — both freeze the
@@ -1467,58 +1473,134 @@ function ProvablyFairShieldIcon() {
   );
 }
 
-/** Item 5 — related-games rail. No grey card; cards a touch larger than the home grid so the
- *  third peeks (signalling horizontal scroll). All games, coming-soon dimmed + non-playable. */
+/**
+ * Ticket 2026-09-15#12 (D18) — full rebuild, prior version shared nothing with the prototype
+ * (plain scroll, no arrows, no bolt icon, wrong card shape, a "Soon" badge the prototype doesn't
+ * have). Citations: heading/arrow row `Full Spec.html:915-921`, rail/card CSS `:929-933`,
+ * `nudgeRel` scroll-by-3-cards `:3237-3243`, arrow mute state `:3842-3843`/`:3848-3851`, edge-mask
+ * strips `:934-935`. The bolt icon (`OriginalsIcon`) and the arrow press-pop mechanism (`popId`
+ * set on `onPointerUp`, cleared on `onAnimationEnd` — deliberately NOT a key-remount, the
+ * mechanism that caused the 2026-09-13#9 nav-bar regression) both reuse HomeHub.tsx's own
+ * already-proven-safe category-rail patterns verbatim, not new ones.
+ */
 function RelatedRail({
   related, onSelectGame,
 }: {
   related: { id: string; name: string; playable: boolean; meta?: GameMeta }[];
   onSelectGame(meta: GameMeta): void;
 }) {
+  const railRef = useRef<HTMLDivElement>(null);
+  const [scroll, setScroll] = useState({ left: 0, atEnd: false });
+  const [popId, setPopId] = useState<'prev' | 'next' | null>(null);
+
+  // `nudgeRel` (Full Spec.html:3237-3243): scroll exactly 3 cards' worth, measured off the first
+  // card's own real rendered width (not a hardcoded card size).
+  function nudge(dir: 1 | -1) {
+    const rail = railRef.current;
+    const card = rail?.firstElementChild as HTMLElement | null | undefined;
+    const step = card ? card.getBoundingClientRect().width + 9 : 120;
+    rail?.scrollBy?.({ left: dir * step * 3, behavior: 'smooth' });
+  }
+  function handleScroll(e: UIEvent<HTMLDivElement>) {
+    const el = e.currentTarget;
+    setScroll({ left: el.scrollLeft, atEnd: el.scrollLeft >= el.scrollWidth - el.clientWidth - 4 });
+  }
+  // relPrevFill/relNextFill (Full Spec.html:3842-3843): left active only past scrollLeft 20; right
+  // active until within 4px of the scrollable end.
+  const prevActive = scroll.left > 20;
+  const nextActive = !scroll.atEnd;
+
   if (related.length === 0) return null;
   return (
     <section data-testid="hub-section-related" aria-label="Related games">
-      <h2 className="mb-3 px-4 text-sm font-bold uppercase tracking-wide text-foreground">Related games</h2>
-      <div className="no-scrollbar flex gap-3 overflow-x-auto px-4 pb-1">
-        {related.map((t) =>
-          t.playable && t.meta ? (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => onSelectGame(t.meta!)}
-              data-testid={`hub-related-${t.id}`}
-              aria-label={t.name}
-              className="group relative aspect-[2/3] w-36 shrink-0 overflow-hidden rounded-xl border border-border transition-transform hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-            >
-              <RelatedArt id={t.id} name={t.name} />
-            </button>
-          ) : (
-            <div
-              key={t.id}
-              aria-disabled="true"
-              aria-label={`${t.name} — coming soon`}
-              data-testid={`hub-related-${t.id}`}
-              className="relative aspect-[2/3] w-36 shrink-0 overflow-hidden rounded-xl border border-border opacity-50"
-            >
-              <RelatedArt id={t.id} name={t.name} />
-              <span className="absolute right-1.5 top-1.5 rounded-full bg-black/55 px-1.5 py-0.5 text-[7px] font-bold uppercase tracking-wide text-white/80">Soon</span>
-            </div>
-          ),
-        )}
+      <div className="mt-[22px] flex items-center gap-[9px] px-4">
+        <OriginalsIcon className="h-[22px] w-[22px] shrink-0 text-[#8B45F0]" />
+        <span className="flex-1 truncate text-[19px] font-bold tracking-[0.6px] text-[var(--rc-text)]" style={{ fontFamily: ARIAL }}>
+          RELATED GAMES
+        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          {(['prev', 'next'] as const).map((dir) => {
+            const active = dir === 'prev' ? prevActive : nextActive;
+            const color = active ? 'var(--rc-text)' : 'var(--rc-muted)';
+            return (
+              <button
+                key={dir}
+                type="button"
+                aria-label={dir === 'prev' ? 'Previous' : 'Next'}
+                data-testid={`hub-related-${dir}`}
+                onClick={() => nudge(dir === 'prev' ? -1 : 1)}
+                onPointerUp={() => setPopId(dir)}
+                onAnimationEnd={() => setPopId((cur) => (cur === dir ? null : cur))}
+                style={{ animation: popId === dir ? 'rcNavPop 420ms cubic-bezier(0.22,0.61,0.36,1)' : undefined }}
+                className="flex h-[34px] w-[34px] items-center justify-center rounded-full bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+              >
+                <svg width="12" height="14" viewBox="0 0 12 14">
+                  <path
+                    d={dir === 'prev' ? 'M8.8 2.2 3.2 7 8.8 11.8z' : 'M3.2 2.2 8.8 7 3.2 11.8z'}
+                    fill={color}
+                    stroke={color}
+                    strokeWidth="1.8"
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                    style={{ transition: 'fill 260ms ease, stroke 260ms ease' }}
+                  />
+                </svg>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="relative mt-3">
+        <div
+          ref={railRef}
+          onScroll={handleScroll}
+          className="no-scrollbar flex gap-[9px] overflow-x-auto px-4"
+          style={{ scrollSnapType: 'x mandatory', scrollPaddingLeft: 16, WebkitOverflowScrolling: 'touch' }}
+        >
+          {related.map((t) => {
+            // The "RAPIDCLASH ORIGINALS" pill visible on every card is baked into the tile art
+            // image itself, not separate markup — confirmed via the harness capture. No border, no
+            // badge overlay (the prototype's own card has neither); opacity-50 is this app's own
+            // real non-interactive/coming-soon cue, same convention used elsewhere in the app.
+            const cardStyle = {
+              flex: '0 0 calc((100% - 18px) / 3)',
+              width: 'calc((100% - 18px) / 3)',
+              aspectRatio: '112 / 158',
+              scrollSnapAlign: 'start' as const,
+              borderRadius: 14,
+              overflow: 'hidden' as const,
+              backgroundColor: 'var(--rc-surface)',
+              backgroundImage: TILE_ART[t.id] ? `url(${TILE_ART[t.id]})` : undefined,
+              backgroundSize: 'cover' as const,
+              backgroundPosition: 'center' as const,
+            };
+            return t.playable && t.meta ? (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => onSelectGame(t.meta!)}
+                data-testid={`hub-related-${t.id}`}
+                aria-label={t.name}
+                style={{ ...cardStyle, cursor: 'pointer' }}
+                className="focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+              />
+            ) : (
+              <div
+                key={t.id}
+                aria-disabled="true"
+                aria-label={`${t.name} — coming soon`}
+                data-testid={`hub-related-${t.id}`}
+                style={cardStyle}
+                className="opacity-50"
+              />
+            );
+          })}
+        </div>
+        {/* Edge-mask strips (Full Spec.html:934-935) — solid var(--rc-bg), not a fade gradient. */}
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-4" style={{ background: 'var(--rc-bg)' }} />
+        <div className="pointer-events-none absolute inset-y-0 left-0 w-4" style={{ background: 'var(--rc-bg)' }} />
       </div>
     </section>
-  );
-}
-
-function RelatedArt({ id, name }: { id: string; name: string }) {
-  const art = TILE_ART[id];
-  if (art) {
-    return <img src={art} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />;
-  }
-  return (
-    <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-brand/30 to-indigo-900/50">
-      <span className="px-1 text-center text-sm font-black uppercase tracking-wide text-white/85">{name}</span>
-    </div>
   );
 }
 
