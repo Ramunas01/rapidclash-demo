@@ -210,7 +210,7 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     expect(onPlay).not.toHaveBeenCalled(); // guided to the bet panel, not started
     expect(scrollSpy).toHaveBeenCalled(); // bet panel scrolled into view
     expect(screen.getByTestId('hub-section-bet').getAttribute('data-needs-bet')).toBe('true');
-    expect(screen.getByTestId('hub-bet-hint').textContent).toMatch(/select a bet/i);
+    expect(screen.getByTestId('hub-bet-hint').textContent).toMatch(/choose your bet/i);
 
     fireEvent.click(screen.getByTestId('hub-bet-10')); // selecting a bet clears the frame + hint…
     expect(screen.getByTestId('hub-section-bet').getAttribute('data-needs-bet')).toBeNull();
@@ -630,13 +630,13 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     expect(screen.getByTestId('hub-slot-own').textContent).toMatch(/sign in/i);
   });
 
-  it('Unified play panel: PLAY + an inert Play-a-Friend; no "max"/"select a bet" copy', () => {
+  it('Unified play panel: PLAY + an inert Play-a-Friend; no "max"/"choose your bet" copy while idle', () => {
     const { container } = render(<CoinflipHubScreen {...baseProps()} />);
     const panel = screen.getByTestId('hub-section-play');
     expect(panel).toContainElement(screen.getByTestId('hub-play'));
     const friend = screen.getByTestId('hub-play-friend');
     expect(friend).toHaveAttribute('aria-disabled', 'true'); // visual-only (owner D1)
-    expect(container.textContent ?? '').not.toMatch(/select a bet/i);
+    expect(container.textContent ?? '').not.toMatch(/choose your bet/i);
     expect(container.textContent ?? '').not.toMatch(/max /i);
   });
 

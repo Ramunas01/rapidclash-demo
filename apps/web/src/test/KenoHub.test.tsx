@@ -58,7 +58,7 @@ describe('KenoHubScreen (GameHub + KenoPanel)', () => {
     expect(onPlay).not.toHaveBeenCalled(); // guided to the bet panel, not started
     expect(scrollSpy).toHaveBeenCalled(); // bet panel scrolled into view
     expect(screen.getByTestId('hub-section-bet').getAttribute('data-needs-bet')).toBe('true');
-    expect(screen.getByTestId('hub-bet-hint').textContent).toMatch(/select a bet/i);
+    expect(screen.getByTestId('hub-bet-hint').textContent).toMatch(/choose your bet/i);
 
     fireEvent.click(screen.getByTestId('hub-bet-10')); // selecting a bet clears the frame + hint…
     expect(screen.getByTestId('hub-section-bet').getAttribute('data-needs-bet')).toBeNull();

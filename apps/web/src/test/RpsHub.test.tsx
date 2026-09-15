@@ -56,12 +56,19 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     expect(onPlay).not.toHaveBeenCalled(); // guided to the bet panel, not started
     expect(scrollSpy).toHaveBeenCalled(); // bet panel scrolled into view
     expect(screen.getByTestId('hub-section-bet').getAttribute('data-needs-bet')).toBe('true');
-    expect(screen.getByTestId('hub-bet-hint').textContent).toMatch(/select a bet/i);
+    expect(screen.getByTestId('hub-bet-hint').textContent).toMatch(/choose your bet/i);
+    // Ticket 2026-09-15#13 item 1: the needs-bet ring lives on the bet-track pill itself, NOT the
+    // whole hub-section-bet wrapper — and the shake fires on PLAY at the same moment.
+    const bettrack = document.querySelector('[data-rc-bettrack]') as HTMLElement;
+    expect(bettrack.style.boxShadow).toBe('0 0 0 2px var(--rc-loss)');
+    expect(screen.getByTestId('hub-section-bet').style.boxShadow).toBeFalsy();
+    expect(play.style.animation).toContain('rcPlayShake');
 
     fireEvent.click(screen.getByTestId('hub-bet-10')); // selecting a bet clears the frame + hint…
     expect(screen.getByTestId('hub-section-bet').getAttribute('data-needs-bet')).toBeNull();
     expect(screen.getByTestId('hub-bet-hint').textContent).toBe('');
     expect(onPlay).not.toHaveBeenCalled(); // …with NO auto-play
+    expect(bettrack.style.boxShadow).toBe('0 0 0 0 rgba(255,62,94,0)');
   });
 
   it('#143: the inert "Play a Friend" also guides to the bet panel when no stake is armed (guard pre-wired)', () => {
@@ -70,7 +77,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     render(<RpsHubScreen {...baseProps()} />);
     fireEvent.click(screen.getByTestId('hub-play-friend'));
     expect(scrollSpy).toHaveBeenCalled();
-    expect(screen.getByTestId('hub-bet-hint').textContent).toMatch(/select a bet/i);
+    expect(screen.getByTestId('hub-bet-hint').textContent).toMatch(/choose your bet/i);
   });
 
   it('In-match: the RPS board activates, choices come from legalMoves, and the opponent stays hidden', () => {

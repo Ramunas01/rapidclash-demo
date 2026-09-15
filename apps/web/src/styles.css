@@ -194,6 +194,21 @@ p  { color: var(--muted); margin-bottom: 12px; }
   100% { transform: scale(1) translateY(0); }
 }
 
+/* Ticket 2026-09-15#13 item 1 — the PLAY button's "no bet armed" nudge shake, ported verbatim
+ * from the prototype's own global keyframes (`Full Spec.html:71`) — genuinely missing from this
+ * codebase entirely before this (confirmed zero occurrences via grep across both CSS files).
+ * Applied inline (`animation: 'rcPlayShake 540ms cubic-bezier(0.36,0.07,0.19,0.97) both'`) to the
+ * PLAY button on the same press that triggers `guideToBet()` (GameHub.tsx's `PlayPanel`) — this
+ * block just needs to exist once, globally. */
+@keyframes rcPlayShake {
+  0%, 100% { transform: translateX(0); }
+  12% { transform: translateX(-7px); }
+  28% { transform: translateX(6px); }
+  44% { transform: translateX(-5px); }
+  60% { transform: translateX(4px); }
+  78% { transform: translateX(-2px); }
+}
+
 .outcome-win  { color: #4ade80; font-size: 1.6rem; font-weight: bold; text-align: center; margin: 20px 0 8px; }
 .outcome-lose { color: var(--accent); font-size: 1.6rem; font-weight: bold; text-align: center; margin: 20px 0 8px; }
 .outcome-draw { color: #facc15; font-size: 1.6rem; font-weight: bold; text-align: center; margin: 20px 0 8px; }
