@@ -69,6 +69,7 @@ const AVATAR_PRESETS: Exclude<AvatarId, 'default'>[] = ['rc-01', 'rc-02', 'rc-03
  *  attributes throughout — both accept a CSS custom-property reference exactly as readily as a hex
  *  literal, so the object stays the natural shape for this file's own call-site pattern. */
 const RC = {
+  bg: 'var(--rc-bg)',
   surface: 'var(--rc-surface)',
   sunken: 'var(--rc-sunken)',
   text: 'var(--rc-text)',
@@ -587,16 +588,22 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
                     {hasMorePages && (
                       <>
                         <div
+                          data-testid="profile-matches-fade"
                           style={{
                             position: 'absolute', left: 0, right: 0, bottom: 0, height: 76, pointerEvents: 'none', borderRadius: '0 0 26px 26px',
                             opacity: matchesExpanded ? 0 : 1,
                             transition: 'opacity 380ms ease',
-                            // Issue #491: this used to append a hex alpha suffix directly onto RC.sunken's
-                            // own hex literal (`${RC.sunken}B8` etc.) — that trick only works on a raw hex
-                            // string, not the `var(--rc-sunken)` reference RC.sunken is now. color-mix()
-                            // reproduces the same alpha fade (0xB8/0xF0/0xFC ≈ 72%/94%/99% opacity) against
-                            // whatever --rc-sunken resolves to in the active theme.
-                            background: `linear-gradient(to bottom, transparent 0%, color-mix(in srgb, ${RC.sunken} 72%, transparent) 34%, color-mix(in srgb, ${RC.sunken} 94%, transparent) 66%, color-mix(in srgb, ${RC.sunken} 99%, transparent) 100%)`,
+                            // Issue #491: this used to append a hex alpha suffix directly onto a hex
+                            // literal — that trick only works on a raw hex string, not a `var(--rc-*)`
+                            // reference. color-mix() reproduces the same alpha fade (≈72%/94%/99%
+                            // opacity) against whatever the token resolves to in the active theme.
+                            //
+                            // Ticket 2026-09-15#5: was RC.sunken, matching the prototype's own
+                            // `gamesFadeOpacity` fade (Full Spec.html:1451) which uses --rc-bg, not
+                            // --rc-sunken. Both tokens are byte-identical in dark theme (#0b0b0b),
+                            // which is exactly why this was invisible until light mode gave them
+                            // different values (--rc-bg #ffffff vs --rc-sunken #d3d3dd).
+                            background: `linear-gradient(to bottom, transparent 0%, color-mix(in srgb, ${RC.bg} 72%, transparent) 34%, color-mix(in srgb, ${RC.bg} 94%, transparent) 66%, color-mix(in srgb, ${RC.bg} 99%, transparent) 100%)`,
                           }}
                         />
                         <button
