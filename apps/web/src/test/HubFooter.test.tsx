@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, act } from '@testing-library/react';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
 
 describe('HubFooter (issue #323)', () => {
@@ -16,7 +16,7 @@ describe('HubFooter (issue #323)', () => {
       expect(within(footer).getByText(heading)).toBeInTheDocument();
     }
     for (const label of [
-      'Games', 'Tournaments', 'Rewards/VIP', 'Leaderboards',
+      'Games', 'Events', 'Rewards/VIP', 'Leaderboards',
       'How it works', 'Provably fair', 'Fees & rake', 'Game rules',
       'Help center', 'Contact us', 'Responsible gaming', 'Complaint form',
       'Terms of Service', 'Privacy Policy', 'AML Policy', 'Responsible Gaming Policy',
@@ -41,7 +41,7 @@ describe('HubFooter (issue #323)', () => {
     expect(onRewards).toHaveBeenCalledTimes(1);
 
     const inertLabels = [
-      'Tournaments', 'Leaderboards', 'How it works', 'Provably fair', 'Fees & rake', 'Game rules',
+      'Events', 'Leaderboards', 'How it works', 'Provably fair', 'Fees & rake', 'Game rules',
       'Help center', 'Contact us', 'Responsible gaming', 'Complaint form',
       'Terms of Service', 'Privacy Policy', 'AML Policy', 'Responsible Gaming Policy',
     ];
@@ -132,11 +132,15 @@ describe('HubFooter drift fixes (issue #333)', () => {
     ).toBeTruthy();
     expect(gradient.className).toContain('h-16');
     expect(gradient.className).toContain('mt-6');
+    // Ticket 2026-09-15#2 item 1: was a hardcoded rgba(26,26,46,...) literal (the DARK theme's
+    // --rc-surface value spelled out directly) — now reads the token via color-mix(), same
+    // pattern as ProfileHub.tsx's match-list fade, so this composites correctly in light mode too.
     expect(gradient.style.background).toBe(
-      'linear-gradient(to bottom, rgba(26,26,46,0) 0%, rgba(26,26,46,0.45) 55%, rgba(26,26,46,0.85) 82%, rgba(26,26,46,1) 100%)',
+      'linear-gradient(to bottom, color-mix(in srgb, var(--rc-surface) 0%, transparent) 0%, color-mix(in srgb, var(--rc-surface) 45%, transparent) 55%, color-mix(in srgb, var(--rc-surface) 85%, transparent) 82%, color-mix(in srgb, var(--rc-surface) 100%, transparent) 100%)',
     );
-    // The gradient's terminal stop is opaque #1A1A2E, matching the content wrapper's bg-surface
-    // exactly — no seam between the gradient's bottom edge and the content wrapper's top edge.
+    // The gradient's terminal stop is opaque var(--rc-surface), matching the content wrapper's
+    // bg-surface exactly — no seam between the gradient's bottom edge and the content wrapper's
+    // top edge, in either theme now.
   });
 
   it('issue #346: the gradient div is a sibling of the bg-surface content wrapper, not its parent — genuinely composites over page-black', () => {
@@ -184,7 +188,54 @@ describe('HubFooter drift fixes (issue #333)', () => {
     const link = within(footer).getByText('Games');
     expect(link.className).toContain('text-[14px]');
     expect(link.className).not.toContain('text-[12.5px]');
-    expect(link.className).toContain('text-foreground');
+    // Ticket 2026-09-15#2 item 5: text-foreground resolved to a legacy shadcn token with no
+    // light-mode override anywhere in index.css — fixed to read the app's own themed text token.
+    expect(link.className).toContain('text-[var(--rc-text)]');
+    expect(link.className).not.toContain('text-foreground');
+  });
+});
+
+// Ticket 2026-09-15#2 — footer light-mode theming: 4 hardcoded literals swapped for theme
+// tokens (items 1, 4, 5, 6), the logo now swaps by theme (item 3, reusing HubRibbon's own
+// pattern), and the Tournaments→Events label fix.
+describe('HubFooter light-mode theming (ticket 2026-09-15#2)', () => {
+  it('item 3: swaps the wordmark image by resolved theme, same HubRibbon.tsx pattern reused verbatim', async () => {
+    const { setThemeChoice } = await import('../lib/theme.js');
+    render(<HubFooter />);
+    const darkSrc = screen.getByAltText('RapidClash').getAttribute('src');
+    act(() => setThemeChoice('light'));
+    const lightSrc = screen.getByAltText('RapidClash').getAttribute('src');
+    expect(lightSrc).not.toBe(darkSrc);
+    act(() => setThemeChoice('dark')); // restore — theme.ts is a module-level singleton shared across tests
+  });
+
+  it('item 4: the JOIN THE COMMUNITY heading reads the themed text token, not a hardcoded text-white', () => {
+    render(<HubFooter />);
+    const heading = within(screen.getByTestId('home-footer')).getByText('JOIN THE COMMUNITY');
+    expect(heading.className).toContain('text-[var(--rc-text)]');
+    expect(heading.className).not.toContain('text-white');
+  });
+
+  it('item 6: the disclaimer, copyright, and 18+ text all read var(--rc-muted), not the dark-only #83838F literal', () => {
+    render(<HubFooter />);
+    const footer = screen.getByTestId('home-footer');
+    const disclaimer = within(footer).getByText(/play-money demo platform/);
+    const copyright = within(footer).getByText(/All rights reserved\./);
+    const plus18 = within(footer).getByText('18+');
+    for (const el of [disclaimer, copyright, plus18]) {
+      expect(el.style.color).toBe('var(--rc-muted)');
+    }
+  });
+
+  it('"also": the Tournaments link now reads Events, matching the prototype\'s own copy, and stays inert like every other non-real link', () => {
+    render(<HubFooter />);
+    const footer = screen.getByTestId('home-footer');
+    expect(within(footer).queryByText('Tournaments')).toBeNull();
+    const events = within(footer).getByText('Events');
+    expect(events.onclick).toBeNull();
+    fireEvent.click(events);
+    // No throw, no callback to assert against — Events has no `real` marker, matching every
+    // other placeholder link's current inert treatment.
   });
 });
 

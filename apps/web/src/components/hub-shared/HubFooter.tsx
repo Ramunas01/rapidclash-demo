@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { HUB_BODY } from '../hub-chrome/layout.js';
-import wordmark from '../../assets/brand/rapidclash-wordmark.webp';
+import { useTheme } from '../../lib/theme.js';
+import wordmarkLight from '../../assets/brand/rapidclash-wordmark.webp';
+import wordmarkDark from '../../assets/brand/rapidclash-wordmark-dark.png';
 import boltMark from '../../assets/brand/bolt-mark.webp';
 
 interface Props {
@@ -70,7 +72,12 @@ const LINK_COLUMNS: { heading: string; links: { label: string; real?: 'games' | 
     heading: 'PLATFORM',
     links: [
       { label: 'Games', real: 'games' },
-      { label: 'Tournaments' },
+      // Ticket 2026-09-15#2 "also": corrected to match the prototype's own copy ("Events", not
+      // "Tournaments") — still inert, like every other non-`real` link here. Making this an
+      // actually-functional link to the Events category needs new plumbing across HubFooter's 6
+      // call sites (no category-aware callback exists anywhere today) — scoped as its own
+      // follow-up, not bundled into this label-only fix.
+      { label: 'Events' },
       { label: 'Rewards/VIP', real: 'rewards' },
       { label: 'Leaderboards' },
     ],
@@ -118,20 +125,26 @@ const LINK_COLUMNS: { heading: string; links: { label: string; real?: 'games' | 
  * about the other 4 call sites' behavior changes.
  */
 export function HubFooter({ onGames, onRewards, onPlaceholder }: Props) {
+  const { resolved } = useTheme();
+  const wordmark = resolved === 'light' ? wordmarkDark : wordmarkLight;
   return (
     <footer data-testid="home-footer" className="pt-6">
       {/* Full-bleed gradient band: transparent <footer> lets the page's own bg-background
        *  (black) show through above/behind this div, so its 0% stop genuinely composites
        *  black-to-navy instead of navy-on-navy (issue #346). Deliberately outside the
        *  bg-surface content wrapper below and carries no horizontal padding, so it spans the
-       *  footer's full width edge-to-edge, matching the design source. */}
+       *  footer's full width edge-to-edge, matching the design source.
+       *  Ticket 2026-09-15#2 item 1: the four stops hardcoded `rgba(26,26,46,...)` — the DARK
+       *  theme's `--rc-surface` value spelled out as a literal RGB — instead of reading the
+       *  token, so the band stayed navy under a light page. `color-mix()` swap matches the same
+       *  pattern already used for this exact class of fade (ProfileHub.tsx's match-list fade). */}
       <div
         data-testid="home-footer-gradient"
         aria-hidden="true"
         className="mt-6 h-16"
         style={{
           background:
-            'linear-gradient(to bottom, rgba(26,26,46,0) 0%, rgba(26,26,46,0.45) 55%, rgba(26,26,46,0.85) 82%, rgba(26,26,46,1) 100%)',
+            'linear-gradient(to bottom, color-mix(in srgb, var(--rc-surface) 0%, transparent) 0%, color-mix(in srgb, var(--rc-surface) 45%, transparent) 55%, color-mix(in srgb, var(--rc-surface) 85%, transparent) 82%, color-mix(in srgb, var(--rc-surface) 100%, transparent) 100%)',
         }}
       />
 
@@ -143,11 +156,15 @@ export function HubFooter({ onGames, onRewards, onPlaceholder }: Props) {
        *  transparent, the reserved clearance space behind the fixed HubToolbar must still read
        *  as solid navy, not a transparent strip revealing page-black — #342's fix). */}
       <div data-testid="home-footer-content" className={cn('bg-surface px-4', HUB_BODY)}>
+        {/* Ticket 2026-09-15#2 item 3: hardcoded the white-text logo unconditionally — the
+            dark-crop asset already exists and is already used correctly one file away
+            (HubRibbon.tsx), same useTheme() swap copied verbatim, no new asset/logic. */}
         <img src={wordmark} alt="RapidClash" className="mb-[22px] h-auto w-[140px]" />
 
         <div className="flex flex-col gap-[22px]">
           <div>
-            <h2 className="mb-[18px] text-[20px] font-bold text-white">JOIN THE COMMUNITY</h2>
+            {/* Ticket 2026-09-15#2 item 4: hardcoded text-white. */}
+            <h2 className="mb-[18px] text-[20px] font-bold text-[var(--rc-text)]">JOIN THE COMMUNITY</h2>
             <div data-testid="home-footer-social" className="flex gap-[14px]">
               {SOCIALS.map((s) => (
                 <span
@@ -174,7 +191,11 @@ export function HubFooter({ onGames, onRewards, onPlaceholder }: Props) {
                     <span
                       key={l.label}
                       data-testid={`home-footer-link-${l.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
-                      className="cursor-pointer text-[14px] text-foreground"
+                      // Ticket 2026-09-15#2 item 5: `text-foreground` resolves to the legacy
+                      // shadcn `--foreground` token, which has no light-mode override anywhere in
+                      // index.css — the same bug class already fixed on HubToolbar/HubRibbon.
+                      // Fixed locally, not by re-theming the shared token itself.
+                      className="cursor-pointer text-[14px] text-[var(--rc-text)]"
                       onClick={
                         l.real === 'games'
                           ? onGames
@@ -193,13 +214,13 @@ export function HubFooter({ onGames, onRewards, onPlaceholder }: Props) {
             ))}
           </div>
 
-          <p className="text-[12.5px] leading-relaxed" style={{ color: '#83838F' }}>
+          <p className="text-[12.5px] leading-relaxed" style={{ color: 'var(--rc-muted)' }}>
             RapidClash is a play-money demo platform for players aged 18 and over. Credits have no
             real-world value and cannot be redeemed for cash or prizes. Play responsibly, set
             limits, and take breaks.
           </p>
 
-          <p className="text-[12.5px] leading-relaxed" style={{ color: '#83838F' }}>
+          <p className="text-[12.5px] leading-relaxed" style={{ color: 'var(--rc-muted)' }}>
             © 2026 RapidClash. All rights reserved.
             <br />
             Players vs Players, Never the House.
@@ -207,7 +228,7 @@ export function HubFooter({ onGames, onRewards, onPlaceholder }: Props) {
 
           <div className="flex items-center gap-2">
             <img src={boltMark} alt="" aria-hidden="true" className="h-[28px] w-[28px] object-contain" />
-            <span className="text-[26px] font-bold" style={{ color: '#83838F' }}>18+</span>
+            <span className="text-[26px] font-bold" style={{ color: 'var(--rc-muted)' }}>18+</span>
           </div>
         </div>
       </div>
