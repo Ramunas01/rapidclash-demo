@@ -4,6 +4,7 @@ import { render, screen, fireEvent, waitFor, within, act } from '@testing-librar
 import { RpsHubScreen } from '../screens/RpsHub.js';
 import type { RpsView } from '../App.js';
 import type { OpenChallenge } from '@rapidclash/shared';
+import { setCurSel } from '../lib/currency.js';
 
 // canvas-confetti needs a real <canvas> (absent in jsdom) — mock it (matches the other hub tests).
 vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
@@ -32,7 +33,10 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
       return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
     }));
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setCurSel('USD'); // restore the app-wide default so other test files aren't affected
+  });
 
   it('Idle: arming a bet enables PLAY, which posts that stake (shared GameHub)', () => {
     const onPlay = vi.fn();
@@ -69,6 +73,26 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     expect(screen.getByTestId('hub-bet-hint').textContent).toBe('');
     expect(onPlay).not.toHaveBeenCalled(); // …with NO auto-play
     expect(bettrack.style.boxShadow).toBe('0 0 0 0 rgba(255,62,94,0)');
+  });
+
+  // Ticket 2026-09-16#2: the bet-amount row (icon + label) must follow the wallet's own selected
+  // currency (`useCurSel()`, already wired into HubRibbon/GamesCarousel/RewardsHub) instead of
+  // the hardcoded "USD" this row shipped with. Guest mode's RC-icon/'RC'-label branch is a
+  // separate, deliberate surface (CHARTER.md) and stays untouched regardless of curSel.
+  it('#2026-09-16#2: the bet row label follows the wallet\'s selected currency, not a hardcoded USD', () => {
+    setCurSel('SOL');
+    render(<RpsHubScreen {...baseProps()} />);
+    const betAmountGroup = screen.getByRole('group', { name: /bet amount/i });
+    expect(betAmountGroup.textContent).toContain('SOL');
+    expect(betAmountGroup.textContent).not.toContain('USD');
+  });
+
+  it('#2026-09-16#2: guest mode keeps RC regardless of the wallet\'s selected currency', () => {
+    setCurSel('SOL');
+    render(<RpsHubScreen {...baseProps({ isGuest: true })} />);
+    const betAmountGroup = screen.getByRole('group', { name: /bet amount/i });
+    expect(betAmountGroup.textContent).toContain('RC');
+    expect(betAmountGroup.textContent).not.toContain('SOL');
   });
 
   it('#143: the inert "Play a Friend" also guides to the bet panel when no stake is armed (guard pre-wired)', () => {

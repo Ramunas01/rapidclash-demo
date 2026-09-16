@@ -24,6 +24,7 @@ import { HubFooter } from '../components/hub-shared/HubFooter.js';
 import { Avatar, avatarIdForName } from '../components/hub-shared/Avatar.js';
 import { Credits, RcIcon } from '../components/hub-shared/RcIcon.js';
 import { CurrencyIcon } from '../components/hub-chrome/CurrencyPicker.js';
+import { useCurSel } from '../lib/currency.js';
 import { useTheme } from '../lib/theme.js';
 import { play, installUnlockOnFirstGesture } from '../lib/sound.js';
 import { outlineClasses, outlineForOutcome, replaysOf, useDelayedFlag, useWinReveal, WIN_FILL_IN_MS, type Verdict } from './hub-shared/slotReveal.js';
@@ -1160,6 +1161,11 @@ function PlayPanel({
   // Ticket 2026-09-11#8/A: bet-panel light/dark colors + the sliding-indicator track math.
   const { resolved } = useTheme();
   const light = resolved === 'light';
+  // Ticket 2026-09-16#2: the currency-name row below must follow the wallet's actual selection
+  // (`useCurSel()`, already wired into HubRibbon/GamesCarousel/RewardsHub) — this row was the one
+  // consumer still hardcoded to "USD". Guest mode is untouched (its RC-icon/'RC'-label branch is a
+  // separate, deliberate surface, not currency-aware at all).
+  const { curSel } = useCurSel();
   // The armed preset's index within the OFFERED grid (accounts for the #381 tap-again gesture:
   // stake 2 lights the `v === 1` slot, same slot 1 renders in). -1 (no bet armed, or an armed
   // value outside the offered grid) hides the indicator entirely, same as the prototype's own
@@ -1297,16 +1303,16 @@ function PlayPanel({
             the old visible caption used to (the prototype itself has no separate text label here). */}
         <div role="group" aria-label="Bet amount" className="mb-3 flex items-center justify-between">
           <div className="flex min-w-0 items-center gap-[7px]">
-            {isGuest ? <RcIcon size={17} /> : <CurrencyIcon sym="USD" size={17} />}
+            {isGuest ? <RcIcon size={17} /> : <CurrencyIcon sym={curSel} size={17} />}
             <span className="text-foreground" style={{ fontFamily: ARIAL, fontSize: '12px', fontWeight: 700, letterSpacing: '1.2px' }}>
-              {isGuest ? 'RC' : 'USD'} <span style={{ fontSize: '10px', letterSpacing: '0.6px' }}>(democash)</span>
+              {isGuest ? 'RC' : curSel} <span style={{ fontSize: '10px', letterSpacing: '0.6px' }}>(democash)</span>
             </span>
           </div>
           <div
             className="flex shrink-0 items-center gap-[5px]"
             style={{ opacity: armedStake == null ? 0 : 1, transition: 'opacity 200ms ease' }}
           >
-            {isGuest ? <RcIcon size={15} /> : <CurrencyIcon sym="USD" size={15} />}
+            {isGuest ? <RcIcon size={15} /> : <CurrencyIcon sym={curSel} size={15} />}
             <span className="text-success tabular-nums" style={{ fontFamily: SPACE_GROTESK, fontSize: '14px', fontWeight: 700 }}>
               {isGuest ? (armedStake ?? 0).toLocaleString('en-US') : `$${(armedStake ?? 0).toLocaleString('en-US')}`}
             </span>
