@@ -147,7 +147,35 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     expect(kind(0)).toBe('safe');
     expect(kind(10)).toBe('bustedOn'); // the detonated mine wins over plain 'mine'
     expect(kind(20)).toBe('mine');     // layout revealed once locked
-    expect(kind(2)).toBe('covered');
+    // Ticket 2026-09-16#6 item 2: an untouched, non-mine tile auto-reveals (ghosted) once locked —
+    // it no longer stays 'covered' forever, matching the prototype's own `open = picked || busted`.
+    expect(kind(2)).toBe('autoSafe');
+  });
+
+  // Ticket 2026-09-16#6 item 1: the bomb icon on the hit tile is position:absolute (matching its
+  // halo sibling, which already was) — otherwise the halo, being positioned, paints ABOVE the
+  // icon regardless of DOM order (a CSS stacking-context mechanic, not a DOM-order bug). The
+  // non-hit exposed mine gets the same treatment too (harmless there, no halo sibling exists).
+  it('item 1: the bomb icon wrapper is position:absolute on both the hit tile and other exposed mines', () => {
+    render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [], locked: true, bustedOn: 10, mines: [10, 20] }), legalMoves: asLegal([]) })} />);
+    // Structure: <div class="absolute..."><motion.div (classless)><svg/></motion.div></div> — the
+    // svg's grandparent (not immediate parent) is the actual positioned/animated wrapper div.
+    const hitIconWrapper = screen.getByTestId('cell-10').querySelectorAll('svg')[1].parentElement?.parentElement as HTMLElement;
+    expect(hitIconWrapper.className).toContain('absolute');
+    const otherMineIconWrapper = screen.getByTestId('cell-20').querySelector('svg')?.parentElement?.parentElement as HTMLElement;
+    expect(otherMineIconWrapper.className).toContain('absolute');
+  });
+
+  // Ticket 2026-09-16#6 item 3: the hit tile's bomb halo + icon bounce (rcMineJump) — the other
+  // exposed mines and every safe tile stay still (matches the prototype's own `hit`-only gating).
+  it('item 3: the hit tile\'s bomb halo and icon carry the rcMineJump bounce; other exposed mines don\'t', () => {
+    render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [], locked: true, bustedOn: 10, mines: [10, 20] }), legalMoves: asLegal([]) })} />);
+    const hitCell = screen.getByTestId('cell-10');
+    const [haloSvg, iconSvg] = hitCell.querySelectorAll('svg');
+    expect(haloSvg.parentElement?.style.animation).toContain('rcMineJump'); // halo wrapper is the direct parent
+    expect(iconSvg.parentElement?.parentElement?.style.animation).toContain('rcMineJump'); // icon wrapper is the grandparent
+    const otherMineIconWrapper = screen.getByTestId('cell-20').querySelector('svg')?.parentElement?.parentElement as HTMLElement;
+    expect(otherMineIconWrapper.style.animation).toBeFalsy();
   });
 
   // Ticket 2026-09-16#5 item 1: the duplicate You/Opponent status row (and its own "N safe"/

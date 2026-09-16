@@ -209,6 +209,29 @@ p  { color: var(--muted); margin-bottom: 12px; }
   78% { transform: translateX(-2px); }
 }
 
+/* Ticket 2026-09-16#6 item 3 — the hit mine's bounce, ported verbatim from the prototype's own
+ * global keyframes (`Full Spec.html:72-86`), genuinely missing entirely before this (confirmed
+ * zero occurrences via grep). Applied inline (`animation: 'rcMineJump 4000ms
+ * cubic-bezier(0.32,0.72,0.4,1) 1 both'`) to BOTH the bomb halo and bomb icon SVGs on the tile
+ * that actually busted you (MinesHub.tsx's `bustedOn` cell kind) — the other exposed mines and
+ * every safe tile stay still. */
+@keyframes rcMineJump {
+  0% { transform: translateY(0) scale(1); }
+  8% { transform: translateY(-24%) scale(1.07); }
+  16% { transform: translateY(0) scale(0.94); }
+  24% { transform: translateY(-17%) scale(1.05); }
+  32% { transform: translateY(0) scale(0.96); }
+  40% { transform: translateY(-11%) scale(1.03); }
+  48% { transform: translateY(0) scale(0.975); }
+  56% { transform: translateY(-7%) scale(1.02); }
+  64% { transform: translateY(0) scale(0.985); }
+  72% { transform: translateY(-4%) scale(1.01); }
+  80% { transform: translateY(0) scale(0.994); }
+  88% { transform: translateY(-2%) scale(1.004); }
+  94% { transform: translateY(0) scale(0.998); }
+  100% { transform: translateY(0) scale(1); }
+}
+
 .outcome-win  { color: #4ade80; font-size: 1.6rem; font-weight: bold; text-align: center; margin: 20px 0 8px; }
 .outcome-lose { color: var(--accent); font-size: 1.6rem; font-weight: bold; text-align: center; margin: 20px 0 8px; }
 .outcome-draw { color: #facc15; font-size: 1.6rem; font-weight: bold; text-align: center; margin: 20px 0 8px; }

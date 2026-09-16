@@ -19,7 +19,10 @@ const BOARD_SIZE = 25; // 5×5
 // already follow for their own server-side timer constants.
 const ROUND_SECONDS = 30;
 
-type CellKind = 'covered' | 'safe' | 'mine' | 'bustedOn';
+// Ticket 2026-09-16#6 item 2: 'autoSafe' — a safe tile you never personally tapped, auto-revealed
+// once you're locked (busted), matching the prototype's own `open = picked || busted` (all 25
+// tiles satisfy `open` the instant a bust happens, not just the picked/mine ones).
+type CellKind = 'covered' | 'safe' | 'mine' | 'bustedOn' | 'autoSafe';
 
 // ── Prototype-literal colors, Full Spec.html:470-529 (`isMines` block) + :3720-3722/:3792 (the
 // `getState()` values feeding it). None of these match an existing --rc-* token pair (checked
@@ -42,6 +45,7 @@ function tileBg(kind: CellKind, light: boolean): string {
     case 'covered':
       return light ? MINES_TILE_COVERED.light : MINES_TILE_COVERED.dark;
     case 'mine':
+    case 'autoSafe':
       return light ? MINES_TILE_AUTO.light : MINES_TILE_AUTO.dark;
     case 'safe':
     case 'bustedOn':
@@ -50,9 +54,12 @@ function tileBg(kind: CellKind, light: boolean): string {
 }
 
 /** The faceted gem, lines 508-516 — a revealed safe tile. Exact path data, not approximated. */
-function GemIcon() {
+// Ticket 2026-09-16#6 item 2: `opacity` mirrors `MineIcon`'s own shape — 1 for a tile you actually
+// tapped, 0.26 for a safe tile auto-revealed on bust (never tapped). Full opacity was previously
+// the only state this ever rendered at (the prop is new; every existing call site now passes 1).
+function GemIcon({ opacity }: { opacity: number }) {
   return (
-    <svg viewBox="0 0 48 44" width="62%" className="block">
+    <svg viewBox="0 0 48 44" width="62%" className="block" style={{ opacity }}>
       <path d="M24 43 L2 16 L11 3 L37 3 L46 16 Z" fill="#16C447" />
       <path d="M24 43 L2 16 L17 16 Z" fill="#22DD55" />
       <path d="M24 43 L17 16 L31 16 Z" fill="#3BF06B" />
@@ -139,6 +146,10 @@ function MineHalo() {
 // cleanly: CSS opacity is multiplicative across nested elements, so a 0→1 wrapper animation times
 // MineIcon's own constant 0.26 lands exactly on 0→0.26, the real target, with no extra plumbing.
 const REVEAL_POP_TRANSITION = { duration: 0.3, ease: [0.34, 1.7, 0.5, 1] as const };
+// Ticket 2026-09-16#6 item 3: the hit tile's bounce (`Full Spec.html:3702`, `bombAnim: hit ?
+// 'rcMineJump 4000ms cubic-bezier(0.32,0.72,0.4,1) 1 both' : 'none'`) — applies to BOTH the bomb
+// halo and bomb icon on the busted tile specifically, never the other exposed mines.
+const BOMB_JUMP_ANIM = 'rcMineJump 4000ms cubic-bezier(0.32,0.72,0.4,1) 1 both';
 function MineTileContent({ kind }: { kind: CellKind }) {
   if (kind === 'safe') {
     return (
@@ -147,27 +158,50 @@ function MineTileContent({ kind }: { kind: CellKind }) {
           <GemHalo />
         </div>
         <motion.div initial={{ opacity: 0, scale: 0.4 }} animate={{ opacity: 1, scale: 1 }} transition={REVEAL_POP_TRANSITION}>
-          <GemIcon />
+          <GemIcon opacity={1} />
         </motion.div>
       </>
     );
   }
-  if (kind === 'mine') {
+  if (kind === 'autoSafe') {
     return (
       <motion.div initial={{ opacity: 0, scale: 0.4 }} animate={{ opacity: 1, scale: 1 }} transition={REVEAL_POP_TRANSITION}>
-        <MineIcon opacity={0.26} />
+        <GemIcon opacity={0.26} />
       </motion.div>
+    );
+  }
+  if (kind === 'mine') {
+    // Ticket 2026-09-16#6 item 1: position:absolute, matching the prototype's own bomb-icon SVG
+    // (`:488`, always position:absolute) — no halo sibling exists for this kind, so this is a
+    // harmless, literal port here, not a fix (the fix that actually matters is the `bustedOn`
+    // branch below, where a halo sibling is present).
+    return (
+      <div className="absolute inset-0 flex items-center justify-center">
+        <motion.div initial={{ opacity: 0, scale: 0.4 }} animate={{ opacity: 1, scale: 1 }} transition={REVEAL_POP_TRANSITION}>
+          <MineIcon opacity={0.26} />
+        </motion.div>
+      </div>
     );
   }
   if (kind === 'bustedOn') {
     return (
       <>
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center" style={{ animation: BOMB_JUMP_ANIM }}>
           <MineHalo />
         </div>
-        <motion.div initial={{ opacity: 0, scale: 0.4 }} animate={{ opacity: 1, scale: 1 }} transition={REVEAL_POP_TRANSITION}>
-          <MineIcon opacity={1} />
-        </motion.div>
+        {/* Ticket 2026-09-16#6 item 1 (the real fix): position:absolute here, matching the halo
+            wrapper above — CSS paints a positioned element above a static sibling regardless of
+            DOM order (a genuine stacking-context mechanic, empirically confirmed by Advisor's own
+            repro), which is why the halo was painting over this icon despite already being first
+            in the JSX. Item 3's bounce lives on this same OUTER, CSS-animated wrapper rather than
+            directly on the Framer-driven pop `motion.div` nested inside it — putting a raw CSS
+            `animation` and Framer's own `animate`-driven transform on the identical element would
+            fight over the same `transform` property; two separate layers compose cleanly instead. */}
+        <div className="absolute inset-0 flex items-center justify-center" style={{ animation: BOMB_JUMP_ANIM }}>
+          <motion.div initial={{ opacity: 0, scale: 0.4 }} animate={{ opacity: 1, scale: 1 }} transition={REVEAL_POP_TRANSITION}>
+            <MineIcon opacity={1} />
+          </motion.div>
+        </div>
       </>
     );
   }
@@ -307,6 +341,11 @@ function MinesBoard({ playerId, gameState, legalMoves, onMove, phase, serverCloc
     if (bustedOn === i) return 'bustedOn';
     if (myUncovered.has(i)) return 'safe';
     if (myMines.has(i)) return 'mine'; // revealed only once I'm locked
+    // Ticket 2026-09-16#6 item 2: once locked, every remaining tile reveals — the prototype's own
+    // `open = picked || busted` (Full Spec.html:3690-3694) opens ALL 25 tiles the instant a bust
+    // happens, not just the picked/mine ones. A tile that's neither picked nor a mine, revealed
+    // this way, is a ghosted safe tile ('autoSafe') — still 'covered' only while still playing.
+    if (myLocked) return 'autoSafe';
     return 'covered';
   }
 
