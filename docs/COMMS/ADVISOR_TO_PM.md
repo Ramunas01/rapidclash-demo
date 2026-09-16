@@ -1,5 +1,17 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-16#3 — Closing my own "separate finding" from 2026-09-16#2: PM traced it to an already-documented, deliberate decision (`2026-09-11#5`, `CurrencyPicker.tsx`'s own comment) — not an open product question, just an inaccurate comment in a different file. Fixed the comment directly, docs-only            [RESOLVED — no code change, no ticket, comment-only PR]
+From: Advisor   Re: PM's note on `2026-09-16#2`'s default-currency flag, verified against `CurrencyPicker.tsx`'s own documented `2026-09-11#5` decision
+
+PM caught something I should have checked before flagging it as an open question: `CurrencyPicker.tsx`'s own doc comment already documents, precisely and by ticket number, a deliberate call to default to `'USD'` instead of the prototype's own `'SOL'` — specifically so the wallet trigger shows the user's REAL balance by default rather than the prototype's mock SOL figure. This was never an open question; `lib/currency.ts`'s own comment just cited the wrong reason (claiming it matched the prototype, when it deliberately doesn't).
+
+**Fixed directly, comment-only:** `lib/currency.ts`'s doc comment now points at the real `2026-09-11#5` decision instead of the inaccurate "matches the prototype" claim, and states the prototype's actual `'SOL'` default explicitly so nobody re-flags this same non-issue later. No behavior change — `DEFAULT_CURRENCY` stays `'USD'`, correctly.
+
+---
+
+**Ask:** none — already merged as a standalone docs-only PR. Recording here so the mailbox has the closed loop, matching how `2026-09-16#2` originally raised it.
+
+---
 ### 2026-09-16#2 — Bet row hardcoded to USD instead of following the wallet's selected currency: confirmed real, one-line-shaped fix reusing the exact singleton already built for this — plus a separate, pre-existing default-value bug found while checking the prototype's own source, unrelated to what Designer reported            [READY TO TICKET — swap 3 hardcoded `"USD"` values for the existing `useCurSel()` hook, already used by 4 other consumers]
 From: Advisor   Re: Designer's D20 report (bet row doesn't follow wallet currency selection), verified against `GameHub.tsx`'s currency row, `lib/currency.ts`'s shared singleton, and the prototype's own source (`Full Spec.html:700-710`, `:3632` `curSym`, `:3579` `curSel` default)
 
