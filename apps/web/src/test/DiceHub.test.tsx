@@ -94,9 +94,19 @@ describe('DiceHubScreen', () => {
     expect(onMakeMove).toHaveBeenCalledWith('reveal'); // auto-fired
   });
 
-  it('Resolved: reveals both rolls', () => {
+  // Ticket 2026-09-16#4 item 1: the rolls are now held back and revealed on a timeline (dice-roll
+  // sound + count-up at +460ms, landing on the real numbers at +904ms) instead of appearing the
+  // instant `result` exists — advance past REVEAL_SETTLE_MS (904ms) to see the settled values.
+  // Real timers (not fake): this file's other reveal-timing tests found `vi.useFakeTimers()` +
+  // a self-rescheduling `requestAnimationFrame` loop + React state updates to be genuinely flaky
+  // across MULTIPLE fake-timer tests in the same run (the first such test in a file reliably
+  // passes, later ones don't reliably drive the rAF loop) — a jsdom/sinon/React interaction, not a
+  // bug in the reveal machine itself (confirmed correct standalone). Real timers + `waitFor` sidestep
+  // it entirely, matching this file's other real-timer reveal tests below.
+  it('Resolved: reveals both rolls, once the reveal count-up lands', async () => {
     render(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState: resolved() })} />);
-    expect(screen.getByTestId('hub-board').textContent).toContain('50.00'); // my roll
+    expect(screen.getByTestId('hub-board').textContent).not.toContain('50.00'); // not yet — still counting
+    await waitFor(() => expect(screen.getByTestId('hub-board').textContent).toContain('50.00'), { timeout: 3000 });
     expect(screen.getByTestId('hub-board').textContent).toContain('30.00'); // opponent
   });
 
@@ -274,10 +284,11 @@ describe('DiceHubScreen', () => {
       );
       expect(screen.queryByTestId('hub-result-dice')).toBeNull();
       expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
-      // Real timers here (unlike the fake-timer test below): HOLD_MS=2200 + BAR_VERDICT_BEAT_MS=250
-      // exceeds waitFor's default 1000ms window, so raise it — same idiom as CoinflipHub.test.tsx's
-      // equivalent real-timer reveal test.
-      await waitFor(() => expect(screen.getByTestId('hub-slot-own-verdict')).toBeInTheDocument(), { timeout: 3000 });
+      // Real timers here (unlike the fake-timer test below): ticket 2026-09-16#4's own
+      // REVEAL_COMPLETE_MS=1804 (DiceHub.tsx) is what now gates the own-bar verdict (via
+      // gateResultOnReveal/onRevealComplete) — exceeds waitFor's default 1000ms window, so raise
+      // it — same idiom as CoinflipHub.test.tsx's equivalent real-timer reveal test.
+      await waitFor(() => expect(screen.getByTestId('hub-slot-own-verdict')).toBeInTheDocument(), { timeout: 4000 });
       expect(screen.queryByTestId('hub-result-dice')).toBeNull();
       expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
     });
@@ -300,99 +311,98 @@ describe('DiceHubScreen', () => {
           })}
         />,
       );
-      await waitFor(() => expect(screen.getByTestId('hub-slot-own-verdict')).toBeInTheDocument(), { timeout: 3000 });
+      await waitFor(() => expect(screen.getByTestId('hub-slot-own-verdict')).toBeInTheDocument(), { timeout: 4000 });
       // Still the real, resolved rolls — not DiceIdle's blank gauges (which show neither number).
       expect(screen.getByTestId('hub-board').textContent).toContain('50.00');
       expect(screen.getByTestId('hub-board').textContent).toContain('30.00');
     });
 
+    // Real timers throughout (see the equivalent comment on "Resolved: reveals both rolls" above).
     it('own-bar win-fill mechanism fires on the own bar only — opponent bar never gets a win/lose ring', async () => {
-      vi.useFakeTimers();
-      try {
-        const gameState = winGameState();
-        const { rerender } = render(
-          <DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />,
-        );
-        rerender(
-          <DiceHubScreen
-            {...baseProps({
-              currentMatchId: null,
-              gameState,
-              lastOutcome: { type: 'win', winner: 'me' },
-              lastSettlement: { delta: 10, newBalance: 1010 },
-            })}
-          />,
-        );
+      const gameState = winGameState();
+      const { rerender } = render(
+        <DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />,
+      );
+      rerender(
+        <DiceHubScreen
+          {...baseProps({
+            currentMatchId: null,
+            gameState,
+            lastOutcome: { type: 'win', winner: 'me' },
+            lastSettlement: { delta: 10, newBalance: 1010 },
+          })}
+        />,
+      );
 
-        // HOLD_MS=2200 (this file's DiceHub.tsx constant) → result phase, then the fixed
-        // BAR_VERDICT_BEAT_MS=250 (GameHub.tsx) → the own-bar verdict lights.
-        await act(async () => { await vi.advanceTimersByTimeAsync(2200 + 50); });
-        await act(async () => { await vi.advanceTimersByTimeAsync(250 + 50); });
+      // Ticket 2026-09-16#4 item 1: REVEAL_COMPLETE_MS=1804 (this file's DiceHub.tsx constant) is
+      // when DiceBoard's own reveal clock fires onRevealComplete — gateResultOnReveal then lights
+      // the own-bar verdict in lockstep with it (no more separate fixed BAR_VERDICT_BEAT_MS beat).
+      await waitFor(() => expect(screen.getByTestId('hub-slot-own-verdict')).toBeInTheDocument(), { timeout: 4000 });
 
-        const ownBar = screen.getByTestId('hub-slot-own');
-        const oppBar = screen.getByTestId('hub-slot-opponent');
-        expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you win/i);
-        expect(ownBar.querySelector('.bg-success')).not.toBeNull(); // green fill = a background layer
-        expect(ownBar.className).not.toContain('ring-success'); // not yet settled to the outline
-        // Own-bar only (matches Mines' equivalent regression guard) — the opponent's pill never
-        // gets any win/lose treatment.
-        expect(oppBar.querySelector('.bg-success')).toBeNull();
-        expect(oppBar.className).not.toContain('ring-success');
+      const ownBar = screen.getByTestId('hub-slot-own');
+      const oppBar = screen.getByTestId('hub-slot-opponent');
+      expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you win/i);
+      // Ticket 2026-09-16#4 item 4: Dice's own win fill is the inline #16A34A (DICE_WIN_GREEN),
+      // not the shared bg-success class — the fill layer's own distinguishing classes (Avatar's
+      // wrapper also carries aria-hidden, so key off these instead to avoid a false match there).
+      const ownFill = ownBar.querySelector('.pointer-events-none.absolute.inset-0') as HTMLElement;
+      expect(ownFill.style.background).toBe('rgb(22, 163, 74)'); // #16A34A, jsdom-normalized
+      expect(ownBar.className).not.toContain('ring-success'); // not yet settled to the outline
+      // Own-bar only (matches Mines' equivalent regression guard) — the opponent's pill never
+      // gets any win/lose treatment.
+      expect(oppBar.querySelector('.pointer-events-none.absolute.inset-0')).toBeNull();
+      expect(oppBar.className).not.toContain('ring-success');
 
-        // 0.5s fill-in + 2s hold + 0.5s fade-out = 3s → settles to the persistent green outline.
-        await act(async () => { await vi.advanceTimersByTimeAsync(3000 + 50); });
-        expect(ownBar.className).toContain('ring-success');
-        expect(screen.queryByTestId('hub-slot-own-verdict')).toBeNull(); // "You Win" left with the fill
-      } finally {
-        vi.useRealTimers();
-      }
+      // 0.5s fill-in + 2s hold + 0.5s fade-out = 3s → settles to the persistent outline.
+      // Ticket 2026-09-16#4 item 4: same inline-color shape as the loss ring (2026-09-15#13) —
+      // `ring-[3px]` + `--tw-ring-color`, never the shared `ring-success` class, for Dice.
+      await waitFor(() => expect(ownBar.className).toContain('ring-[3px]'), { timeout: 5000 });
+      expect(ownBar.className).not.toContain('ring-success');
+      expect(ownBar.style.getPropertyValue('--tw-ring-color')).toBe('#16A34A');
+      expect(screen.queryByTestId('hub-slot-own-verdict')).toBeNull(); // "You Win" left with the fill
     });
 
     // Ticket 2026-09-15#13 item 2: Dice's own player-bar loss ring is var(--rc-loss) (#FF3E5E,
     // Full Spec.html:3787's playerBarRing), scoped to Dice only via OwnSlot's new lossRingColor
     // prop — every other OwnSlot-using game keeps the shared ring-destructive class untouched
-    // (confirmed separately by CoinflipHub.test.tsx's own "Result loss/draw" test).
+    // (confirmed separately by CoinflipHub.test.tsx's own "Result loss/draw" test). Real timers
+    // (see the equivalent comment on "Resolved: reveals both rolls" above).
     it('own-bar loss ring is var(--rc-loss), not the shared ring-destructive class', async () => {
-      vi.useFakeTimers();
-      try {
-        const gameState: DiceView = {
-          players: ['me', 'opp'], seeds: { me: 1, opp: 2 }, round: 0, replays: 0, revealed: { me: true, opp: true },
-          result: { rolls: { me: 2000, opp: 3000 }, round: 0 }, winner: 'opp',
-        };
-        const { rerender } = render(
-          <DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />,
-        );
-        rerender(
-          <DiceHubScreen
-            {...baseProps({
-              currentMatchId: null,
-              gameState,
-              lastOutcome: { type: 'win', winner: 'opp' },
-              lastSettlement: { delta: -10, newBalance: 990 },
-            })}
-          />,
-        );
-        await act(async () => { await vi.advanceTimersByTimeAsync(2200 + 50); });
-        await act(async () => { await vi.advanceTimersByTimeAsync(250 + 50); });
+      const gameState: DiceView = {
+        players: ['me', 'opp'], seeds: { me: 1, opp: 2 }, round: 0, replays: 0, revealed: { me: true, opp: true },
+        result: { rolls: { me: 2000, opp: 3000 }, round: 0 }, winner: 'opp',
+      };
+      const { rerender } = render(
+        <DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />,
+      );
+      rerender(
+        <DiceHubScreen
+          {...baseProps({
+            currentMatchId: null,
+            gameState,
+            lastOutcome: { type: 'win', winner: 'opp' },
+            lastSettlement: { delta: -10, newBalance: 990 },
+          })}
+        />,
+      );
 
-        const ownBar = screen.getByTestId('hub-slot-own');
-        expect(ownBar.className).toContain('ring-[3px]');
-        expect(ownBar.className).not.toContain('ring-destructive');
-        expect(ownBar.style.getPropertyValue('--tw-ring-color')).toBe('var(--rc-loss)');
+      const ownBar = screen.getByTestId('hub-slot-own');
+      await waitFor(() => expect(ownBar.className).toContain('ring-[3px]'), { timeout: 4000 });
+      expect(ownBar.className).not.toContain('ring-destructive');
+      expect(ownBar.style.getPropertyValue('--tw-ring-color')).toBe('var(--rc-loss)');
 
-        // Same ticket, same token: the losing cube's own number color is the app-wide loss red,
-        // deliberately overriding the prototype's own literal #DC2626 (Full Spec.html:3678-3679).
-        const myNum = screen.getByTestId('dice-cube-mine').querySelector('span');
-        expect(myNum?.style.color).toBe('var(--rc-loss)');
-      } finally {
-        vi.useRealTimers();
-      }
+      // Same ticket, same token: the losing cube's own number color is the app-wide loss red,
+      // deliberately overriding the prototype's own literal #DC2626 (Full Spec.html:3678-3679).
+      const myNum = screen.getByTestId('dice-cube-mine').querySelector('span');
+      expect(myNum?.style.color).toBe('var(--rc-loss)');
     });
   });
 
-  // Ticket 2026-09-12#3 item 1: dice-roll/dice-win sound wiring in the existing resolved-match
-  // effect (deduped via `lastSigRef`, keyed on a round+rolls signature).
-  describe('ticket 2026-09-12#3 item 1: dice-roll/dice-win sound', () => {
+  // Ticket 2026-09-12#3 item 1 (fires) / 2026-09-16#4 item 2 (WHEN they fire): dice-roll now fires
+  // at the reveal clock's REVEAL_SOUND_MS beat (+460ms), dice-win at REVEAL_COMPLETE_MS (+1804ms) —
+  // not both in the same instant `result` first exists, the "everything happens at once" problem
+  // D21 described. Dedup is unchanged (armedSig, keyed on the same round+rolls signature).
+  describe('ticket 2026-09-12#3 item 1 / 2026-09-16#4 item 2: dice-roll/dice-win sound sequencing', () => {
     const winRoll = (): DiceView => ({
       players: ['me', 'opp'], seeds: { me: 1, opp: 2 }, round: 0, replays: 0, revealed: { me: true, opp: true },
       result: { rolls: { me: 5000, opp: 3000 }, round: 0 }, winner: 'me',
@@ -402,24 +412,30 @@ describe('DiceHubScreen', () => {
       result: { rolls: { me: 2000, opp: 3000 }, round: 0 }, winner: 'opp',
     });
 
-    it('play("dice-roll") fires exactly once per newly-resolved match, not on an unrelated re-render of the same result', () => {
+    // Real timers throughout (see the equivalent comment on "Resolved: reveals both rolls" above).
+    it('play("dice-roll") fires once at +460ms per newly-resolved match, not on an unrelated re-render of the same result, and not before its own beat', async () => {
       const gameState = winRoll();
       const { rerender } = render(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
-      expect(playMock.mock.calls.filter((c) => c[0] === 'dice-roll')).toHaveLength(1);
+      expect(playMock.mock.calls.filter((c) => c[0] === 'dice-roll')).toHaveLength(0); // not yet — before its own beat
+
+      await waitFor(() => expect(playMock.mock.calls.filter((c) => c[0] === 'dice-roll')).toHaveLength(1), { timeout: 2000 });
 
       // Re-render with the SAME resolved state (e.g. an unrelated prop change) — deduped, no re-fire.
       rerender(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [], balance: 999 })} />);
+      await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
       expect(playMock.mock.calls.filter((c) => c[0] === 'dice-roll')).toHaveLength(1);
     });
 
-    it('play("dice-win") fires only on an actual win, never on a loss — the prototype has no loss sound', () => {
+    it('play("dice-win") fires only on an actual win, never on a loss — the prototype has no loss sound — both at +1804ms, not the moment result exists', async () => {
       const { rerender } = render(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState: loseRoll(), legalMoves: [] })} />);
-      expect(playMock.mock.calls.some((c) => c[0] === 'dice-roll')).toBe(true); // roll sound still fires
+      await waitFor(() => expect(playMock.mock.calls.some((c) => c[0] === 'dice-roll')).toBe(true), { timeout: 2000 }); // roll sound still fires
+      await act(async () => { await new Promise((r) => setTimeout(r, 1500)); }); // let the loss round's reveal fully complete
       expect(playMock.mock.calls.some((c) => c[0] === 'dice-win')).toBe(false); // no win sound on a loss
 
       playMock.mockClear();
       rerender(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState: winRoll(), legalMoves: [] })} />);
-      expect(playMock.mock.calls.some((c) => c[0] === 'dice-win')).toBe(true);
+      expect(playMock.mock.calls.some((c) => c[0] === 'dice-win')).toBe(false); // not yet — before its own beat
+      await waitFor(() => expect(playMock.mock.calls.some((c) => c[0] === 'dice-win')).toBe(true), { timeout: 3000 });
     });
   });
 });
