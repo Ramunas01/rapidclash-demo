@@ -789,6 +789,13 @@ export function GameHub(props: GameHubProps) {
               // every other OwnSlot-using game keeps — scoped here by gameId, not a global token
               // swap, since this component is shared by RPS/Mines/Coinflip/Blackjack/Chess too.
               lossRingColor={gameId === 'dice' ? 'var(--rc-loss)' : undefined}
+              // Ticket 2026-09-16#4 item 4: Dice's own win ring/fill is #16A34A (DiceHub.tsx's own
+              // DICE_WIN_GREEN — the same green already used for the winning cube number and the
+              // winning history pill), NOT the shared --rc-green — scoped by gameId, same shape as
+              // lossRingColor above. Literal, not a --rc-* token: unlike --rc-loss this color has no
+              // other consumer outside Dice, so there's nothing else for a shared token to serve.
+              winRingColor={gameId === 'dice' ? '#16A34A' : undefined}
+              winFillColor={gameId === 'dice' ? '#16A34A' : undefined}
             />
           </section>
 
@@ -1032,7 +1039,7 @@ function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShif
  *  plays the SHARED win animation (`useWinReveal`): a green fill + "You Win" kept ALONGSIDE the
  *  username (never swapped out), the green a background layer — 0.5 s fill-in → 2 s hold → 0.5 s
  *  fade-out → the persistent green outline. Loss/draw are outline-only (no fill/text). */
-function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdict, drawBeat, barShiftY, lossRingColor }: { label: string; username?: string | null; avatarId?: AvatarId; isOwn: boolean; aside?: ReactNode; barVerdict?: Verdict | null; drawBeat?: boolean; barShiftY?: number; lossRingColor?: string }) {
+function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdict, drawBeat, barShiftY, lossRingColor, winRingColor, winFillColor }: { label: string; username?: string | null; avatarId?: AvatarId; isOwn: boolean; aside?: ReactNode; barVerdict?: Verdict | null; drawBeat?: boolean; barShiftY?: number; lossRingColor?: string; winRingColor?: string; winFillColor?: string }) {
   const win = barVerdict === 'win';
   const { contentVisible, fillShown, settled } = useWinReveal(win);
 
@@ -1054,24 +1061,32 @@ function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdi
         // caller (no `lossRingColor` passed) keeps today's shared class byte-identical.
         barVerdict === 'lose' && (lossRingColor ? 'ring-[3px]' : 'ring-[3px] ring-destructive'),
         barVerdict === 'draw' && 'ring-[3px] ring-amber-400',
-        win && settled && outlineClasses('win'),
+        // Ticket 2026-09-16#4 item 4: same shape as `lossRingColor` above — an opt-in `winRingColor`
+        // (Dice only, today) swaps `outlineClasses('win')`'s `ring-success`/glow-shadow classes for a
+        // plain inline-colored ring (no glow, matching the loss side's own precedent), so Dice's win
+        // ring can be `DICE_WIN_GREEN` (#16A34A) instead of the shared `--rc-green`.
+        win && settled && (winRingColor ? 'ring-[3px]' : outlineClasses('win')),
         // In-match draw→rematch beat (#161): the same orange push outline as the opponent bar.
         drawBeat && outlineClasses('draw'),
       )}
       style={{
         ...(barShiftY != null ? { transform: `translateY(${barShiftY}px)`, transition: 'transform 620ms cubic-bezier(0.3,0.9,0.32,1)' } : undefined),
         ...(barVerdict === 'lose' && lossRingColor ? { '--tw-ring-color': lossRingColor } as CSSProperties : undefined),
+        ...(win && settled && winRingColor ? { '--tw-ring-color': winRingColor } as CSSProperties : undefined),
       }}
     >
       {/* Green celebration fill — a background LAYER behind the content (never replaces the username).
-          Fades in over 0.5 s, holds 2 s, fades out over 0.5 s (same duration both ways), then unmounts. */}
+          Fades in over 0.5 s, holds 2 s, fades out over 0.5 s (same duration both ways), then unmounts.
+          Ticket 2026-09-16#4 item 4: an opt-in `winFillColor` (Dice only) swaps the shared `bg-success`
+          class for an inline background of that exact color — every other caller is unaffected. */}
       {contentVisible && (
         <motion.span
           aria-hidden="true"
           initial={{ opacity: 0 }}
           animate={{ opacity: fillShown ? 1 : 0 }}
           transition={{ duration: WIN_FILL_IN_MS / 1000, ease: 'easeOut' }}
-          className="pointer-events-none absolute inset-0 rounded-full bg-success"
+          className={cn('pointer-events-none absolute inset-0 rounded-full', !winFillColor && 'bg-success')}
+          style={winFillColor ? { background: winFillColor } : undefined}
         />
       )}
       {/* Own avatar — per-user LIGHT disc + darkened glyph, derived from the username (no username →

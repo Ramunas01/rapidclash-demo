@@ -7,8 +7,6 @@ import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.j
 
 /** Hundredths → "42.37". */
 const fmtRoll = (roll: number): string => (roll / 100).toFixed(2);
-/** Hold the board a beat after the server resolves so the rolls reveal before the overlay. */
-const HOLD_MS = 2200;
 
 /*
  * T6a — visual rebuild, ported from the prototype's `isDice` block: `design/prototype/RapidClash
@@ -19,16 +17,29 @@ const HOLD_MS = 2200;
  * independent seeded rolls, higher wins, exact tie → instant reroll) is UNTOUCHED — this is
  * presentation only.
  *
- * Reveal-timing note: the prototype's own reveal is client-SIMULATED — `startDice()` fakes both
- * rolls with `Math.random()` and counts them up over a 444ms rAF tween (lines 3420-3446) BEFORE the
- * numbers are "true". Our reveal is server-authoritative and redacted pre-terminal (dice.ts's
- * `viewFor`) — the real rolls only ever arrive already-decided, so there's no honest intermediate
- * value to count through (fabricating one would break this app's no-fabricated-data rule — see
- * GameHub.tsx's "never a fabricated/cycled name" precedent for the same principle elsewhere). This
- * port keeps the exact motion — the gauge fill/cube animate from empty/hidden to their landed
- * position over the SAME cited transitions — but always shows the true final number the instant it's
- * known; only the width/opacity/transform interpolate, via plain CSS transitions, not a JS counter.
+ * Reveal-timing note (ticket 2026-09-16#4/D21, Owner-confirmed): the prototype's own reveal is
+ * client-SIMULATED — `startDice()` fakes both rolls with `Math.random()` and counts them up over a
+ * 444ms rAF tween (lines 3420-3446) BEFORE the numbers are "true". This app's reveal is
+ * server-authoritative — the real rolls only ever arrive already-decided. Earlier revisions of this
+ * file read that as reason enough to skip the counting animation entirely (snap straight to the
+ * final state the instant data arrives) rather than risk fabricating an intermediate value. Owner
+ * settled the actual question directly: the honest-data principle bars displaying a value that could
+ * turn out wrong or inventing an event that never happened — it does NOT bar spending time revealing
+ * an ALREADY-KNOWN-TRUE result dramatically. Counting up to a real number is theatre, not
+ * fabrication, as long as nothing shown mid-count could turn out to be wrong. So this DOES now run a
+ * real `requestAnimationFrame` counter (`DiceBoard`'s reveal-elapsed clock below) — every frame's
+ * displayed number is the real final roll scaled by `runDiceRoll`'s own eased curve, mathematically
+ * approaching (never exceeding, never inventing) the already-known-correct target.
  */
+// ── Reveal choreography (Full Spec.html:3387-3459, `startDice`/`runDiceRoll`/`startDiceResult`) —
+// the moment the server's real result is known, hold it back and reveal it on this exact timeline
+// rather than snapping straight to it. ──
+const REVEAL_SOUND_MS = 460; // `dice-roll` sound fires; both numbers begin counting up together
+const REVEAL_COUNT_MS = 444; // `runDiceRoll`'s own count-up tween duration
+const REVEAL_SETTLE_MS = REVEAL_SOUND_MS + REVEAL_COUNT_MS; // 904 — count lands exactly on the real numbers; colors resolve
+const REVEAL_COMPLETE_MS = 1804; // 904+900 — bar ring/fill, history pill/belt-shift, and (win only) `dice-win` all fire together
+/** `runDiceRoll`'s own eased curve (`Full Spec.html:3439-3442`) — `e = 1-(1-p)^3`. */
+const revealEase = (p: number): number => 1 - (1 - p) ** 3;
 
 // ── Prototype-literal colors — fixed, never theme-dependent. The prototype's own `getState()`
 // never varies these with `light` either. Reconciliation sweep (2026-09-11): `--brand-purple`
@@ -123,9 +134,15 @@ function DiceTrack({ pos, roll, numColor, light, active }: { pos: 'opp' | 'mine'
   const isOpp = pos === 'opp';
   const trackColor = light ? DICE_TRACK.light : DICE_TRACK.dark;
   const grooveColor = light ? DICE_GROOVE.light : DICE_GROOVE.dark;
-  const value = roll != null ? Math.max(0, Math.min(100, roll / 100)) : null;
-  const fillWidth = value == null ? '50%' : `calc(10px + ${value} * (100% - 36px) / 100)`; // lines 3676-3677
-  const cubeLeft = `calc(18px + ${value ?? 0} * (100% - 36px) / 100)`; // lines 3608-3609
+  // Ticket 2026-09-16#4 item 3: `roll == null` (no result yet, or the reveal hasn't started counting
+  // yet — see DiceBoard's reveal clock) now falls back to the SAME value (0) for both formulas below
+  // — the prototype's own resting state (`diceMyPos`/`diceMyFill`, `:3608/3676`), and the state this
+  // app flips to the instant a round begins (`startDice`, `:3422`). Previously these two formulas
+  // disagreed (cube at the left edge, fill at an unrelated 50%) for the entire wait on the server —
+  // resolved as a byproduct of the reveal machine's own "t=0" beat now feeding both consistently.
+  const value = roll != null ? Math.max(0, Math.min(100, roll / 100)) : 0;
+  const fillWidth = `calc(10px + ${value} * (100% - 36px) / 100)`; // lines 3676-3677
+  const cubeLeft = `calc(18px + ${value} * (100% - 36px) / 100)`; // lines 3608-3609
   const cubeOpacity = active ? 1 : 0; // lines 3612-3613 (`diceCubeIn` — true for the WHOLE roll, not just once resolved)
   const cubeScale = active ? 'scale(1)' : 'scale(0.55)'; // line 3614 (same `diceCubeIn` gate)
 
@@ -281,23 +298,97 @@ function DiceIdle({ light, barSlideActive }: { light: boolean; barSlideActive?: 
 }
 
 /** The live Dice area: both players auto-commit a `reveal` (no decisions), then the higher of two
- *  independent rolls wins. Neither roll is shown until the simultaneous reveal (server redaction). */
-function DiceBoard({ gameState, legalMoves, onMove, playerId, opponentId, history, light, barSlideActive }: GameAreaArgs & { history: HistoryPill[]; light: boolean }) {
+ *  independent rolls wins. Neither roll is shown until the simultaneous reveal (server redaction).
+ *
+ *  Ticket 2026-09-16#4 item 1: once the server delivers the real result, it's held back from the
+ *  rendered UI and revealed on the REVEAL_* timeline above — an rAF-driven elapsed-time clock
+ *  (`revealElapsed`), re-armed once per genuinely new resolved round via `armedSig` (computed once,
+ *  in `DiceHubScreen`, off the same dedup key that already gated the old instant history-push/sound
+ *  effect — kept there so that key isn't computed twice, per Advisor's own recommendation). Sound
+ *  (item 2) and the history push both fire off this same clock, exactly once per `armedSig`, tracked
+ *  via a ref (not state) so the ~60fps rAF re-renders below don't re-fire them on stale closures. */
+function DiceBoard({
+  gameState, legalMoves, onMove, playerId, opponentId, history, light, barSlideActive, armedSig, pushHistory, onRevealComplete,
+}: GameAreaArgs & { history: HistoryPill[]; light: boolean; armedSig: string | null; pushHistory(sig: string, mine: number, win: boolean): void }) {
   const view = gameState as DiceView | null;
   const me = playerId, opp = opponentId;
   const result = view?.result;
   const myRoll = me ? result?.rolls?.[me] : undefined;
   const oppRoll = opp ? result?.rolls?.[opp] : undefined;
-  const resolved = Boolean(result);
 
   // No decisions: auto-commit the reveal as soon as the server offers it. Gating on legalMoves
   // (cleared optimistically on send, re-armed by the next match's your_turn) sends it exactly once.
   const canReveal = legalMoves.includes('reveal');
   useEffect(() => { if (canReveal) onMove('reveal'); }, [canReveal, onMove]);
 
-  const meWon = resolved && myRoll != null && oppRoll != null && myRoll > oppRoll;
-  const oppWon = resolved && myRoll != null && oppRoll != null && oppRoll > myRoll;
-  const tie = resolved && myRoll != null && oppRoll != null && myRoll === oppRoll;
+  // The elapsed-time clock. Idle (no armed round yet) → null, so every downstream computation below
+  // falls back to "nothing revealed yet" without a separate idle branch. `Date.now()`, not the rAF
+  // callback's own timestamp arg (which is a real, unfaked `performance.now()` under test) — same
+  // convention CrashHub.tsx's own rAF clock already uses, for the same reason: fake-timer-testable.
+  //
+  // `sig` is paired with `elapsed` in ONE state update (not two separate state variables) to close
+  // a real race: when `armedSig` changes (a fresh round arms while this component is already
+  // mounted), React re-runs this effect in the SAME commit that updated `armedSig` — but the new
+  // effect's first `requestAnimationFrame` callback hasn't fired yet, so a plain `elapsed`-only
+  // state would still hold the PREVIOUS round's (possibly already-past-threshold) value for that one
+  // commit, letting the sound/history effect below misfire against stale data. Pairing them lets the
+  // derived `revealElapsed` below fall back to `null` whenever the sig doesn't match yet.
+  const [reveal, setReveal] = useState<{ sig: string; elapsed: number } | null>(null);
+  useEffect(() => {
+    if (!armedSig) { setReveal(null); return; }
+    let raf = 0;
+    const start = Date.now();
+    const tick = () => {
+      const elapsed = Date.now() - start;
+      setReveal({ sig: armedSig, elapsed });
+      if (elapsed < REVEAL_COMPLETE_MS) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [armedSig]);
+  const revealElapsed = reveal && reveal.sig === armedSig ? reveal.elapsed : null;
+
+  // Sound (item 2) + history push, each exactly once per armedSig, at their own beat on the clock
+  // above — replacing the old effect that fired both the instant `result` existed. The ref resets
+  // itself (inline, guarded by the sig check) rather than during render, now that `revealElapsed`
+  // itself can't go stale across an armedSig change (see above).
+  const firedRef = useRef<{ sig: string | null; sound: boolean; complete: boolean }>({ sig: null, sound: false, complete: false });
+  useEffect(() => {
+    if (revealElapsed == null || !armedSig || myRoll == null || oppRoll == null) return;
+    if (firedRef.current.sig !== armedSig) firedRef.current = { sig: armedSig, sound: false, complete: false };
+    const fired = firedRef.current;
+    if (revealElapsed >= REVEAL_SOUND_MS && !fired.sound) {
+      fired.sound = true;
+      play('dice-roll');
+    }
+    if (revealElapsed >= REVEAL_COMPLETE_MS && !fired.complete) {
+      fired.complete = true;
+      pushHistory(armedSig, myRoll, myRoll > oppRoll);
+      // `dice-win` is win-conditional only — the prototype's own asset set has no loss sound
+      // (`if (win) this.sfx('dice-win')`, `Full Spec.html:3452`); do not add one for a loss.
+      if (myRoll > oppRoll) play('dice-win');
+      onRevealComplete?.();
+    }
+  }, [revealElapsed, armedSig, myRoll, oppRoll, pushHistory, onRevealComplete]);
+
+  // The number shown DURING the count is a REAL value mathematically approaching the already-known
+  // target — never a value that could turn out wrong (see file header). Undefined (empty label,
+  // resting position via DiceTrack's own item-3 fallback) before the count starts; the exact true
+  // final value once it lands.
+  function revealedRoll(finalRoll: number | undefined): number | undefined {
+    if (finalRoll == null || revealElapsed == null || revealElapsed < REVEAL_SOUND_MS) return undefined;
+    if (revealElapsed >= REVEAL_SETTLE_MS) return finalRoll;
+    const p = (revealElapsed - REVEAL_SOUND_MS) / REVEAL_COUNT_MS;
+    return Math.round(finalRoll * revealEase(p));
+  }
+  const myRollShown = revealedRoll(myRoll);
+  const oppRollShown = revealedRoll(oppRoll);
+  // Colors stay neutral through the whole count — confirmed against D21: "neutral during the count,
+  // not before [the count lands]" — and resolve to green/red only once the numbers have settled.
+  const numbersSettled = revealElapsed != null && revealElapsed >= REVEAL_SETTLE_MS;
+  const meWon = numbersSettled && myRoll != null && oppRoll != null && myRoll > oppRoll;
+  const oppWon = numbersSettled && myRoll != null && oppRoll != null && oppRoll > myRoll;
+  const tie = numbersSettled && myRoll != null && oppRoll != null && myRoll === oppRoll;
   // lines 3678-3679: neutral pre-final/tie, else green for the higher roll, red for the lower.
   const myNumColor = tie ? DICE_NEUTRAL_NUM : meWon ? DICE_WIN_GREEN : oppWon ? DICE_LOSE_RED : DICE_NEUTRAL_NUM;
   const oppNumColor = tie ? DICE_NEUTRAL_NUM : oppWon ? DICE_WIN_GREEN : meWon ? DICE_LOSE_RED : DICE_NEUTRAL_NUM;
@@ -312,9 +403,9 @@ function DiceBoard({ gameState, legalMoves, onMove, playerId, opponentId, histor
       className="flex h-[266px] flex-col justify-start gap-3.5 rounded-[22px] bg-surface px-4 py-5"
       style={{ paddingTop: 47, opacity: barSlideActive ? 0.28 : 1, transition: 'opacity 380ms ease' }}
     >
-      <DiceTrack pos="opp" roll={oppRoll} numColor={oppNumColor} light={light} active />
+      <DiceTrack pos="opp" roll={oppRollShown} numColor={oppNumColor} light={light} active />
       <DiceScaleRow />
-      <DiceTrack pos="mine" roll={myRoll} numColor={myNumColor} light={light} active />
+      <DiceTrack pos="mine" roll={myRollShown} numColor={myNumColor} light={light} active />
       {/* Ticket 2026-09-15#10 item 1: a "You rolled higher!"/"Rolling…" status paragraph used to
           render here — zero occurrences anywhere in the prototype's own source (confirmed by
           direct grep), leftover copy this app added on its own. Removing it also frees up the
@@ -327,13 +418,13 @@ function DiceBoard({ gameState, legalMoves, onMove, playerId, opponentId, histor
 }
 
 // Ticket 2026-09-12#5 item 1 (ADVISOR_TO_PM.md) — HIGH PRIORITY correction to #558: this used to
-// gate on `phase === 'in-match'` only, so the instant `phase` became `'result'` (after HOLD_MS's
-// 2200ms hold) the panel unmounted `DiceBoard` and swapped to the blank `DiceIdle` gauges —
-// discarding the resolved cubes/history/status line right after they finally became visible. Fix:
-// mirror `CoinflipPanel`'s own `live` gate exactly (`CoinflipHub.tsx:120`) — `DiceBoard` reads only
+// gate on `phase === 'in-match'` only, so the instant `phase` became `'result'` (after the reveal
+// hold) the panel unmounted `DiceBoard` and swapped to the blank `DiceIdle` gauges — discarding the
+// resolved cubes/history/status line right after they finally became visible. Fix: mirror
+// `CoinflipPanel`'s own `live` gate exactly (`CoinflipHub.tsx:120`) — `DiceBoard` reads only
 // `gameState`/`legalMoves` (never `phase` itself), so it renders the resolved roll correctly with
 // no further changes needed there.
-function DicePanel(args: GameAreaArgs & { history: HistoryPill[] }) {
+function DicePanel(args: GameAreaArgs & { history: HistoryPill[]; armedSig: string | null; pushHistory(sig: string, mine: number, win: boolean): void }) {
   const { resolved: themeResolved } = useTheme();
   const light = themeResolved === 'light';
   const live = args.phase === 'in-match' || args.phase === 'result';
@@ -354,6 +445,10 @@ function DicePanel(args: GameAreaArgs & { history: HistoryPill[] }) {
 export function DiceHubScreen(props: GameHubScreenProps) {
   const [history, setHistory] = useState<HistoryPill[]>([]);
   const lastSigRef = useRef<string | null>(null);
+  // Ticket 2026-09-16#4 item 1: the "is this round genuinely new" dedup key, now ARMING the reveal
+  // (DiceBoard's own rAF clock) instead of firing the history push/sounds instantly — those now fire
+  // off DiceBoard's own clock instead (REVEAL_SOUND_MS / REVEAL_COMPLETE_MS), via `armedSig` below.
+  const [armedSig, setArmedSig] = useState<string | null>(null);
   const view = props.gameState as DiceView | null;
 
   useEffect(() => {
@@ -367,22 +462,20 @@ export function DiceHubScreen(props: GameHubScreenProps) {
     const sig = `${playerId}:${result.round}:${mine}:${theirs}`;
     if (lastSigRef.current === sig) return;
     lastSigRef.current = sig;
-    const win = theirs != null && mine > theirs;
-    setHistory((h) => [{ id: sig, value: mine, win }, ...h].slice(0, 6)); // line 3455 — `.slice(0, 6)`
-    // Ticket 2026-09-12#3 item 1: the prototype loops `dice-roll` from roll-start to resolution
-    // (`this.sfx('dice-roll', true)` … `this.stopSfx('dice-roll')`, `Full Spec.html:3436/3469`).
-    // `sound.ts`'s `play()` is a one-shot, fire-and-forget primitive with no loop/stop — building
-    // one just for this single call site was judged not worth it (see ADVISOR_TO_PM.md
-    // 2026-09-12#3 item 1's own recommendation). Since this reveal is server-authoritative (no
-    // fabricated intermediate roll — see this file's header comment), the honest analog of "the
-    // roll is happening" is this exact moment, once per newly-resolved match (deduped above).
-    play('dice-roll');
-    // `dice-win` is win-conditional only — the prototype's own asset set has no loss sound
-    // (`if (win) this.sfx('dice-win')`, `Full Spec.html:3452`); do not add one for a loss.
-    if (win) play('dice-win');
+    setArmedSig(sig);
   }, [view, props.playerId]);
 
-  const renderGameArea = useCallback((args: GameAreaArgs) => <DicePanel {...args} history={history} />, [history]);
+  // Called by DiceBoard's reveal clock at REVEAL_COMPLETE_MS — the SAME sig this effect just armed,
+  // so a stray double-fire (there shouldn't be one) can't double-push: only the first call for a
+  // given sig actually changes state.
+  const pushHistory = useCallback((sig: string, mine: number, win: boolean) => {
+    setHistory((h) => (h[0]?.id === sig ? h : [{ id: sig, value: mine, win }, ...h].slice(0, 6))); // line 3455 — `.slice(0, 6)`
+  }, []);
+
+  const renderGameArea = useCallback(
+    (args: GameAreaArgs) => <DicePanel {...args} history={history} armedSig={armedSig} pushHistory={pushHistory} />,
+    [history, armedSig, pushHistory],
+  );
 
   return (
     <GameHub
@@ -396,7 +489,13 @@ export function DiceHubScreen(props: GameHubScreenProps) {
       // Dice needs none of Mines' harder parts (bar-convergence/gem-text are both `!isDice`-gated).
       suppressResultOverlay
       ownBarResult
-      holdResultMs={HOLD_MS}
+      // Ticket 2026-09-16#4 item 1: the bar ring/fill now waits for DiceBoard's own reveal-complete
+      // signal (fired at REVEAL_COMPLETE_MS) instead of a fixed generic beat — same mechanism
+      // BlackjackBoard already proved (`onRevealComplete`/`gateResultOnReveal`). `holdResultMs`
+      // mirrors the same beat so `phase` reaches 'result' in lockstep with `revealDone`, rather than
+      // the old fixed 2200ms (now redundant with — and slightly out of sync with — the reveal clock).
+      gateResultOnReveal
+      holdResultMs={REVEAL_COMPLETE_MS}
       // Ticket 2026-09-11#10 item 1: Dice measures the real bar-slide magnitude live, matching the
       // prototype's own `startDice()` (`Full Spec.html:3396-3403`) — never the flat ±123px RPS uses.
       matchBarSlide="measured"
