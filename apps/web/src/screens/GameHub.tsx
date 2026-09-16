@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type UIEvent } from 'react';
 import { motion } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { Trophy, X } from 'lucide-react';
@@ -783,6 +783,11 @@ export function GameHub(props: GameHubProps) {
               barVerdict={ownBarVerdict}
               drawBeat={barDrawBeat}
               barShiftY={ownBarShiftY}
+              // Ticket 2026-09-15#13 item 2: Dice's own player-bar loss ring is var(--rc-loss)
+              // (#FF3E5E, Full Spec.html:3787's playerBarRing), NOT the shared ring-destructive
+              // every other OwnSlot-using game keeps — scoped here by gameId, not a global token
+              // swap, since this component is shared by RPS/Mines/Coinflip/Blackjack/Chess too.
+              lossRingColor={gameId === 'dice' ? 'var(--rc-loss)' : undefined}
             />
           </section>
 
@@ -1026,7 +1031,7 @@ function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShif
  *  plays the SHARED win animation (`useWinReveal`): a green fill + "You Win" kept ALONGSIDE the
  *  username (never swapped out), the green a background layer — 0.5 s fill-in → 2 s hold → 0.5 s
  *  fade-out → the persistent green outline. Loss/draw are outline-only (no fill/text). */
-function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdict, drawBeat, barShiftY }: { label: string; username?: string | null; avatarId?: AvatarId; isOwn: boolean; aside?: ReactNode; barVerdict?: Verdict | null; drawBeat?: boolean; barShiftY?: number }) {
+function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdict, drawBeat, barShiftY, lossRingColor }: { label: string; username?: string | null; avatarId?: AvatarId; isOwn: boolean; aside?: ReactNode; barVerdict?: Verdict | null; drawBeat?: boolean; barShiftY?: number; lossRingColor?: string }) {
   const win = barVerdict === 'win';
   const { contentVisible, fillShown, settled } = useWinReveal(win);
 
@@ -1043,13 +1048,19 @@ function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdi
         // explicit `z-[3]` (`Full Spec.html:436`/`:660`), opt-in via `barShiftY != null` only.
         barShiftY != null && 'z-[3]',
         // All three settle to the shared ring; the win ring only lands once the fill has run.
-        barVerdict === 'lose' && 'ring-[3px] ring-destructive',
+        // Ticket 2026-09-15#13 item 2: an opt-in `lossRingColor` (Dice only, today) swaps the
+        // Tailwind `ring-destructive` class for an inline ring of that exact color — every other
+        // caller (no `lossRingColor` passed) keeps today's shared class byte-identical.
+        barVerdict === 'lose' && (lossRingColor ? 'ring-[3px]' : 'ring-[3px] ring-destructive'),
         barVerdict === 'draw' && 'ring-[3px] ring-amber-400',
         win && settled && outlineClasses('win'),
         // In-match draw→rematch beat (#161): the same orange push outline as the opponent bar.
         drawBeat && outlineClasses('draw'),
       )}
-      style={barShiftY != null ? { transform: `translateY(${barShiftY}px)`, transition: 'transform 620ms cubic-bezier(0.3,0.9,0.32,1)' } : undefined}
+      style={{
+        ...(barShiftY != null ? { transform: `translateY(${barShiftY}px)`, transition: 'transform 620ms cubic-bezier(0.3,0.9,0.32,1)' } : undefined),
+        ...(barVerdict === 'lose' && lossRingColor ? { '--tw-ring-color': lossRingColor } as CSSProperties : undefined),
+      }}
     >
       {/* Green celebration fill — a background LAYER behind the content (never replaces the username).
           Fades in over 0.5 s, holds 2 s, fades out over 0.5 s (same duration both ways), then unmounts. */}
@@ -1174,6 +1185,13 @@ function PlayPanel({
   // dead-ending — it never starts a match. The cue clears the instant a bet is armed (no auto-play).
   const betRef = useRef<HTMLDivElement>(null);
   const [needsBet, setNeedsBet] = useState(false);
+  // Ticket 2026-09-15#13 item 1: the PLAY button's own shake nudge — the prototype's `nudgePlay()`
+  // (`Full Spec.html:3043-3047`), self-clearing after its own duration so a rapid repeat press
+  // restarts cleanly (the clearTimeout guard mirrors the prototype's own re-trigger guard). Fired
+  // from `guideToBet()` below, the single shared guard both PLAY and Play-a-Friend call through.
+  const [playShake, setPlayShake] = useState(false);
+  const playShakeTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(playShakeTimeoutRef.current), []);
 
   // Clear the cue the moment a stake is armed (any path: preset, initialStake, external) and
   // whenever the panel freezes for a live match. Arming only clears the guide — it never presses
@@ -1187,6 +1205,9 @@ function PlayPanel({
   function guideToBet() {
     setNeedsBet(true);
     betRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    clearTimeout(playShakeTimeoutRef.current);
+    setPlayShake(true);
+    playShakeTimeoutRef.current = setTimeout(() => setPlayShake(false), 560);
   }
   function handlePlayPress() {
     if (armedStake == null) { guideToBet(); return; } // no bet → guide; do NOT start a match
@@ -1227,7 +1248,13 @@ function PlayPanel({
           // `translateY(3px)` on press (`:695`'s own `style-active`). Per-property durations cited
           // verbatim from the same line's `transition` value — box-shadow/opacity survive the
           // Tailwind `transition-colors` this button already had; only transform is added new.
-          style={{ boxShadow: PLAY_BTN_SHADOW, transition: 'box-shadow 260ms ease, transform 120ms ease, opacity 220ms ease, filter 150ms ease' }}
+          // Ticket 2026-09-15#13 item 1: playShakeAnim (Full Spec.html:3828), fired by guideToBet()
+          // on an unarmed press — the same easing/duration the prototype uses verbatim.
+          style={{
+            boxShadow: PLAY_BTN_SHADOW,
+            transition: 'box-shadow 260ms ease, transform 120ms ease, opacity 220ms ease, filter 150ms ease',
+            animation: playShake ? 'rcPlayShake 540ms cubic-bezier(0.36,0.07,0.19,0.97) both' : undefined,
+          }}
         >
           {playing ? 'Playing…' : 'Play'}
         </button>
@@ -1246,16 +1273,17 @@ function PlayPanel({
       </p>
 
       {/* Bet amount — stays visible during a match OR a search, greyed + inert (same treatment).
-          The needs-bet frame (#143) rings it red when PLAY was pressed with no stake. scroll-mt
-          clears the fixed top ribbon (~6rem); scroll-mb clears the fixed bottom nav (~7rem) +
-          safe-area so a scrolled-in panel lands ABOVE the nav (robust to the #142 body-scroll). */}
+          Ticket 2026-09-15#13 item 1: the needs-bet ring (#143) moved OFF this wrapper — it now
+          lives on the bet-track pill itself (data-rc-bettrack below), matching the prototype's own
+          citation exactly (`betWarnRing`, a box-shadow on that one element, not the whole panel).
+          scroll-mt clears the fixed top ribbon (~6rem); scroll-mb clears the fixed bottom nav
+          (~7rem) + safe-area so a scrolled-in panel lands ABOVE the nav (robust to #142). */}
       <div
         ref={betRef}
         data-testid="hub-section-bet"
         data-needs-bet={needsBet || undefined}
         className={cn(
-          'scroll-mt-24 scroll-mb-[calc(7rem_+_env(safe-area-inset-bottom))] rounded-xl transition-shadow',
-          needsBet && 'ring-2 ring-destructive',
+          'scroll-mt-24 scroll-mb-[calc(7rem_+_env(safe-area-inset-bottom))] rounded-xl',
           frozen && 'pointer-events-none opacity-50',
         )}
       >
@@ -1298,7 +1326,16 @@ function PlayPanel({
         <div
           data-rc-bettrack="1"
           className="relative grid rounded-full p-[5px]"
-          style={{ background: light ? BET_TRACK_BG.light : BET_TRACK_BG.dark, gridTemplateColumns: `repeat(${presets.length}, 1fr)`, gap: `${BET_TRACK_GAP_PX}px` }}
+          style={{
+            background: light ? BET_TRACK_BG.light : BET_TRACK_BG.dark,
+            gridTemplateColumns: `repeat(${presets.length}, 1fr)`,
+            gap: `${BET_TRACK_GAP_PX}px`,
+            // Ticket 2026-09-15#13 item 1: the needs-bet ring itself (betWarnRing, Full
+            // Spec.html:3736) — same hue at zero alpha/zero spread when off, so the transition is
+            // a clean fade rather than a hard cut.
+            boxShadow: needsBet ? '0 0 0 2px var(--rc-loss)' : '0 0 0 0 rgba(255,62,94,0)',
+            transition: 'box-shadow 260ms ease',
+          }}
         >
           <div
             aria-hidden="true"
@@ -1355,14 +1392,29 @@ function PlayPanel({
 
         {/* Not colour-alone (#143): a short text hint paired with a polite live region for
             colourblind / screen-reader users. Always mounted as the live region (so the change is
-            announced); shows the red hint only in the needs-bet state, clearing with the frame. */}
+            announced); shows the red hint only in the needs-bet state, clearing with the frame.
+            Ticket 2026-09-15#13 item 1: three corrections — copy ("Select a bet amount to play" →
+            the prototype's exact "Choose your bet"), color (text-destructive → the new
+            theme-invariant var(--rc-loss) token, not the shared destructive/danger reds), and
+            mechanism (an instant sr-only toggle → a real max-height 0→26px + opacity 0→1 collapse,
+            `overflow:hidden`, matching the prototype's betWarnH/betWarnOp exactly — confirmed
+            genuinely different from an instant show/hide, not a cosmetic nit). One element instead
+            of the prototype's wrapper+span pair — max-height clips the padding along with the
+            text either way, so the visual effect is identical with less markup. */}
         <p
           role="status"
           aria-live="polite"
           data-testid="hub-bet-hint"
-          className={cn('mt-2.5 text-xs font-semibold text-destructive', !needsBet && 'sr-only')}
+          className="overflow-hidden text-xs font-semibold"
+          style={{
+            color: 'var(--rc-loss)',
+            paddingTop: 7,
+            maxHeight: needsBet ? 26 : 0,
+            opacity: needsBet ? 1 : 0,
+            transition: 'max-height 260ms ease, opacity 220ms ease',
+          }}
         >
-          {needsBet ? 'Select a bet amount to play' : ''}
+          {needsBet ? 'Choose your bet' : ''}
         </p>
 
         {/* Time-control picker — shown only for games that declare one (chess). Each option is a

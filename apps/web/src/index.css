@@ -288,6 +288,13 @@
  * to `#8B45F0`'s decimal equivalent so the glow still matches the purple it glows around. */
 :root {
   --brand-purple: #8B45F0;
+  /* Ticket 2026-09-15#13 item 2: the bet-warning ring/hint red and Dice's loss color, both
+   * #FF3E5E in the prototype (Full Spec.html:3736/:3822), a fixed literal with no light/dark
+   * variant anywhere in the source — same theme-invariant shape as --brand-purple above. Distinct
+   * from --rc-danger (theme-varying, #f0556b/#c42b41, used in 4 unrelated screens) and
+   * --destructive (backs the shared outlineClasses('lose') ring every hidden-commit game uses) —
+   * neither should be repurposed or overwritten; this is its own new token. */
+  --rc-loss: #FF3E5E;
 }
 
 @layer utilities {

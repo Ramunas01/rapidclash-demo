@@ -79,7 +79,7 @@ describe('DiceHubScreen', () => {
     expect(playMock).not.toHaveBeenCalledWith('play');
     expect(scrollSpy).toHaveBeenCalled(); // bet panel scrolled into view
     expect(screen.getByTestId('hub-section-bet').getAttribute('data-needs-bet')).toBe('true');
-    expect(screen.getByTestId('hub-bet-hint').textContent).toMatch(/select a bet/i);
+    expect(screen.getByTestId('hub-bet-hint').textContent).toMatch(/choose your bet/i);
 
     fireEvent.click(screen.getByTestId('hub-bet-10')); // selecting a bet clears the frame + hint…
     expect(screen.getByTestId('hub-section-bet').getAttribute('data-needs-bet')).toBeNull();
@@ -343,6 +343,42 @@ describe('DiceHubScreen', () => {
         await act(async () => { await vi.advanceTimersByTimeAsync(3000 + 50); });
         expect(ownBar.className).toContain('ring-success');
         expect(screen.queryByTestId('hub-slot-own-verdict')).toBeNull(); // "You Win" left with the fill
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    // Ticket 2026-09-15#13 item 2: Dice's own player-bar loss ring is var(--rc-loss) (#FF3E5E,
+    // Full Spec.html:3787's playerBarRing), scoped to Dice only via OwnSlot's new lossRingColor
+    // prop — every other OwnSlot-using game keeps the shared ring-destructive class untouched
+    // (confirmed separately by CoinflipHub.test.tsx's own "Result loss/draw" test).
+    it('own-bar loss ring is var(--rc-loss), not the shared ring-destructive class', async () => {
+      vi.useFakeTimers();
+      try {
+        const gameState: DiceView = {
+          players: ['me', 'opp'], seeds: { me: 1, opp: 2 }, round: 0, replays: 0, revealed: { me: true, opp: true },
+          result: { rolls: { me: 2000, opp: 3000 }, round: 0 }, winner: 'opp',
+        };
+        const { rerender } = render(
+          <DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />,
+        );
+        rerender(
+          <DiceHubScreen
+            {...baseProps({
+              currentMatchId: null,
+              gameState,
+              lastOutcome: { type: 'win', winner: 'opp' },
+              lastSettlement: { delta: -10, newBalance: 990 },
+            })}
+          />,
+        );
+        await act(async () => { await vi.advanceTimersByTimeAsync(2200 + 50); });
+        await act(async () => { await vi.advanceTimersByTimeAsync(250 + 50); });
+
+        const ownBar = screen.getByTestId('hub-slot-own');
+        expect(ownBar.className).toContain('ring-[3px]');
+        expect(ownBar.className).not.toContain('ring-destructive');
+        expect(ownBar.style.getPropertyValue('--tw-ring-color')).toBe('var(--rc-loss)');
       } finally {
         vi.useRealTimers();
       }
