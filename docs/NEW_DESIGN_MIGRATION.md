@@ -262,7 +262,7 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 - **Races (24h / Weekly) + Leaderboards tab** — genuine new feature work (time-windowed leaderboard logic), sized separately from the lobby/stake-entry/play/result → single-screen-with-phases collapse.
 - **lobby / stake-entry / play / result → one screen, internal phases** — real architectural simplification (`App.tsx:1292-1317` today).
 
-## Status snapshot — 2026-09-16 (D01-D18 all shipped, most deployed; D19 item 1 + ring shipped in #612, one real follow-up open on Dice's losing cube number; D20 — bet row hardcoded to USD instead of the wallet's currency — investigated, ready to ticket, plus a separate pre-existing default-value mismatch found and flagged) — supersedes all earlier snapshots in this section
+## Status snapshot — 2026-09-16 (D01-D19 all shipped, D19 fully closed out; D20 — bet row hardcoded to USD — ready to ticket, plus a separate pre-existing default-value mismatch flagged) — supersedes all earlier snapshots in this section
 
 **2026-09-16#2 — NEW, top item, ready to ticket. Designer's D20: the bet-amount row on every game screen shows USD/a dollar icon regardless of the wallet's actual selected currency. Full detail: `ADVISOR_TO_PM.md` 2026-09-16#2.**
 
@@ -275,13 +275,12 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 
 ---
 
-**2026-09-16#1 — a correction to PM's own correction. PM's `#612` report said Dice's `DICE_LOSE_RED` (#DC2626) was "already correct" and left it untouched — this is wrong; D19's own text is explicit that the cube number changes to #FF3E5E too, not just the bar ring. Full detail: `ADVISOR_TO_PM.md` 2026-09-16#1.**
+**2026-09-16#1 — CLOSED, fixed in `#615`.** PM's `#612` report had said Dice's `DICE_LOSE_RED` (#DC2626) was "already correct" and left it untouched — that was wrong; D19's own text is explicit that the cube number changes to #FF3E5E too, not just the bar ring. Full detail: `ADVISOR_TO_PM.md` 2026-09-16#1.
 
-- **What happened:** PM re-verified the ticket against the prototype's own source before implementing (good practice) and confirmed the prototype's `diceMyNumColor`/`diceOppNumColor` (`Full Spec.html:3678-3679`) does literally compute `#DC2626` for the loss case — a true fact. But concluded from that fact that the ticket's own citation was wrong and the constant should stay `#DC2626`. **D19's own text says the opposite, explicitly and by name:** "the cube number was the odd one out and changes to match, not the other way round... Cube number for the lower roll: #FF3E5E — replacing the prototype's #DC2626 at lines 3678-3679." Confirming the prototype's own current value doesn't settle whether a ticket wants it kept or changed — here it's a deliberate, named override, not a fidelity citation.
-- **What's correct in `#612`:** the bar ring (`lossRingColor` prop on `OwnSlot`, scoped to Dice only) is right — that's genuinely a different element (`playerBarRing`) than the cube number, and PM's Dice-only scoping (not touching RPS/Mines/Coinflip/Blackjack/Chess) is exactly right. Holding the loss-fill for an explicit Owner reconfirm (which came back "no") was also exactly right — that correctly protected the D17 decision from being silently reversed.
-- **What's still wrong:** `DiceHub.tsx:40`'s `DICE_LOSE_RED` is still `#DC2626` — needs to become `#FF3E5E` (ideally referencing the same `--rc-loss` token `#612` already introduced for the ring, not a second hardcoded literal). One line.
+- **Root cause, acknowledged precisely by PM:** citation-verification (confirming what the prototype currently does) got treated as equivalent to confirming ticket intent (what Designer wants changed) — those are different questions, and here they pointed opposite ways.
+- **Fixed:** `DICE_LOSE_RED` now reads `var(--rc-loss)` instead of the literal `#DC2626`, exactly as recommended (referencing the same token the ring already uses, not a second hardcoded literal). A test now asserts the losing cube's own rendered color.
 
-**Advisor next:** available, no open thread. **PM next:** the one-line `DICE_LOSE_RED` fix — nothing else in `#612` needs revisiting.
+D19 is now fully closed — all of item 1, the ring, and the cube number are shipped and correct. **Advisor next:** available, no open thread. **PM next:** nothing pending on D19.
 
 ---
 
