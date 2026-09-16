@@ -327,6 +327,22 @@ interface GameHubProps extends GameHubScreenProps {
    *  cycle". Undefined (every hub but ChessHub) → byte-identical no-op: the "100" button (and every
    *  other preset) keeps its plain `onArm(v)`. */
   highStakeCycle?: readonly number[];
+  /** Ticket 2026-09-16#7 item 4: a SECOND bar-convergence trigger, OR'd into `barSlideActive`
+   *  (below) alongside the existing pre-match `matchForming || searching` — Mines' own post-bust
+   *  result sequence (`minesResult !== null`, `Full Spec.html:3521-3526`'s `mConverged`), scoped
+   *  per-hub (unlike the shared `barSlideActive` itself, which every `matchBarSlide` hub reads as
+   *  "pre-match slide only"). Reuses the EXACT same live-measurement/transition machinery —
+   *  `barSlideActive` transitioning false→true again is all the existing effect needs to
+   *  re-measure, no new code there. Undefined (every hub but Mines) → byte-identical no-op. */
+  resultConverge?: boolean;
+  /** Ticket 2026-09-16#7 item 5: Mines-only gem-count icon rows (`minesOppGemList`/`minesGems`,
+   *  `Full Spec.html:445-462`/`:660-681`) — rendered as a new sibling between the name and the
+   *  right-side aside/"Playing…" slot, `shrink-0` (not the prototype's own `flex:1 1 auto` fill —
+   *  a deliberate, safer deviation: making it flex-1 would mean moving `flex-1` OFF the existing
+   *  name span, which would break long-name truncation for every OTHER hub using this bar).
+   *  Undefined (every hub but Mines) → byte-identical no-op, nothing rendered. */
+  oppGemRow?: ReactNode;
+  ownGemRow?: ReactNode;
 }
 
 /** Ticket 2026-09-12: generalizes the #381 "tap-again to escalate" gesture beyond the hardcoded
@@ -361,7 +377,7 @@ function useNow(active: boolean): number {
  */
 export function GameHub(props: GameHubProps) {
   const {
-    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar, searchFloorMs = 2400, matchBarSlide, pinDark = false, highStakeCycle,
+    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar, searchFloorMs = 2400, matchBarSlide, pinDark = false, highStakeCycle, resultConverge, oppGemRow, ownGemRow,
     token, playerId, username, avatarId = 'default', opponentId, opponentName, serverClockOffset = 0, balance, currentMatchId, gameState, events,
     legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
@@ -629,7 +645,10 @@ export function GameHub(props: GameHubProps) {
   // both collapse to `phase === 'waiting'`, and `matchForming`→false lands on the exact same beat
   // `phase` flips to `in-match`, matching the prototype's `found`→`split` transition point). Reuse
   // them rather than invent a third flag.
-  const barSlideActive = matchForming || searching;
+  // Ticket 2026-09-16#7 item 4: `resultConverge` (Mines-only) extends this the same way the
+  // prototype's own `mConverged` extends `rpsMatching` (`Full Spec.html:3756`'s `minesBoardOp`) —
+  // the SAME flag drives both the bar-shift-to-center AND the board dim below, matching exactly.
+  const barSlideActive = matchForming || searching || Boolean(resultConverge);
   const barSlideEnabled = matchBarSlide != null;
 
   // 'measured' mode (Mines/Dice): live-measure the real bar positions the moment the slide first
@@ -773,7 +792,7 @@ export function GameHub(props: GameHubProps) {
                 VS
               </span>
             </div>
-            <OpponentSlot phase={phase} opponentName={opponentName} scanNames={scanNames} aside={renderSlotAside?.(areaArgs, 'opponent')} drawBeat={barDrawBeat} barShiftY={oppBarShiftY} />
+            <OpponentSlot phase={phase} opponentName={opponentName} scanNames={scanNames} aside={renderSlotAside?.(areaArgs, 'opponent')} drawBeat={barDrawBeat} barShiftY={oppBarShiftY} gemRow={oppGemRow} />
             {renderGameArea(areaArgs)}
             <OwnSlot
               label={loggedIn ? (username || 'You') : 'Sign in'}
@@ -784,18 +803,31 @@ export function GameHub(props: GameHubProps) {
               barVerdict={ownBarVerdict}
               drawBeat={barDrawBeat}
               barShiftY={ownBarShiftY}
+              gemRow={ownGemRow}
               // Ticket 2026-09-15#13 item 2: Dice's own player-bar loss ring is var(--rc-loss)
               // (#FF3E5E, Full Spec.html:3787's playerBarRing), NOT the shared ring-destructive
               // every other OwnSlot-using game keeps — scoped here by gameId, not a global token
               // swap, since this component is shared by RPS/Mines/Coinflip/Blackjack/Chess too.
-              lossRingColor={gameId === 'dice' ? 'var(--rc-loss)' : undefined}
+              // Ticket 2026-09-16#7 item 4: Mines gets the SAME token — its own playerBarRing
+              // literal (Full Spec.html:3787) is ALSO #FF3E5E for loss, confirmed independently —
+              // not a coincidence worth re-literalling, reuse the token exactly like Dice does.
+              lossRingColor={gameId === 'dice' || gameId === 'mines' ? 'var(--rc-loss)' : undefined}
               // Ticket 2026-09-16#4 item 4: Dice's own win ring/fill is #16A34A (DiceHub.tsx's own
               // DICE_WIN_GREEN — the same green already used for the winning cube number and the
               // winning history pill), NOT the shared --rc-green — scoped by gameId, same shape as
               // lossRingColor above. Literal, not a --rc-* token: unlike --rc-loss this color has no
               // other consumer outside Dice, so there's nothing else for a shared token to serve.
-              winRingColor={gameId === 'dice' ? '#16A34A' : undefined}
-              winFillColor={gameId === 'dice' ? '#16A34A' : undefined}
+              // Ticket 2026-09-16#7 item 4 (correction to an earlier draft of this same ticket,
+              // caught before anything was built on it): Mines' own win colour is #22C55E, NOT
+              // Dice's #16A34A — Mines has no per-number recolor at all; its only win tell is this
+              // shared ring/fill mechanism, whose own literal (Full Spec.html:3789) is unambiguously
+              // #22C55E. Do not conflate the two games' deliberately-different pairs.
+              winRingColor={gameId === 'dice' ? '#16A34A' : gameId === 'mines' ? '#22C55E' : undefined}
+              winFillColor={gameId === 'dice' ? '#16A34A' : gameId === 'mines' ? '#22C55E' : undefined}
+              // Ticket 2026-09-16#7 item 4: Mines-only — the shared outlineClasses() had no
+              // per-verdict draw override until now (win/lose already did). Mines' own draw literal
+              // (Full Spec.html:3787) is #FF8A1E — no other game currently needs this overridden.
+              drawRingColor={gameId === 'mines' ? '#FF8A1E' : undefined}
             />
           </section>
 
@@ -970,7 +1002,7 @@ function useNameScan(active: boolean, names: string[]): string | null {
  *  "Searching…" beat with a decorative online-name scan; In-match/Result → the REAL opponent's
  *  name in bright white (or a neutral "Opponent" when the joiner's name never reached the client).
  *  Never an opponentId, never a fabricated/cycled name (Charter #2 + DEMO_PRESENTATION honesty). */
-function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShiftY }: { phase: Phase; opponentName?: string | null; scanNames: string[]; aside?: ReactNode; drawBeat?: boolean; barShiftY?: number }) {
+function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShiftY, gemRow }: { phase: Phase; opponentName?: string | null; scanNames: string[]; aside?: ReactNode; drawBeat?: boolean; barShiftY?: number; gemRow?: ReactNode }) {
   const searching = phase === 'waiting';
   const inMatch = phase === 'in-match' || phase === 'result';
   const scan = useNameScan(searching, scanNames);
@@ -1021,6 +1053,11 @@ function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShif
           Searching…
         </span>
       )}
+      {/* Ticket 2026-09-16#7 item 5: Mines-only gem-count row — a new sibling between the name and
+          the aside/"Playing…" slot below, `shrink-0` (see the `oppGemRow` prop's own doc comment on
+          GameHubProps for why not the prototype's literal `flex:1 1 auto`). Undefined for every
+          other hub → nothing rendered here at all. */}
+      {gemRow && <span className="min-w-0 shrink-0">{gemRow}</span>}
       {/* A per-game aside (e.g. chess clock) takes the right slot; otherwise the live "Playing…"
           tag — only while actually in-match (a persisted post-match board is not "playing").
           Ticket 2026-09-16#5 item 7: weight/case/tracking corrected against the prototype's own
@@ -1046,7 +1083,7 @@ function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShif
  *  plays the SHARED win animation (`useWinReveal`): a green fill + "You Win" kept ALONGSIDE the
  *  username (never swapped out), the green a background layer — 0.5 s fill-in → 2 s hold → 0.5 s
  *  fade-out → the persistent green outline. Loss/draw are outline-only (no fill/text). */
-function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdict, drawBeat, barShiftY, lossRingColor, winRingColor, winFillColor }: { label: string; username?: string | null; avatarId?: AvatarId; isOwn: boolean; aside?: ReactNode; barVerdict?: Verdict | null; drawBeat?: boolean; barShiftY?: number; lossRingColor?: string; winRingColor?: string; winFillColor?: string }) {
+function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdict, drawBeat, barShiftY, lossRingColor, winRingColor, winFillColor, drawRingColor, gemRow }: { label: string; username?: string | null; avatarId?: AvatarId; isOwn: boolean; aside?: ReactNode; barVerdict?: Verdict | null; drawBeat?: boolean; barShiftY?: number; lossRingColor?: string; winRingColor?: string; winFillColor?: string; drawRingColor?: string; gemRow?: ReactNode }) {
   const win = barVerdict === 'win';
   const { contentVisible, fillShown, settled } = useWinReveal(win);
 
@@ -1067,7 +1104,9 @@ function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdi
         // Tailwind `ring-destructive` class for an inline ring of that exact color — every other
         // caller (no `lossRingColor` passed) keeps today's shared class byte-identical.
         barVerdict === 'lose' && (lossRingColor ? 'ring-[3px]' : 'ring-[3px] ring-destructive'),
-        barVerdict === 'draw' && 'ring-[3px] ring-amber-400',
+        // Ticket 2026-09-16#7 item 4: same shape again — an opt-in `drawRingColor` (Mines only,
+        // today) swaps the shared `ring-amber-400` for Mines' own #FF8A1E.
+        barVerdict === 'draw' && (drawRingColor ? 'ring-[3px]' : 'ring-[3px] ring-amber-400'),
         // Ticket 2026-09-16#4 item 4: same shape as `lossRingColor` above — an opt-in `winRingColor`
         // (Dice only, today) swaps `outlineClasses('win')`'s `ring-success`/glow-shadow classes for a
         // plain inline-colored ring (no glow, matching the loss side's own precedent), so Dice's win
@@ -1079,6 +1118,7 @@ function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdi
       style={{
         ...(barShiftY != null ? { transform: `translateY(${barShiftY}px)`, transition: 'transform 620ms cubic-bezier(0.3,0.9,0.32,1)' } : undefined),
         ...(barVerdict === 'lose' && lossRingColor ? { '--tw-ring-color': lossRingColor } as CSSProperties : undefined),
+        ...(barVerdict === 'draw' && drawRingColor ? { '--tw-ring-color': drawRingColor } as CSSProperties : undefined),
         ...(win && settled && winRingColor ? { '--tw-ring-color': winRingColor } as CSSProperties : undefined),
       }}
     >
@@ -1117,6 +1157,9 @@ function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdi
           You Win
         </motion.span>
       )}
+      {/* Ticket 2026-09-16#7 item 5: see `OpponentSlot`'s matching comment above — wrapped the same
+          way `aside` is, so it sits above the win-fill layer too. */}
+      {gemRow && <span className="relative z-10 min-w-0 shrink-0">{gemRow}</span>}
       {aside && <span className="relative z-10 flex shrink-0 items-center gap-2">{aside}</span>}
     </div>
   );
