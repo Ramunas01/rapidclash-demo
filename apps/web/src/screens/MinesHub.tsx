@@ -127,6 +127,18 @@ function MineHalo() {
 
 /** What renders inside one tile, by `cellKind` — the ONLY thing T8 changes about a cell; the
  *  covered/safe/mine/bustedOn classification itself (`cellKind()` below) is untouched. */
+// Ticket 2026-09-16#5 item 5: the gem/bomb icon's own reveal pop — `gemOp`/`gemScale`/`bombOp`/
+// `bombScale` (`Full Spec.html:508/488`), opacity 0→1 (0→0.26 for a non-hit exposed mine — see
+// below), scale 0.4→1, `transition:opacity 180ms ease, transform 300ms cubic-bezier(0.34,1.7,0.5,1)`
+// — the same convention RPS's own rock/paper/scissors icon reveals already use (`:611-613/634-636`,
+// byte-identical transition string). Our `MineTileContent` used to just conditionally render the
+// icon with no transition at all — instant appear. (The tile's own `transform:scale({{t.scale}})`,
+// `:474`, is very likely inert in the prototype itself — `t.scale` is a constant `1`, never changes
+// — so it's not ported; only the icon's own reveal pop is real.) Wrapping the icon (not touching its
+// own `opacity` prop, which is a STEADY-STATE target, not a transition) in a `motion.div` composes
+// cleanly: CSS opacity is multiplicative across nested elements, so a 0→1 wrapper animation times
+// MineIcon's own constant 0.26 lands exactly on 0→0.26, the real target, with no extra plumbing.
+const REVEAL_POP_TRANSITION = { duration: 0.3, ease: [0.34, 1.7, 0.5, 1] as const };
 function MineTileContent({ kind }: { kind: CellKind }) {
   if (kind === 'safe') {
     return (
@@ -134,12 +146,18 @@ function MineTileContent({ kind }: { kind: CellKind }) {
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <GemHalo />
         </div>
-        <GemIcon />
+        <motion.div initial={{ opacity: 0, scale: 0.4 }} animate={{ opacity: 1, scale: 1 }} transition={REVEAL_POP_TRANSITION}>
+          <GemIcon />
+        </motion.div>
       </>
     );
   }
   if (kind === 'mine') {
-    return <MineIcon opacity={0.26} />;
+    return (
+      <motion.div initial={{ opacity: 0, scale: 0.4 }} animate={{ opacity: 1, scale: 1 }} transition={REVEAL_POP_TRANSITION}>
+        <MineIcon opacity={0.26} />
+      </motion.div>
+    );
   }
   if (kind === 'bustedOn') {
     return (
@@ -147,7 +165,9 @@ function MineTileContent({ kind }: { kind: CellKind }) {
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <MineHalo />
         </div>
-        <MineIcon opacity={1} />
+        <motion.div initial={{ opacity: 0, scale: 0.4 }} animate={{ opacity: 1, scale: 1 }} transition={REVEAL_POP_TRANSITION}>
+          <MineIcon opacity={1} />
+        </motion.div>
       </>
     );
   }
@@ -252,7 +272,15 @@ function RoundClock({ roundStartedAt, serverClockOffset, light }: { roundStarted
  * gameState, so a new round (round bumps, uncovered resets) re-covers the board on its own; only
  * the decisive match.end surfaces the GameHub result overlay.
  */
-function MinesBoard({ playerId, opponentId, username, gameState, legalMoves, onMove, onForfeit, serverClockOffset = 0 }: GameAreaArgs) {
+// Ticket 2026-09-16#5 item 1: MinesBoard's own internal You/Opponent status row + "Your move"/
+// "Busted"/"Board cleared" status line + explainer paragraph + Resign button all had zero
+// equivalent anywhere in the prototype's own `isMines` block (`Full Spec.html:470-529`, confirmed
+// directly). The shared GameHub bars already show the real avatar/name, and OpponentSlot's own
+// existing "Playing…" fallback already covers the right-side status (MinesHubScreen passes no
+// renderSlotAside) — this was pure duplicate chrome, not a missing-elsewhere feature. `onForfeit`
+// itself is untouched (still fully generic, shared infra — RPS/Chess/Blackjack's own real Resign
+// buttons still use it); only Mines' own now-orphaned Resign button is gone.
+function MinesBoard({ playerId, gameState, legalMoves, onMove, phase, serverClockOffset = 0 }: GameAreaArgs) {
   const { resolved: themeResolved } = useTheme();
   const light = themeResolved === 'light';
   const view = gameState as MinesView | null;
@@ -262,11 +290,8 @@ function MinesBoard({ playerId, opponentId, username, gameState, legalMoves, onM
   const moveIdx = onMove as unknown as (i: number) => void;
 
   const me = playerId ? view?.boards?.[playerId] : undefined;
-  const opp = view && opponentId ? view.boards?.[opponentId] : undefined;
 
-  const round = view?.round ?? 0;
   const myUncovered = useMemo(() => new Set(me?.uncovered ?? []), [me?.uncovered]);
-  const myScore = me?.uncovered?.length ?? 0;
   const myLocked = me?.locked ?? false;
   const bustedOn = me?.bustedOn;
   // The mine layout is present in my view only once I've locked (busted/cleared); at terminal
@@ -278,12 +303,6 @@ function MinesBoard({ playerId, opponentId, username, gameState, legalMoves, onM
   const legalSet = useMemo(() => new Set(legalIdx), [legalIdx]);
   const canMove = !myLocked && legalIdx.length > 0;
 
-  // Opponent's safe-count is server-redacted: hidden for the WHOLE round, revealed only once
-  // BOTH players have locked (2026-09-11 ruleset — no early resolution, no mid-round chase).
-  // We NEVER see their board, in-play or otherwise.
-  const oppScore = opp?.score;
-  const oppLocked = opp?.locked ?? false;
-
   function cellKind(i: number): CellKind {
     if (bustedOn === i) return 'bustedOn';
     if (myUncovered.has(i)) return 'safe';
@@ -291,45 +310,8 @@ function MinesBoard({ playerId, opponentId, username, gameState, legalMoves, onM
     return 'covered';
   }
 
-  const myStatus = myLocked ? (bustedOn !== undefined ? 'Busted' : 'Board cleared') : 'Your move';
-
   return (
     <div className="flex flex-col gap-3" data-testid="hub-board">
-      {/* You / opponent count (chase) / round */}
-      <div className="flex items-center justify-between text-xs">
-        <span data-testid="play-you" className="font-medium text-muted-foreground">
-          {username ? <>You (<strong className="text-foreground">{username}</strong>)</> : 'You'}
-          <span className="ml-1 text-foreground/40">· {myScore} safe</span>
-        </span>
-        {round > 0 && (
-          <span data-testid="round-indicator" className="rounded-full bg-surface px-2 py-0.5 text-muted-foreground">
-            Round {round + 1}
-          </span>
-        )}
-        <span data-testid="opponent-count" className="font-medium text-muted-foreground">
-          Opponent ·{' '}
-          {oppScore !== undefined ? (
-            <strong className="text-foreground">{oppScore} safe</strong>
-          ) : (
-            <span className="text-foreground/40" aria-label="hidden">🙈</span>
-          )}
-          {oppLocked && <span className="ml-1 text-foreground/40">locked</span>}
-        </span>
-      </div>
-
-      {/* Status */}
-      <div className="flex items-center justify-between">
-        <span
-          data-testid="my-status"
-          className={cn(
-            'text-sm font-semibold',
-            myLocked ? (bustedOn !== undefined ? 'text-destructive' : 'text-success') : 'text-brand',
-          )}
-        >
-          {myStatus}
-        </span>
-      </div>
-
       {/* Own 5×5 board, lines 470-518 — inner board radius 16px, bg `minesBoardBg`, 10px padding,
        *  a 5-col grid with 8px gaps; each tile radius 9px. The opponent's board is NEVER rendered
        *  (server hides it). */}
@@ -356,10 +338,13 @@ function MinesBoard({ playerId, opponentId, username, gameState, legalMoves, onM
               whileHover={clickable ? { scale: 1.08 } : undefined}
               whileTap={clickable ? { scale: 0.92 } : undefined}
               className={cn(
-                'relative flex aspect-square items-center justify-center rounded-[9px] transition-colors',
+                'relative flex aspect-square items-center justify-center rounded-[9px]',
                 clickable ? 'cursor-pointer' : kind === 'covered' ? 'cursor-not-allowed opacity-70' : 'cursor-default',
               )}
-              style={{ background: tileBg(kind, light) }}
+              // Ticket 2026-09-16#5 item 6: the cited `transition:background 200ms ease` (`:474`) —
+              // Tailwind's generic `transition-colors` utility defaulted to this project's unmodified
+              // 150ms/cubic-bezier(0.4,0,0.2,1) instead (confirmed via tailwind.config.js, no override).
+              style={{ background: tileBg(kind, light), transition: 'background 200ms ease' }}
             >
               <MineTileContent kind={kind} />
             </motion.button>
@@ -367,25 +352,22 @@ function MinesBoard({ playerId, opponentId, username, gameState, legalMoves, onM
         })}
       </div>
 
-      <RoundClock roundStartedAt={view?.roundStartedAt} serverClockOffset={serverClockOffset} light={light} />
-
-      <p className="text-center text-xs text-muted-foreground">
-        {myLocked
-          ? oppLocked
-            ? 'Resolving…'
-            : 'Locked in — waiting for your opponent to finish their round.'
-          : 'Tap a tile. Avoid the mines — most safe tiles wins. A mine, 22 safe tiles, or the clock ends your round.'}
-      </p>
-
-      {!myLocked && (
-        <button
-          type="button"
-          onClick={onForfeit}
-          className="pt-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-        >
-          Resign
-        </button>
-      )}
+      {/* Ticket 2026-09-16#5 item 4: collapses outside the actively-running round, matching the
+          prototype's own gating exactly — `minesClockOp`/`minesClockH` (`Full Spec.html:3758-3759`)
+          are 1/46px only while a round is live, 0/0px everywhere else (including the result-hold
+          window) — confirmed our own `RoundClock` rendered unconditionally, staying visible through
+          the whole result phase. `phase !== 'result'` is the cleanest local proxy MinesBoard already
+          has (it stays mounted through both 'in-match' and 'result', never remounting between). */}
+      <div
+        style={{
+          opacity: phase === 'result' ? 0 : 1,
+          maxHeight: phase === 'result' ? 0 : 46,
+          overflow: 'hidden',
+          transition: 'opacity 420ms ease, max-height 620ms cubic-bezier(0.3,0.9,0.32,1)',
+        }}
+      >
+        <RoundClock roundStartedAt={view?.roundStartedAt} serverClockOffset={serverClockOffset} light={light} />
+      </div>
     </div>
   );
 }

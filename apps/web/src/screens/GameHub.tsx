@@ -1022,11 +1022,18 @@ function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShif
         </span>
       )}
       {/* A per-game aside (e.g. chess clock) takes the right slot; otherwise the live "Playing…"
-          tag — only while actually in-match (a persisted post-match board is not "playing"). */}
+          tag — only while actually in-match (a persisted post-match board is not "playing").
+          Ticket 2026-09-16#5 item 7: weight/case/tracking corrected against the prototype's own
+          citation (`Full Spec.html:463`: font-weight:bold, no text-transform on the literal mixed-
+          case "Playing...", letter-spacing:0.3px, font-size:13px) — was font-black/uppercase/
+          tracking-wide/text-xs(12px), wrong in both themes. `text-foreground/70` (the color half) is
+          left untouched — a separate, already-tracked GameHub.tsx light-theme token backlog
+          (2026-09-15#9), not reopened here. Shared fallback: affects every game using it (RPS/Mines/
+          Dice/Coinflip/Blackjack/Chess alike), not Mines-specific. */}
       {aside ? (
         <span className="flex shrink-0 items-center gap-2">{aside}</span>
       ) : (
-        phase === 'in-match' && <span className="shrink-0 text-xs font-black uppercase tracking-wide text-foreground/70">Playing…</span>
+        phase === 'in-match' && <span className="shrink-0 text-[13px] font-bold tracking-[0.3px] text-foreground/70">Playing…</span>
       )}
     </div>
   );
