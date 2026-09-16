@@ -11,11 +11,18 @@ import { useEffect, useState } from 'react';
  * picker changes it — a per-component-instance `useState` structurally can't do that, since only
  * one screen position (`HubRibbon.tsx`'s wallet chip) ever mounted `CurrencyPicker` before.
  *
- * Deliberately NOT persisted to localStorage (unlike `theme.ts`'s choice): the prototype's own
- * `curSel` lives in plain `this.state`, defaulting to `'USD'` fresh on every load, with no
- * read-back from storage anywhere in the decoded template — and every non-USD value it drives is
- * `currencyData.ts`'s own hardcoded MOCK balance, never the real ledger (see that file's own doc
- * comment), so there's no real state here worth surviving a reload.
+ * Deliberately NOT persisted to localStorage (unlike `theme.ts`'s choice): every non-USD value
+ * this drives is `currencyData.ts`'s own hardcoded MOCK balance, never the real ledger (see that
+ * file's own doc comment), so there's no real state here worth surviving a reload.
+ *
+ * `DEFAULT_CURRENCY = 'USD'` is NOT a prototype-fidelity citation — the prototype's own `curSel`
+ * actually defaults to `'SOL'` (`Full Spec.html:3579`, `this.state.curSel || 'SOL'`). USD-by-
+ * default here is a deliberate PM decision overriding that (`CurrencyPicker.tsx`'s own doc
+ * comment, `2026-09-11#5`): this app's wallet trigger must show the user's REAL balance by
+ * default, not the prototype's mock SOL figure. Corrected 2026-09-16 — an earlier version of this
+ * comment claimed the prototype also defaults to USD, which doesn't match its actual source
+ * (flagged in `docs/COMMS/ADVISOR_TO_PM.md` 2026-09-16#2, confirmed as a pre-existing decision
+ * this file's own comment had simply mis-cited, not an open product question).
  */
 
 const DEFAULT_CURRENCY = 'USD';
