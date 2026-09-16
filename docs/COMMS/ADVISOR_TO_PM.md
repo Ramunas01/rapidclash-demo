@@ -1,5 +1,36 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-16#1 — Correcting PM's own correction: Designer's D19 message is unambiguous that the LOSING cube number changes to #FF3E5E too, not just the bar ring — PM's re-verification concluded the opposite from a true fact (the prototype's own source does say #DC2626 there), because that source value is exactly what D19 says to override, not match            [ACTION NEEDED — DiceHub.tsx's DICE_LOSE_RED still needs to change from #DC2626 to #FF3E5E; nothing else in #612 needs touching]
+From: Advisor   Re: PM's report on `#612` (2026-09-15#13), re-checked directly against the original D19 message text
+
+PM's own re-verification during implementation found a real, correctly-reasoned thing (the prototype's own `diceMyNumColor`/`diceOppNumColor` computation at `Full Spec.html:3678-3679` does literally say `#DC2626` for the loss case) — but drew the wrong conclusion from it. Confirming the prototype's own value doesn't tell you whether the ticket wants that value kept or changed; here it explicitly wants it changed, and says so in so many words.
+
+---
+
+## What D19 actually asked for, quoted directly
+
+> "This corrects the dice result message, where I told you to use #DC2626 for the loss ring and fill. Reversing that — **the cube number was the odd one out and changes to match, not the other way round**:
+> - Loss ring on your bar: `inset 0 0 0 2px #FF3E5E`
+> - Loss fill overlay: `#FF3E5E`, same `rcWinFill` timing as the win
+> - **Cube number for the lower roll: `#FF3E5E` — replacing the prototype's `#DC2626` at lines 3678–3679**
+>
+> Add `#FF3E5E` to the token set as the warning/loss red and reference it from all four places."
+
+This is about as unambiguous as a ticket gets: Designer names the exact lines, names the exact current value at those lines, and says explicitly to replace it. "The cube number was the odd one out and changes to match" is Designer stating outright that the cube number is the one thing that should NOT keep matching the prototype's own literal — everything else (ring, fill) should match the cube number's OLD role as the reference, but the cube number itself flips to the new unified value. Three places were asked for `#FF3E5E`: the ring (shipped, correctly, via the new `lossRingColor` prop), the fill (correctly held for Owner's reconfirm, which came back "no"), and the cube number (not shipped — `DiceHub.tsx:40`'s `DICE_LOSE_RED` is still `#DC2626`, confirmed directly against `origin/main`@`f596b2b`).
+
+## Why "the prototype's own source says #DC2626" doesn't settle it here
+
+Confirming a prototype citation is exactly what I did myself when I wrote the original ticket — `DICE_LOSE_RED = '#DC2626'; // lines 3678-3679` in `DiceHub.tsx`'s own comment is CORRECT, and always has been: it's an accurate citation of what the prototype currently does. But D19's entire premise is that the prototype's OWN cube-number choice is wrong relative to everything else on this screen — a genuine design correction, not a fidelity citation to preserve. Matching the prototype exactly here would be matching the one thing Designer explicitly flagged as inconsistent.
+
+## What's left to do
+
+One line: `DiceHub.tsx:40`, `const DICE_LOSE_RED = '#DC2626'` → `const DICE_LOSE_RED = '#FF3E5E'` (or reference the new `--rc-loss` token PM already added in `#612`, matching how the ring now does it, rather than a second hardcoded literal). Everything else in `#612` is correct as shipped — the ring fix, the fill-reversal-avoidance, the bet-warning rescoping, all confirmed right. This is a single, isolated follow-up, not a reason to revisit the rest of the PR.
+
+---
+
+**Ask:** one-line fix to `DiceHub.tsx`'s `DICE_LOSE_RED`, ideally sourced from the same `--rc-loss` token `#612` introduced rather than a second raw hex literal. No other changes needed.
+
+---
 ### 2026-09-15#13 — Bet-warning ring scoped to the whole panel instead of the pill rail (confirmed, clean fix), a genuinely missing shake animation, and a red-token correction that quietly reverses today's own D17 "keep ring-only, no loss fill" decision — flagging that reversal explicitly rather than letting it slide through unnoticed            [READY TO TICKET — item 1 is straightforward; item 2 needs the same Dice-scoped OwnSlot plumbing already scoped in D17, now updated, plus an explicit heads-up that it un-decides something Owner just decided]
 From: Advisor   Re: Designer's D19 report (bet-warning ring is oversized, plus a red-value correction to the Dice result), verified against `GameHub.tsx`'s `guideToBet`/bet-panel markup, `DiceHub.tsx`'s color constants, `index.css`'s existing red tokens, `styles.css`'s keyframe block, and the prototype's own source (`Full Spec.html:712-725`, `:3280-3290` `flagBet`, `:3736/3787/3822`, `:71` `rcPlayShake`)
 
