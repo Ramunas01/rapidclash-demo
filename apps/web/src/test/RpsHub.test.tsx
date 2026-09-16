@@ -116,6 +116,24 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     expect(onMakeMove).toHaveBeenCalledWith('rock');
   });
 
+  // Ticket 2026-09-16#5 item 7: the shared OpponentSlot fallback "Playing…" tag's weight/case/
+  // tracking corrected against the prototype's own citation (Full Spec.html:463) — was font-black/
+  // uppercase/tracking-wide/text-xs(12px), wrong in both themes. Found while verifying a Mines
+  // ticket but lands in shared GameHub.tsx code, so every game using the fallback is affected —
+  // exercised here via RPS as the canonical shared-GameHub test surface. The color half
+  // (text-foreground/70) is a separate, already-tracked light-theme token backlog — untouched here.
+  it('ticket 2026-09-16#5 item 7: the opponent bar\'s "Playing…" fallback uses the prototype\'s own weight/case/tracking', () => {
+    const gameState: RpsView = { players: ['pid', 'bob'], choices: {} };
+    render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock', 'paper', 'scissors'] })} />);
+    // Scoped to the opponent bar — the PLAY button's own disabled label is also "Playing…".
+    const playingTag = within(screen.getByTestId('hub-slot-opponent')).getByText('Playing…');
+    expect(playingTag.className).toContain('font-bold');
+    expect(playingTag.className).not.toContain('font-black');
+    expect(playingTag.className).not.toContain('uppercase');
+    expect(playingTag.className).toContain('text-[13px]');
+    expect(playingTag.className).toContain('tracking-[0.3px]');
+  });
+
   // 2026-09-11#9 item 2 (deliberate, Owner-approved redaction rollback — ADVISOR_TO_PM.md): a tied
   // round's new_round event carries revealedChoices, and RpsBoard flips the opponent card to the
   // real throw, holds it, then resets to redacted — a real, intentional behavior change from "always

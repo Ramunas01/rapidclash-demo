@@ -148,21 +148,16 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     expect(kind(10)).toBe('bustedOn'); // the detonated mine wins over plain 'mine'
     expect(kind(20)).toBe('mine');     // layout revealed once locked
     expect(kind(2)).toBe('covered');
-    expect(screen.getByTestId('my-status').textContent).toBe('Busted');
   });
 
-  it('Redaction: hides the opponent count while both are active and never renders an opponent board', () => {
+  // Ticket 2026-09-16#5 item 1: the duplicate You/Opponent status row (and its own "N safe"/
+  // "hidden" redaction display) is gone — the shared GameHub bars now cover this, and neither
+  // player's safe-count is shown anywhere in Mines' own UI at all (matches the prototype's own
+  // `isMines` block, which never displays a score as text either — confirmed, not just assumed).
+  // What's still a real, independent regression guard: the opponent's own board is never rendered.
+  it('Redaction: never renders an opponent board — only the player\'s own 25 cells exist in the DOM', () => {
     render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [1] }, { locked: false }), legalMoves: asLegal(allCovered) })} />);
-    const oppCount = screen.getByTestId('opponent-count');
-    expect(oppCount.textContent).not.toMatch(/\d+ safe/); // no number leaked
-    expect(oppCount.querySelector('[aria-label="hidden"]')).toBeInTheDocument();
-    // Only the player's own 25 cells exist — the opponent's board is never in the DOM.
     expect(screen.getAllByRole('gridcell')).toHaveLength(25);
-  });
-
-  it('Reveals the opponent count once it is provided (server-gated on BOTH players locking)', () => {
-    render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [2] }, { locked: true, score: 7 }), legalMoves: asLegal(allCovered) })} />);
-    expect(screen.getByTestId('opponent-count').textContent).toContain('7 safe');
   });
 
   // T8: the 30s round clock, driven by the server-authoritative `roundStartedAt` (not a
@@ -218,14 +213,12 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
       <MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [0, 1, 2] }), legalMoves: asLegal([3, 4, 5]) })} />,
     );
     expect(kind(0)).toBe('safe');
-    expect(screen.queryByTestId('round-indicator')).not.toBeInTheDocument();
 
     // Draw → replay within the SAME match (currentMatchId stays set): round bumps, board resets,
     // and crucially no result overlay is shown (the match keeps going).
     rerender(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [] }, {}, { round: 1 }), legalMoves: asLegal(allCovered) })} />);
     expect(kind(0)).toBe('covered'); // the previously-safe square is covered again
     expect(screen.getByTestId('cell-0')).not.toBeDisabled();
-    expect(screen.getByTestId('round-indicator').textContent).toContain('Round 2');
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
   });
 
@@ -261,6 +254,53 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     // No holdResultMs for Mines — phase jumps straight to 'result'. The real board must still be
     // the thing rendered, not MinesIdle's blank preview grid.
     expect(screen.getByTestId('hub-board')).toBeInTheDocument();
+  });
+
+  // Ticket 2026-09-16#5 item 1: the duplicate You/Opponent row, status line, explainer paragraph,
+  // and Resign button are gone — zero equivalent anywhere in the prototype's own `isMines` block.
+  // `onForfeit` itself is untouched (still generic shared infra for RPS/Chess/Blackjack's own real
+  // Resign buttons) — only Mines' own now-orphaned button is gone, confirmed via the grep D22 asked
+  // for turning up exactly one hit (the button's own text) before this fix.
+  it("item 1: the duplicate status row/paragraph/Resign button are gone — the shared GameHub bars cover it instead", () => {
+    render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [0, 1] }), legalMoves: asLegal(allCovered) })} />);
+    expect(screen.queryByTestId('play-you')).toBeNull();
+    expect(screen.queryByTestId('opponent-count')).toBeNull();
+    expect(screen.queryByTestId('my-status')).toBeNull();
+    expect(screen.queryByTestId('round-indicator')).toBeNull();
+    expect(screen.queryByRole('button', { name: /resign/i })).toBeNull();
+    expect(screen.queryByText(/tap a tile/i)).toBeNull();
+    // The shared bars still show the real names, unaffected by the deletion.
+    expect(screen.getByTestId('hub-slot-own')).toBeInTheDocument();
+    expect(screen.getByTestId('hub-slot-opponent')).toBeInTheDocument();
+  });
+
+  // Ticket 2026-09-16#5 item 4: the round clock collapses (max-height 46px→0, opacity 1→0) once the
+  // result phase lands — it used to render unconditionally, staying visible through the whole
+  // result-hold window. `Full Spec.html:3758-3759`'s own gating (`minesClockOp`/`minesClockH`)
+  // confirms this is the prototype's real behavior, not a cosmetic nice-to-have.
+  it('item 4: the round clock collapses once the result phase lands', () => {
+    const gameState = view({ uncovered: [0, 1, 2, 3], locked: true });
+    const { rerender } = render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: asLegal([]) })} />);
+    const clockWrapper = screen.getByTestId('mines-round-clock').parentElement as HTMLElement;
+    expect(clockWrapper.style.maxHeight).toBe('46px');
+    expect(clockWrapper.style.opacity).toBe('1');
+
+    rerender(<MinesHubScreen {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'alice' }, lastSettlement: { delta: 18, newBalance: 1018 } })} />);
+    expect(clockWrapper.style.maxHeight).toMatch(/^0(px)?$/); // React renders a 0 style value unitless
+    expect(clockWrapper.style.opacity).toBe('0');
+  });
+
+  // Ticket 2026-09-16#5 item 5: the gem/mine icon's own reveal pop — previously appeared instantly
+  // with zero transition; now mounts at opacity:0/scale:0.4 and animates to opacity:1/scale:1 (the
+  // wrapping motion.div's own inline style, before Framer Motion's rAF-driven animation advances it).
+  it('item 5: the gem/mine icon mounts as a reveal pop (opacity 0, scale 0.4), not an instant appear', () => {
+    render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [0], bustedOn: 5, mines: [5] }, {}, {}), legalMoves: asLegal([]) })} />);
+    // cell-0's SVGs, in DOM order: GemHalo's (unpopped, its own separate opacity-only fade), then
+    // the pop-wrapped GemIcon's — the second one, whose parent is the motion.div reveal-pop wrapper.
+    const svgs = screen.getByTestId('cell-0').querySelectorAll('svg');
+    const gemPop = svgs[1].parentElement as HTMLElement;
+    expect(gemPop.style.opacity).toBe('0');
+    expect(gemPop.style.transform).toContain('scale(0.4)');
   });
 
   it('Result win: shared 0.5/2/0.5 bar animation on the own bar only — keeps the username, "You Win" alongside, then settles to the green outline (mirrors CoinflipHub.test.tsx)', async () => {
