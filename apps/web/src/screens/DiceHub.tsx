@@ -37,7 +37,10 @@ const HOLD_MS = 2200;
 // a raw literal, now that they're the same value. ──
 const DICE_FILL_GREEN = '#22C55E'; // lines 542, 575 — the roll-progress fill
 const DICE_WIN_GREEN = '#16A34A'; // lines 556, 589, 3451, 3678-3679 — winning number / winning history pill
-const DICE_LOSE_RED = '#DC2626'; // lines 3678-3679 — losing number color
+// Ticket 2026-09-15#13 item 2: Designer overrides the prototype's own #DC2626 with the app-wide
+// #FF3E5E loss red (same token as the bet-warning ring/player-bar loss ring) — deliberate, not a
+// restore of the prototype's literal value.
+const DICE_LOSE_RED = 'var(--rc-loss)'; // losing number color
 const DICE_NEUTRAL_NUM = '#12121F'; // lines 556, 589, 3678-3679 — pre-final / tie number color
 // The die cube's faces are a fixed light isometric gradient in EITHER theme (a physical die stays
 // white) — lines 551-553 / 584-586.
