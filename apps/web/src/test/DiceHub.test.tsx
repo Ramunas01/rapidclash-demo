@@ -379,6 +379,11 @@ describe('DiceHubScreen', () => {
         expect(ownBar.className).toContain('ring-[3px]');
         expect(ownBar.className).not.toContain('ring-destructive');
         expect(ownBar.style.getPropertyValue('--tw-ring-color')).toBe('var(--rc-loss)');
+
+        // Same ticket, same token: the losing cube's own number color is the app-wide loss red,
+        // deliberately overriding the prototype's own literal #DC2626 (Full Spec.html:3678-3679).
+        const myNum = screen.getByTestId('dice-cube-mine').querySelector('span');
+        expect(myNum?.style.color).toBe('var(--rc-loss)');
       } finally {
         vi.useRealTimers();
       }
