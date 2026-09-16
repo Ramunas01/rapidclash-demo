@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import type { MinesView } from '../App.js';
@@ -464,7 +464,108 @@ function MinesPanel(args: GameAreaArgs) {
  * this exactly, so no extra gating was needed. Do not assume RPS and Mines must always be handled the
  * same way just because they're both GameHub games — check the prototype's own gate for each.
  */
+// Ticket 2026-09-16#7 item 4: the post-bust convergence sequence, `Full Spec.html:3705-3711`'s own
+// trigger chain — the bust itself sets `minesBust` immediately, THEN 1500ms later calls
+// `startMinesResult()`, which flips `minesResult` to 'converge' and arms two more timers 820ms and
+// 1520ms further out ('reveal'/'final'). Scoped deliberately: the prototype's own timeline runs
+// entirely client-side (one simulated tab plays both "sides"), so "mine hit" and "the match is
+// truly, server-confirmed over" are the same instant there. They are NOT the same instant for us —
+// I can bust while my opponent is still mid-round, and only the SERVER knows when their board is
+// truly locked (the same redaction this file's own history-belt/score logic already respects).
+// Anchoring this sequence on "I personally busted" instead of "the terminal result is actually
+// known" risks the exact thing D21's honest-data principle rules out: revealing a count before the
+// server has confirmed it's real. So `RESULT_*_MS` below are offsets from the SAME moment that
+// already gates everything else (`lastOutcome && lastSettlement`, matching GameHub's own
+// `hasFreshResult`) — not literally "mine hit" — preserving the prototype's relative pacing while
+// only ever counting up to numbers the server has actually confirmed.
+const RESULT_CONVERGE_MS = 1500;
+const RESULT_REVEAL_MS = 2320; // 1500 + 820
+const RESULT_FINAL_MS = 3020; // 1500 + 1520
+type ResultPhase = 'idle' | 'converge' | 'reveal' | 'final';
+
+/** The 17px gem, no halo/blur, no opacity variance — `minesOppGemList`/`minesGems`'s own SVG
+ *  (`Full Spec.html:445-451`/`:670-676`), byte-identical to `GemIcon`'s own path data at opacity 1
+ *  (this is a SEPARATE small component, not a reuse of `GemIcon`, since the count-row instance
+ *  never needs `GemIcon`'s opacity prop — deliberately not adding an unused parameter). Capped at
+ *  `Math.min(count, 22)` (`:3718`/`:3785`, confirmed both cap identically), wrapped, `max-height`
+ *  clipped at 38px (`playGemStripH`/`oppGemRowOp`'s own citation) — a deliberate deviation from the
+ *  prototype's own `flex:1 1 auto` fill, see `GameHubProps.oppGemRow`'s own doc comment for why. */
+function GemCountRow({ count, visible }: { count: number; visible: boolean }) {
+  if (count <= 0) return null;
+  const shown = Math.min(count, 22);
+  return (
+    <div
+      data-testid="mines-gem-row"
+      className="flex flex-wrap content-center gap-[2px] overflow-hidden"
+      style={{ maxWidth: 90, maxHeight: 38, opacity: visible ? 1 : 0, transition: 'opacity 320ms ease' }}
+    >
+      {Array.from({ length: shown }, (_, i) => (
+        <svg key={i} viewBox="0 0 48 44" width="17" className="block shrink-0">
+          <path d="M24 43 L2 16 L11 3 L37 3 L46 16 Z" fill="#16C447" />
+          <path d="M24 43 L2 16 L17 16 Z" fill="#22DD55" />
+          <path d="M24 43 L17 16 L31 16 Z" fill="#3BF06B" />
+          <path d="M24 43 L31 16 L46 16 Z" fill="#1BCE4C" />
+          <path d="M2 16 L11 3 L17 16 Z" fill="#4CF97A" />
+          <path d="M17 16 L11 3 L24 3 L31 16 Z" fill="#2AE95E" />
+          <path d="M31 16 L24 3 L37 3 L46 16 Z" fill="#5DFB88" />
+        </svg>
+      ))}
+    </div>
+  );
+}
+
 export function MinesHubScreen(props: GameHubScreenProps) {
+  const view = props.gameState as MinesView | null;
+  const [didBust, setDidBust] = useState(false);
+  const [resultPhase, setResultPhase] = useState<ResultPhase>('idle');
+  const armedRef = useRef(false);
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Arm as soon as MY board shows a bust — independent of whether the match (and thus the real,
+  // confirmed result) has resolved yet; the SEQUENCE itself only starts once it has (below).
+  useEffect(() => {
+    const me = props.playerId ? view?.boards?.[props.playerId] : undefined;
+    if (me?.bustedOn !== undefined) setDidBust(true);
+  }, [view, props.playerId]);
+
+  // The sequence itself: only once didBust AND the server has actually confirmed the terminal
+  // result (see this section's own header comment for why not simply "1500ms after the bust").
+  useEffect(() => {
+    if (!didBust || armedRef.current) return;
+    if (!(props.lastOutcome && props.lastSettlement)) return;
+    armedRef.current = true;
+    timersRef.current.push(setTimeout(() => setResultPhase('converge'), RESULT_CONVERGE_MS));
+    timersRef.current.push(setTimeout(() => setResultPhase('reveal'), RESULT_REVEAL_MS));
+    timersRef.current.push(setTimeout(() => setResultPhase('final'), RESULT_FINAL_MS));
+  }, [didBust, props.lastOutcome, props.lastSettlement]);
+
+  // A new match starts its own sequence — reset the baseline so a prior match can't leak state in.
+  // `prevMatchIdRef` starts at the sentinel `undefined` (not `null`) specifically so this does NOT
+  // fire on first mount — a real scenario (reconnecting mid-match, already locked from a bust) must
+  // let the bust-detection effect above correctly arm off gameState that's already present on the
+  // very first render, rather than this effect immediately stomping it back to false.
+  const prevMatchIdRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    const prev = prevMatchIdRef.current;
+    prevMatchIdRef.current = props.currentMatchId;
+    if (prev !== undefined && props.currentMatchId && props.currentMatchId !== prev) {
+      setDidBust(false);
+      setResultPhase('idle');
+      armedRef.current = false;
+      timersRef.current.forEach(clearTimeout);
+      timersRef.current = [];
+    }
+  }, [props.currentMatchId]);
+  useEffect(() => () => timersRef.current.forEach(clearTimeout), []);
+
+  // Live at render time, never a captured snapshot — the count only ever reflects what the server
+  // has ACTUALLY sent (may still be `undefined` for the opponent briefly after 'converge' fires, if
+  // their own round somehow hadn't resolved yet; `GemCountRow` simply renders nothing until then).
+  const me = props.playerId ? view?.boards?.[props.playerId] : undefined;
+  const opp = props.opponentId ? view?.boards?.[props.opponentId] : undefined;
+  const myGemCount = me?.uncovered?.length ?? 0;
+  const oppGemCount = opp?.score ?? 0;
+
   return (
     <GameHub
       gameId="mines"
@@ -475,6 +576,17 @@ export function MinesHubScreen(props: GameHubScreenProps) {
       matchBarSlide="measured"
       suppressResultOverlay
       ownBarResult
+      // Ticket 2026-09-16#7 item 4: extends the shared `barSlideActive` (bar-shift + board-dim)
+      // with this new post-bust window — see `GameHubProps.resultConverge`'s own doc comment.
+      resultConverge={resultPhase !== 'idle'}
+      // Only the bust path gets the new, precisely-timed sequence — every other match ending
+      // (opponent busts, I clear cleanly, the clock times out) keeps today's already-shipped fixed-
+      // beat `ownBarResult` mechanism exactly as before (this section's own header comment explains
+      // why that path isn't audited/built here). `RESULT_FINAL_MS` (not RESULT_CONVERGE_MS) since
+      // `holdResultMs` gates the WHOLE hold, matching the prototype's own 'final' landing beat.
+      holdResultMs={didBust ? RESULT_FINAL_MS : undefined}
+      oppGemRow={didBust && resultPhase !== 'idle' ? <GemCountRow count={oppGemCount} visible={resultPhase === 'reveal' || resultPhase === 'final'} /> : undefined}
+      ownGemRow={didBust && resultPhase !== 'idle' ? <GemCountRow count={myGemCount} visible /> : undefined}
       {...props}
     />
   );

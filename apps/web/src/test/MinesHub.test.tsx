@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { MinesHubScreen } from '../screens/MinesHub.js';
 import type { MinesView, MinesBoardView } from '../App.js';
 
@@ -359,18 +359,23 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
       const oppBar = screen.getByTestId('hub-slot-opponent');
       expect(ownBar.textContent).toContain('alice'); // username stays put (not swapped out)
       expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you win/i);
-      expect(ownBar.querySelector('.bg-success')).not.toBeNull(); // green fill = a background layer
+      // Ticket 2026-09-16#7 item 4: Mines' own win fill is the inline #22C55E, not the shared
+      // bg-success class — same shape as Dice's own winFillColor fix (2026-09-16#4).
+      const ownFill = ownBar.querySelector('.pointer-events-none.absolute.inset-0') as HTMLElement;
+      expect(ownFill.style.background).toBe('rgb(34, 197, 94)'); // #22C55E, jsdom-normalized
       expect(ownBar.className).not.toContain('ring-success'); // not yet settled to the outline
       // Ring is OWN-BAR ONLY (Full Spec.html:3786, `oppBarRing: 'none'` unconditionally) — the
       // opponent's pill never gets any win/lose/draw treatment.
-      expect(oppBar.querySelector('.bg-success')).toBeNull();
+      expect(oppBar.querySelector('.pointer-events-none.absolute.inset-0')).toBeNull();
       expect(oppBar.className).not.toContain('ring-success');
 
       // 0.5s fill-in + 2s hold + 0.5s fade-out = 3s → settles to the persistent outline.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(3000 + 50);
       });
-      expect(ownBar.className).toContain('ring-success');
+      expect(ownBar.className).toContain('ring-[3px]');
+      expect(ownBar.className).not.toContain('ring-success');
+      expect(ownBar.style.getPropertyValue('--tw-ring-color')).toBe('#22C55E');
       expect(screen.queryByTestId('hub-slot-own-verdict')).toBeNull(); // "You Win" left with the fill
     } finally {
       vi.useRealTimers();
@@ -441,6 +446,117 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
       expect(screen.getByTestId('hub-slot-own').style.transform).toBe('translateY(0px)');
     } finally {
       rectSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  // Ticket 2026-09-16#7 item 4: a bust converges the bars + dims the board at +1500ms from when
+  // the result is actually confirmed (lastOutcome/lastSettlement) — NOT +1500ms from the bust
+  // itself (this file's own MinesHubScreen header comment explains why: the bust and the
+  // server-confirmed result aren't the same instant in a real match, unlike the prototype's
+  // client-simulated one) — and the ring holds until the sequence's own 'final' beat (+3020ms),
+  // not the old fixed BAR_VERDICT_BEAT_MS.
+  it("item 4: a bust converges the bars + dims the board once the result is confirmed, and holds the ring until the sequence's own final beat", async () => {
+    vi.useFakeTimers();
+    const rect = (top: number, height: number): DOMRect =>
+      ({ top, height, bottom: top + height, left: 0, right: 0, width: 0, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.hasAttribute('data-rc-gamewrap')) return rect(0, 0);
+      if (this.hasAttribute('data-rc-oppbar')) return rect(100, 48);
+      if (this.hasAttribute('data-rc-playerbar')) return rect(300, 48);
+      return rect(0, 0);
+    });
+    try {
+      const gameState = view({ uncovered: [0, 1, 2, 3], locked: true, bustedOn: 10 }, { locked: false });
+      const { rerender } = render(
+        <MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: asLegal([]) })} />,
+      );
+      // Busted, but the match hasn't formally ended yet (no lastOutcome/lastSettlement) — the
+      // sequence must NOT arm off the bust alone.
+      expect(screen.getByTestId('hub-mines-panel').style.opacity).toBe('1');
+      expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(0px)');
+
+      rerender(
+        <MinesHubScreen
+          {...baseProps({
+            currentMatchId: null,
+            gameState,
+            lastOutcome: { type: 'win', winner: 'bob' },
+            lastSettlement: { delta: -10, newBalance: 990 },
+          })}
+        />,
+      );
+
+      // Just before the converge beat — still nothing.
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(0px)');
+      const ownBar = screen.getByTestId('hub-slot-own');
+      expect(ownBar.className).not.toContain('ring-[3px]');
+
+      // Converge lands (+1500 total) — bars shift, board dims.
+      await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+      expect(screen.getByTestId('hub-mines-panel').style.opacity).toBe('0.28');
+      // oTop=100, pTop=300, pr.height=48 → mid=(100+300+48)/2=224 → o=224-71-100=53, p=224+23-300=-53.
+      expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(53px)');
+      expect(ownBar.style.transform).toBe('translateY(-53px)');
+      // Ring hasn't lit yet — well past the OLD fixed 250ms beat, confirming the new gated timing.
+      expect(ownBar.className).not.toContain('ring-[3px]');
+
+      // Final lands (+3020 total from result-known), then GameHub's own fixed BAR_VERDICT_BEAT_MS
+      // (250ms) on top of that (this path isn't gateResultOnReveal-gated, unlike Dice's — see this
+      // file's own MinesHubScreen header comment) — the loss ring lights, Mines' own var(--rc-loss)
+      // (same token Dice's own lossRingColor already uses). Two separate advances (not one
+      // combined number) — same idiom the "Result win" test above already uses — so React gets a
+      // chance to flush the intermediate phase→'result' render before the second timer registers.
+      await act(async () => { await vi.advanceTimersByTimeAsync(1450); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+      expect(ownBar.className).toContain('ring-[3px]');
+      expect(ownBar.className).not.toContain('ring-destructive');
+      expect(ownBar.style.getPropertyValue('--tw-ring-color')).toBe('var(--rc-loss)');
+    } finally {
+      rectSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  // Ticket 2026-09-16#7 item 5: the gem-count rows — hidden until the sequence's own 'reveal'
+  // beat, capped at 22, own count shown immediately at 'converge' (matches the prototype's own
+  // flat, never-fading `playGemStripOp`), opponent's genuinely fades in only at 'reveal'.
+  it('item 5: gem-count rows appear on the sequence\'s own beats, capped at 22, own row earlier than the opponent\'s', async () => {
+    vi.useFakeTimers();
+    try {
+      const gameState = view(
+        { uncovered: Array.from({ length: 24 }, (_, i) => i), locked: true, bustedOn: 24 },
+        { locked: true, score: 30 },
+      );
+      const { rerender } = render(
+        <MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: asLegal([]) })} />,
+      );
+      rerender(
+        <MinesHubScreen
+          {...baseProps({
+            currentMatchId: null,
+            gameState,
+            lastOutcome: { type: 'win', winner: 'bob' },
+            lastSettlement: { delta: -10, newBalance: 990 },
+          })}
+        />,
+      );
+
+      // Converge (+1500): own row present (24 opened → capped at 22), opponent row present but
+      // still opacity 0 (not yet 'reveal').
+      await act(async () => { await vi.advanceTimersByTimeAsync(1550); });
+      const ownBar = screen.getByTestId('hub-slot-own');
+      const oppBar = screen.getByTestId('hub-slot-opponent');
+      expect(ownBar.querySelectorAll('svg[viewBox="0 0 48 44"]')).toHaveLength(22); // capped, not 24
+      const oppGemWrapper = within(oppBar).getByTestId('mines-gem-row');
+      expect(oppGemWrapper.style.opacity).toBe('0');
+
+      // Reveal (+2320 total, ~820ms further) — opponent's row fades in (30 opened → capped at 22).
+      await act(async () => { await vi.advanceTimersByTimeAsync(820); });
+      expect(oppGemWrapper.style.opacity).toBe('1');
+      expect(oppBar.querySelectorAll('svg[viewBox="0 0 48 44"]')).toHaveLength(22);
+    } finally {
       vi.useRealTimers();
     }
   });
