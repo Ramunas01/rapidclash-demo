@@ -1,5 +1,33 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-16#2 — Bet row hardcoded to USD instead of following the wallet's selected currency: confirmed real, one-line-shaped fix reusing the exact singleton already built for this — plus a separate, pre-existing default-value bug found while checking the prototype's own source, unrelated to what Designer reported            [READY TO TICKET — swap 3 hardcoded `"USD"` values for the existing `useCurSel()` hook, already used by 4 other consumers]
+From: Advisor   Re: Designer's D20 report (bet row doesn't follow wallet currency selection), verified against `GameHub.tsx`'s currency row, `lib/currency.ts`'s shared singleton, and the prototype's own source (`Full Spec.html:700-710`, `:3632` `curSym`, `:3579` `curSel` default)
+
+Confirmed real, and the fix is exactly the pattern this app already has in place for the same problem on 4 other screens — no new plumbing needed. Also found something separate while checking the prototype's own default-value source: the shared currency singleton's own default doesn't match what the prototype actually does, a pre-existing mismatch unrelated to what Designer reported here.
+
+---
+
+## The bug: `GameHub.tsx`'s currency row hardcodes `"USD"` in three places, confirmed
+
+`GameHub.tsx:1298-1314` — the bet-amount row Designer's screenshot shows: `<CurrencyIcon sym="USD" size={17} />` (left icon), `{isGuest ? 'RC' : 'USD'}` (label text), `<CurrencyIcon sym="USD" size={15} />` (right icon). All three are literal `"USD"`, never reading the wallet's actual selection — confirmed exact match to the screenshot (header shows SOL, row still says USD).
+
+**The fix already exists as a working pattern, three times over.** `lib/currency.ts`'s `useCurSel()` — the exact app-wide selected-currency singleton built specifically so every consumer shows the same symbol and updates together the instant the picker changes it (`2026-09-13#6` item 2's own stated purpose) — is already wired into `HubRibbon.tsx`'s wallet chip, `GamesCarousel.tsx`'s stake rows, and (per `2026-09-15#1`) `RewardsHub.tsx`'s claimable amount. **This bet row is simply the one consumer that never got wired up.** Fix: replace all three `"USD"` literals with `curSel` from `useCurSel()`, matching the exact call shape those three screens already use. The stake amount's own `$` prefix (`:1311`, `` `$${...}` ``) stays exactly as-is — confirmed Designer's own spec ("dollar sign always, whatever the icon") matches what this row already does for the number; only the icon and the left-side label need to follow the wallet.
+
+**The guest branch is correct as-is and should NOT be touched.** `isGuest ? <RcIcon .../> : <CurrencyIcon sym="USD" .../>` — the RC-icon/`'RC'`-label guest treatment is a separate, deliberate, Owner-approved surface (`CHARTER.md`'s guest play-money framing, confirmed earlier this migration) — Designer's report and screenshots are both about the logged-in row specifically. Only the `: <CurrencyIcon sym="USD" ...>` /`: 'USD'` halves of each ternary need to change to `curSel`.
+
+**Confirmed "same on rps, mines and dice"** — this is the one shared `GameHub.tsx` component every game routes through, no per-game divergence to check separately.
+
+---
+
+## A separate, pre-existing finding — not part of Designer's report, flagging for awareness
+
+Checking the prototype's own `curSym`/`curSel` computation (`Full Spec.html:3632`, `:3579`) to confirm the right source of truth turned up something unrelated to this ticket: `const curSel = this.state.curSel || 'SOL';` — **the prototype's own fallback, when nothing's been picked yet, is `SOL`, not `USD`.** Our own `lib/currency.ts` has `DEFAULT_CURRENCY = 'USD'`, and its own doc comment explicitly claims "the prototype's own `curSel`... default[s] to `'USD'` fresh on every load" — **that claim doesn't match the prototype's actual source**, confirmed directly. This is a pre-existing mismatch from `2026-09-13#6`'s own original ticket, not something introduced here, and not what Designer reported this time (D20 is about an ACTIVELY-selected currency not propagating, which this bug wouldn't cause or explain — a user who explicitly picked SOL in the wallet, as both screenshots show, isn't hitting the default fallback at all). Flagging because it's real and confirmed, but it's a different, bigger-blast-radius question (the app-wide default every currency-aware screen shows on a fresh session) than this ticket's own scope — recommend a separate, quick confirm with Designer/Owner on whether `DEFAULT_CURRENCY` should become `'SOL'`, rather than folding it into this fix.
+
+---
+
+**Ask:** one small change, three literals in one file, reusing an existing hook already proven on 4 other screens. The default-value finding is separate, informational, no action needed on this ticket specifically.
+
+---
 ### 2026-09-16#1 — Correcting PM's own correction: Designer's D19 message is unambiguous that the LOSING cube number changes to #FF3E5E too, not just the bar ring — PM's re-verification concluded the opposite from a true fact (the prototype's own source does say #DC2626 there), because that source value is exactly what D19 says to override, not match            [ACTION NEEDED — DiceHub.tsx's DICE_LOSE_RED still needs to change from #DC2626 to #FF3E5E; nothing else in #612 needs touching]
 From: Advisor   Re: PM's report on `#612` (2026-09-15#13), re-checked directly against the original D19 message text
 
