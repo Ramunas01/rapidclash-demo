@@ -262,7 +262,7 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 - **Races (24h / Weekly) + Leaderboards tab** — genuine new feature work (time-windowed leaderboard logic), sized separately from the lobby/stake-entry/play/result → single-screen-with-phases collapse.
 - **lobby / stake-entry / play / result → one screen, internal phases** — real architectural simplification (`App.tsx:1292-1317` today).
 
-## Status snapshot — 2026-09-16 (D01-D19 all shipped, D19 fully closed out; D20 in progress (PM implementing, PR #617); the default-currency question from D20's own investigation resolved as a documentation fix, not an open product question) — supersedes all earlier snapshots in this section
+## Status snapshot — 2026-09-16 (D01-D20 all shipped and merged; D19 and D20 fully closed out, nothing open anywhere) — supersedes all earlier snapshots in this section
 
 **2026-09-16#3 — RESOLVED, comment-only, no ticket needed.** `2026-09-16#2`'s "separate finding" (the `lib/currency.ts` default-value mismatch against the prototype) turned out to be an already-documented, deliberate decision — `CurrencyPicker.tsx`'s own comment already records, by ticket number (`2026-09-11#5`), a deliberate call to default to `'USD'` instead of the prototype's `'SOL'`, specifically so the wallet trigger shows the user's real balance by default. `lib/currency.ts`'s own comment just cited the wrong reason (claimed it matched the prototype, when it deliberately doesn't). Fixed the comment directly to point at the real decision — no behavior change, `DEFAULT_CURRENCY` stays `'USD'`. Full detail: `ADVISOR_TO_PM.md` 2026-09-16#3.
 
@@ -270,14 +270,12 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 
 ---
 
-**2026-09-16#2 — PR `#617` open, CI running, not yet merged. Designer's D20: the bet-amount row on every game screen shows USD/a dollar icon regardless of the wallet's actual selected currency. Full detail: `ADVISOR_TO_PM.md` 2026-09-16#2.**
+**2026-09-16#2 — shipped and merged in `#617`.** Designer's D20: the bet-amount row on every game screen shows USD/a dollar icon regardless of the wallet's actual selected currency. Full detail: `ADVISOR_TO_PM.md` 2026-09-16#2.
 
-- **Confirmed real — 3 literal `"USD"` values in `GameHub.tsx`'s currency row**, never reading the wallet's actual selection. **The fix is already a proven pattern** — the exact `useCurSel()` singleton this app already uses on `HubRibbon`, `GamesCarousel`, and `RewardsHub` to keep every consumer in sync; this bet row is simply the one spot that never got wired up. Swap the 3 literals for `curSel`, leave the `$` prefix on the number exactly as-is (already matches Designer's "dollar sign always" spec).
-- **The guest branch is correct and untouched** — its RC-icon/`'RC'`-label treatment is a separate, deliberate, Owner-approved surface; only the logged-in halves of each ternary change.
-- **Confirmed shared across rps/mines/dice** — one component, no per-game divergence.
+- **Confirmed real, fixed exactly as scoped** — 3 literal `"USD"` values in `GameHub.tsx`'s currency row swapped for the existing `useCurSel()` singleton already proven on `HubRibbon`/`GamesCarousel`/`RewardsHub`. Guest mode's RC-icon/`'RC'`-label branch left untouched, confirmed via diff. One shared `GameHub.tsx` component covers rps/mines/dice in one fix.
 - **The "separate finding" flagged alongside this ticket (the default-currency question) resolved — see `2026-09-16#3` above.** It was a documentation fix, not an open product question; no code change needed.
 
-**Advisor next:** available, no open thread. **PM next:** merge `#617` once CI is green.
+**Advisor next:** available, no open thread. **PM next:** nothing pending on this ticket.
 
 ---
 
