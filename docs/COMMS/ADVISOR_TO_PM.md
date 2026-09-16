@@ -1,5 +1,64 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-16#4 — Dice's reveal has no drama: an Owner-directed rebuild, not a Designer bug report — the honest-data principle stays untouched, but once the server's real result is known we're meant to spend ~1.8s revealing it theatrically (counting animation, staged sound, staged ring/fill), not snap straight to it. Plus two smaller, independently-real bugs found while deriving this            [READY TO TICKET — real feature-sized item 1 (a genuine new client-side reveal state machine, reusing Blackjack's own already-proven `onRevealComplete`/`gateResultOnReveal` mechanism, not new GameHub plumbing); items 2-3 are small and ship regardless]
+From: Advisor   Re: Designer's D21 spec (`design-ref/D21/RapidClash_Dice_Spec.md`, no screenshots — a full technical animation spec) plus Owner's own follow-up decision in chat, verified against `DiceHub.tsx`/`GameHub.tsx`/`BlackjackHub.tsx`, `packages/games/dice/src/dice.ts`, and the prototype's own source (`Full Spec.html:531-600` markup, `:3387-3459` sequencing, `:3605-3690` computed values)
+
+D21 itself isn't a bug report — it's Designer's own exhaustive, line-cited technical spec for the Dice screen's full animation, submitted because a plain-English bug description couldn't capture what was missing. Comparing it against `DiceHub.tsx` line by line confirmed the overwhelming majority of the screen already matches exactly (colors, geometry, cube SVG, belt, edge fades, timing constants — see the confirmed-correct list at the end). One real, substantive gap surfaced: the prototype's reveal is a piece of theatre (a 444ms counting animation, staged ring/fill/sound ~1.8s after the roll is "done") that our honest, server-authoritative reveal never replicates — it just snaps straight to the final state the instant data arrives. I raised this with Owner directly rather than guessing at the right resolution, since it touches a platform-wide "never fabricate data" principle. **Owner's explicit decision: the principle stays — never display a value that could turn out wrong, never invent an event that didn't happen — but once we HAVE the real, already-correct result from the server, we're free to spend time revealing it dramatically, matching D21's own choreography exactly.** Counting up to an already-known-true number is theatre, not fabrication; the current code conflates the two.
+
+---
+
+## Item 1 — the reveal itself: a real state machine, using the exact D21 timeline, reusing an already-proven GameHub mechanism
+
+**The core design, confirmed against D21's own numbers (`:3387-3459`, `Result`/`Round` sections):** the moment the server delivers the final, real result, hold it back from the rendered UI and run this sequence before ever showing it:
+
+| +ms from result-known | What fires |
+|---|---|
+| 0 | Cubes sit at position 0 / fill at the 10px nub (their pop-in resting state — see item 3, which this state machine's own "t=0" beat naturally subsumes) |
+| +460 | `dice-roll` sound plays (one-shot — see the sound note below); both numbers begin counting up together, eased `e = 1-(1-p)³` over `p = elapsed/444`, exactly `runDiceRoll`'s own formula (`:3439-3442`) — just fed the REAL final values as the target instead of `Math.random()`-derived ones. Nothing shown during this window is ever wrong: every intermediate number is a real value mathematically approaching the one already known to be correct. |
+| +904 (460+444) | Counting stops exactly on the real numbers. Cube number colors resolve (green/red per who's higher) — confirmed matching D21's own gating: colors are neutral (`#12121F`) during the count, not before. |
+| +1804 (904+900) | The bar ring + win/loss fill (`rcWinFill`, 3000ms), the history pill + belt-shift, and (win only) `dice-win` all fire together — matching `startDiceResult`'s (`:3448`) own "fires once, all at the same instant" framing exactly. |
+
+**Reference architecture — don't build new GameHub plumbing, this exact pattern already exists and is proven:** `BlackjackHub.tsx`'s own `BlackjackBoard` (`:259-341`) already solves precisely this class of problem — it paces its own on-board reveal (hole-card flip + hit deal-in) on a locally-computed timer, then calls the `onRevealComplete` callback `GameAreaArgs` already hands every game area, exactly once, when its own last reveal beat lands; `BlackjackHub`'s own `<GameHub gateResultOnReveal>` (`:497`) is what makes the shared `ownBarVerdict` wait for that signal instead of firing on a fixed generic beat. Dice needs the identical wiring: a local timer (0→460→904→1804, re-armed per resolved round the same way `DiceHubScreen`'s existing `sig`/`lastSigRef` dedup already tracks "is this a genuinely new result"), calling `onRevealComplete()` at the 1804ms mark, plus `gateResultOnReveal` added to `DiceHubScreen`'s existing `<GameHub>` call (alongside the `suppressResultOverlay`/`ownBarResult`/`holdResultMs` it already sets). No new hub-level mechanism needed — this is Dice adopting an existing, already-shipped pattern, not inventing one.
+
+**Where the state should live:** `DiceHubScreen` already owns the exact "is this round genuinely new" dedup logic (`sig`) and already lifts session state (`history`) down through `renderGameArea` → `DicePanel` → `DiceBoard`, the same shape the new reveal-timer state fits into — recommend keeping it there rather than pushing it down into `DiceBoard` itself, so the same dedup key drives both the history push and the reveal timer without duplicating "is this new" logic in two places.
+
+**This genuinely needs `requestAnimationFrame` back, not a CSS transition** — the number LABEL itself has to visibly count digit-by-digit, which a CSS transition can't do to text content. This is fine now: the file's own header comment ruled out an rAF loop specifically because of the fabrication concern (an unknown value at each frame), not because rAF itself was ever the problem — here every frame's value is a real number progressing toward an already-known-correct target, so the original objection doesn't apply.
+
+---
+
+## Item 2 — sound sequencing: the same redesign fixes this as a side effect, but call it out explicitly since it's precisely what "we sequence badly... the chiming sounds" meant
+
+Confirmed the prototype's own sequencing (`:3437` dice-roll start, `:3424` dice-roll stop, `:3452` dice-win): `dice-roll` fires when the count-up STARTS (t=+460 in the table above), `dice-win` fires only at the FINAL reveal gate (t=+1804), not together. **Our current code (`DiceHubScreen`'s own effect) plays both `dice-roll` and, when applicable, `dice-win` in the exact same instant — the moment `result` first exists** — which is exactly the "everything happens at once" problem Owner described. **Fix:** move the `play('dice-roll')` call to the reveal timer's +460ms beat, and `play('dice-win')` to the +1804ms final-gate beat (the same moment `onRevealComplete()` fires) — no new sound-engine work needed (still one-shot `play()` calls, same as today, per the standing `2026-09-12#3` decision that a real loop/stop mechanism isn't worth building for this) — purely a matter of moving WHEN the two existing calls happen.
+
+---
+
+## Item 3 — the resting-state fill/cube mismatch: a real, independently-confirmable bug, and the natural "t=0" beat of item 1's own design
+
+Derived precisely, not assumed: `DiceTrack`'s `cubeLeft` formula falls back to `value ?? 0` when `roll` is null (`:128`) — so the cube sits at its LEFT-EDGE "0" position — but `fillWidth` falls back to a completely different, unrelated `'50%'` (`:127`) in the exact same null case. **These two elements' resting positions don't agree with each other.** Confirmed the prototype's own literal source has the identical two formulas (`diceMyPos`'s `|| 0` vs `diceMyFill`'s `== null ? '50%'`, `:3608/3676`) — but the prototype flips its local value to `0` (not null) the instant a round begins (`startDice`, `:3422`), so this mismatched state is only ever true for a genuinely idle screen, never a live one. **Our code has no equivalent "flip to 0 the instant the round starts" step today, so `roll` stays `undefined` (triggering the mismatch) for the ENTIRE wait on the server** — cube at the left edge, fill bar at 50%, visibly disconnected from each other, for as long as the real round-trip takes. This is exactly item 1's own "t=0, values set to 0" beat — once the reveal state machine lands, it's resolved as a byproduct, not a separate fix. If useful, it's also independently shippable as a quick, isolated improvement before the fuller reveal work: treat "active, no result yet" as value=`0` (not null) for both formulas, consistently.
+
+---
+
+## Item 4 — Dice's win ring/fill still uses the wrong green, unrelated to the reveal timing, ships regardless
+
+Checked precisely, since this is exactly the kind of claim worth deriving rather than trusting: `2026-09-15#13`'s shipped fix (`#612`) added `lossRingColor` to `OwnSlot`, scoped to Dice only, correctly swapping the LOSS ring to `var(--rc-loss)` (`#FF3E5E`). **The WIN side was never given the same treatment** — it still resolves through the shared `outlineClasses('win')` → `ring-success`/`bg-success` → `--rc-green`, which is `#34d399` dark / `#0b8f5a` light, confirmed via `index.css` — **neither value is `#16A34A`**, the exact color both the original `2026-09-15#10` ticket and D21 specify for Dice's win ring/fill. This was missed because every prior round's attention was on the loss side specifically. **Fix:** the same shape as the existing `lossRingColor` — a `winRingColor` (or generalize both into one `verdictColors` prop) on `OwnSlot`, scoped to `gameId === 'dice'`, feeding `DICE_WIN_GREEN`/`--rc-loss`'s equivalent for win. The win-fill's own TIMING is already exactly correct (confirmed: `WIN_FILL_IN_MS`/`WIN_HOLD_MS`/`WIN_FADE_OUT_MS` = 500/2000/500, summing to the prototype's exact `rcWinFill` 3000ms) — only the color needs fixing.
+
+---
+
+## Confirmed already correct, extensively — no action needed
+
+Card/track/groove background colors, the purple base pill, tick triangles (size, position, color), cube geometry and all 3 face colors (verified against the prototype's actual SVG, not just D21's prose, which only names 2 of the 3 faces), scale-row sizing and color (`--rc-text` confirmed exactly `#FFFFFF`/`#0B0B0B`), history belt sizing/colors/edge-fade width and color (`--rc-surface` confirmed exactly `#1A1A2E`/`#E9E9F0`), the belt's shift/grow/shrink easing and duration (`460ms cubic-bezier(0.3,0.9,0.32,1)`, exact match), and the win-fill's own 3-part timing. `--brand-purple` confirmed `#8B45F0` exactly.
+
+## Explicitly not in scope here — already-accepted or genuinely moot, not re-opening
+
+- **Matchmaking's simulated search timing** (680/1700/760/660ms) — already an accepted, documented divergence from `2026-09-15#9`/D16 ("In production the 1700ms is 'until the server returns an opponent'"), restated by D21 but not newly in question.
+- **The 70ms name-scramble cadence** (ours runs at 280ms) — already flagged and deliberately deferred back in `2026-09-15#9`, restated by D21 but not re-opened here; still a cheap, independent tuning knob if ever wanted.
+- **The tie/draw ring color** (D21 restates `#FF8A1E`, an item left open back in `2026-09-15#13`) — checked `packages/games/dice/src/dice.ts` directly: an exact tie always auto-replays (fresh rolls, never a terminal outcome) rather than ever reaching a visible "draw" state — confirmed via the engine's own `resolve()` logic. **This is genuinely unreachable code for Dice specifically** — nothing to change here regardless of how the still-open general draw-ring question eventually resolves for other games.
+
+---
+
+**Ask:** item 1 is the real one — a genuine new client-side reveal state machine, but built on an already-proven, already-shipped mechanism (`BlackjackBoard`'s own `onRevealComplete`/`gateResultOnReveal`), not new architecture. Items 2 and 3 are natural parts of the same change. Item 4 is small and unrelated — safe to ship independently, in the same PR or its own.
+
+---
 ### 2026-09-16#3 — Closing my own "separate finding" from 2026-09-16#2: PM traced it to an already-documented, deliberate decision (`2026-09-11#5`, `CurrencyPicker.tsx`'s own comment) — not an open product question, just an inaccurate comment in a different file. Fixed the comment directly, docs-only            [RESOLVED — no code change, no ticket, comment-only PR]
 From: Advisor   Re: PM's note on `2026-09-16#2`'s default-currency flag, verified against `CurrencyPicker.tsx`'s own documented `2026-09-11#5` decision
 
