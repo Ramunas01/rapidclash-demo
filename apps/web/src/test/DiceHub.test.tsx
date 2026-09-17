@@ -341,7 +341,7 @@ describe('DiceHubScreen', () => {
 
       const ownBar = screen.getByTestId('hub-slot-own');
       const oppBar = screen.getByTestId('hub-slot-opponent');
-      expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you win/i);
+      expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you won/i);
       // Ticket 2026-09-16#4 item 4: Dice's own win fill is the inline #16A34A (DICE_WIN_GREEN),
       // not the shared bg-success class — the fill layer's own distinguishing classes (Avatar's
       // wrapper also carries aria-hidden, so key off these instead to avoid a false match there).

@@ -287,7 +287,7 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     // does (500ms reason delay + 820 + 700 = 2020ms), not the old instant/fixed-250ms-beat path —
     // real timers here, generous waitFor timeout (matches this file's own real-timer idiom).
     await waitFor(() => expect(screen.getByTestId('hub-slot-own-verdict')).toBeInTheDocument(), { timeout: 4000 });
-    expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you win/i);
+    expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you won/i);
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull(); // still absent after the reveal
   });
 
@@ -389,12 +389,32 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
       const ownBar = screen.getByTestId('hub-slot-own');
       const oppBar = screen.getByTestId('hub-slot-opponent');
       expect(ownBar.textContent).toContain('alice'); // username stays put (not swapped out)
-      expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you win/i);
-      // Ticket 2026-09-16#7 item 4: Mines' own win fill is the inline #22C55E, not the shared
-      // bg-success class — same shape as Dice's own winFillColor fix (2026-09-16#4).
+      expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you won/i);
+      // Ticket 2026-09-17#6 (D28): Mines' own win fill is the inline #16A34A (a deliberate reversal
+      // of 2026-09-16#7's #22C55E, now byte-identical to Dice's own winFillColor).
       const ownFill = ownBar.querySelector('.pointer-events-none.absolute.inset-0') as HTMLElement;
-      expect(ownFill.style.background).toBe('rgb(34, 197, 94)'); // #22C55E, jsdom-normalized
+      expect(ownFill.style.background).toBe('rgb(22, 163, 74)'); // #16A34A, jsdom-normalized
       expect(ownBar.className).not.toContain('ring-success'); // not yet settled to the outline
+
+      // Ticket 2026-09-17#6 (D28) items 2-3: the verdict text is pulled out of the flex row into
+      // its own position:absolute span (right:18px, top:50%), lowercase "you won" with no
+      // `uppercase` class forcing it back to caps, and the citation's exact font values.
+      const verdict = screen.getByTestId('hub-slot-own-verdict');
+      expect(verdict.className).toContain('absolute');
+      expect(verdict.className).not.toContain('uppercase');
+      expect(verdict.className).not.toContain('shrink-0'); // no longer a flex-row child at all
+      expect(verdict.textContent).toBe('you won'); // exact lowercase content, not just a case-insensitive match
+      expect(verdict.style.right).toBe('18px');
+      expect(verdict.style.top).toBe('50%');
+      expect(verdict.style.transform).toContain('translateY(-50%)');
+      expect(verdict.style.fontSize).toBe('16px');
+      expect(verdict.style.letterSpacing).toBe('0.6px');
+
+      // Ticket 2026-09-17#6 (D28) item 1: the gem-strip wrapper (present here too — myGemCount=4)
+      // no longer carries `relative z-10`, which used to paint it ABOVE the z-1 win-fill layer.
+      const gemRowWrapper = within(ownBar).getByTestId('mines-gem-row').parentElement as HTMLElement;
+      expect(gemRowWrapper.className).not.toContain('z-10');
+      expect(gemRowWrapper.className).not.toContain('relative');
       // Ring is OWN-BAR ONLY (Full Spec.html:3786, `oppBarRing: 'none'` unconditionally) — the
       // opponent's pill never gets any win/lose/draw treatment.
       expect(oppBar.querySelector('.pointer-events-none.absolute.inset-0')).toBeNull();
@@ -406,7 +426,7 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
       });
       expect(ownBar.className).toContain('ring-[3px]');
       expect(ownBar.className).not.toContain('ring-success');
-      expect(ownBar.style.getPropertyValue('--tw-ring-color')).toBe('#22C55E');
+      expect(ownBar.style.getPropertyValue('--tw-ring-color')).toBe('#16A34A');
       expect(screen.queryByTestId('hub-slot-own-verdict')).toBeNull(); // "You Win" left with the fill
     } finally {
       vi.useRealTimers();

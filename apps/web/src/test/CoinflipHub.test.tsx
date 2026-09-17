@@ -414,7 +414,7 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     await waitFor(
       () => {
         const ownBar = screen.getByTestId('hub-slot-own');
-        expect(ownBar.textContent).toMatch(/you win/i);
+        expect(ownBar.textContent).toMatch(/you won/i);
         expect(ownBar.textContent).toContain('me'); // username is NOT replaced by "You Win"
         expect(ownBar.querySelector('.bg-success')).not.toBeNull(); // green fill = a background layer
       },
@@ -466,7 +466,7 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
       }); // → win animation (fill-in)
       const ownBar = screen.getByTestId('hub-slot-own');
       expect(ownBar.textContent).toContain('neo'); // username stays put (not swapped out)
-      expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you win/i); // alongside
+      expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you won/i); // alongside
       expect(ownBar.querySelector('.bg-success')).not.toBeNull(); // green as a background layer
       expect(ownBar.className).not.toContain('ring-success'); // not yet settled to the outline
 
