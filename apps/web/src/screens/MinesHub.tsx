@@ -683,6 +683,21 @@ export function MinesHubScreen(props: GameHubScreenProps) {
       // free. `transitionMs={280}`: the player's own row's cited duration, distinct from the
       // opponent's 320ms default (see `GemCountRow`'s own doc comment).
       ownGemRow={<GemCountRow count={myGemCount} visible transitionMs={280} />}
+      // Ticket 2026-09-17#3 item 2: the gem-count CAPTION (oppGemText/myGemText,
+      // Full Spec.html:3779/3781) — a genuinely separate mechanism from the icon strip above (it
+      // sits OUTSIDE the bar box). Preserving the source's own asymmetry exactly: the opponent's
+      // text is ALWAYS "N gems" (no singular case), the player's own DOES singularize at exactly
+      // 1. Both only exist once the result sequence has actually started (resultPhase !== 'idle')
+      // — unlike ownGemRow above, which is live from the very start of the round; this caption is
+      // NOT (myGemTextOp: mGrown, which requires mActive, :3781). Visibility timing differs
+      // between the two sides: the opponent's caption waits for reveal (oppGemTextOp: mReveal,
+      // :3780, same beat as its own icon row), the player's own shows from converge onward
+      // (mGrown is true for the whole non-idle/non-closed window, :3781 — a real distinction
+      // from the icon row, not a slot reused with different data).
+      oppGemText={resultPhase !== 'idle' ? `${oppGemCount} gems` : undefined}
+      oppGemTextVisible={resultPhase === 'reveal' || resultPhase === 'final'}
+      ownGemText={resultPhase !== 'idle' ? `${myGemCount} gem${myGemCount === 1 ? '' : 's'}` : undefined}
+      ownGemTextVisible={resultPhase !== 'idle'}
       {...props}
     />
   );
