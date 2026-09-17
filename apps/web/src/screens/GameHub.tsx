@@ -349,6 +349,26 @@ interface GameHubProps extends GameHubScreenProps {
    *  Undefined (every hub but Mines) → byte-identical no-op, nothing rendered. */
   oppGemRow?: ReactNode;
   ownGemRow?: ReactNode;
+  /** Ticket 2026-09-17#3 item 2: the gem-COUNT CAPTION (`oppGemText`/`myGemText`,
+   *  `Full Spec.html:3779/3781`) — plain text sitting OUTSIDE the bar box (above the opponent's bar,
+   *  below the player's own), a genuinely separate mechanism from `oppGemRow`/`ownGemRow` above
+   *  (which render the icon strip INSIDE the bar). This is the long-tracked `2026-09-12#2` item 3(c)
+   *  gap. Text generation is asymmetric in the source, preserved as-is rather than "fixed" into
+   *  consistency: the opponent's caption is ALWAYS "{n} gems" — no singular case, even at 1
+   *  (`:3779`); the player's own DOES singularize — "{n} gem" at exactly 1, "{n} gems" otherwise
+   *  (`:3781`). Mines supplies the already-formatted string and its own visibility (`oppGemTextOp`/
+   *  `myGemTextOp`, `:3780/3782`); GameHub owns position/font/color/transition, matching the
+   *  citation's own literal values (`:467`/`:690`) exactly — `position:absolute`,
+   *  `bottom:calc(100% + 6px)` for the opponent / `top:calc(100% + 6px)` for the player, both
+   *  `right:4px`, `color:var(--rc-green)`, Space Grotesk 700 13px, `white-space:nowrap`,
+   *  `pointer-events:none`, `transition:opacity 320ms ease`. Both `OpponentSlot`/`OwnSlot`'s root
+   *  divs are already `position:relative`, so these render as ordinary absolutely-positioned
+   *  children — no structural change, and they move with the bar during the converge slide for
+   *  free. Undefined (every hub but Mines) → byte-identical no-op, nothing rendered. */
+  oppGemText?: string;
+  oppGemTextVisible?: boolean;
+  ownGemText?: string;
+  ownGemTextVisible?: boolean;
 }
 
 /** Ticket 2026-09-12: generalizes the #381 "tap-again to escalate" gesture beyond the hardcoded
@@ -383,7 +403,7 @@ function useNow(active: boolean): number {
  */
 export function GameHub(props: GameHubProps) {
   const {
-    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar, searchFloorMs = 2400, matchBarSlide, pinDark = false, highStakeCycle, resultConverge, oppGemRow, ownGemRow,
+    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar, searchFloorMs = 2400, matchBarSlide, pinDark = false, highStakeCycle, resultConverge, oppGemRow, ownGemRow, oppGemText, oppGemTextVisible, ownGemText, ownGemTextVisible,
     token, playerId, username, avatarId = 'default', opponentId, opponentName, serverClockOffset = 0, balance, currentMatchId, gameState, events,
     legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
@@ -786,8 +806,13 @@ export function GameHub(props: GameHubProps) {
               data-testid="hub-match-vs"
               className="pointer-events-none absolute inset-x-0 top-1/2 z-[2] flex items-center justify-center"
               style={{
-                opacity: matchForming ? 1 : 0,
-                transform: `translateY(-50%) scale(${matchForming ? 1 : 0.7})`,
+                // Ticket 2026-09-17#3 item 1: extends `matchForming` with Mines' own post-lock
+                // `resultConverge` (undefined/false for every other hub — byte-identical no-op
+                // there), mirroring the prototype's own `rpsMatchVsOp: rpsMatching || mConverged ? 1
+                // : 0` (`Full Spec.html:3787`). Position is unchanged — already centered on the
+                // section's own midpoint, which already coincides with where the converged bars land.
+                opacity: matchForming || resultConverge ? 1 : 0,
+                transform: `translateY(-50%) scale(${matchForming || resultConverge ? 1 : 0.7})`,
                 transition: 'opacity 320ms ease, transform 420ms cubic-bezier(0.34,1.5,0.5,1)',
               }}
             >
@@ -798,7 +823,7 @@ export function GameHub(props: GameHubProps) {
                 VS
               </span>
             </div>
-            <OpponentSlot phase={phase} opponentName={opponentName} scanNames={scanNames} aside={renderSlotAside?.(areaArgs, 'opponent')} drawBeat={barDrawBeat} barShiftY={oppBarShiftY} gemRow={oppGemRow} />
+            <OpponentSlot phase={phase} opponentName={opponentName} scanNames={scanNames} aside={renderSlotAside?.(areaArgs, 'opponent')} drawBeat={barDrawBeat} barShiftY={oppBarShiftY} gemRow={oppGemRow} gemText={oppGemText} gemTextVisible={oppGemTextVisible} />
             {renderGameArea(areaArgs)}
             <OwnSlot
               label={loggedIn ? (username || 'You') : 'Sign in'}
@@ -810,6 +835,8 @@ export function GameHub(props: GameHubProps) {
               drawBeat={barDrawBeat}
               barShiftY={ownBarShiftY}
               gemRow={ownGemRow}
+              gemText={ownGemText}
+              gemTextVisible={ownGemTextVisible}
               // Ticket 2026-09-15#13 item 2: Dice's own player-bar loss ring is var(--rc-loss)
               // (#FF3E5E, Full Spec.html:3787's playerBarRing), NOT the shared ring-destructive
               // every other OwnSlot-using game keeps — scoped here by gameId, not a global token
@@ -1008,7 +1035,7 @@ function useNameScan(active: boolean, names: string[]): string | null {
  *  "Searching…" beat with a decorative online-name scan; In-match/Result → the REAL opponent's
  *  name in bright white (or a neutral "Opponent" when the joiner's name never reached the client).
  *  Never an opponentId, never a fabricated/cycled name (Charter #2 + DEMO_PRESENTATION honesty). */
-function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShiftY, gemRow }: { phase: Phase; opponentName?: string | null; scanNames: string[]; aside?: ReactNode; drawBeat?: boolean; barShiftY?: number; gemRow?: ReactNode }) {
+function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShiftY, gemRow, gemText, gemTextVisible }: { phase: Phase; opponentName?: string | null; scanNames: string[]; aside?: ReactNode; drawBeat?: boolean; barShiftY?: number; gemRow?: ReactNode; gemText?: string; gemTextVisible?: boolean }) {
   const searching = phase === 'waiting';
   const inMatch = phase === 'in-match' || phase === 'result';
   const scan = useNameScan(searching, scanNames);
@@ -1088,6 +1115,26 @@ function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShif
       ) : (
         phase === 'in-match' && <span className="shrink-0 text-[13px] font-bold tracking-[0.3px] text-foreground/70">Playing…</span>
       )}
+      {/* Ticket 2026-09-17#3 item 2: the gem-count CAPTION — see `GameHubProps.oppGemText`'s own doc
+          comment for the citation. Sits outside the pill (bottom:calc(100% + 6px)), so it moves with
+          the bar during the converge slide for free, being an ordinary DOM descendant of it. */}
+      {gemText && (
+        <span
+          data-testid="hub-gem-text-opponent"
+          className="absolute z-[1] text-[13px] font-bold text-[var(--rc-green)]"
+          style={{
+            right: 4,
+            bottom: 'calc(100% + 6px)',
+            fontFamily: SPACE_GROTESK,
+            whiteSpace: 'nowrap',
+            pointerEvents: 'none',
+            opacity: gemTextVisible ? 1 : 0,
+            transition: 'opacity 320ms ease',
+          }}
+        >
+          {gemText}
+        </span>
+      )}
     </div>
   );
 }
@@ -1099,7 +1146,7 @@ function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShif
  *  plays the SHARED win animation (`useWinReveal`): a green fill + "You Win" kept ALONGSIDE the
  *  username (never swapped out), the green a background layer — 0.5 s fill-in → 2 s hold → 0.5 s
  *  fade-out → the persistent green outline. Loss/draw are outline-only (no fill/text). */
-function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdict, drawBeat, barShiftY, lossRingColor, winRingColor, winFillColor, drawRingColor, gemRow }: { label: string; username?: string | null; avatarId?: AvatarId; isOwn: boolean; aside?: ReactNode; barVerdict?: Verdict | null; drawBeat?: boolean; barShiftY?: number; lossRingColor?: string; winRingColor?: string; winFillColor?: string; drawRingColor?: string; gemRow?: ReactNode }) {
+function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdict, drawBeat, barShiftY, lossRingColor, winRingColor, winFillColor, drawRingColor, gemRow, gemText, gemTextVisible }: { label: string; username?: string | null; avatarId?: AvatarId; isOwn: boolean; aside?: ReactNode; barVerdict?: Verdict | null; drawBeat?: boolean; barShiftY?: number; lossRingColor?: string; winRingColor?: string; winFillColor?: string; drawRingColor?: string; gemRow?: ReactNode; gemText?: string; gemTextVisible?: boolean }) {
   const win = barVerdict === 'win';
   const { contentVisible, fillShown, settled } = useWinReveal(win);
 
@@ -1180,6 +1227,25 @@ function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdi
           sits above the win-fill layer. */}
       {gemRow && <span className="relative z-10 min-w-0 flex-1">{gemRow}</span>}
       {aside && <span className="relative z-10 flex shrink-0 items-center gap-2">{aside}</span>}
+      {/* Ticket 2026-09-17#3 item 2: see `OpponentSlot`'s matching comment above — same mechanism,
+          mirrored to the OTHER side of the bar (`top:calc(100% + 6px)`, not `bottom`). */}
+      {gemText && (
+        <span
+          data-testid="hub-gem-text-own"
+          className="absolute z-[1] text-[13px] font-bold text-[var(--rc-green)]"
+          style={{
+            right: 4,
+            top: 'calc(100% + 6px)',
+            fontFamily: SPACE_GROTESK,
+            whiteSpace: 'nowrap',
+            pointerEvents: 'none',
+            opacity: gemTextVisible ? 1 : 0,
+            transition: 'opacity 320ms ease',
+          }}
+        >
+          {gemText}
+        </span>
+      )}
     </div>
   );
 }

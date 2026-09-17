@@ -639,6 +639,52 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     }
   });
 
+  // Ticket 2026-09-17#3 items 1-2: the VS label extends to the result sequence (matchForming ||
+  // resultConverge), and the gem-count CAPTIONS (separate from the icon strip above) appear on
+  // their own asymmetric beats — own caption from 'converge' (singularizing at exactly 1 gem),
+  // opponent's caption only at 'reveal' (never singularizes, even at 1).
+  it('items 1-2: the VS label reappears for the result sequence, and the gem-count captions singularize/timed correctly', async () => {
+    vi.useFakeTimers();
+    try {
+      const gameState = view(
+        { uncovered: [0], locked: true, bustedOn: 24 },
+        { locked: true, score: 1 },
+      );
+      const { rerender } = render(
+        <MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: asLegal([]) })} />,
+      );
+      expect(screen.getByTestId('hub-match-vs').style.opacity).toBe('0'); // pre-lock: hidden
+      expect(screen.queryByTestId('hub-gem-text-own')).toBeNull();
+
+      rerender(
+        <MinesHubScreen
+          {...baseProps({
+            currentMatchId: null,
+            gameState,
+            lastOutcome: { type: 'win', winner: 'bob' },
+            lastSettlement: { delta: -10, newBalance: 990 },
+          })}
+        />,
+      );
+
+      // Converge (+1500ms, bust delay): VS reappears; own caption shows, singular at exactly 1 gem;
+      // opponent's caption is present (rendered, matching the icon row's own pattern) but still
+      // opacity 0 — not yet 'reveal'.
+      await act(async () => { await vi.advanceTimersByTimeAsync(1550); });
+      expect(screen.getByTestId('hub-match-vs').style.opacity).toBe('1');
+      expect(screen.getByTestId('hub-gem-text-own').textContent).toBe('1 gem'); // singular
+      expect(screen.getByTestId('hub-gem-text-own').style.opacity).toBe('1');
+      expect(screen.getByTestId('hub-gem-text-opponent').style.opacity).toBe('0');
+
+      // Reveal (+820ms further): opponent's caption appears — always plural, even at 1 gem.
+      await act(async () => { await vi.advanceTimersByTimeAsync(820); });
+      expect(screen.getByTestId('hub-gem-text-opponent').textContent).toBe('1 gems'); // never singular
+      expect(screen.getByTestId('hub-gem-text-opponent').style.opacity).toBe('1');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // Ticket 2026-09-17#1 item 3: the player's own gem-count row is now live — visible DURING an
   // active, still-in-progress round (no lock, no bust, no result phase at all), matching the
   // prototype's own `minesGems` binding directly to the opened-safe-tile count. Previously gated
