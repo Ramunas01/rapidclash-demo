@@ -1,5 +1,39 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-17#6 — D28, the win-fill on your bar: all 3 of Designer's items confirmed real by direct code read, exactly as diagnosed — the gem strip wrapper carries a stray `z-10`/`relative`, the win text is a normal flex sibling instead of an absolutely-positioned overlay, and it's literally the wrong words in the wrong case (Tailwind's `uppercase` class forces "You Win" to render as "YOU WIN" regardless of the JSX string). Plus a 4th, real gap found by checking the citation precisely rather than eyeballing it: the text currently fades in at the same instant as the fill, with no stagger, contradicting the citation's own keyframe percentages. One color change is a deliberate reversal of my own earlier, correctly-sourced value from `2026-09-16#7` — flagging the reversal explicitly, applying it as directed            [READY TO TICKET]
+From: Advisor   Re: Designer's D28 report (win-fill/win-text on the player bar), verified against `GameHub.tsx`'s `OwnSlot` component (shared by every hub, not Mines-specific for items 2-4) and the prototype's own source (`Full Spec.html:662-676` the bar's own layer stack, `:69-70` the `rcWinFill`/`rcWinText` keyframes, `:3788-3789` their trigger)
+
+All 3 of Designer's own listed items are exactly right — checked directly, no corrections needed to the diagnosis itself this round. Digging into the exact keyframe percentages the citation gives (rather than treating "timing already matches" as settled) surfaced a 4th, real, distinct gap: the win text currently fades in simultaneously with the fill, not staggered behind it as the source specifies.
+
+---
+
+## Items 1-2 — stacking and positioning: confirmed exactly as diagnosed
+
+**Item 1 (gem strip painting over the fill):** `OwnSlot`'s `gemRow` wrapper (`GameHub.tsx`) is `<span className="relative z-10 min-w-0 flex-1">` — the exact `position:relative`/`z-index` Designer says needs removing. The win-fill layer is `z-1`; giving the gem strip `z-10` puts it above the fill instead of below it. Fix: drop `relative z-10` from this one wrapper (keep `min-w-0 flex-1`, unrelated to stacking). Mines-scoped by construction — `gemRow` is `undefined` for every other hub, so nothing else is touched.
+
+**Item 2 (win text inline in the flex row):** confirmed — it's a normal flex child (`<motion.span className="relative z-10 shrink-0 ...">You Win</motion.span>`) sitting between the name and the gem row/aside slots, sized and positioned by ordinary flex layout. The citation's own markup has it as a SEPARATE absolutely-positioned span (`right:18px; top:50%; transform:translateY(-50%)`), not a row sibling at all. Fix: pull it out of the flex row entirely into its own `position:absolute` span at the bar's own top level, matching the fill layer's own positioning approach (`inset:0` sibling) rather than the row's.
+
+## Item 3 — wrong words, wrong case: confirmed, and the actual mechanism is worth knowing
+
+**Text content is `"You Win"` (title case); the citation wants `"you won"` (lowercase, past tense) — a real, simple content fix.** But the VISIBLE result on screen (`"YOU WIN"`, all caps) has a second cause layered on top: the span also carries Tailwind's `uppercase` class, which force-transforms whatever text is inside it to all-caps via CSS regardless of the literal JSX string — so even fixing just the string to `"you won"` while leaving `uppercase` in place would still render `"YOU WON"` on screen. Both need to go: the string, and the `uppercase` class. Also swap `font-extrabold`/`tracking-wide`/`text-sm` for the citation's own exact values — bold (not extrabold), 16px (not 14px), `letter-spacing:0.6px` (not Tailwind's generic `tracking-wide`), and `Arial, Helvetica, sans-serif` (this file already has an `ARIAL` constant used identically elsewhere for the VS label — reuse it, don't add a second literal).
+
+## Item 4 — found by checking the citation's own numbers precisely, not asked for by name but real
+
+**The fill and text currently share one timing mechanism (`fillShown`, `WIN_FILL_IN_MS`) — they fade in at the exact same instant.** The citation's own keyframes say otherwise: `rcWinFill` ramps 0%→16.7% (0-501ms of 3000ms, matching our existing `WIN_FILL_IN_MS=500` almost exactly — already correct, no change needed there); `rcWinText` HOLDS at 0 through 8% (240ms) before ramping to 1 by 20% (600ms) — a deliberate, cited stagger ("It lags the fill by a beat so the green lands first, then the words," in Designer's own words) that today's code doesn't implement at all. Fade-OUT timing is identical for both layers already (both hold to 83.4%, fade to 0 by 100% — no change needed there). Recommend Framer's own keyframe-array + `times` option for the text specifically (`animate={{opacity:[0,0,1,1,0]}}`, `transition={{times:[0,0.08,0.2,0.834,1], duration:3}}`) to hit the exact cited percentages without needing new raw CSS keyframes — the fill's own simpler 2-breakpoint shape can stay exactly as it already is.
+
+## The color change: a deliberate reversal of my own earlier value, applying as directed
+
+**D28 explicitly asks for `#16A34A`, not the prototype's own literal `#22C55E` this specific mechanism uses (`Full Spec.html:664`) — this is a direct reversal of what I established and shipped in `2026-09-16#7`, where I verified `#22C55E` was the prototype's own correct value for THIS mechanism (distinct from Dice's own separately-cited `#16A34A`).** D28 states this explicitly as "per the colour decision" — treating this as a deliberate, informed override rather than a misreading (it correctly cites the prototype's own `#22C55E` value before saying to use `#16A34A` instead), and applying it as directed. Once applied, Mines' `winFillColor`/`winRingColor` become byte-identical to Dice's own values — worth a one-line simplification (one shared condition instead of two branches with the same literal) but not required. Scope check: this does NOT extend to RPS/Blackjack/Chess/Coinflip, which were never given this override and stay on the shared generic `--rc-green` token — D28's own scope is Mines' bar specifically, matching Dice's existing special-case, not a platform-wide green unification.
+
+## Scope, precisely: items 1 is Mines-only; items 2-4 and the color are shared, universal fixes
+
+`OwnSlot` is the ONE component every GameHub game's own bar renders through. Item 1 (gem-strip stacking) only ever matters for Mines, since `gemRow` is `undefined` everywhere else. Items 2-4 (text content/style/position, the fade-stagger) fix the SAME broken text for every game currently showing a win — confirmed via D28's own explicit check ("Compare against dice and rps: identical position and style"), this is intentional, not scope creep on my part.
+
+---
+
+**Ask:** small, well-understood, no new architecture — a stacking fix, a reposition, a content/style fix, a timing stagger, and one deliberate color reversal. `grep -rn "YOU WIN"` (or `"You Win"`) returning nothing is a clean, mechanical way to confirm the content half landed.
+
+---
 ### 2026-09-17#5 — Correction to `2026-09-17#4`'s own "composes for free via `resultConverge`" claim, now that `2026-09-17#3` shipped (PR `#638`) while I was still writing that ticket — checked the actual merged code before dispatching rather than dispatching my original, now-stale framing            [correction, folded into the dispatch]
 From: Advisor   Re: `2026-09-17#4`/D27, re-verified against the ACTUAL shipped `2026-09-17#3` code (`MinesHub.tsx`'s real `oppGemText`/`oppGemTextVisible`/`ownGemText`/`ownGemTextVisible`), not the hypothetical implementation I was reasoning about when I wrote the original ticket
 
