@@ -337,9 +337,15 @@ interface GameHubProps extends GameHubScreenProps {
   resultConverge?: boolean;
   /** Ticket 2026-09-16#7 item 5: Mines-only gem-count icon rows (`minesOppGemList`/`minesGems`,
    *  `Full Spec.html:445-462`/`:660-681`) — rendered as a new sibling between the name and the
-   *  right-side aside/"Playing…" slot, `shrink-0` (not the prototype's own `flex:1 1 auto` fill —
-   *  a deliberate, safer deviation: making it flex-1 would mean moving `flex-1` OFF the existing
-   *  name span, which would break long-name truncation for every OTHER hub using this bar).
+   *  right-side aside/"Playing…" slot. Ticket 2026-09-17#2 item 2: now `flex-1 min-w-0` (matching
+   *  the prototype's own `flex:1 1 auto` fill), NOT the `shrink-0` this originally shipped with —
+   *  the original deviation (avoiding moving `flex-1` off the name span, to protect long-name
+   *  truncation on other hubs) turned out to cause its own real bug: with the gem row `shrink-0`
+   *  and the name still `flex-1`, the name box grows to claim ALL remaining space regardless of its
+   *  own length, pushing the gem row to the bar's far right edge. Fixed correctly this time: the
+   *  name span's own `flex-1` is now conditional on `gemRow`'s absence (see `OpponentSlot`'s/
+   *  `OwnSlot`'s own name-span comments) — still a Mines-only-safe change, since `gemRow` stays
+   *  `undefined` for every other hub, so their name span keeps its `flex-1` exactly as before.
    *  Undefined (every hub but Mines) → byte-identical no-op, nothing rendered. */
   oppGemRow?: ReactNode;
   ownGemRow?: ReactNode;
@@ -1035,7 +1041,14 @@ function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShif
           right, instead of one inline flex row with both pieces side by side. The avatar now
           hashes from the (already ADR-010-stripped) scanned name while searching — matching the
           prototype's own `avForName` flicker — instead of staying the neutral default throughout. */}
-      <span className={cn('flex min-w-0 flex-1 items-center gap-2.5 transition-[filter] duration-300', searching && 'blur-[4.5px]')}>
+      {/* Ticket 2026-09-17#2 item 2: `flex-1` on this avatar+name group is what makes the gem row
+          (below) land at the bar's far right edge — it stretches to claim ALL remaining space
+          regardless of how short the name is, leaving `gemRow` (shrink-0) nowhere to go but
+          immediately after that now-enormous box. Drop `flex-1` here ONLY when a gem row is
+          actually present (Mines only — `gemRow` is undefined everywhere else, so this is a
+          byte-identical no-op for every other hub) and let `gemRow` itself claim the freed space
+          instead (see its own span below). */}
+      <span className={cn('flex items-center gap-2.5 transition-[filter] duration-300', gemRow ? 'shrink-0' : 'min-w-0 flex-1', searching && 'blur-[4.5px]')}>
         {/* NEUTRAL avatar outside search — the in-match opponent stays redacted: never their real
             name/avatar (Charter #2). Only the DECORATIVE scan (never the real opponent) drives it
             while actively searching. */}
@@ -1053,11 +1066,14 @@ function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShif
           Searching…
         </span>
       )}
-      {/* Ticket 2026-09-16#7 item 5: Mines-only gem-count row — a new sibling between the name and
-          the aside/"Playing…" slot below, `shrink-0` (see the `oppGemRow` prop's own doc comment on
-          GameHubProps for why not the prototype's literal `flex:1 1 auto`). Undefined for every
-          other hub → nothing rendered here at all. */}
-      {gemRow && <span className="min-w-0 shrink-0">{gemRow}</span>}
+      {/* Ticket 2026-09-16#7 item 5 / 2026-09-17#2 item 2: Mines-only gem-count row — a new sibling
+          between the name and the aside/"Playing…" slot below. Now `flex-1 min-w-0` (not
+          `shrink-0`) — paired with the name span above dropping ITS `flex-1` when a gem row is
+          present, so the freed space actually goes to the gem row instead of the (now
+          intrinsically-sized) name. `GemCountRow`'s own inner flex defaults to `justify-content:
+          flex-start`, so it still left-aligns within that space rather than centering/stretching.
+          Undefined for every other hub → nothing rendered here at all, byte-identical no-op. */}
+      {gemRow && <span className="min-w-0 flex-1">{gemRow}</span>}
       {/* A per-game aside (e.g. chess clock) takes the right slot; otherwise the live "Playing…"
           tag — only while actually in-match (a persisted post-match board is not "playing").
           Ticket 2026-09-16#5 item 7: weight/case/tracking corrected against the prototype's own
@@ -1139,9 +1155,11 @@ function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdi
       {/* Own avatar — per-user LIGHT disc + darkened glyph, derived from the username (no username →
           NEUTRAL, e.g. logged out / legacy session). Sits above the win-fill layer (z-10). */}
       <Avatar username={username} avatarId={avatarId} className="relative z-10" />
-      {/* Username stays put in every state; white over the green fill, back to normal once it fades. */}
+      {/* Username stays put in every state; white over the green fill, back to normal once it fades.
+          Ticket 2026-09-17#2 item 2: `flex-1` dropped when a gem row is present — see the matching
+          comment on `OpponentSlot`'s own name span above for why. */}
       <span
-        className={cn('relative z-10 min-w-0 flex-1 truncate text-sm font-bold transition-colors duration-300', contentVisible ? 'text-white' : isOwn ? 'text-foreground' : 'text-muted-foreground')}
+        className={cn('relative z-10 truncate text-sm font-bold transition-colors duration-300', gemRow ? 'shrink-0' : 'min-w-0 flex-1', contentVisible ? 'text-white' : isOwn ? 'text-foreground' : 'text-muted-foreground')}
       >
         {label}
       </span>
@@ -1157,9 +1175,10 @@ function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdi
           You Win
         </motion.span>
       )}
-      {/* Ticket 2026-09-16#7 item 5: see `OpponentSlot`'s matching comment above — wrapped the same
-          way `aside` is, so it sits above the win-fill layer too. */}
-      {gemRow && <span className="relative z-10 min-w-0 shrink-0">{gemRow}</span>}
+      {/* Ticket 2026-09-16#7 item 5 / 2026-09-17#2 item 2: see `OpponentSlot`'s matching comment
+          above (`flex-1 min-w-0`, not `shrink-0`) — wrapped the same way `aside` is here too, so it
+          sits above the win-fill layer. */}
+      {gemRow && <span className="relative z-10 min-w-0 flex-1">{gemRow}</span>}
       {aside && <span className="relative z-10 flex shrink-0 items-center gap-2">{aside}</span>}
     </div>
   );
