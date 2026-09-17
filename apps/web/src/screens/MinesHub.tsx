@@ -151,23 +151,36 @@ const REVEAL_POP_TRANSITION = { duration: 0.3, ease: [0.34, 1.7, 0.5, 1] as cons
 // halo and bomb icon on the busted tile specifically, never the other exposed mines.
 const BOMB_JUMP_ANIM = 'rcMineJump 4000ms cubic-bezier(0.32,0.72,0.4,1) 1 both';
 function MineTileContent({ kind }: { kind: CellKind }) {
+  // Ticket 2026-09-17#1 item 1: `GemIcon` (both branches below) needs the SAME `absolute inset-0
+  // flex items-center justify-center` wrapper `MineIcon`'s 'mine'/'bustedOn' branches already use —
+  // empirically proven (not just reasoned) that a bare, normal-flow flex child whose content is a
+  // percentage-width SVG hits a real CSS ambiguity (the item's size depends on the percentage, the
+  // percentage's resolution depends on the item's size) that Chromium resolves by stretching the
+  // flex item to the tile's full width, leaving `justify-content:center` nothing to center — the
+  // SVG then sits flush-left instead of dead-center, exactly the drift in Designer's screenshot.
+  // `position:absolute` resolves the SVG's percentage width against the tile's own definite size
+  // instead, sidestepping the ambiguity entirely — same reason `MineIcon` already needed it.
   if (kind === 'safe') {
     return (
       <>
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <GemHalo />
         </div>
-        <motion.div initial={{ opacity: 0, scale: 0.4 }} animate={{ opacity: 1, scale: 1 }} transition={REVEAL_POP_TRANSITION}>
-          <GemIcon opacity={1} />
-        </motion.div>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <motion.div initial={{ opacity: 0, scale: 0.4 }} animate={{ opacity: 1, scale: 1 }} transition={REVEAL_POP_TRANSITION}>
+            <GemIcon opacity={1} />
+          </motion.div>
+        </div>
       </>
     );
   }
   if (kind === 'autoSafe') {
     return (
-      <motion.div initial={{ opacity: 0, scale: 0.4 }} animate={{ opacity: 1, scale: 1 }} transition={REVEAL_POP_TRANSITION}>
-        <GemIcon opacity={0.26} />
-      </motion.div>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <motion.div initial={{ opacity: 0, scale: 0.4 }} animate={{ opacity: 1, scale: 1 }} transition={REVEAL_POP_TRANSITION}>
+          <GemIcon opacity={0.26} />
+        </motion.div>
+      </div>
     );
   }
   if (kind === 'mine') {
@@ -489,15 +502,19 @@ type ResultPhase = 'idle' | 'converge' | 'reveal' | 'final';
  *  never needs `GemIcon`'s opacity prop — deliberately not adding an unused parameter). Capped at
  *  `Math.min(count, 22)` (`:3718`/`:3785`, confirmed both cap identically), wrapped, `max-height`
  *  clipped at 38px (`playGemStripH`/`oppGemRowOp`'s own citation) — a deliberate deviation from the
- *  prototype's own `flex:1 1 auto` fill, see `GameHubProps.oppGemRow`'s own doc comment for why. */
-function GemCountRow({ count, visible }: { count: number; visible: boolean }) {
+ *  prototype's own `flex:1 1 auto` fill, see `GameHubProps.oppGemRow`'s own doc comment for why.
+ *  `transitionMs` (ticket 2026-09-17#1 item 3): the two rows use DIFFERENT prototype-cited values
+ *  — the opponent's own `oppGemRowOp` transition is `320ms` (`:448`), the player's own
+ *  `playGemStripOp` is `280ms` (`:674`) — not the same number copied twice, confirmed by re-reading
+ *  both citations directly rather than assuming symmetry. */
+function GemCountRow({ count, visible, transitionMs = 320 }: { count: number; visible: boolean; transitionMs?: number }) {
   if (count <= 0) return null;
   const shown = Math.min(count, 22);
   return (
     <div
       data-testid="mines-gem-row"
       className="flex flex-wrap content-center gap-[2px] overflow-hidden"
-      style={{ maxWidth: 90, maxHeight: 38, opacity: visible ? 1 : 0, transition: 'opacity 320ms ease' }}
+      style={{ maxWidth: 90, maxHeight: 38, opacity: visible ? 1 : 0, transition: `opacity ${transitionMs}ms ease` }}
     >
       {Array.from({ length: shown }, (_, i) => (
         <svg key={i} viewBox="0 0 48 44" width="17" className="block shrink-0">
@@ -586,7 +603,12 @@ export function MinesHubScreen(props: GameHubScreenProps) {
       // `holdResultMs` gates the WHOLE hold, matching the prototype's own 'final' landing beat.
       holdResultMs={didBust ? RESULT_FINAL_MS : undefined}
       oppGemRow={didBust && resultPhase !== 'idle' ? <GemCountRow count={oppGemCount} visible={resultPhase === 'reveal' || resultPhase === 'final'} /> : undefined}
-      ownGemRow={didBust && resultPhase !== 'idle' ? <GemCountRow count={myGemCount} visible /> : undefined}
+      // Ticket 2026-09-17#1 item 3: live, unconditional — matches the prototype's own `minesGems`
+      // binding directly to the opened-safe-tile count, no result-state involvement at all.
+      // `GemCountRow`'s own `count <= 0 → null` already gives "fades in with the first gem" for
+      // free. `transitionMs={280}`: the player's own row's cited duration, distinct from the
+      // opponent's 320ms default (see `GemCountRow`'s own doc comment).
+      ownGemRow={<GemCountRow count={myGemCount} visible transitionMs={280} />}
       {...props}
     />
   );
