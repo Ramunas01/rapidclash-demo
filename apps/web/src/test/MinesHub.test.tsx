@@ -272,14 +272,19 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
   // mechanism, already proven on Coinflip — see `CoinflipHub.test.tsx`'s equivalent tests for the
   // exact testids/assertions mirrored below).
   it('Result: no separate overlay — match.end reveals the outcome via the own-bar frame ring / win-fill (ownBarResult) instead', async () => {
-    const gameState = view({ uncovered: [0, 1, 2, 3], locked: true });
+    // Ticket 2026-09-17#1 item 2: both boards locked — a real, decisive (non-bust, non-cleared)
+    // "timeout" lock reason for MY board specifically (uncovered.length=4, not SAFE_COUNT=22).
+    const gameState = view({ uncovered: [0, 1, 2, 3], locked: true }, { locked: true });
     const { rerender } = render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: asLegal([]) })} />);
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
 
     rerender(<MinesHubScreen {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'alice' }, lastSettlement: { delta: 18, newBalance: 1018 } })} />);
     // `suppressResultOverlay`: GameHub never renders the separate `ResultOverlay`, terminal or not.
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
-    await waitFor(() => expect(screen.getByTestId('hub-slot-own-verdict')).toBeInTheDocument());
+    // Ticket 2026-09-17#1 item 2: a "timeout" lock now goes through the same real sequence a bust
+    // does (500ms reason delay + 820 + 700 = 2020ms), not the old instant/fixed-250ms-beat path —
+    // real timers here, generous waitFor timeout (matches this file's own real-timer idiom).
+    await waitFor(() => expect(screen.getByTestId('hub-slot-own-verdict')).toBeInTheDocument(), { timeout: 4000 });
     expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you win/i);
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull(); // still absent after the reveal
   });
@@ -321,16 +326,17 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
   // result phase lands — it used to render unconditionally, staying visible through the whole
   // result-hold window. `Full Spec.html:3758-3759`'s own gating (`minesClockOp`/`minesClockH`)
   // confirms this is the prototype's real behavior, not a cosmetic nice-to-have.
-  it('item 4: the round clock collapses once the result phase lands', () => {
-    const gameState = view({ uncovered: [0, 1, 2, 3], locked: true });
+  it('item 4: the round clock collapses once the result phase lands', async () => {
+    const gameState = view({ uncovered: [0, 1, 2, 3], locked: true }, { locked: true });
     const { rerender } = render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: asLegal([]) })} />);
     const clockWrapper = screen.getByTestId('mines-round-clock').parentElement as HTMLElement;
     expect(clockWrapper.style.maxHeight).toBe('46px');
     expect(clockWrapper.style.opacity).toBe('1');
 
     rerender(<MinesHubScreen {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'alice' }, lastSettlement: { delta: 18, newBalance: 1018 } })} />);
+    // Ticket 2026-09-17#1 item 2: see the equivalent comment on the "no separate overlay" test above.
+    await waitFor(() => expect(clockWrapper.style.opacity).toBe('0'), { timeout: 4000 });
     expect(clockWrapper.style.maxHeight).toMatch(/^0(px)?$/); // React renders a 0 style value unitless
-    expect(clockWrapper.style.opacity).toBe('0');
   });
 
   // Ticket 2026-09-16#5 item 5: the gem/mine icon's own reveal pop — previously appeared instantly
@@ -349,7 +355,9 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
   it('Result win: shared 0.5/2/0.5 bar animation on the own bar only — keeps the username, "You Win" alongside, then settles to the green outline (mirrors CoinflipHub.test.tsx)', async () => {
     vi.useFakeTimers();
     try {
-      const gameState = view({ uncovered: [0, 1, 2, 3], locked: true });
+      // Ticket 2026-09-17#1 item 2: both boards locked — a real "timeout" lock reason for MY board
+      // (uncovered.length=4, not SAFE_COUNT=22, no bustedOn).
+      const gameState = view({ uncovered: [0, 1, 2, 3], locked: true }, { locked: true });
       const { rerender } = render(
         <MinesHubScreen {...baseProps({ username: 'alice', currentMatchId: 'm1', gameState, legalMoves: asLegal([]) })} />,
       );
@@ -365,8 +373,14 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
         />,
       );
 
-      // No `holdResultMs` for Mines (like RPS) — the result phase starts essentially immediately;
-      // only the fixed BAR_VERDICT_BEAT_MS (250ms) gates the bar lighting.
+      // Ticket 2026-09-17#1 item 2: a "timeout" lock's full holdResultMs is 500 (reason delay) +
+      // 820 + 700 = 2020ms, THEN the fixed BAR_VERDICT_BEAT_MS (250ms) gates the bar lighting on
+      // top of that — two separate advances (not one combined number), same idiom this file's own
+      // item 4 convergence test already uses, so React gets a chance to flush the intermediate
+      // phase→'result' render before the second timer registers.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2020 + 50);
+      });
       await act(async () => {
         await vi.advanceTimersByTimeAsync(250 + 50);
       });
@@ -465,13 +479,16 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     }
   });
 
-  // Ticket 2026-09-16#7 item 4: a bust converges the bars + dims the board at +1500ms from when
-  // the result is actually confirmed (lastOutcome/lastSettlement) — NOT +1500ms from the bust
-  // itself (this file's own MinesHubScreen header comment explains why: the bust and the
-  // server-confirmed result aren't the same instant in a real match, unlike the prototype's
-  // client-simulated one) — and the ring holds until the sequence's own 'final' beat (+3020ms),
-  // not the old fixed BAR_VERDICT_BEAT_MS.
-  it("item 4: a bust converges the bars + dims the board once the result is confirmed, and holds the ring until the sequence's own final beat", async () => {
+  // Ticket 2026-09-16#7 item 4 / 2026-09-17#1 item 2: a bust converges the bars + dims the board
+  // at +1500ms from MY OWN lock (`bustedOn !== undefined` here) — independent of match settlement;
+  // `lastOutcome`/`lastSettlement` arrive later in this test specifically to also exercise the ring
+  // (which DOES need confirmed data, via `holdResultMs`), but converge itself has already armed off
+  // the bust alone by the time they land. The opponent here never locks at all (`opp: { locked:
+  // false }`, never flipped) — resultPhase legitimately stays held at 'converge' forever in this
+  // fixture; only the ring's own `holdResultMs` (computed independently of resultPhase — see that
+  // prop's own doc comment) is what this test actually verifies past the convergence beat. The
+  // hold-then-RELEASE path (opponent locks AFTER convergence) has its own dedicated test below.
+  it("item 4/item 2: a bust converges the bars + dims the board off MY OWN lock, and the ring holds until the sequence's own final beat even when the opponent never locks", async () => {
     vi.useFakeTimers();
     const rect = (top: number, height: number): DOMRect =>
       ({ top, height, bottom: top + height, left: 0, right: 0, width: 0, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
@@ -486,8 +503,8 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
       const { rerender } = render(
         <MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: asLegal([]) })} />,
       );
-      // Busted, but the match hasn't formally ended yet (no lastOutcome/lastSettlement) — the
-      // sequence must NOT arm off the bust alone.
+      // Locked (busted) from the very first render, but converge hasn't fired yet — it's SCHEDULED
+      // (1500ms out), not immediate; nothing visible changes synchronously.
       expect(screen.getByTestId('hub-mines-panel').style.opacity).toBe('1');
       expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(0px)');
 
@@ -508,7 +525,9 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
       const ownBar = screen.getByTestId('hub-slot-own');
       expect(ownBar.className).not.toContain('ring-[3px]');
 
-      // Converge lands (+1500 total) — bars shift, board dims.
+      // Converge lands (+1500 from my own lock, ~the same moment as this render since I locked at
+      // render 1) — bars shift, board dims. The opponent here never locks, so resultPhase stays
+      // held at 'converge' for the rest of this test — deliberately, see this test's own header.
       await act(async () => { await vi.advanceTimersByTimeAsync(600); });
       expect(screen.getByTestId('hub-mines-panel').style.opacity).toBe('0.28');
       // oTop=100, pTop=300, pr.height=48 → mid=(100+300+48)/2=224 → o=224-71-100=53, p=224+23-300=-53.
@@ -517,9 +536,10 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
       // Ring hasn't lit yet — well past the OLD fixed 250ms beat, confirming the new gated timing.
       expect(ownBar.className).not.toContain('ring-[3px]');
 
-      // Final lands (+3020 total from result-known), then GameHub's own fixed BAR_VERDICT_BEAT_MS
-      // (250ms) on top of that (this path isn't gateResultOnReveal-gated, unlike Dice's — see this
-      // file's own MinesHubScreen header comment) — the loss ring lights, Mines' own var(--rc-loss)
+      // holdResultMs (1500+1520=3020 at elapsed≈0, computed independently of resultPhase/the
+      // opponent ever locking — see that prop's own doc comment) gates the ring here, then
+      // GameHub's own fixed BAR_VERDICT_BEAT_MS (250ms) on top of that (this path isn't
+      // gateResultOnReveal-gated, unlike Dice's) — the loss ring lights, Mines' own var(--rc-loss)
       // (same token Dice's own lossRingColor already uses). Two separate advances (not one
       // combined number) — same idiom the "Result win" test above already uses — so React gets a
       // chance to flush the intermediate phase→'result' render before the second timer registers.
@@ -530,6 +550,47 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
       expect(ownBar.style.getPropertyValue('--tw-ring-color')).toBe('var(--rc-loss)');
     } finally {
       rectSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  // Ticket 2026-09-17#1 item 2: the genuinely new behavior — a held 'converge' (opponent not yet
+  // locked) releases once their `locked` is observed true, and 'reveal'/'final' fire relative to
+  // THAT release moment, not the original convergence timestamp. This is the core of item 2's fix:
+  // without it, a long-held wait would either fire reveal/final too early (stale schedule from
+  // convergence) or never at all.
+  it("item 2: a held converge releases once the opponent locks, with reveal timed from the RELEASE moment — not the original convergence timestamp", async () => {
+    vi.useFakeTimers();
+    try {
+      const gameState = view({ uncovered: [0, 1, 2, 3], locked: true, bustedOn: 10 }, { locked: false });
+      const { rerender } = render(
+        <MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: asLegal([]) })} />,
+      );
+
+      // Converge lands at +1500 (my own lock) — board dims. The opponent hasn't locked, so this
+      // holds indefinitely — confirmed by waiting WELL past where reveal (+820) and even final
+      // (+1520) would have landed on the OLD, un-held schedule, and seeing nothing further happen.
+      await act(async () => { await vi.advanceTimersByTimeAsync(1500 + 100); });
+      expect(screen.getByTestId('hub-mines-panel').style.opacity).toBe('0.28'); // converged
+      const oppBar = screen.getByTestId('hub-slot-opponent');
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000); }); // well past +820/+1520
+      expect(within(oppBar).queryByTestId('mines-gem-row')).toBeNull(); // still held — never armed
+
+      // The opponent locks now (a long, real-world wait for their round to finish) — this is the
+      // RELEASE moment. Re-supply the same gameState with their board now locked + scored.
+      const releasedState = view({ uncovered: [0, 1, 2, 3], locked: true, bustedOn: 10 }, { locked: true, score: 6 });
+      rerender(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: releasedState, legalMoves: asLegal([]) })} />);
+
+      // Just before +820 from the RELEASE (not from the original convergence, which was ~2100ms
+      // ago by now) — the row now exists (their score is known) but is still invisible.
+      await act(async () => { await vi.advanceTimersByTimeAsync(700); });
+      expect(within(oppBar).getByTestId('mines-gem-row').style.opacity).toBe('0');
+
+      // +820 from release — reveal lands, the opponent's row becomes visible.
+      await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+      const oppGemRow = within(oppBar).getByTestId('mines-gem-row');
+      expect(oppGemRow.style.opacity).toBe('1');
+    } finally {
       vi.useRealTimers();
     }
   });
@@ -588,5 +649,26 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     expect(ownBar.querySelectorAll('svg[viewBox="0 0 48 44"]')).toHaveLength(3);
     // The opponent's row stays absent — no result sequence has armed at all (no bust yet).
     expect(within(screen.getByTestId('hub-slot-opponent')).queryByTestId('mines-gem-row')).toBeNull();
+  });
+
+  // Ticket 2026-09-17#1 item 2: a clean clear (all SAFE_COUNT=22 safe tiles, no bustedOn) is
+  // distinguished from a bust and uses the SAME 500ms delay as a timeout, per the Owner's own
+  // confirmed answer (2026-09-17) — the prototype has no source for this case at all. Confirmed by
+  // checking convergence has ALREADY fired well before bust's 1500ms would allow.
+  it("item 2: a clean clear (all 22 safe tiles) converges at the confirmed 500ms delay, not bust's 1500ms", async () => {
+    vi.useFakeTimers();
+    try {
+      const gameState = view(
+        { uncovered: Array.from({ length: 22 }, (_, i) => i), locked: true },
+        { locked: true },
+      );
+      render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: asLegal([]) })} />);
+      // Well past 'cleared'/'timeout's 500ms, well before bust's 1500ms — if this were mistakenly
+      // treated as a bust, convergence would NOT have fired yet at this point.
+      await act(async () => { await vi.advanceTimersByTimeAsync(500 + 100); });
+      expect(screen.getByTestId('hub-mines-panel').style.opacity).toBe('0.28');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
