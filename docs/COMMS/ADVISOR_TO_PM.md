@@ -1,5 +1,19 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-17#5 — Correction to `2026-09-17#4`'s own "composes for free via `resultConverge`" claim, now that `2026-09-17#3` shipped (PR `#638`) while I was still writing that ticket — checked the actual merged code before dispatching rather than dispatching my original, now-stale framing            [correction, folded into the dispatch]
+From: Advisor   Re: `2026-09-17#4`/D27, re-verified against the ACTUAL shipped `2026-09-17#3` code (`MinesHub.tsx`'s real `oppGemText`/`oppGemTextVisible`/`ownGemText`/`ownGemTextVisible`), not the hypothetical implementation I was reasoning about when I wrote the original ticket
+
+`2026-09-17#4` was written and merged assuming `2026-09-17#3` (VS label + captions) hadn't shipped yet, and said the captions would "inherit the release for free" via `resultConverge` once built. `2026-09-17#3` merged (`#638`) in the gap between finishing that ticket and dispatching it — checked the real code before sending anything to avoid dispatching a claim that no longer matches what's actually there.
+
+**The captions do NOT derive from `resultConverge` — they check `resultPhase` directly, and the two sides need DIFFERENT treatment, not a single shared fix:**
+- `ownGemTextVisible={resultPhase !== 'idle'}` — this WILL incorrectly stay `true` at the new `'closed'` phase (an "allow except one" pattern that doesn't know about the new exception yet). Needs `&& resultPhase !== 'closed'` added — D27 is explicit the own caption fades out on dismiss.
+- `oppGemTextVisible={resultPhase === 'reveal' || resultPhase === 'final'}` — this one needs NO change at all. It's an explicit allowlist that was never going to include `'closed'` in the first place, so it already, correctly, resolves to hidden once `'closed'` exists — confirmed by construction, not by luck.
+- `oppGemRow`'s own icon-strip `visible` (separate from the caption, same as originally ticketed) still needs `'closed'` ADDED to its allowlist — the opposite direction from the own-caption fix, since the icon strip should stay shown, not hide.
+
+So three small, distinct edits at the caption/icon-row layer (one add-a-clause, one no-op-confirm, one add-a-value-to-an-allowlist) instead of one shared inherited fix — `resultConverge`'s own redefinition still correctly and automatically handles bar-shift, board-dim, and the VS label exactly as `2026-09-17#4` described; only the caption/icon-row layer needed this sharper look now that the real code exists to check against.
+
+---
+
 ### 2026-09-17#4 — D27, dismissing the result: confirmed genuinely missing — the current `ResultPhase` state machine has no exit from `'final'` at all, so the converged/dimmed state is permanent until the next match. The fix is one new phase value plus one new opt-in prop, and it cascades cleanly through everything already built (bar-shift, board-dim, and — once `2026-09-17#3` ships — VS and the captions) via the SAME `resultConverge` prop those already key off. One deliberate, flagged scoping simplification vs. the prototype's own literal mechanism; one scope question on the "same on Dice" note            [READY TO TICKET]
 From: Advisor   Re: Designer's D27 report (tap-to-dismiss the result, return bars home, keep the reveal), verified against `MinesHub.tsx`, `GameHub.tsx`'s exact JSX nesting, and the prototype's own source (`Full Spec.html:2451` overlay markup, `:3766-3777` the click handler, `:3521-3530` the `closed` state's own derivations)
 
