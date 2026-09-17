@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import type { MinesView } from '../App.js';
+import type { MinesView, MinesBoardView } from '../App.js';
 import { useTheme } from '../lib/theme.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
 
@@ -18,6 +18,13 @@ const BOARD_SIZE = 25; // 5×5
 // packages — the same rule CoinflipHub.tsx's `PICK_SECONDS` and RpsHub.tsx's `PICK_SECONDS`
 // already follow for their own server-side timer constants.
 const ROUND_SECONDS = 30;
+
+// Ticket 2026-09-17#1 item 2: the ruleset's own safe-tile count (`packages/games/mines/src/board.ts`
+// — `SAFE_COUNT = BOARD_SIZE - MINE_COUNT` = 22), mirrored locally for the same decoupling reason
+// `ROUND_SECONDS`/`BOARD_SIZE` above already are — used to distinguish "locked because I cleared
+// the board" from "locked because my clock ran out" (both otherwise look identical: locked, not
+// busted).
+const SAFE_COUNT = 22;
 
 // Ticket 2026-09-16#6 item 2: 'autoSafe' — a safe tile you never personally tapped, auto-revealed
 // once you're locked (busted), matching the prototype's own `open = picked || busted` (all 25
@@ -477,24 +484,41 @@ function MinesPanel(args: GameAreaArgs) {
  * this exactly, so no extra gating was needed. Do not assume RPS and Mines must always be handled the
  * same way just because they're both GameHub games — check the prototype's own gate for each.
  */
-// Ticket 2026-09-16#7 item 4: the post-bust convergence sequence, `Full Spec.html:3705-3711`'s own
-// trigger chain — the bust itself sets `minesBust` immediately, THEN 1500ms later calls
-// `startMinesResult()`, which flips `minesResult` to 'converge' and arms two more timers 820ms and
-// 1520ms further out ('reveal'/'final'). Scoped deliberately: the prototype's own timeline runs
-// entirely client-side (one simulated tab plays both "sides"), so "mine hit" and "the match is
-// truly, server-confirmed over" are the same instant there. They are NOT the same instant for us —
-// I can bust while my opponent is still mid-round, and only the SERVER knows when their board is
-// truly locked (the same redaction this file's own history-belt/score logic already respects).
-// Anchoring this sequence on "I personally busted" instead of "the terminal result is actually
-// known" risks the exact thing D21's honest-data principle rules out: revealing a count before the
-// server has confirmed it's real. So `RESULT_*_MS` below are offsets from the SAME moment that
-// already gates everything else (`lastOutcome && lastSettlement`, matching GameHub's own
-// `hasFreshResult`) — not literally "mine hit" — preserving the prototype's relative pacing while
-// only ever counting up to numbers the server has actually confirmed.
-const RESULT_CONVERGE_MS = 1500;
-const RESULT_REVEAL_MS = 2320; // 1500 + 820
-const RESULT_FINAL_MS = 3020; // 1500 + 1520
+// Ticket 2026-09-17#1 item 2: a correction to how `2026-09-16#7` shipped this sequence — that fix
+// gated ALL THREE beats (converge/reveal/final) behind full match settlement (`lastOutcome &&
+// lastSettlement`, i.e. BOTH players locked), so the result ran on the OPPONENT's clock instead of
+// mine: if I lock first and they're still playing, my own reveal sequence would wait on them even
+// though 'converge' itself (a board-dim + bar-slide) reveals no data at all — only 'reveal' (their
+// count) and 'final' (the ring) actually need confirmed data. Corrected mechanism:
+//  - 'converge' triggers off MY OWN lock (`MinesBoardView.locked`, packages/games/mines/src/
+//    mines.ts — flips true the instant MY round ends, for any of 3 reasons, independent of the
+//    opponent), after a reason-based delay derived entirely from already-stable view fields:
+//    bust (`bustedOn !== undefined`) → 1500ms (`Full Spec.html:3711`); a clean clear
+//    (`uncovered.length === SAFE_COUNT`) or a clock timeout (locked, neither of the above) → 500ms
+//    (`:3370` for timeout; the prototype has NO code path for a clean clear at all — its own
+//    reveal() handler never early-wins on 22/22, it just waits for the clock even then — so there's
+//    no source to confirm a timing against; Owner confirmed defaulting a clear to the timeout's
+//    500ms, both being "non-bust" endings, 2026-09-17).
+//  - Once 'converge' fires (always, on my own schedule), check the opponent's own `locked`. If
+//    already true, schedule 'reveal' at +820ms and 'final' at +700ms after that — today's already-
+//    correct relative spacing, run straight through. If not yet true, HOLD at 'converge' (dimmed
+//    board, bars together, my own gem row showing live — 2026-09-17#1 item 3 — theirs still hidden)
+//    until their `locked` is observed true, THEN schedule 'reveal'/'final' at the same +820/+700
+//    relative to THAT release moment, not the original converge timestamp — an unbounded wait, by
+//    design (never guess at data the server hasn't confirmed).
+//  - `holdResultMs` (below, at the `<GameHub>` call) is now a value computed FRESH on every render,
+//    not a fixed constant — see that prop's own comment for why a "last known release moment"
+//    ref/effect would race against GameHub's own consuming effect, and how a pure per-render
+//    function avoids it while still reducing to exactly today's 3020ms in the straight-through case.
+//  - Pre-existing limitation, carried forward unchanged, not solved further: on a fresh mount/
+//    reconnect where `me.locked` is already true, there is no server timestamp for exactly when I
+//    locked — this file already accepted the same imprecision for the bust-only case before this
+//    ticket (arms fresh from "now"); this fix doesn't change that.
+type LockReason = 'bust' | 'cleared' | 'timeout';
 type ResultPhase = 'idle' | 'converge' | 'reveal' | 'final';
+const REASON_DELAY_MS: Record<LockReason, number> = { bust: 1500, cleared: 500, timeout: 500 };
+const REVEAL_AFTER_CONVERGE_MS = 820;
+const FINAL_AFTER_REVEAL_MS = 700;
 
 /** The 17px gem, no halo/blur, no opacity variance — `minesOppGemList`/`minesGems`'s own SVG
  *  (`Full Spec.html:445-451`/`:670-676`), byte-identical to `GemIcon`'s own path data at opacity 1
@@ -531,44 +555,74 @@ function GemCountRow({ count, visible, transitionMs = 320 }: { count: number; vi
   );
 }
 
+/** Derive WHY a locked board locked, from already-stable view fields alone — no new server/
+ *  protocol work needed. `SAFE_COUNT` before the generic 'timeout' fallback: a clean clear also
+ *  ends with `locked: true` and no `bustedOn`, so it must be checked explicitly, not assumed away. */
+function lockReasonOf(board: MinesBoardView | undefined): LockReason | null {
+  if (!board?.locked) return null;
+  if (board.bustedOn !== undefined) return 'bust';
+  if ((board.uncovered?.length ?? 0) === SAFE_COUNT) return 'cleared';
+  return 'timeout';
+}
+
 export function MinesHubScreen(props: GameHubScreenProps) {
   const view = props.gameState as MinesView | null;
-  const [didBust, setDidBust] = useState(false);
+  const me = props.playerId ? view?.boards?.[props.playerId] : undefined;
+  const opp = props.opponentId ? view?.boards?.[props.opponentId] : undefined;
+
+  const [lockReason, setLockReason] = useState<LockReason | null>(null);
   const [resultPhase, setResultPhase] = useState<ResultPhase>('idle');
-  const armedRef = useRef(false);
+  // Captured once, the first time `lockReason` is set — the "pre-existing limitation" this
+  // section's own header comment accepts (no server timestamp for exactly when I locked).
+  const myLockedAtRef = useRef<number | null>(null);
+  const convergeArmedRef = useRef(false);
+  const revealArmedRef = useRef(false);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  // Arm as soon as MY board shows a bust — independent of whether the match (and thus the real,
-  // confirmed result) has resolved yet; the SEQUENCE itself only starts once it has (below).
+  // Arm as soon as MY board locks, for ANY of the 3 real reasons — independent of the opponent;
+  // 'converge' itself reveals no data, so it never needed to wait on them (see header comment).
   useEffect(() => {
-    const me = props.playerId ? view?.boards?.[props.playerId] : undefined;
-    if (me?.bustedOn !== undefined) setDidBust(true);
-  }, [view, props.playerId]);
+    if (lockReason !== null) return; // already captured for this match
+    const reason = lockReasonOf(me);
+    if (reason) {
+      myLockedAtRef.current = Date.now();
+      setLockReason(reason);
+    }
+  }, [me, lockReason]);
 
-  // The sequence itself: only once didBust AND the server has actually confirmed the terminal
-  // result (see this section's own header comment for why not simply "1500ms after the bust").
+  // Schedule 'converge' at the reason-appropriate delay — exactly once per lock.
   useEffect(() => {
-    if (!didBust || armedRef.current) return;
-    if (!(props.lastOutcome && props.lastSettlement)) return;
-    armedRef.current = true;
-    timersRef.current.push(setTimeout(() => setResultPhase('converge'), RESULT_CONVERGE_MS));
-    timersRef.current.push(setTimeout(() => setResultPhase('reveal'), RESULT_REVEAL_MS));
-    timersRef.current.push(setTimeout(() => setResultPhase('final'), RESULT_FINAL_MS));
-  }, [didBust, props.lastOutcome, props.lastSettlement]);
+    if (lockReason === null || convergeArmedRef.current) return;
+    convergeArmedRef.current = true;
+    timersRef.current.push(setTimeout(() => setResultPhase('converge'), REASON_DELAY_MS[lockReason]));
+  }, [lockReason]);
+
+  // Once 'converge' lands, schedule 'reveal'/'final' either straight through (opponent already
+  // locked) or held until an effect observes their `locked` flip true — re-checked on every
+  // gameState update while held, firing exactly once via `revealArmedRef`.
+  useEffect(() => {
+    if (resultPhase !== 'converge' || revealArmedRef.current) return;
+    if (!opp?.locked) return; // still held — re-runs on the next gameState update
+    revealArmedRef.current = true;
+    timersRef.current.push(setTimeout(() => setResultPhase('reveal'), REVEAL_AFTER_CONVERGE_MS));
+    timersRef.current.push(setTimeout(() => setResultPhase('final'), REVEAL_AFTER_CONVERGE_MS + FINAL_AFTER_REVEAL_MS));
+  }, [resultPhase, opp?.locked]);
 
   // A new match starts its own sequence — reset the baseline so a prior match can't leak state in.
   // `prevMatchIdRef` starts at the sentinel `undefined` (not `null`) specifically so this does NOT
-  // fire on first mount — a real scenario (reconnecting mid-match, already locked from a bust) must
-  // let the bust-detection effect above correctly arm off gameState that's already present on the
-  // very first render, rather than this effect immediately stomping it back to false.
+  // fire on first mount — a real scenario (reconnecting mid-match, already locked) must let the
+  // lock-detection effect above correctly arm off gameState that's already present on the very
+  // first render, rather than this effect immediately stomping it back to null.
   const prevMatchIdRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     const prev = prevMatchIdRef.current;
     prevMatchIdRef.current = props.currentMatchId;
     if (prev !== undefined && props.currentMatchId && props.currentMatchId !== prev) {
-      setDidBust(false);
+      setLockReason(null);
       setResultPhase('idle');
-      armedRef.current = false;
+      myLockedAtRef.current = null;
+      convergeArmedRef.current = false;
+      revealArmedRef.current = false;
       timersRef.current.forEach(clearTimeout);
       timersRef.current = [];
     }
@@ -578,8 +632,6 @@ export function MinesHubScreen(props: GameHubScreenProps) {
   // Live at render time, never a captured snapshot — the count only ever reflects what the server
   // has ACTUALLY sent (may still be `undefined` for the opponent briefly after 'converge' fires, if
   // their own round somehow hadn't resolved yet; `GemCountRow` simply renders nothing until then).
-  const me = props.playerId ? view?.boards?.[props.playerId] : undefined;
-  const opp = props.opponentId ? view?.boards?.[props.opponentId] : undefined;
   const myGemCount = me?.uncovered?.length ?? 0;
   const oppGemCount = opp?.score ?? 0;
 
@@ -594,15 +646,33 @@ export function MinesHubScreen(props: GameHubScreenProps) {
       suppressResultOverlay
       ownBarResult
       // Ticket 2026-09-16#7 item 4: extends the shared `barSlideActive` (bar-shift + board-dim)
-      // with this new post-bust window — see `GameHubProps.resultConverge`'s own doc comment.
+      // with this new post-lock window — see `GameHubProps.resultConverge`'s own doc comment.
       resultConverge={resultPhase !== 'idle'}
-      // Only the bust path gets the new, precisely-timed sequence — every other match ending
-      // (opponent busts, I clear cleanly, the clock times out) keeps today's already-shipped fixed-
-      // beat `ownBarResult` mechanism exactly as before (this section's own header comment explains
-      // why that path isn't audited/built here). `RESULT_FINAL_MS` (not RESULT_CONVERGE_MS) since
-      // `holdResultMs` gates the WHOLE hold, matching the prototype's own 'final' landing beat.
-      holdResultMs={didBust ? RESULT_FINAL_MS : undefined}
-      oppGemRow={didBust && resultPhase !== 'idle' ? <GemCountRow count={oppGemCount} visible={resultPhase === 'reveal' || resultPhase === 'final'} /> : undefined}
+      // Ticket 2026-09-17#1 item 2: computed FRESH on every render, not a fixed constant. GameHub's
+      // own match-end effect reads whatever this equals at the EXACT render where the match truly
+      // ends (both players locked) — which, by construction, is no earlier than the moment the
+      // opponent's own `locked` becomes visible to us. A ref set by a separate "release" effect
+      // would race against that consuming effect (children's effects fire before a parent's own, so
+      // GameHub's read could run before this component's own effect had a chance to update a ref) —
+      // a pure per-render function sidesteps the race entirely: it's always correct for THIS render,
+      // whichever fires first. Two cases: still counting down to 'converge' → the full remaining
+      // time from my own lock; 'converge' has (or is about to) land → a flat 1520ms (820+700) from
+      // NOW, since whatever the actual wait for the opponent was, holdResultMs is only ever
+      // consumed once they're already done. Reduces to exactly 3020ms at elapsed=0 for a bust with
+      // the opponent already finished — today's exact old constant, a special case, not a rewrite.
+      holdResultMs={(() => {
+        if (lockReason === null || myLockedAtRef.current === null) return undefined;
+        const elapsed = Date.now() - myLockedAtRef.current;
+        const reasonDelay = REASON_DELAY_MS[lockReason];
+        const totalMs = REVEAL_AFTER_CONVERGE_MS + FINAL_AFTER_REVEAL_MS;
+        return elapsed < reasonDelay
+          ? Math.max(0, reasonDelay + totalMs - elapsed)
+          : totalMs;
+      })()}
+      // Ticket 2026-09-17#1 item 2: `resultPhase` alone is now sufficient — it's no longer possible
+      // for `resultPhase` to be non-'idle' without a genuine lock having armed it, so the old
+      // `didBust &&` prefix (now generalized to every lock reason, not just bust) was redundant.
+      oppGemRow={resultPhase !== 'idle' ? <GemCountRow count={oppGemCount} visible={resultPhase === 'reveal' || resultPhase === 'final'} /> : undefined}
       // Ticket 2026-09-17#1 item 3: live, unconditional — matches the prototype's own `minesGems`
       // binding directly to the opened-safe-tile count, no result-state involvement at all.
       // `GemCountRow`'s own `count <= 0 → null` already gives "fades in with the first gem" for
