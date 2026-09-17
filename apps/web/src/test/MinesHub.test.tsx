@@ -166,6 +166,21 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     expect(otherMineIconWrapper.className).toContain('absolute');
   });
 
+  // Ticket 2026-09-17#1 item 1: GemIcon (the 'safe' and 'autoSafe' cases — the two branches that
+  // never got the 2026-09-16#6 fix, since only the mine-hit branches had a halo sibling to prove
+  // the bug against at the time) needs the identical position:absolute wrapper — a bare, normal-
+  // flow flex item containing a percentage-width SVG stretches to the tile's full width in
+  // Chromium, leaving nothing for justify-content:center to center, so the icon drifts off-center.
+  it("item 1: the gem icon wrapper is position:absolute on both a tapped-open tile and a ghosted auto-revealed one", () => {
+    render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [0], locked: true, bustedOn: 10, mines: [10] }), legalMoves: asLegal([]) })} />);
+    // 'safe' (cell 0): halo svg first, then the gem icon svg — grandparent is the wrapper div.
+    const safeIconWrapper = screen.getByTestId('cell-0').querySelectorAll('svg')[1].parentElement?.parentElement as HTMLElement;
+    expect(safeIconWrapper.className).toContain('absolute');
+    // 'autoSafe' (any untouched, non-mine tile once locked — e.g. cell 2): no halo, one svg.
+    const autoSafeIconWrapper = screen.getByTestId('cell-2').querySelector('svg')?.parentElement?.parentElement as HTMLElement;
+    expect(autoSafeIconWrapper.className).toContain('absolute');
+  });
+
   // Ticket 2026-09-16#6 item 3: the hit tile's bomb halo + icon bounce (rcMineJump) — the other
   // exposed mines and every safe tile stay still (matches the prototype's own `hit`-only gating).
   it('item 3: the hit tile\'s bomb halo and icon carry the rcMineJump bounce; other exposed mines don\'t', () => {
@@ -559,5 +574,19 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // Ticket 2026-09-17#1 item 3: the player's own gem-count row is now live — visible DURING an
+  // active, still-in-progress round (no lock, no bust, no result phase at all), matching the
+  // prototype's own `minesGems` binding directly to the opened-safe-tile count. Previously gated
+  // behind `didBust`, so it only ever appeared after the round had already ended.
+  it("item 3: the player's own gem row is live — visible mid-round, well before any lock or result", () => {
+    render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [0, 1, 2] }), legalMoves: asLegal([3, 4, 5]) })} />);
+    const ownBar = screen.getByTestId('hub-slot-own');
+    const ownGemWrapper = within(ownBar).getByTestId('mines-gem-row');
+    expect(ownGemWrapper.style.opacity).toBe('1');
+    expect(ownBar.querySelectorAll('svg[viewBox="0 0 48 44"]')).toHaveLength(3);
+    // The opponent's row stays absent — no result sequence has armed at all (no bust yet).
+    expect(within(screen.getByTestId('hub-slot-opponent')).queryByTestId('mines-gem-row')).toBeNull();
   });
 });
