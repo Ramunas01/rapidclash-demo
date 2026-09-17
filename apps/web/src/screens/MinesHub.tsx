@@ -60,13 +60,35 @@ function tileBg(kind: CellKind, light: boolean): string {
   }
 }
 
+// Ticket 2026-09-17#2 item 1: D24's own fix (wrapping the icon in `absolute inset-0 flex
+// items-center justify-center`) recurs one level deeper — that wrapper measures dead-center, but
+// its child (a motion.div containing a percentage-width SVG) is ITSELF still a bare, normal-flow
+// flex item with the SAME ambiguous-sizing content, so the bug reappears one layer down. Empirical
+// fix (verified against the live deployed page, not a synthetic repro — see this session's own
+// docs for why a synthetic one gave a false negative): eliminate every intermediate flex-item
+// layer. The icon is now a `motion.svg` directly, `position:absolute` with NO offsets — it relies
+// on the TILE BUTTON's own `flex items-center justify-center` for "static position" centering,
+// which only works because the icon is a DIRECT CHILD of that flex container; any wrapper
+// reintroduced between them (flex or not) breaks this. Halos get the identical treatment (drop the
+// wrapper, `position:absolute` straight on the halo SVG) — they were never animated, so no motion
+// component needed there. `opacity` still carries the STEADY-STATE target (1, or 0.26 for a dimmed
+// non-hit mine) — Framer's own `animate` now targets it directly (not a nested-multiplication
+// trick through a wrapper's own separate 0→1 fade).
+
 /** The faceted gem, lines 508-516 — a revealed safe tile. Exact path data, not approximated. */
 // Ticket 2026-09-16#6 item 2: `opacity` mirrors `MineIcon`'s own shape — 1 for a tile you actually
 // tapped, 0.26 for a safe tile auto-revealed on bust (never tapped). Full opacity was previously
 // the only state this ever rendered at (the prop is new; every existing call site now passes 1).
 function GemIcon({ opacity }: { opacity: number }) {
   return (
-    <svg viewBox="0 0 48 44" width="62%" className="block" style={{ opacity }}>
+    <motion.svg
+      viewBox="0 0 48 44"
+      width="62%"
+      className="absolute block"
+      initial={{ opacity: 0, scale: 0.4 }}
+      animate={{ opacity, scale: 1 }}
+      transition={REVEAL_POP_TRANSITION}
+    >
       <path d="M24 43 L2 16 L11 3 L37 3 L46 16 Z" fill="#16C447" />
       <path d="M24 43 L2 16 L17 16 Z" fill="#22DD55" />
       <path d="M24 43 L17 16 L31 16 Z" fill="#3BF06B" />
@@ -74,7 +96,7 @@ function GemIcon({ opacity }: { opacity: number }) {
       <path d="M2 16 L11 3 L17 16 Z" fill="#4CF97A" />
       <path d="M17 16 L11 3 L24 3 L31 16 Z" fill="#2AE95E" />
       <path d="M31 16 L24 3 L37 3 L46 16 Z" fill="#5DFB88" />
-    </svg>
+    </motion.svg>
   );
 }
 
@@ -83,7 +105,7 @@ function GemIcon({ opacity }: { opacity: number }) {
  *  tapped, so it always gets the halo). */
 function GemHalo() {
   return (
-    <svg viewBox="0 0 48 44" width="62%" className="block" style={{ filter: 'blur(3.5px)' }}>
+    <svg viewBox="0 0 48 44" width="62%" className="pointer-events-none absolute block" style={{ filter: 'blur(3.5px)' }}>
       <path d="M24 43 L2 16 L11 3 L37 3 L46 16 Z" fill="#3CF06E" />
     </svg>
   );
@@ -91,10 +113,24 @@ function GemHalo() {
 
 /** The spiky mine, lines 489-503 — a revealed mine (either the one that busted you, or one of
  *  the other two exposed once you're locked). `opacity` mirrors line 3700's `bombOp`: 1 for the
- *  hit tile, 0.26 for the others. */
-function MineIcon({ opacity }: { opacity: number }) {
+ *  hit tile, 0.26 for the others. `animation` (ticket 2026-09-16#6 item 3): the hit tile's own
+ *  `rcMineJump` bounce — applied directly here now that there's no separate CSS-animated wrapper
+ *  layer to carry it (that layer was itself one of the flex-item wrappers item 1 eliminates).
+ *  Coexists with Framer's own `animate` on the SAME element (both touch `transform` briefly during
+ *  the ~300ms reveal-pop, before Framer's own control of it settles) — a known, accepted overlap;
+ *  see this ticket's own PR description for why the alternative (a separate wrapper) isn't safe
+ *  here without breaking the centering fix this item exists to make. */
+function MineIcon({ opacity, animation }: { opacity: number; animation?: string }) {
   return (
-    <svg viewBox="0 0 48 48" width="66%" className="block" style={{ opacity }}>
+    <motion.svg
+      viewBox="0 0 48 48"
+      width="66%"
+      className="absolute block"
+      initial={{ opacity: 0, scale: 0.4 }}
+      animate={{ opacity, scale: 1 }}
+      transition={REVEAL_POP_TRANSITION}
+      style={animation ? { animation } : undefined}
+    >
       <g fill="#3A3E46">
         <rect x="21.5" y="2" width="5" height="9" rx="2.5" />
         <rect x="21.5" y="37" width="5" height="9" rx="2.5" />
@@ -110,19 +146,21 @@ function MineIcon({ opacity }: { opacity: number }) {
       <circle cx="18.5" cy="18" r="4.6" fill="#4E525C" opacity="0.75" />
       <path d="M27 11 L21.5 22 L26.5 23 L20 37 L27 24.5 L22.5 23.5 Z" fill="#FF8A1E" />
       <path d="M26 13.5 L22.8 22.4 L26.2 23.2 L22 33 L26 24.6 L23.3 23.9 Z" fill="#FFD23D" />
-    </svg>
+    </motion.svg>
   );
 }
 
 /** The mine's glow halo, lines 475-487 — shown only on the tile that actually busted you (line
- *  3699, `bombHaloOp: hit ? 1 : 0`). */
-function MineHalo() {
+ *  3699, `bombHaloOp: hit ? 1 : 0`). `animation`: the same `rcMineJump` bounce as `MineIcon`
+ *  above — the prototype applies it to both the bomb halo AND the bomb icon SVGs identically
+ *  (`:475`/`:488`). No Framer element here (halos are never animated on reveal), so no overlap. */
+function MineHalo({ animation }: { animation?: string }) {
   return (
     <svg
       viewBox="0 0 48 48"
       width="66%"
-      className="block"
-      style={{ filter: 'blur(3.5px) drop-shadow(0 0 3px rgba(255,60,85,0.85))' }}
+      className="pointer-events-none absolute block"
+      style={{ filter: 'blur(3.5px) drop-shadow(0 0 3px rgba(255,60,85,0.85))', animation }}
     >
       <g fill="#FF3E5E">
         <rect x="21.5" y="2" width="5" height="9" rx="2.5" />
@@ -148,80 +186,44 @@ function MineHalo() {
 // byte-identical transition string). Our `MineTileContent` used to just conditionally render the
 // icon with no transition at all — instant appear. (The tile's own `transform:scale({{t.scale}})`,
 // `:474`, is very likely inert in the prototype itself — `t.scale` is a constant `1`, never changes
-// — so it's not ported; only the icon's own reveal pop is real.) Wrapping the icon (not touching its
-// own `opacity` prop, which is a STEADY-STATE target, not a transition) in a `motion.div` composes
-// cleanly: CSS opacity is multiplicative across nested elements, so a 0→1 wrapper animation times
-// MineIcon's own constant 0.26 lands exactly on 0→0.26, the real target, with no extra plumbing.
+// — so it's not ported; only the icon's own reveal pop is real.) Ticket 2026-09-17#2 item 1: GemIcon/
+// MineIcon are now `motion.svg` elements themselves (no wrapping `motion.div` — see that item's own
+// header comment above `GemIcon`) — `animate={{ opacity, scale: 1 }}` targets the real steady-state
+// opacity DIRECTLY now, not via the old wrapper-multiplication trick.
 const REVEAL_POP_TRANSITION = { duration: 0.3, ease: [0.34, 1.7, 0.5, 1] as const };
 // Ticket 2026-09-16#6 item 3: the hit tile's bounce (`Full Spec.html:3702`, `bombAnim: hit ?
 // 'rcMineJump 4000ms cubic-bezier(0.32,0.72,0.4,1) 1 both' : 'none'`) — applies to BOTH the bomb
 // halo and bomb icon on the busted tile specifically, never the other exposed mines.
 const BOMB_JUMP_ANIM = 'rcMineJump 4000ms cubic-bezier(0.32,0.72,0.4,1) 1 both';
 function MineTileContent({ kind }: { kind: CellKind }) {
-  // Ticket 2026-09-17#1 item 1: `GemIcon` (both branches below) needs the SAME `absolute inset-0
-  // flex items-center justify-center` wrapper `MineIcon`'s 'mine'/'bustedOn' branches already use —
-  // empirically proven (not just reasoned) that a bare, normal-flow flex child whose content is a
-  // percentage-width SVG hits a real CSS ambiguity (the item's size depends on the percentage, the
-  // percentage's resolution depends on the item's size) that Chromium resolves by stretching the
-  // flex item to the tile's full width, leaving `justify-content:center` nothing to center — the
-  // SVG then sits flush-left instead of dead-center, exactly the drift in Designer's screenshot.
-  // `position:absolute` resolves the SVG's percentage width against the tile's own definite size
-  // instead, sidestepping the ambiguity entirely — same reason `MineIcon` already needed it.
+  // Ticket 2026-09-17#2 item 1: NO wrapper divs — `GemIcon`/`MineIcon`/`GemHalo`/`MineHalo` are all
+  // direct children of the tile button now, each `position:absolute` on their own root SVG (see
+  // the block comment above `GemIcon`'s own definition for the full empirical reasoning). DOM order
+  // still determines paint order between two `position:absolute` siblings with `z-index:auto`
+  // (2026-09-16#6) — halo first, icon second, so the icon paints on top.
   if (kind === 'safe') {
     return (
       <>
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <GemHalo />
-        </div>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <motion.div initial={{ opacity: 0, scale: 0.4 }} animate={{ opacity: 1, scale: 1 }} transition={REVEAL_POP_TRANSITION}>
-            <GemIcon opacity={1} />
-          </motion.div>
-        </div>
+        <GemHalo />
+        <GemIcon opacity={1} />
       </>
     );
   }
   if (kind === 'autoSafe') {
-    return (
-      <div className="absolute inset-0 flex items-center justify-center">
-        <motion.div initial={{ opacity: 0, scale: 0.4 }} animate={{ opacity: 1, scale: 1 }} transition={REVEAL_POP_TRANSITION}>
-          <GemIcon opacity={0.26} />
-        </motion.div>
-      </div>
-    );
+    return <GemIcon opacity={0.26} />;
   }
   if (kind === 'mine') {
     // Ticket 2026-09-16#6 item 1: position:absolute, matching the prototype's own bomb-icon SVG
     // (`:488`, always position:absolute) — no halo sibling exists for this kind, so this is a
     // harmless, literal port here, not a fix (the fix that actually matters is the `bustedOn`
     // branch below, where a halo sibling is present).
-    return (
-      <div className="absolute inset-0 flex items-center justify-center">
-        <motion.div initial={{ opacity: 0, scale: 0.4 }} animate={{ opacity: 1, scale: 1 }} transition={REVEAL_POP_TRANSITION}>
-          <MineIcon opacity={0.26} />
-        </motion.div>
-      </div>
-    );
+    return <MineIcon opacity={0.26} />;
   }
   if (kind === 'bustedOn') {
     return (
       <>
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center" style={{ animation: BOMB_JUMP_ANIM }}>
-          <MineHalo />
-        </div>
-        {/* Ticket 2026-09-16#6 item 1 (the real fix): position:absolute here, matching the halo
-            wrapper above — CSS paints a positioned element above a static sibling regardless of
-            DOM order (a genuine stacking-context mechanic, empirically confirmed by Advisor's own
-            repro), which is why the halo was painting over this icon despite already being first
-            in the JSX. Item 3's bounce lives on this same OUTER, CSS-animated wrapper rather than
-            directly on the Framer-driven pop `motion.div` nested inside it — putting a raw CSS
-            `animation` and Framer's own `animate`-driven transform on the identical element would
-            fight over the same `transform` property; two separate layers compose cleanly instead. */}
-        <div className="absolute inset-0 flex items-center justify-center" style={{ animation: BOMB_JUMP_ANIM }}>
-          <motion.div initial={{ opacity: 0, scale: 0.4 }} animate={{ opacity: 1, scale: 1 }} transition={REVEAL_POP_TRANSITION}>
-            <MineIcon opacity={1} />
-          </motion.div>
-        </div>
+        <MineHalo animation={BOMB_JUMP_ANIM} />
+        <MineIcon opacity={1} animation={BOMB_JUMP_ANIM} />
       </>
     );
   }
@@ -525,12 +527,14 @@ const FINAL_AFTER_REVEAL_MS = 700;
  *  (this is a SEPARATE small component, not a reuse of `GemIcon`, since the count-row instance
  *  never needs `GemIcon`'s opacity prop — deliberately not adding an unused parameter). Capped at
  *  `Math.min(count, 22)` (`:3718`/`:3785`, confirmed both cap identically), wrapped, `max-height`
- *  clipped at 38px (`playGemStripH`/`oppGemRowOp`'s own citation) — a deliberate deviation from the
- *  prototype's own `flex:1 1 auto` fill, see `GameHubProps.oppGemRow`'s own doc comment for why.
- *  `transitionMs` (ticket 2026-09-17#1 item 3): the two rows use DIFFERENT prototype-cited values
- *  — the opponent's own `oppGemRowOp` transition is `320ms` (`:448`), the player's own
- *  `playGemStripOp` is `280ms` (`:674`) — not the same number copied twice, confirmed by re-reading
- *  both citations directly rather than assuming symmetry. */
+ *  clipped at 38px (`playGemStripH`/`oppGemRowOp`'s own citation). Ticket 2026-09-17#2 item 2: no
+ *  `max-width` — the prototype's own citation has none (just `flex:1 1 auto`), and now that the
+ *  wrapper actually gets real room to grow (its parent span is `flex-1`, not `shrink-0` — see
+ *  `GameHubProps.oppGemRow`'s own doc comment), an inline cap here would just fight that growth for
+ *  no reason. `transitionMs` (ticket 2026-09-17#1 item 3): the two rows use DIFFERENT
+ *  prototype-cited values — the opponent's own `oppGemRowOp` transition is `320ms` (`:448`), the
+ *  player's own `playGemStripOp` is `280ms` (`:674`) — not the same number copied twice, confirmed
+ *  by re-reading both citations directly rather than assuming symmetry. */
 function GemCountRow({ count, visible, transitionMs = 320 }: { count: number; visible: boolean; transitionMs?: number }) {
   if (count <= 0) return null;
   const shown = Math.min(count, 22);
@@ -538,7 +542,7 @@ function GemCountRow({ count, visible, transitionMs = 320 }: { count: number; vi
     <div
       data-testid="mines-gem-row"
       className="flex flex-wrap content-center gap-[2px] overflow-hidden"
-      style={{ maxWidth: 90, maxHeight: 38, opacity: visible ? 1 : 0, transition: `opacity ${transitionMs}ms ease` }}
+      style={{ maxHeight: 38, opacity: visible ? 1 : 0, transition: `opacity ${transitionMs}ms ease` }}
     >
       {Array.from({ length: shown }, (_, i) => (
         <svg key={i} viewBox="0 0 48 44" width="17" className="block shrink-0">

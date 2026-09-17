@@ -156,14 +156,15 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
   // halo sibling, which already was) — otherwise the halo, being positioned, paints ABOVE the
   // icon regardless of DOM order (a CSS stacking-context mechanic, not a DOM-order bug). The
   // non-hit exposed mine gets the same treatment too (harmless there, no halo sibling exists).
-  it('item 1: the bomb icon wrapper is position:absolute on both the hit tile and other exposed mines', () => {
+  it('item 1: the bomb icon is position:absolute on both the hit tile and other exposed mines', () => {
     render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [], locked: true, bustedOn: 10, mines: [10, 20] }), legalMoves: asLegal([]) })} />);
-    // Structure: <div class="absolute..."><motion.div (classless)><svg/></motion.div></div> — the
-    // svg's grandparent (not immediate parent) is the actual positioned/animated wrapper div.
-    const hitIconWrapper = screen.getByTestId('cell-10').querySelectorAll('svg')[1].parentElement?.parentElement as HTMLElement;
-    expect(hitIconWrapper.className).toContain('absolute');
-    const otherMineIconWrapper = screen.getByTestId('cell-20').querySelector('svg')?.parentElement?.parentElement as HTMLElement;
-    expect(otherMineIconWrapper.className).toContain('absolute');
+    // Ticket 2026-09-17#2 item 1: no wrapper divs at all now — the icon IS a motion.svg with
+    // position:absolute directly on itself (a DIRECT child of the tile's flex container), relying
+    // on CSS "static position" centering rather than an intermediate wrapper's own centering.
+    const hitIcon = screen.getByTestId('cell-10').querySelectorAll('svg')[1] as unknown as SVGElement;
+    expect(hitIcon.getAttribute('class')).toContain('absolute');
+    const otherMineIcon = screen.getByTestId('cell-20').querySelector('svg') as unknown as SVGElement;
+    expect(otherMineIcon.getAttribute('class')).toContain('absolute');
   });
 
   // Ticket 2026-09-17#1 item 1: GemIcon (the 'safe' and 'autoSafe' cases — the two branches that
@@ -171,14 +172,14 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
   // the bug against at the time) needs the identical position:absolute wrapper — a bare, normal-
   // flow flex item containing a percentage-width SVG stretches to the tile's full width in
   // Chromium, leaving nothing for justify-content:center to center, so the icon drifts off-center.
-  it("item 1: the gem icon wrapper is position:absolute on both a tapped-open tile and a ghosted auto-revealed one", () => {
+  it("item 1: the gem icon is position:absolute on both a tapped-open tile and a ghosted auto-revealed one", () => {
     render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [0], locked: true, bustedOn: 10, mines: [10] }), legalMoves: asLegal([]) })} />);
-    // 'safe' (cell 0): halo svg first, then the gem icon svg — grandparent is the wrapper div.
-    const safeIconWrapper = screen.getByTestId('cell-0').querySelectorAll('svg')[1].parentElement?.parentElement as HTMLElement;
-    expect(safeIconWrapper.className).toContain('absolute');
+    // 'safe' (cell 0): halo svg first, then the gem icon svg — both now direct absolute children.
+    const safeIcon = screen.getByTestId('cell-0').querySelectorAll('svg')[1] as unknown as SVGElement;
+    expect(safeIcon.getAttribute('class')).toContain('absolute');
     // 'autoSafe' (any untouched, non-mine tile once locked — e.g. cell 2): no halo, one svg.
-    const autoSafeIconWrapper = screen.getByTestId('cell-2').querySelector('svg')?.parentElement?.parentElement as HTMLElement;
-    expect(autoSafeIconWrapper.className).toContain('absolute');
+    const autoSafeIcon = screen.getByTestId('cell-2').querySelector('svg') as unknown as SVGElement;
+    expect(autoSafeIcon.getAttribute('class')).toContain('absolute');
   });
 
   // Ticket 2026-09-16#6 item 3: the hit tile's bomb halo + icon bounce (rcMineJump) — the other
@@ -187,10 +188,11 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [], locked: true, bustedOn: 10, mines: [10, 20] }), legalMoves: asLegal([]) })} />);
     const hitCell = screen.getByTestId('cell-10');
     const [haloSvg, iconSvg] = hitCell.querySelectorAll('svg');
-    expect(haloSvg.parentElement?.style.animation).toContain('rcMineJump'); // halo wrapper is the direct parent
-    expect(iconSvg.parentElement?.parentElement?.style.animation).toContain('rcMineJump'); // icon wrapper is the grandparent
-    const otherMineIconWrapper = screen.getByTestId('cell-20').querySelector('svg')?.parentElement?.parentElement as HTMLElement;
-    expect(otherMineIconWrapper.style.animation).toBeFalsy();
+    // Ticket 2026-09-17#2 item 1: no wrapper divs — the animation is inline on the SVGs' own style now.
+    expect((haloSvg as unknown as SVGElement).style.animation).toContain('rcMineJump');
+    expect((iconSvg as unknown as SVGElement).style.animation).toContain('rcMineJump');
+    const otherMineIcon = screen.getByTestId('cell-20').querySelector('svg') as unknown as SVGElement;
+    expect(otherMineIcon.style.animation).toBeFalsy();
   });
 
   // Ticket 2026-09-16#5 item 1: the duplicate You/Opponent status row (and its own "N safe"/
@@ -345,11 +347,11 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
   it('item 5: the gem/mine icon mounts as a reveal pop (opacity 0, scale 0.4), not an instant appear', () => {
     render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [0], bustedOn: 5, mines: [5] }, {}, {}), legalMoves: asLegal([]) })} />);
     // cell-0's SVGs, in DOM order: GemHalo's (unpopped, its own separate opacity-only fade), then
-    // the pop-wrapped GemIcon's — the second one, whose parent is the motion.div reveal-pop wrapper.
+    // GemIcon's — a motion.svg now, so the reveal-pop inline style lives on the svg itself.
     const svgs = screen.getByTestId('cell-0').querySelectorAll('svg');
-    const gemPop = svgs[1].parentElement as HTMLElement;
-    expect(gemPop.style.opacity).toBe('0');
-    expect(gemPop.style.transform).toContain('scale(0.4)');
+    const gemIcon = svgs[1] as unknown as SVGElement;
+    expect(gemIcon.style.opacity).toBe('0');
+    expect(gemIcon.style.transform).toContain('scale(0.4)');
   });
 
   it('Result win: shared 0.5/2/0.5 bar animation on the own bar only — keeps the username, "You Win" alongside, then settles to the green outline (mirrors CoinflipHub.test.tsx)', async () => {
