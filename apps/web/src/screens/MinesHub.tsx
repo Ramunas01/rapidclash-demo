@@ -400,7 +400,16 @@ function MinesBoard({ playerId, gameState, legalMoves, onMove, phase, serverCloc
               whileTap={clickable ? { scale: 0.92 } : undefined}
               className={cn(
                 'relative flex aspect-square items-center justify-center rounded-[9px]',
-                clickable ? 'cursor-pointer' : kind === 'covered' ? 'cursor-not-allowed opacity-70' : 'cursor-default',
+                // Ticket 2026-09-17#7 (D29): `opacity-70` used to pair with the disabled state here,
+                // but the disabled state fires on EVERY tap (App.tsx's shared handleMakeMove clears
+                // legalMoves right after a successful submit, for every hub, not Mines-specific) —
+                // with legalMoves briefly empty, every other still-covered tile goes !clickable for
+                // that whole round-trip window, so all 24 of them flickered dim on every tap, safe or
+                // mine. `disabled={!clickable}` (functional gate — still correctly blocks a double-
+                // tap mid-round-trip) stays; only the visible dim, which was a false-positive signal
+                // with no other legitimate state to protect (a 'covered' tile only ever exists while
+                // actively, un-locked mid-round — see `cellKind()`), is removed.
+                clickable ? 'cursor-pointer' : kind === 'covered' ? 'cursor-not-allowed' : 'cursor-default',
               )}
               // Ticket 2026-09-16#5 item 6: the cited `transition:background 200ms ease` (`:474`) —
               // Tailwind's generic `transition-colors` utility defaulted to this project's unmodified

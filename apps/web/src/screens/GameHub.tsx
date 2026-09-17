@@ -27,7 +27,7 @@ import { CurrencyIcon } from '../components/hub-chrome/CurrencyPicker.js';
 import { useCurSel } from '../lib/currency.js';
 import { useTheme } from '../lib/theme.js';
 import { play, installUnlockOnFirstGesture } from '../lib/sound.js';
-import { outlineClasses, outlineForOutcome, replaysOf, useDelayedFlag, useWinReveal, WIN_FILL_IN_MS, type Verdict } from './hub-shared/slotReveal.js';
+import { outlineClasses, outlineForOutcome, replaysOf, useDelayedFlag, useWinReveal, WIN_FILL_IN_MS, WIN_HOLD_MS, WIN_FADE_OUT_MS, type Verdict } from './hub-shared/slotReveal.js';
 
 /** How long after the result phase starts before the own-bar verdict lights (ms). */
 const BAR_VERDICT_BEAT_MS = 250;
@@ -863,13 +863,15 @@ export function GameHub(props: GameHubProps) {
               // winning history pill), NOT the shared --rc-green — scoped by gameId, same shape as
               // lossRingColor above. Literal, not a --rc-* token: unlike --rc-loss this color has no
               // other consumer outside Dice, so there's nothing else for a shared token to serve.
-              // Ticket 2026-09-16#7 item 4 (correction to an earlier draft of this same ticket,
-              // caught before anything was built on it): Mines' own win colour is #22C55E, NOT
-              // Dice's #16A34A — Mines has no per-number recolor at all; its only win tell is this
-              // shared ring/fill mechanism, whose own literal (Full Spec.html:3789) is unambiguously
-              // #22C55E. Do not conflate the two games' deliberately-different pairs.
-              winRingColor={gameId === 'dice' ? '#16A34A' : gameId === 'mines' ? '#22C55E' : undefined}
-              winFillColor={gameId === 'dice' ? '#16A34A' : gameId === 'mines' ? '#22C55E' : undefined}
+              // Ticket 2026-09-17#6 (D28): Mines' own win colour is now #16A34A too — a DELIBERATE
+              // reversal of 2026-09-16#7's #22C55E (which correctly matched the prototype's own
+              // literal for this specific mechanism at the time). D28 explicitly asks for #16A34A
+              // instead, citing the prototype's own #22C55E before overriding it — an informed
+              // decision, applied as directed, not a re-litigation of the earlier verification. Mines
+              // and Dice now share one literal; RPS/Blackjack/Chess/Coinflip are untouched, still on
+              // the shared generic --rc-green token (this does not become a platform-wide unification).
+              winRingColor={gameId === 'dice' || gameId === 'mines' ? '#16A34A' : undefined}
+              winFillColor={gameId === 'dice' || gameId === 'mines' ? '#16A34A' : undefined}
               // Ticket 2026-09-16#7 item 4: Mines-only — the shared outlineClasses() had no
               // per-verdict draw override until now (win/lose already did). Mines' own draw literal
               // (Full Spec.html:3787) is #FF8A1E — no other game currently needs this overridden.
@@ -1223,22 +1225,38 @@ function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdi
       >
         {label}
       </span>
-      {/* "You Win" alongside the username during the win fill; fades in/out with the green, then unmounts. */}
+      {/* "you won" — Ticket 2026-09-17#6 (D28) items 2-4, fixing all three at once:
+          Item 2 (position): the citation has this as a SEPARATE position:absolute span at the
+          bar's own top level (right:18px; top:50%; transform:translateY(-50%)), not a flex-row
+          sibling — pulled out of the row entirely, matching the fill layer's own sibling approach.
+          Item 3 (content): was "You Win" (title case) PLUS Tailwind's `uppercase` class forcing it
+          to render as "YOU WIN" regardless of the JSX string — both needed to go; the citation wants
+          lowercase "you won". Font swapped to the citation's exact values: bold (not extrabold),
+          16px (not text-sm/14px), letter-spacing 0.6px (not tracking-wide), ARIAL (this file's own
+          shared constant, already used identically for the VS label — not a second literal).
+          Item 4 (timing): the citation's own rcWinText keyframe (Full Spec.html:70) holds opacity 0
+          through 8% of the 3000ms total (240ms) before ramping to 1 by 20% (600ms) — a deliberate
+          stagger behind the fill's own faster ramp (rcWinFill hits 1 by 16.7%/501ms — already
+          matching WIN_FILL_IN_MS=500, no change needed there). Fade-out timing is unchanged for both
+          (both hold to 83.4%, fade to 0 by 100%). A single keyframe-array + times animation (rather
+          than the fill's simpler fillShown-toggle) hits these exact cited percentages directly. */}
       {contentVisible && (
         <motion.span
           data-testid="hub-slot-own-verdict"
           initial={{ opacity: 0 }}
-          animate={{ opacity: fillShown ? 1 : 0 }}
-          transition={{ duration: WIN_FILL_IN_MS / 1000, ease: 'easeOut' }}
-          className="relative z-10 shrink-0 text-sm font-extrabold uppercase tracking-wide text-white"
+          animate={{ opacity: [0, 0, 1, 1, 0] }}
+          transition={{ times: [0, 0.08, 0.2, 0.834, 1], duration: (WIN_FILL_IN_MS + WIN_HOLD_MS + WIN_FADE_OUT_MS) / 1000, ease: 'easeOut' }}
+          className="pointer-events-none absolute z-[1] font-bold text-white"
+          style={{ right: 18, top: '50%', transform: 'translateY(-50%)', fontFamily: ARIAL, fontSize: 16, letterSpacing: '0.6px' }}
         >
-          You Win
+          you won
         </motion.span>
       )}
       {/* Ticket 2026-09-16#7 item 5 / 2026-09-17#2 item 2: see `OpponentSlot`'s matching comment
-          above (`flex-1 min-w-0`, not `shrink-0`) — wrapped the same way `aside` is here too, so it
-          sits above the win-fill layer. */}
-      {gemRow && <span className="relative z-10 min-w-0 flex-1">{gemRow}</span>}
+          above (`flex-1 min-w-0`). Ticket 2026-09-17#6 (D28) item 1: dropped `relative z-10` — the
+          win-fill layer is z-1, so z-10 put the gem strip ABOVE it instead of below (Designer's own
+          diagnosis, confirmed by direct read). `min-w-0 flex-1` is unrelated to stacking and stays. */}
+      {gemRow && <span className="min-w-0 flex-1">{gemRow}</span>}
       {aside && <span className="relative z-10 flex shrink-0 items-center gap-2">{aside}</span>}
       {/* Ticket 2026-09-17#3 item 2: see `OpponentSlot`'s matching comment above — same mechanism,
           mirrored to the OTHER side of the bar (`top:calc(100% + 6px)`, not `bottom`). */}

@@ -474,7 +474,7 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       // The bar runs the SAME shared component as Coinflip: green fill + "You Win" alongside the
       // username (never swapped out), settling to the green outline.
       await waitFor(() => {
-        expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you win/i);
+        expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you won/i);
       }, { timeout: 2000 });
       const ownBar = screen.getByTestId('hub-slot-own');
       expect(ownBar.querySelector('.bg-success')).not.toBeNull(); // green fill layer
@@ -718,7 +718,7 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
 
         // Just past FLIP_MS (~550) the shared win reveal begins on the bar.
         await act(async () => { await vi.advanceTimersByTimeAsync(120); });
-        expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you win/i);
+        expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you won/i);
       } finally {
         vi.useRealTimers();
       }
