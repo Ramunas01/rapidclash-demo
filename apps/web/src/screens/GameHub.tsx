@@ -369,6 +369,18 @@ interface GameHubProps extends GameHubScreenProps {
   oppGemTextVisible?: boolean;
   ownGemText?: string;
   ownGemTextVisible?: boolean;
+  /** Ticket 2026-09-17#4 item (dismiss): a tap anywhere in the game section (VS label, both bars,
+   *  the board, or the empty space around them — `hub-section-game`, `Full Spec.html:2451`'s own
+   *  overlay covers the same visual area) — dismisses a landed Mines result, returning the bars/
+   *  board to their pre-match resting state. Deliberately narrower than the prototype's own literal
+   *  mechanism: the prototype uses a truly page-wide overlay (z-index:6, covering the bottom nav
+   *  too) with a manual `getBoundingClientRect` check carving out the Play button specifically,
+   *  since Play sits underneath that same overlay. Our own `hub-section-game`/`hub-section-play` are
+   *  already separate sibling sections — Play is never covered by this handler in the first place,
+   *  so no such carve-out is needed, and unlike the prototype this never risks intercepting bottom-
+   *  nav/wallet taps. Mines' own handler no-ops unless `resultPhase === 'final'`. Undefined (every
+   *  hub but Mines) → byte-identical no-op, no handler attached. */
+  onSectionTap?(): void;
 }
 
 /** Ticket 2026-09-12: generalizes the #381 "tap-again to escalate" gesture beyond the hardcoded
@@ -403,7 +415,7 @@ function useNow(active: boolean): number {
  */
 export function GameHub(props: GameHubProps) {
   const {
-    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar, searchFloorMs = 2400, matchBarSlide, pinDark = false, highStakeCycle, resultConverge, oppGemRow, ownGemRow, oppGemText, oppGemTextVisible, ownGemText, ownGemTextVisible,
+    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar, searchFloorMs = 2400, matchBarSlide, pinDark = false, highStakeCycle, resultConverge, oppGemRow, ownGemRow, oppGemText, oppGemTextVisible, ownGemText, ownGemTextVisible, onSectionTap,
     token, playerId, username, avatarId = 'default', opponentId, opponentName, serverClockOffset = 0, balance, currentMatchId, gameState, events,
     legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
@@ -783,6 +795,7 @@ export function GameHub(props: GameHubProps) {
             data-testid="hub-section-game"
             aria-label={gameName}
             className="relative flex flex-col gap-3 px-4"
+            onClick={onSectionTap}
             ref={gameWrapRef}
             data-rc-gamewrap={barSlideEnabled ? '1' : undefined}
           >

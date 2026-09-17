@@ -517,7 +517,12 @@ function MinesPanel(args: GameAreaArgs) {
 //    locked — this file already accepted the same imprecision for the bust-only case before this
 //    ticket (arms fresh from "now"); this fix doesn't change that.
 type LockReason = 'bust' | 'cleared' | 'timeout';
-type ResultPhase = 'idle' | 'converge' | 'reveal' | 'final';
+// Ticket 2026-09-17#4 item (dismiss): 'closed' is a 5th phase, reachable only from 'final' via a
+// tap on the game section (`onSectionTap` below) — nothing schedules it automatically. Bar-shift/
+// board-dim/VS release "for free" because `resultConverge` (passed to <GameHub>, below) excludes
+// it; the gem-count captions/icon-strip need their own explicit treatment since they key off
+// `resultPhase` directly, not `resultConverge` — see each prop's own comment at the <GameHub> call.
+type ResultPhase = 'idle' | 'converge' | 'reveal' | 'final' | 'closed';
 const REASON_DELAY_MS: Record<LockReason, number> = { bust: 1500, cleared: 500, timeout: 500 };
 const REVEAL_AFTER_CONVERGE_MS = 820;
 const FINAL_AFTER_REVEAL_MS = 700;
@@ -651,7 +656,10 @@ export function MinesHubScreen(props: GameHubScreenProps) {
       ownBarResult
       // Ticket 2026-09-16#7 item 4: extends the shared `barSlideActive` (bar-shift + board-dim)
       // with this new post-lock window — see `GameHubProps.resultConverge`'s own doc comment.
-      resultConverge={resultPhase !== 'idle'}
+      // Ticket 2026-09-17#4 (dismiss): excludes the new 'closed' phase (alongside 'idle') so
+      // bar-shift, board-dim, and the VS label (all of which key off this prop, not `resultPhase`
+      // directly) release automatically once dismissed — no separate wiring needed for any of them.
+      resultConverge={resultPhase === 'converge' || resultPhase === 'reveal' || resultPhase === 'final'}
       // Ticket 2026-09-17#1 item 2: computed FRESH on every render, not a fixed constant. GameHub's
       // own match-end effect reads whatever this equals at the EXACT render where the match truly
       // ends (both players locked) — which, by construction, is no earlier than the moment the
@@ -676,7 +684,10 @@ export function MinesHubScreen(props: GameHubScreenProps) {
       // Ticket 2026-09-17#1 item 2: `resultPhase` alone is now sufficient — it's no longer possible
       // for `resultPhase` to be non-'idle' without a genuine lock having armed it, so the old
       // `didBust &&` prefix (now generalized to every lock reason, not just bust) was redundant.
-      oppGemRow={resultPhase !== 'idle' ? <GemCountRow count={oppGemCount} visible={resultPhase === 'reveal' || resultPhase === 'final'} /> : undefined}
+      // Ticket 2026-09-17#4 (dismiss): 'closed' ADDED to the visible allowlist — this strip stays
+      // populated after dismiss (Full Spec.html:3765, oppGemRowOp is 1 for mr === 'closed' too),
+      // opposite direction from the own-caption fix below (that one hides on dismiss, this doesn't).
+      oppGemRow={resultPhase !== 'idle' ? <GemCountRow count={oppGemCount} visible={resultPhase === 'reveal' || resultPhase === 'final' || resultPhase === 'closed'} /> : undefined}
       // Ticket 2026-09-17#1 item 3: live, unconditional — matches the prototype's own `minesGems`
       // binding directly to the opened-safe-tile count, no result-state involvement at all.
       // `GemCountRow`'s own `count <= 0 → null` already gives "fades in with the first gem" for
@@ -694,10 +705,24 @@ export function MinesHubScreen(props: GameHubScreenProps) {
       // :3780, same beat as its own icon row), the player's own shows from converge onward
       // (mGrown is true for the whole non-idle/non-closed window, :3781 — a real distinction
       // from the icon row, not a slot reused with different data).
+      // Ticket 2026-09-17#4/#5 (dismiss): the caption doesn't derive from `resultConverge` — it
+      // checks `resultPhase` directly, so it needs this correction of its own. `oppGemTextVisible`
+      // needs NO change: it's an explicit allowlist that never included 'closed', so it already,
+      // correctly, hides on dismiss by construction. `ownGemTextVisible` DOES need `'closed'`
+      // excluded — its "allow except idle" pattern would otherwise stay true through 'closed' too,
+      // and D27 is explicit the own caption fades out on dismiss.
       oppGemText={resultPhase !== 'idle' ? `${oppGemCount} gems` : undefined}
       oppGemTextVisible={resultPhase === 'reveal' || resultPhase === 'final'}
       ownGemText={resultPhase !== 'idle' ? `${myGemCount} gem${myGemCount === 1 ? '' : 's'}` : undefined}
-      ownGemTextVisible={resultPhase !== 'idle'}
+      ownGemTextVisible={resultPhase !== 'idle' && resultPhase !== 'closed'}
+      // Ticket 2026-09-17#4 (dismiss): a tap anywhere in the game section dismisses a landed
+      // result — see `GameHubProps.onSectionTap`'s own doc comment for the full scoping rationale
+      // (narrower than the prototype's page-wide overlay, by design). No-ops unless the result has
+      // actually landed ('final') — a tap during 'converge'/'reveal', or with no result at all, does
+      // nothing.
+      onSectionTap={() => {
+        if (resultPhase === 'final') setResultPhase('closed');
+      }}
       {...props}
     />
   );

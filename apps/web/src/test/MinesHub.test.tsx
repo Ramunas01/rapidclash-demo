@@ -685,6 +685,62 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     }
   });
 
+  // Ticket 2026-09-17#4/#5: tapping the game section dismisses a landed ('final') result — bar-
+  // shift/board-dim/VS release automatically (they key off `resultConverge`, redefined to exclude
+  // 'closed'), the own caption fades out (its own explicit exclusion), but the opponent's icon
+  // strip and caption BOTH stay exactly as they were (the icon strip gets 'closed' ADDED to its
+  // allowlist; the caption's allowlist already excluded 'closed' by construction). A tap before
+  // 'final' (mid-converge here) is a no-op — the sequence keeps running on its own schedule.
+  it("item (dismiss): tapping the game section at 'final' returns bars/board home while a tap before 'final' does nothing", async () => {
+    vi.useFakeTimers();
+    try {
+      const gameState = view(
+        { uncovered: [0], locked: true, bustedOn: 24 },
+        { locked: true, score: 1 },
+      );
+      const { rerender } = render(
+        <MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: asLegal([]) })} />,
+      );
+      rerender(
+        <MinesHubScreen
+          {...baseProps({
+            currentMatchId: null,
+            gameState,
+            lastOutcome: { type: 'win', winner: 'bob' },
+            lastSettlement: { delta: -10, newBalance: 990 },
+          })}
+        />,
+      );
+
+      // Mid-converge (well before 'final'): a tap does nothing — the sequence isn't dismissible yet.
+      await act(async () => { await vi.advanceTimersByTimeAsync(1550); });
+      expect(screen.getByTestId('hub-mines-panel').style.opacity).toBe('0.28');
+      fireEvent.click(screen.getByTestId('hub-section-game'));
+      expect(screen.getByTestId('hub-mines-panel').style.opacity).toBe('0.28'); // unchanged
+
+      // Reach 'final' (+820 reveal, +700 final = 1520ms further).
+      await act(async () => { await vi.advanceTimersByTimeAsync(1520); });
+      expect(screen.getByTestId('hub-match-vs').style.opacity).toBe('1');
+      expect(screen.getByTestId('hub-gem-text-own').style.opacity).toBe('1');
+      const oppGemWrapperFinal = within(screen.getByTestId('hub-slot-opponent')).getByTestId('mines-gem-row');
+      expect(oppGemWrapperFinal.style.opacity).toBe('1');
+      expect(screen.getByTestId('hub-gem-text-opponent').style.opacity).toBe('1');
+
+      // Tap dismisses: bar-shift/board-dim/VS release; own caption hides. The opponent's ICON STRIP
+      // stays exactly as it was ('closed' explicitly added to its own allowlist), but the
+      // opponent's CAPTION does hide — its allowlist ('reveal'/'final') never included 'closed' in
+      // the first place, so it resolves to hidden by construction, not by a new exclusion.
+      fireEvent.click(screen.getByTestId('hub-section-game'));
+      expect(screen.getByTestId('hub-mines-panel').style.opacity).toBe('1');
+      expect(screen.getByTestId('hub-match-vs').style.opacity).toBe('0');
+      expect(screen.getByTestId('hub-gem-text-own').style.opacity).toBe('0');
+      expect(oppGemWrapperFinal.style.opacity).toBe('1'); // unchanged — icon strip stays
+      expect(screen.getByTestId('hub-gem-text-opponent').style.opacity).toBe('0'); // caption hides
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // Ticket 2026-09-17#1 item 3: the player's own gem-count row is now live — visible DURING an
   // active, still-in-progress round (no lock, no bust, no result phase at all), matching the
   // prototype's own `minesGems` binding directly to the opened-safe-tile count. Previously gated
