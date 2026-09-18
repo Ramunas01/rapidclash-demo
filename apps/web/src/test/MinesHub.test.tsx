@@ -124,6 +124,24 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     expect(onPlay).not.toHaveBeenCalled(); // …with NO auto-play
   });
 
+  // Ticket 2026-09-18#1: a match starting (JOIN or PLAY, both flow through the same currentMatchId
+  // transition) scrolls the page back to the top — the shared GameHub effect, exercised here via
+  // Mines rather than duplicated per hub. Idle → no scroll; currentMatchId arriving → scrolls once.
+  it("ticket 2026-09-18#1: a match starting scrolls the page to the top (instant, not smooth)", () => {
+    const scrollToSpy = vi.fn();
+    window.scrollTo = scrollToSpy;
+    const { rerender } = render(<MinesHubScreen {...baseProps()} />);
+    expect(scrollToSpy).not.toHaveBeenCalled(); // idle — no match yet, no scroll
+
+    rerender(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [] }), legalMoves: asLegal(allCovered) })} />);
+    expect(scrollToSpy).toHaveBeenCalledWith({ top: 0, behavior: 'auto' });
+    expect(scrollToSpy).toHaveBeenCalledTimes(1);
+
+    // A re-render with the SAME currentMatchId does not re-fire (effect only fires on transition).
+    rerender(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [0] }), legalMoves: asLegal(allCovered) })} />);
+    expect(scrollToSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('In-match: the 5×5 board activates, and clicks are gated to server legalMoves → onMove(index)', () => {
     const onMakeMove = vi.fn();
     // Server says only square 5 is covered+legal right now.

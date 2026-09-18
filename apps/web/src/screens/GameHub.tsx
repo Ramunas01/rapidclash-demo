@@ -462,6 +462,16 @@ export function GameHub(props: GameHubProps) {
   useEffect(() => { setRevealDone(false); }, [currentMatchId]);
   const handleRevealComplete = useCallback(() => setRevealDone(true), []);
 
+  // Ticket 2026-09-18#1: JOIN/PLAY don't navigate (App.tsx's onMatchStart is an ordinary
+  // setScreen(...) state change, no URL change, no page load), so the browser never gets a chance
+  // to reset scroll on its own — whatever position the user had on a scrolled-down open-challenges
+  // list carries straight over onto the new game screen. Scoped narrowly to match-entry only (not
+  // every top-level navigation) per Owner's own explicit call — the broader policy question is
+  // deferred to Designer separately. `behavior: 'auto'` (instant), not smooth: the screen has
+  // already been replaced at this point, so animating a scroll over already-swapped content would
+  // look broken, not polished.
+  useEffect(() => { if (currentMatchId) window.scrollTo({ top: 0, behavior: 'auto' }); }, [currentMatchId]);
+
   // ── Games roster (drives the time control, related rail, and feed labels) ─────
   // A guest's curated surface is exactly one game (isGuest games are hidden anyway) — skip the
   // roster fetch and the cross-game ticker subscription entirely; coinflip has no time control.
