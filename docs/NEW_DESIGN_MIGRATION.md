@@ -262,7 +262,17 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 - **Races (24h / Weekly) + Leaderboards tab** — genuine new feature work (time-windowed leaderboard logic), sized separately from the lobby/stake-entry/play/result → single-screen-with-phases collapse.
 - **lobby / stake-entry / play / result → one screen, internal phases** — real architectural simplification (`App.tsx:1292-1317` today).
 
-## Status snapshot — 2026-09-17 (D01-D29 all shipped, merged, and deployed live at `rapidclash-00120-xrb`, fully closed — D26/D27/D28/D29 all independently re-verified against the actual diffs, not just PM's report; D28's shared win-fill/win-text specifically re-confirmed both via a real rendered-DOM dump (exact computed styles: `rgb(22,163,74)`=`#16A34A`, `right:18px; top:50%`, `Arial 16px 0.6px`, literal "you won") and a live-page screenshot injection, since it touches every game's shared bar, not just Mines) — supersedes all earlier snapshots in this section
+## Status snapshot — 2026-09-18 (D01-D29 all shipped, merged, and deployed live at `rapidclash-00120-xrb`, fully closed; a new, non-Designer item — 2026-09-18#1, Owner's own scroll-position report — investigated, ready to ticket, scope explicitly confirmed with Owner directly (narrow match-entry fix only, broader "every navigation" policy deliberately deferred)) — supersedes all earlier snapshots in this section
+
+**2026-09-18#1 — NEW, top item, ready to ticket. Owner/company-management feedback (not from Designer): JOINing a live challenge from a scrolled-down list leaves the viewport at its old position once the game screen swaps in, so the user can miss the match. Full detail: `ADVISOR_TO_PM.md` 2026-09-18#1.**
+
+- **Confirmed real, root cause precise.** The app is a single page with no internal scroll container — the whole document scrolls normally. JOIN doesn't change what's rendered by itself; the actual screen swap happens later in `App.tsx`'s `onMatchStart` handler via `setScreen(hubScreenFor(payload.gameId) ?? 'play')`, an ordinary React state change with no browser navigation to trigger a scroll reset. Confirmed this affects PLAY identically (same code path) — just far less visible, since PLAY is usually pressed from higher up on a hub's own screen.
+- **Fix, scoped narrowly per Owner's own explicit direction (not the broader "every navigation" version):** one new effect inside `GameHub.tsx` (the shared component every hub game renders through), keyed on `currentMatchId` transitioning to a new truthy value — `useEffect(() => { if (currentMatchId) window.scrollTo({top:0, behavior:'auto'}); }, [currentMatchId])`. Covers JOIN and PLAY identically since both flow through the same transition. There's already a precedent for exactly this shape of effect a few lines away in the same file.
+- **The broader question was raised to Owner directly, not decided unilaterally** — extending this to every top-level navigation is a common, low-risk SPA pattern I'd lean toward, but it touches every screen and Designer hasn't weighed in. Owner's own call: ship the narrow fix now, take the general policy to Designer separately on their own timeline.
+
+**Advisor next:** available, no open thread. **PM next:** dispatch — small, one new effect, no architecture change, Owner has already signed off on this exact scope.
+
+---
 
 **2026-09-17#7 — shipped in PR #644 (bundled with D28), deployed live at `rapidclash-00120-xrb` (confirmed independently via `gh pr view` + `git log` + `git show` against the diff, and `gcloud run services describe`). Designer's D29: the board darkens momentarily on every tile tap, before the tile reveals. Full detail: `ADVISOR_TO_PM.md` 2026-09-17#7.**
 
