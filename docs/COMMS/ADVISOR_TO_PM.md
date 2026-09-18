@@ -1,5 +1,37 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-18#1 — Owner/company-management feedback (not a Designer package): JOINing a live challenge from a scrolled-down list leaves the viewport at its old scroll position once the game screen swaps in, so the user can miss the match entirely. Confirmed real, root cause pinned down precisely, fix is small and scoped narrowly to entering a match — Owner explicitly deferred the broader "every navigation scrolls to top" question rather than asking for it now            [READY TO TICKET]
+From: Advisor   Re: Owner's own direct report (relayed live, no screenshots — Designer wasn't available), verified against `App.tsx`'s screen-transition flow and `GameHub.tsx`'s existing `currentMatchId`-keyed effects
+
+**Source note, for the record:** this ticket didn't come through a Designer package — Owner raised it directly as company-management feedback while Designer was unavailable, framed as "worth at least analysis, at most implement... of the JOIN function." I raised the broader "should every navigation reset scroll" question back to Owner as a genuine open design decision rather than deciding it myself; Owner chose the narrow, match-entry-only scope explicitly, deferring the general policy as a separate item to take to Designer on their own timeline.
+
+## Confirmed real, root cause precise
+
+**The app is a single page — the whole document scrolls normally, no internal scroll container anywhere** (checked directly, nothing else exists to explain this). Tapping JOIN doesn't change what's rendered at all by itself — it only sends a WS request. The actual screen swap happens later, in `App.tsx`'s `onMatchStart` handler, via `setScreen(hubScreenFor(payload.gameId) ?? 'play')` once the server confirms the match. This is an ordinary React state change, not a browser navigation — no URL change, no page load — so the browser has no occasion to reset scroll on its own. Whatever scroll position the user had on the list (usually well down the page, since that's where live challenges live) carries straight over onto the new game screen, which is a different shape entirely.
+
+**Confirmed this affects PLAY identically, not just JOIN** — both routes end at the exact same `onMatchStart` → `setScreen(...)` call. It's far more visible on JOIN specifically because the list you're joining FROM is typically scrolled down; PLAY is usually pressed from higher up on a hub's own screen, so the same underlying gap is less noticeable there.
+
+## The fix, scoped narrowly per Owner's own direction
+
+**Not an App.tsx-level "scroll to top on every `screen` change"** — that would also reset scroll on every bottom-nav switch (Menu/Account/Rewards/Chat) and every other top-level navigation, which Owner explicitly chose not to ask for this round. **Recommend a single new effect inside `GameHub.tsx`** (the one shared component every hub game renders through), keyed on `currentMatchId` transitioning to a new truthy value:
+
+```
+useEffect(() => { if (currentMatchId) window.scrollTo({ top: 0, behavior: 'auto' }); }, [currentMatchId]);
+```
+
+This fires exactly when a match actually starts — covering JOIN and PLAY identically, since both flow through the same `currentMatchId` transition — and nothing else. `behavior: 'auto'` (an instant jump, not smooth-scroll) matches the fact the whole screen has already been replaced at that instant; animating a scroll over already-swapped content would look broken. There's already a precedent for exactly this shape of effect a few lines away in the same file (`useEffect(() => { setRevealDone(false); }, [currentMatchId]);`) — same idiom, same file, same trigger.
+
+**One edge case, low-priority, not worth solving in this round:** if a user is ALREADY sitting on a given hub's own screen (e.g. Mines, idle) and joins a DIFFERENT live Mines challenge without navigating away first, `currentMatchId` still transitions from `null`/a-different-id to the new id, so this fix correctly fires there too — no gap. The only genuinely unaddressed case is a user re-triggering the exact same already-active match, which isn't a real scenario (you can't "join" a match you're already in).
+
+## The broader question, raised and deliberately deferred
+
+Flagged directly to Owner: extending this to "every top-level navigation resets scroll" is a common, low-risk, widely-expected SPA pattern in general, and I'd lean toward it being a good idea — but it touches every screen in the app, not just the game-entry flow, and Designer hasn't weighed in. Owner's own call: ship this narrow fix now, and take the broader policy question to Designer separately, on their own timeline. Not building anything beyond the narrow scope this round.
+
+---
+
+**Ask:** small, one new effect in one shared file, no architecture change. Owner has already signed off on this exact scope directly.
+
+---
 ### 2026-09-17#7 — D29, board darkens on tile tap: confirmed real, root cause pinned down precisely — it's none of Designer's 4 listed candidates exactly, though closest in spirit to #4. It's a per-tile opacity class (not a board-wide flag) triggered by a SHARED, cross-game mechanism (`handleMakeMove`'s `setLegalMoves([])`) that every hub relies on for legitimate reasons — so the fix lives entirely in Mines' own tile styling, not in the shared code. Confirms the caveat at the top of D29's own package: no optimistic reveal needed, the honest server-confirmed reveal stays exactly as it is — only the OTHER tiles' visual dimming during the round-trip needs to go            [READY TO TICKET]
 From: Advisor   Re: Designer's D29 report (board darkens momentarily on every tile tap), verified against `MinesHub.tsx`'s `MinesBoard`/`cellKind`/`clickable` logic and `App.tsx`'s shared `handleMakeMove`, and the prototype's own source (`Full Spec.html:3704-3716` the tap handler, `:3756` the board's own two real opacity triggers)
 
