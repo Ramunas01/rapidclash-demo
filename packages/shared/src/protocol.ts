@@ -154,6 +154,13 @@ export interface MatchStartPayload {
    *  Crash's live altitude must match the altitude the server banks (`altitudeAt(ctx.now −
    *  startedAt)`) despite client/server clock skew. Generic; ignorable by games without timers. */
   serverNow: number;
+  /** Ticket 2026-09-18#2 item 4: the match's real, server-confirmed stake — mirrors `opponentName`
+   *  above, same reasoning. A PLAY-initiator's client already knows the stake it armed locally
+   *  (`GameHub`'s own `armedStake`), but a JOIN-initiator never touches that UI at all, so their
+   *  own bet-amount display stayed permanently blank. Server-confirmed rather than client-echoed —
+   *  safe to trust either way here, since a JOIN can only ever succeed at the exact stake already
+   *  publicly listed on the open-challenges row it came from. */
+  stake: number;
 }
 
 /** Updated redacted view after a move, plus events to animate on the client. */
@@ -167,6 +174,10 @@ export interface MatchStatePayload {
   /** Server wall-clock `now` (ms) at send time — carried on the resume path so a reconnecting
    *  client can re-align its clock offset for in-progress timer-based games (see MatchStartPayload). */
   serverNow?: number;
+  /** Ticket 2026-09-18#2 item 4: the match's real stake — carried on the resume path (same
+   *  reasoning as `opponentName` above) so a JOIN-initiator's bet-amount display survives a
+   *  reconnect/reload too, not just the initial match.start. Omitted on per-move broadcasts. */
+  stake?: number;
 }
 
 /** It is your turn; here are the moves you may legally submit. */

@@ -9,6 +9,21 @@ import { setCurSel } from '../lib/currency.js';
 // canvas-confetti needs a real <canvas> (absent in jsdom) — mock it (matches the other hub tests).
 vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
 
+// Ticket 2026-09-18#2 item 3: mocks lib/sound.js so the guideToBet()/handlePlayFriend() reject-sound
+// assertions below can check the exact call (same idiom as DiceHub.test.tsx's play('play')/('dice-
+// roll') mock).
+const { playMock } = vi.hoisted(() => ({ playMock: vi.fn() }));
+vi.mock('../lib/sound.js', () => ({
+  play: playMock,
+  unlock: vi.fn(),
+  installUnlockOnFirstGesture: vi.fn(),
+  isMuted: () => false,
+  toggleMute: vi.fn(),
+  setMuted: vi.fn(),
+  subscribe: () => () => {},
+  preloadSounds: vi.fn(),
+}));
+
 type Props = Parameters<typeof RpsHubScreen>[0];
 
 function baseProps(over: Partial<Props> = {}): Props {
@@ -32,6 +47,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
       if (u.includes('/games') || u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
       return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
     }));
+    playMock.mockClear();
   });
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -59,6 +75,9 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     fireEvent.click(play);
     expect(onPlay).not.toHaveBeenCalled(); // guided to the bet panel, not started
     expect(scrollSpy).toHaveBeenCalled(); // bet panel scrolled into view
+    // Ticket 2026-09-18#2 item 3: the shared reject sound fires on PLAY-with-no-bet, the same
+    // rejection moment the ring/hint/shake below already mark visually.
+    expect(playMock).toHaveBeenCalledWith('reject');
     expect(screen.getByTestId('hub-section-bet').getAttribute('data-needs-bet')).toBe('true');
     expect(screen.getByTestId('hub-bet-hint').textContent).toMatch(/choose your bet/i);
     // Ticket 2026-09-15#13 item 1: the needs-bet ring lives on the bet-track pill itself, NOT the
@@ -102,6 +121,19 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     fireEvent.click(screen.getByTestId('hub-play-friend'));
     expect(scrollSpy).toHaveBeenCalled();
     expect(screen.getByTestId('hub-bet-hint').textContent).toMatch(/choose your bet/i);
+    expect(playMock).toHaveBeenCalledWith('reject'); // ticket 2026-09-18#2 item 3
+  });
+
+  // Ticket 2026-09-18#2 item 3: an ARMED Play-a-Friend press is a real, live no-op today (the
+  // invite flow isn't built — handlePlayFriend's own TODO) — Owner's own cited example of a
+  // rejection with zero signal. Distinct from the unarmed case above (which routes through
+  // guideToBet() instead) — this is the OTHER call site, confirming both fire the cue.
+  it('ticket 2026-09-18#2 item 3: an ARMED "Play a Friend" press (today\'s no-op) also fires the reject sound', () => {
+    render(<RpsHubScreen {...baseProps()} />);
+    fireEvent.click(screen.getByTestId('hub-bet-25')); // arm a stake first
+    playMock.mockClear();
+    fireEvent.click(screen.getByTestId('hub-play-friend'));
+    expect(playMock).toHaveBeenCalledWith('reject');
   });
 
   it('In-match: the RPS board activates, choices come from legalMoves, and the opponent stays hidden', () => {

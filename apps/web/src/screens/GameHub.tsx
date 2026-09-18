@@ -159,6 +159,12 @@ export interface GameHubScreenProps {
    *  name from the feed). Null on the PLAY/post path (the joiner's name never reaches the client)
    *  → the slot falls back to a neutral "Opponent". Never a fabricated/cycled name (Charter #2). */
   opponentName?: string | null;
+  /** Ticket 2026-09-18#2 item 4: the real, server-confirmed stake for the CURRENT match — mirrors
+   *  `opponentName` above exactly. `armedStake` (this component's own bet-amount display state)
+   *  only ever gets populated locally, when the player taps a bet preset themselves before
+   *  pressing PLAY — a JOIN-initiator never touches that UI, so their bet-amount display stayed
+   *  permanently blank even though the stake was fully known server-side. Null pre-match/idle. */
+  matchStake?: number | null;
   /** Client→server clock offset (ms) for aligning display-only timers (see GameAreaArgs). */
   serverClockOffset?: number;
   /** Live balance from the app (source of truth; updates on match.end settlement). */
@@ -416,7 +422,7 @@ function useNow(active: boolean): number {
 export function GameHub(props: GameHubProps) {
   const {
     gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar, searchFloorMs = 2400, matchBarSlide, pinDark = false, highStakeCycle, resultConverge, oppGemRow, ownGemRow, oppGemText, oppGemTextVisible, ownGemText, ownGemTextVisible, onSectionTap,
-    token, playerId, username, avatarId = 'default', opponentId, opponentName, serverClockOffset = 0, balance, currentMatchId, gameState, events,
+    token, playerId, username, avatarId = 'default', opponentId, opponentName, matchStake, serverClockOffset = 0, balance, currentMatchId, gameState, events,
     legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
     onPlay, onCancel, onTakeChallenge, onTakePublicChallenge, onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, onTrackChallenges,
@@ -640,6 +646,14 @@ export function GameHub(props: GameHubProps) {
 
   // ── Bet + time-control selection ────────────────────────────────────────────
   const [armedStake, setArmedStake] = useState<number | null>(initialStake ?? null);
+  // Ticket 2026-09-18#2 item 4: sync `armedStake` from the server-confirmed `matchStake` once a
+  // match actually starts — the PLAY path already had a correct local value here (the same one
+  // just echoed back), so this is a no-op flicker-free overwrite for PLAY; for JOIN, this is the
+  // ONLY place `armedStake` (and so the bet-amount display) ever gets populated at all, since a
+  // JOIN-initiator never touches the bet-preset UI. Keyed on `currentMatchId` (not `matchStake`
+  // itself) to match every other match-start-triggered effect in this file (see the scroll-to-top
+  // effect above) — fires exactly once per match, not on every incidental re-render.
+  useEffect(() => { if (currentMatchId && matchStake != null) setArmedStake(matchStake); }, [currentMatchId]);
 
   function handlePlay() {
     if (armedStake == null) return;
@@ -1400,6 +1414,11 @@ function PlayPanel({
   // bottom nav; the scroll-margins below add explicit nav + safe-area clearance, robust to the
   // body-scroll change in #142) and raise the red needs-bet frame + hint. Starts no match.
   function guideToBet() {
+    // Ticket 2026-09-18#2 item 3: the shared guard for BOTH rejection moments that route through
+    // it — PLAY pressed with no bet armed, and an unarmed Play-a-Friend press (see
+    // handlePlayFriend's own separate call for the ARMED Play-a-Friend case, which never reaches
+    // this function at all).
+    play('reject');
     setNeedsBet(true);
     betRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     clearTimeout(playShakeTimeoutRef.current);
@@ -1422,6 +1441,9 @@ function PlayPanel({
   // The friend flow itself is not built, so an armed press still does nothing (no behaviour change).
   function handlePlayFriend() {
     if (armedStake == null) { guideToBet(); return; }
+    // Ticket 2026-09-18#2 item 3: an armed press is a real, live no-op today (the flow below isn't
+    // built yet) — Owner's own cited example of a rejection with no signal at all.
+    play('reject');
     /* TODO(D1): launch the friend-invite flow with the armed stake. */
   }
 

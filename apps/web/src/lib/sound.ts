@@ -2,6 +2,7 @@ import moveUrl from '../assets/sounds/move.wav';
 import playUrl from '../assets/sounds/play.mp3';
 import diceRollUrl from '../assets/sounds/dice-roll.mp3';
 import diceWinUrl from '../assets/sounds/dice-win.mp3';
+import rejectUrl from '../assets/sounds/reject.wav';
 
 /**
  * Minimal, dependency-free Web Audio wrapper for short UI sound effects.
@@ -21,6 +22,11 @@ const MANIFEST: Record<string, string> = {
   play: playUrl,
   'dice-roll': diceRollUrl,
   'dice-win': diceWinUrl,
+  // Ticket 2026-09-18#2 item 3: a deliberately minimal, genuinely subtle rejection cue — fired on
+  // the 3 moments the app already recognizes as a rejected action (see App.tsx's onError, and
+  // GameHub.tsx's guideToBet()/handlePlayFriend() call sites). Owner-approved: rejection-only, not
+  // a success-click half — framed as a functional bug fix, not new sound design.
+  reject: rejectUrl,
 };
 
 export type SoundName = keyof typeof MANIFEST | string;

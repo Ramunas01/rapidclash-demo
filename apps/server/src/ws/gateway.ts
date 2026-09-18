@@ -248,8 +248,13 @@ export function registerWsGateway(
    * "current" one still open. Harmless for the two existing synchronous call sites too: the
    * socket they already had in hand IS what this now re-fetches, since it's the one connection
    * currently processing that exact message.
+   *
+   * `stake` (ticket 2026-09-18#2 item 4): `JoinMatched` doesn't carry it (unlike `opponentName`,
+   * which is resolvable from just an id), so every caller passes it in explicitly — each already
+   * has it in scope (a literal from the request payload, a `MatchRecord` lookup, or a function
+   * parameter).
    */
-  function deliverMatchStart(curId: string, result: JoinMatched, gameId: string): void {
+  function deliverMatchStart(curId: string, result: JoinMatched, gameId: string, stake: number): void {
     const mod = moduleByGame.get(gameId);
     playerMatch.set(curId, result.matchId);
     playerMatch.set(result.opponentId, result.matchId);
@@ -266,6 +271,7 @@ export function registerWsGateway(
         gameId,
         state: curState,
         serverNow: Date.now(), // lets the client align its clock to server-authoritative timers
+        stake,
       });
     }
 
@@ -279,6 +285,7 @@ export function registerWsGateway(
         gameId,
         state: oppState,
         serverNow: Date.now(),
+        stake,
       });
     }
 
@@ -444,7 +451,7 @@ export function registerWsGateway(
       // assuming a request-scoped one (see its doc comment). The bot has no socket, so its own
       // send is a harmless no-op; the guest's live socket gets the honest reveal right here, not
       // a moment before.
-      deliverMatchStart(botId, result, gameId);
+      deliverMatchStart(botId, result, gameId, stake);
       // Blackjack's first decision is self-triggered off match formation (see
       // `maybeScheduleGuestBotMove`'s own doc comment); Chess is a harmless no-op here since the
       // guest — not the bot — is players[0] and so owes the first move, not the taker.
@@ -780,7 +787,7 @@ export function registerWsGateway(
                 if (guest && isDemoBotId(result.opponentId)) {
                   guest.onDemoBotMatched(result.matchId, Date.now());
                 }
-                deliverMatchStart(playerId, result, gameId);
+                deliverMatchStart(playerId, result, gameId, stake);
                 // Chess: the just-matched bot may owe the first move (it always plays the side
                 // that was already resting, i.e. players[0] — see matchmaking.ts's joinQueue).
                 // Coinflip: already picked above, so this is a harmless no-op (no legal moves left).
@@ -916,7 +923,10 @@ export function registerWsGateway(
               if (guest && isDemoBotId(result.opponentId)) {
                 guest.onDemoBotMatched(result.matchId, Date.now());
               }
-              deliverMatchStart(playerId, result, gameId);
+              // Ticket 2026-09-18#2 item 4: `match?.stake` rather than a client-supplied value —
+              // a JOIN can only ever succeed at the exact stake already publicly listed, so this
+              // is the server's own authoritative record, not an echo of anything the taker sent.
+              deliverMatchStart(playerId, result, gameId, match?.stake ?? 0);
               if (guest) maybeScheduleGuestBotMove(result.matchId);
               // The claimed bet leaves the feed (OC8). Never for a guest (see above).
               if (!isGuest) {
@@ -951,7 +961,14 @@ export function registerWsGateway(
                 send<MatchStatePayload>(
                   socket,
                   'match.state',
-                  { state, events: [], opponentName: oppId ? resolveUsername(oppId) : undefined, serverNow: Date.now() },
+                  {
+                    state, events: [],
+                    opponentName: oppId ? resolveUsername(oppId) : undefined,
+                    serverNow: Date.now(),
+                    // Ticket 2026-09-18#2 item 4: same reasoning as opponentName above — survives
+                    // a reconnect/reload for a JOIN-initiator too, not just the initial match.start.
+                    stake: activeMatch.stake,
+                  },
                   matchId,
                 );
 

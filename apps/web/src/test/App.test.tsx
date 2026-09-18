@@ -215,8 +215,10 @@ describe('App — match.start routes by the server-authoritative gameId (open-ch
     vi.unstubAllGlobals();
   });
 
-  /** Render the logged-in app, open its socket, and deliver one match.start. */
-  async function deliverMatchStart(gameId: string, state: unknown) {
+  /** Render the logged-in app, open its socket, and deliver one match.start. `stake` (ticket
+   *  2026-09-18#2 item 4) defaults to a value distinct from every hub's own bet presets, so a test
+   *  asserting on it can't accidentally pass via some OTHER, unrelated default. */
+  async function deliverMatchStart(gameId: string, state: unknown, stake = 25) {
     render(<App />);
     await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
     const sock = sockets[0];
@@ -227,7 +229,7 @@ describe('App — match.start routes by the server-authoritative gameId (open-ch
     const env = {
       type: 'match.start',
       matchId: 'm1',
-      payload: { matchId: 'm1', opponent: 'bob-id', gameId, state },
+      payload: { matchId: 'm1', opponent: 'bob-id', gameId, state, stake },
     };
     act(() => {
       sock.onmessage?.({ data: JSON.stringify(env) });
@@ -256,6 +258,85 @@ describe('App — match.start routes by the server-authoritative gameId (open-ch
     // Coinflip drives the one-screen hub: a match.start activates the in-place game board.
     expect(screen.getByTestId('hub-board')).toBeInTheDocument();
     expect(screen.queryByTestId('chess-board')).toBeNull();
+  });
+
+  // Ticket 2026-09-18#2 item 4: a JOIN-initiator never touches the bet-preset UI, so `armedStake`
+  // (GameHub's own local state) was never populated for them — the bet-amount display stayed
+  // permanently invisible even though the real stake was fully known server-side. This test's own
+  // `deliverMatchStart` call is exactly the JOIN shape (no pendingGameId set locally beforehand,
+  // matching this describe block's own header comment) — the fix threads the server-confirmed
+  // `stake` from match.start through to armedStake.
+  it("ticket 2026-09-18#2 item 4: a JOIN-initiator's bet-amount display shows the real, server-confirmed stake", async () => {
+    await deliverMatchStart('rps', { players: ['pid', 'bob-id'], choices: {} }, 75);
+    const betAmountGroup = screen.getByRole('group', { name: /bet amount/i });
+    const betValue = betAmountGroup.querySelector('.text-success') as HTMLElement;
+    expect(betValue.parentElement?.style.opacity).toBe('1'); // visible, not the pre-fix opacity:0
+    expect(betValue.textContent).toContain('75');
+  });
+});
+
+describe('App — challenge rejection notice (ticket 2026-09-18#2 item 2)', () => {
+  // A rejected JOIN (challengeNotice) used to be computed correctly but rendered only inside the
+  // unreachable legacy StakeEntryScreen — this describe block exercises the fix: the SAME fixed
+  // `.ws-banner-error` treatment `actionNotice` already uses, visible from any hub screen.
+  let sockets: Array<{
+    readyState: number;
+    onopen: (() => void) | null;
+    onmessage: ((ev: { data: string }) => void) | null;
+    onclose: (() => void) | null;
+  }>;
+
+  beforeEach(() => {
+    sockets = [];
+    const ctor = vi.fn((url: string) => {
+      const s = {
+        url, readyState: 0,
+        onopen: null as (() => void) | null,
+        onmessage: null as ((ev: { data: string }) => void) | null,
+        onclose: null as (() => void) | null,
+        send: vi.fn(), close: vi.fn(),
+      };
+      sockets.push(s);
+      return s;
+    });
+    vi.stubGlobal('WebSocket', Object.assign(ctor, { OPEN: 1, CONNECTING: 0, CLOSING: 2, CLOSED: 3 }));
+    localStorage.setItem('rc_token', 'tok');
+    localStorage.setItem('rc_playerId', 'pid');
+    localStorage.setItem('rc_username', 'alice');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response));
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    vi.unstubAllGlobals();
+  });
+
+  it('a rejected JOIN (CHALLENGE_TAKEN) shows the fixed bottom banner, visible from Home, not the unreachable legacy screen', async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
+    const sock = sockets[0];
+    act(() => { sock.readyState = 1; sock.onopen?.(); });
+    expect(screen.queryByTestId('challenge-notice')).toBeNull();
+
+    const env = { type: 'error', payload: { code: 'CHALLENGE_TAKEN', message: 'ignored for this code' } };
+    act(() => { sock.onmessage?.({ data: JSON.stringify(env) }); });
+
+    expect(screen.getByTestId('challenge-notice').textContent).toBe('That challenge was just taken.');
+    // Still on Home — the notice is visible regardless of screen, not tied to a legacy stake-entry
+    // route the app no longer navigates to.
+    expect(screen.getByTestId('home-hub')).toBeInTheDocument();
+  });
+
+  it('SELF_TAKE/INSUFFICIENT_BALANCE show the server\'s own message text verbatim', async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
+    const sock = sockets[0];
+    act(() => { sock.readyState = 1; sock.onopen?.(); });
+
+    const env = { type: 'error', payload: { code: 'INSUFFICIENT_BALANCE', message: 'Not enough balance to join.' } };
+    act(() => { sock.onmessage?.({ data: JSON.stringify(env) }); });
+    expect(screen.getByTestId('challenge-notice').textContent).toBe('Not enough balance to join.');
   });
 });
 
