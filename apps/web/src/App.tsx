@@ -35,6 +35,7 @@ import { AffiliateHubScreen } from './screens/AffiliateHub.js';
 import { AuthModal } from './components/AuthModal.js';
 import { api } from './api.js';
 import { GuestGamePicker } from './screens/GuestGamePicker.js';
+import { play } from './lib/sound.js';
 
 type Screen = 'auth' | 'home' | 'profile' | 'preferences' | 'affiliate' | 'rewards' | 'wallet' | 'game-list' | 'guest-loading' | 'guest-picker' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub' | 'crash-hub' | 'roulette-hub' | 'dice-hub' | 'baccarat-hub' | 'keno-hub' | 'limbo-hub' | 'hilo-hub';
 
@@ -390,6 +391,11 @@ export function App() {
   // name). Null on the PLAY/post path — the joiner's name never reaches the client. Never derived
   // from an id and never fabricated (the hub falls back to a neutral "Opponent").
   const [opponentName, setOpponentName] = useState<string | null>(null);
+  // Ticket 2026-09-18#2 item 4: the real, server-confirmed stake for the CURRENT match — mirrors
+  // `opponentName` above exactly (same reasoning, same PLAY-vs-JOIN asymmetry it fixes). A PLAY-
+  // initiator's own bet-amount display already worked off their own locally-armed selection;
+  // a JOIN-initiator's never had an equivalent, so their display stayed permanently blank.
+  const [matchStake, setMatchStake] = useState<number | null>(null);
   const [gameState, setGameState] = useState<GameView | null>(null);
   // The last match.state broadcast's raw GameEvent[] (2026-09-11#9 item 2). Most broadcasts carry
   // none (provisional picks emit no events — see rps.ts's applyMove doc comment); a module may
@@ -505,6 +511,7 @@ export function App() {
     setGameState(null);
     setOpponentId(null);
     setOpponentName(null);
+    setMatchStake(null);
   }, []);
 
   // #152: leaving a game hub (to Home / Profile / Wallet / another hub) abandons an in-flight
@@ -765,6 +772,10 @@ export function App() {
         // Server-authoritative opponent alias — the real name on BOTH the PLAY and JOIN paths
         // (a public alias, not hidden state). Supersedes the JOIN-only ownerName capture below.
         setOpponentName(payload.opponentName ?? null);
+        // Ticket 2026-09-18#2 item 4: same reasoning as opponentName above — server-confirmed on
+        // BOTH the PLAY and JOIN paths, so a JOIN-initiator's bet-amount display finally has
+        // something to read.
+        setMatchStake(payload.stake);
         if (payload.serverNow != null) setServerClockOffset(payload.serverNow - Date.now());
         setGameState(payload.state as GameView);
         // A fresh match starts with no events yet — clear a prior match's stale ones so a leftover
@@ -794,6 +805,9 @@ export function App() {
         // On reconnect/reload, restore the opponent's real alias from the resume payload (the
         // in-memory name is lost on reload; per-move broadcasts omit it and must not clear it).
         if (payload.opponentName) setOpponentName(payload.opponentName);
+        // Ticket 2026-09-18#2 item 4: same reasoning — restore the real stake on resume too;
+        // per-move broadcasts omit it (undefined) and must not clear an already-known value.
+        if (payload.stake != null) setMatchStake(payload.stake);
         if (payload.serverNow != null) setServerClockOffset(payload.serverNow - Date.now());
         // Hub games resume onto their hub (in-place); other games use the play screen.
         setScreen((s) => (isGameHubScreen(s) ? s : (hubScreenFor(activeGameId) ?? 'play')));
@@ -881,6 +895,10 @@ export function App() {
           setChallengeNotice(
             payload.code === 'CHALLENGE_TAKEN' ? 'That challenge was just taken.' : payload.message,
           );
+          // Ticket 2026-09-18#2 item 3: pairs the now-visible text (item 2) with a signal —
+          // Owner's own reasoning was that a rejection needs SOME cue, not just correct-but-
+          // invisible state.
+          play('reject');
         }
         console.error('[ws error]', payload.code, payload.message);
       },
@@ -1242,6 +1260,7 @@ export function App() {
           avatarId={avatarId}
           opponentId={opponentId}
           opponentName={opponentName}
+          matchStake={matchStake}
           serverClockOffset={serverClockOffset}
           balance={balance}
           currentMatchId={currentMatchId}
@@ -1319,6 +1338,19 @@ export function App() {
       )}
       {actionNotice && (
         <div className="ws-banner ws-banner-error" role="alert" data-testid="action-notice">{actionNotice}</div>
+      )}
+      {/* Ticket 2026-09-18#2 item 2: `challengeNotice` (a rejected JOIN — CHALLENGE_TAKEN/SELF_TAKE/
+          INSUFFICIENT_BALANCE) was ALWAYS computed correctly by the onError handler above, but only
+          ever rendered inside `StakeEntryScreen` — the pre-hub-migration screen every currently-
+          playable game has since routed past (`hubScreenFor()` covers all of `HUB_GAMES`), making it
+          permanently unreachable. Routed through the exact same `.ws-banner-error` fixed-position
+          treatment `actionNotice` already uses, for the same reason: visible regardless of scroll
+          position or which screen is showing — a JOIN attempt happens from a scrolled-down open-
+          challenges list, the same class of gap 2026-09-18#1 fixed for scroll position. Kept as a
+          separate state (not merged into actionNotice) since the two have different lifecycles —
+          actionNotice persists until reconnected, challengeNotice clears on the next JOIN attempt. */}
+      {challengeNotice && (
+        <div className="ws-banner ws-banner-error" role="alert" data-testid="challenge-notice">{challengeNotice}</div>
       )}
       {renderScreen()}
       {/* Ticket 2026-09-13#4, item 3: always mounted (not `{authOpen && (...)}`) so `BottomSheet`'s
