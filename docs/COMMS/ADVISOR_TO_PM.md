@@ -1,5 +1,31 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-21#8 — Owner report ("Rate exceeded" occasionally when opening the site): confirmed real, and it's not a load/capacity issue — `trustProxy` is never enabled on the Fastify server, so on Cloud Run every request's `request.ip` resolves to the SAME address regardless of who's actually visiting, turning the intentionally-per-visitor guest-login rate limit (5/min) into ONE SHARED BUCKET for the entire site's traffic, bots included            [READY TO TICKET]
+From: Advisor   Re: Owner's own direct report (relayed live, browser occasionally shows "Rate exceeded" opening the production URL), verified against `apps/server/src/server.ts`'s Fastify instantiation, `apps/server/src/routes/guest-auth.ts`'s rate-limit config, and Cloud Run's own known proxy architecture (Google Front End sets `X-Forwarded-For`, container sees only the GFE's own peer address unless the app opts in to reading it)
+
+Owner asked for help finding Cloud Run's monitoring console to check "VM load" — pointed them there, but also traced the actual error message to its source rather than stopping at "check the dashboard." Confirmed a real, specific bug: this isn't the server straining under traffic, it's a rate limiter that can no longer tell visitors apart from each other.
+
+## The bug, precisely
+
+**`POST /auth/guest`** (`guest-auth.ts:23-28`) is rate-limited to **5 requests/minute**, via `@fastify/rate-limit` registered `global: false` (`server.ts:145`) so only this route (and `/rewards/claim`) are affected. The plugin's default `keyGenerator` buckets by `request.ip` — the code's own comment confirms this is the intent: *"5/minute/IP... a real visitor clicking 'Play as guest' once, or reloading a few times, stays well under this; a scripted hammer minting sessions in a loop does not."*
+
+**`request.ip` is Fastify's raw TCP peer address unless `trustProxy` is enabled — and it never is here.** `Fastify({ logger: false })` (`server.ts:135`) passes no `trustProxy` option, and a repo-wide grep confirms it's not set anywhere else. Cloud Run's own architecture means the container's TCP peer is always Google's Front End proxy, never the real visitor — the real client IP is only available via the `X-Forwarded-For` header, which Fastify only reads when `trustProxy` says to. **Every request today, from every visitor, from anywhere, resolves to the same `request.ip`** — so the "5/minute/IP" bucket is actually "5/minute, period," shared by the whole site's guest-login traffic AND the demo's own bot-crowd.
+
+**This fully explains "occasionally," not "always" or "never":** it only trips when enough guest-logins (real or bot) land within the same 60-second window to burn through 5 for the WHOLE SITE — which is intermittent, exactly matching the report, and gets worse the more the demo is actually being used or demoed (the opposite of what you'd want from an anti-abuse mechanism).
+
+## Checked for side effects before recommending the fix
+
+Repo-wide grep confirms `request.ip`/`req.ip` is read in exactly one place — this rate-limit config. No other route, ban-list, or abuse-detection logic depends on IP today, so fixing this has no other blast radius to worry about.
+
+## Fix
+
+**Add `trustProxy: true` to the `Fastify(...)` constructor call** (`server.ts:135`). This is the standard, widely-documented setting for any Fastify app running behind exactly one well-known reverse proxy (Cloud Run's GFE, an ALB, nginx, etc.) — it tells Fastify to read the real client IP from `X-Forwarded-For` instead of the immediate TCP peer. Framed precisely: this restores the rate limiter to its ORIGINAL documented intent (per-visitor, best-effort anti-abuse) — it was never meant to be airtight against a determined, header-spoofing attacker (the existing comment's own framing — "a scripted hammer" — describes deterring casual abuse, not a hardened security boundary), so `trustProxy: true`'s well-known limitation (a client can still forge the leftmost `X-Forwarded-For` hop before it reaches Google's edge) doesn't change the mechanism's category, only fixes it from "broken for everyone" to "working as originally documented."
+
+---
+
+**Ask:** one-line config change, no route/protocol changes. Worth a quick post-deploy check that a normal guest login still succeeds and that 5 rapid-fire attempts from ONE real client still trip the limit (proving it's per-visitor now, not just "still works because it's globally generous").
+
+---
 ### 2026-09-21#7 — Blackjack RNG fairness check, Owner/Designer report ("3 BJ deals in a row, then a run of 13s"): investigated thoroughly, found NO bug — the shuffle is statistically correct, well-decorrelated round-to-round, and the reported pattern is well within ordinary variance for the demo's actual hand volume. Not a fix ticket — closing the question, recording the evidence            [NOT A BUG — CLOSING]
 From: Advisor   Re: Owner's relayed Designer report (DemoGM account: 3 natural blackjacks in sequence, then several hands at 13), verified via direct code review of `packages/games/blackjack/src/deck.ts` + `packages/core/src/matchmaking.ts`'s RNG/seed sourcing, plus empirical statistical simulation of the actual shuffle code (2M+ trials)
 
