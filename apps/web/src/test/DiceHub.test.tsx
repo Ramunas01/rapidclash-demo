@@ -178,6 +178,50 @@ describe('DiceHubScreen', () => {
     expect(fill.style.transition).toContain('width');
   });
 
+  // Ticket 2026-09-21#4 (D33): the fill formula used to share `cubeLeft`'s own 0-fallback
+  // unconditionally, collapsing the prototype's two genuinely distinct resting states (true idle
+  // → neutral 50%; an active-but-not-yet-rolled round → the near-empty nub) into one. `active`
+  // (already the exact signal distinguishing DiceIdle from DiceBoard) now gates `fillWidth`
+  // separately from `cubeLeft`, which is unaffected (the cube itself is invisible at true idle
+  // regardless, so its position was never visibly wrong).
+  it('D33: the lobby idle fills rest at a neutral 50%, not the near-empty active nub', () => {
+    render(<DiceHubScreen {...baseProps()} />);
+    const fillOpp = screen.getByTestId('dice-cube-opp').previousElementSibling as HTMLElement;
+    const fillMine = screen.getByTestId('dice-cube-mine').previousElementSibling as HTMLElement;
+    expect(fillOpp.style.width).toBe('50%');
+    expect(fillMine.style.width).toBe('50%');
+  });
+
+  it('D33: once a match is live (active, no roll yet), the fill rests at the near-empty nub, not 50%', () => {
+    render(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState: preRoll(), legalMoves: ['reveal'] })} />);
+    const fill = screen.getByTestId('dice-cube-opp').previousElementSibling as HTMLElement;
+    expect(fill.style.width).not.toBe('50%');
+    expect(fill.style.width).toContain('10px'); // calc(10px + 0 * (100% - 36px) / 100)
+  });
+
+  // Ticket 2026-09-21#5 (D34): the history belt used to only ever render from inside `DiceBoard` —
+  // `DiceIdle` (rendered for the ENTIRE matchmaking window: idle, searching, matchForming) never
+  // included it at all, so the pills vanished the instant a search started instead of staying
+  // visible and dimmed like the rest of the card. `history`'s own lifecycle (in `DiceHubScreen`)
+  // was already correct and untouched — this is purely "render the same belt from the other
+  // branch too."
+  it('D34: the history belt is present at true idle, not just during a live/resolved match', () => {
+    render(<DiceHubScreen {...baseProps()} />);
+    expect(screen.getByTestId('dice-history-belt')).toBeInTheDocument();
+  });
+
+  it("D34: a landed result's history pill survives the transition back to idle — not cleared, just previously unrendered", async () => {
+    const { rerender } = render(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState: resolved(), legalMoves: [] })} />);
+    // REVEAL_COMPLETE_MS=1804 is when pushHistory actually fires — generous timeout past it.
+    await waitFor(() => expect(screen.getByTestId('dice-history-belt').textContent).toContain('50.00'), { timeout: 3000 });
+
+    // Back to true idle — a fresh PLAY/leave, same DiceHubScreen instance (history is its own
+    // local state, unaffected by DicePanel swapping which child renders it).
+    rerender(<DiceHubScreen {...baseProps()} />);
+    expect(screen.getByTestId('dice-history-belt')).toBeInTheDocument();
+    expect(screen.getByTestId('dice-history-belt').textContent).toContain('50.00');
+  });
+
   it('T9: registered users see the Owner-approved $ skin in the bet panel too, not just the header wallet chip (GameHub.tsx PlayPanel, CHARTER.md #4)', () => {
     const { container } = render(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState: resolved() })} />);
     const header = container.querySelector('header');
