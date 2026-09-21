@@ -135,6 +135,49 @@ describe('DiceHubScreen', () => {
     expect(screen.getByTestId('dice-cube-mine').style.opacity).toBe('0');
   });
 
+  // Ticket 2026-09-21#3 (D32) item 1: the label used to fall back to '' whenever `roll` was null —
+  // a real, noticeable blank stretch spanning the whole server round-trip plus the reveal clock's
+  // first 460ms, even though the cube itself (opacity/scale) was already fully visible. Now matches
+  // `cubeLeft`/`fillWidth`'s own resting fallback: "0.00" whenever the cube is active at all.
+  it("D32 item 1: the cube's number label reads \"0.00\" (not blank) the moment the board goes live, before any roll data exists", () => {
+    render(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState: preRoll(), legalMoves: ['reveal'] })} />);
+    expect(screen.getByTestId('dice-cube-opp').textContent).toBe('0.00');
+    expect(screen.getByTestId('dice-cube-mine').textContent).toBe('0.00');
+  });
+
+  it('D32 item 1: the idle preview keeps the label blank (cube not active at all, not just at rest)', () => {
+    render(<DiceHubScreen {...baseProps()} />);
+    expect(screen.getByTestId('dice-cube-opp').textContent).toBe('');
+    expect(screen.getByTestId('dice-cube-mine').textContent).toBe('');
+  });
+
+  // Ticket 2026-09-21#3 (D32) item 2: `left`/`width` used to keep an unconditional CSS transition
+  // active even while `revealedRoll()` was driving a new value every rAF frame — the browser
+  // perpetually smoothed toward a target that kept moving, so the cube/fill visibly lagged the
+  // number label (which renders the live per-frame value directly, no CSS). Gated off during that
+  // window (`counting`), restored once the count settles on the true final value.
+  it('D32 item 2: the cube/fill position transitions are gated off during the per-frame count, restored once settled', async () => {
+    render(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState: resolved() })} />);
+    const cube = screen.getByTestId('dice-cube-mine');
+    const fill = cube.previousElementSibling as HTMLElement;
+
+    // Mid-count (REVEAL_SOUND_MS=460 < t < REVEAL_SETTLE_MS=904): counting is active, so no
+    // `left`/`width` transition — it would otherwise fight the per-frame-moving target.
+    await act(async () => { await new Promise((r) => setTimeout(r, 650)); });
+    expect(cube.style.transition).not.toContain('left');
+    expect(fill.style.transition).toBe('none');
+
+    // Past REVEAL_SETTLE_MS (904ms total): not using a textContent waitFor here — the eased
+    // count-up can round to the exact final digits a frame or two BEFORE `revealElapsed` actually
+    // crosses the settle threshold, which would make a text-based wait resolve mid-count. A fixed
+    // advance well past the known constant is the reliable signal for "genuinely settled" here.
+    await act(async () => { await new Promise((r) => setTimeout(r, 400)); });
+    expect(screen.getByTestId('hub-board').textContent).toContain('50.00');
+    // Settled: transitions restored (a real value change post-settle should animate smoothly again).
+    expect(cube.style.transition).toContain('left');
+    expect(fill.style.transition).toContain('width');
+  });
+
   it('T9: registered users see the Owner-approved $ skin in the bet panel too, not just the header wallet chip (GameHub.tsx PlayPanel, CHARTER.md #4)', () => {
     const { container } = render(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState: resolved() })} />);
     const header = container.querySelector('header');

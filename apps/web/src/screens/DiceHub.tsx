@@ -74,12 +74,23 @@ const FILL_TRANSITION = 'width 420ms cubic-bezier(0.4,0,0.2,1)'; // line 3675 (s
 // Ticket 2026-09-12#5 item 3 (ADVISOR_TO_PM.md): `left` added to the prototype's own literal
 // transition list (lines 543/576 cite only opacity/transform — the prototype instead re-renders
 // `left` every rAF frame during its client-simulated 444ms count-up, `runDiceRoll`, :3432-3437, so
-// it never needed a CSS transition on position). This app has no such per-frame loop (deliberately —
-// no fabricated intermediate roll value, see this file's header comment), so a real CSS transition on
-// `left` is the honest substitute: it interpolates POSITION only, between two always-true endpoints
-// (0% at rest, the true final roll once known) — never an invented NUMBER. Same 420ms/easing as the
-// existing `transform` entry, since both drive the same physical motion.
+// it never needed a CSS transition on position). At the time this app had no per-frame loop of its
+// own, so a real CSS transition on `left` was the honest substitute: it interpolates POSITION only,
+// between two always-true endpoints (0% at rest, the true final roll once known) — never an
+// invented NUMBER. Same 420ms/easing as the existing `transform` entry, since both drive the same
+// physical motion.
+//
+// Ticket 2026-09-21#3 item 2 (D32): `2026-09-16#4`/D21 later added exactly the per-frame reveal
+// loop this comment originally said didn't exist (`revealedRoll()`'s rAF-driven `tick()`, below) —
+// without anyone regating this transition for that new window. With `left` still transitioning
+// unconditionally, the browser was perpetually smoothing toward a target `cubeLeft` that moved
+// again every ~16ms before it could catch up — a real, visible lag behind the number label (which
+// renders the same per-frame value directly, no CSS). `CUBE_TRANSITION_COUNTING` (no `left`,
+// mirroring the prototype's own `diceFillTrans: diceRolling ? 'none' : ...`) is used instead
+// exactly while that per-frame drive is active — opacity/transform are untouched by `roll` at all,
+// so they keep transitioning smoothly regardless.
 const CUBE_TRANSITION = 'opacity 300ms ease, transform 420ms cubic-bezier(0.2,1.2,0.35,1), left 420ms cubic-bezier(0.2,1.2,0.35,1)';
+const CUBE_TRANSITION_COUNTING = 'opacity 300ms ease, transform 420ms cubic-bezier(0.2,1.2,0.35,1)';
 const NUM_COLOR_TRANSITION = 'color 260ms ease'; // lines 556, 589
 const BELT_EASE: [number, number, number, number] = [0.3, 0.9, 0.32, 1]; // lines 3669, 3674
 const BELT_DURATION_S = 0.46; // 460ms — lines 3669, 3674
@@ -128,9 +139,17 @@ function DieCubeIcon() {
  *  (`CUBE_TRANSITION` above) instead: the cube pops in at rest (0%, already `cubeLeft`'s existing
  *  `value ?? 0` fallback) the moment the board goes live, then visibly slides to its true endpoint
  *  once `roll` arrives — an honest position interpolation between two always-true points, never a
- *  fabricated intermediate NUMBER (the number label itself still only ever shows `fmtRoll(roll)`
- *  once `roll` is non-null, unchanged). */
-function DiceTrack({ pos, roll, numColor, light, active }: { pos: 'opp' | 'mine'; roll: number | undefined; numColor: string; light: boolean; active: boolean }) {
+ *  fabricated intermediate NUMBER.
+ *
+ *  Ticket 2026-09-21#3 (D32) item 1: the number label used to fall back to `''` whenever `roll` was
+ *  `null` — but `roll` stays `null` for the whole server round-trip PLUS the reveal clock's first
+ *  460ms, so the cube sat fully visible but textually blank for a real, noticeable stretch. Now
+ *  matches `cubeLeft`/`fillWidth`'s own already-established resting fallback: `fmtRoll(0)` ("0.00")
+ *  whenever the cube is `active` at all, blank only in the idle preview (`active` false) — the same
+ *  honest "resting position" those two already commit to before a real roll exists, applied to the
+ *  label too. Item 2: `counting` (new prop, threaded down from `DiceBoard`'s own reveal clock) gates
+ *  `left`/`width`'s transitions off — see `CUBE_TRANSITION_COUNTING`'s own comment above for why. */
+function DiceTrack({ pos, roll, numColor, light, active, counting = false }: { pos: 'opp' | 'mine'; roll: number | undefined; numColor: string; light: boolean; active: boolean; counting?: boolean }) {
   const isOpp = pos === 'opp';
   const trackColor = light ? DICE_TRACK.light : DICE_TRACK.dark;
   const grooveColor = light ? DICE_GROOVE.light : DICE_GROOVE.dark;
@@ -167,7 +186,7 @@ function DiceTrack({ pos, roll, numColor, light, active }: { pos: 'opp' | 'mine'
         {/* The always-full base pill — lines 541, 574. */}
         <div className="absolute inset-2 rounded-full" style={{ background: 'var(--brand-purple)' }} />
         {/* The roll-progress fill — lines 542/575 (color), 3675-3677 (width formula + transition). */}
-        <div className="absolute bottom-2 left-2 top-2 rounded-full" style={{ background: DICE_FILL_GREEN, width: fillWidth, transition: FILL_TRANSITION }} />
+        <div className="absolute bottom-2 left-2 top-2 rounded-full" style={{ background: DICE_FILL_GREEN, width: fillWidth, transition: counting ? 'none' : FILL_TRANSITION }} />
         {/* The riding die — lines 543/576 (position/opacity/scale), 3608-3609 (position formula). */}
         <div
           data-testid={`dice-cube-${pos}`}
@@ -177,7 +196,7 @@ function DiceTrack({ pos, roll, numColor, light, active }: { pos: 'opp' | 'mine'
             ...(isOpp ? { bottom: 'calc(50% - 3px)', transformOrigin: '50% 100%' } : { top: 'calc(50% - 3px)', transformOrigin: '50% 0%' }),
             opacity: cubeOpacity,
             transform: cubeScale,
-            transition: CUBE_TRANSITION,
+            transition: counting ? CUBE_TRANSITION_COUNTING : CUBE_TRANSITION,
           }}
         >
           <DieCubeIcon />
@@ -185,7 +204,7 @@ function DiceTrack({ pos, roll, numColor, light, active }: { pos: 'opp' | 'mine'
             className="absolute inset-0 flex items-center justify-center text-[13px] font-bold"
             style={{ fontFamily: SPACE_GROTESK, color: numColor, transition: NUM_COLOR_TRANSITION }}
           >
-            {roll != null ? fmtRoll(roll) : ''}
+            {active ? fmtRoll(roll ?? 0) : ''}
           </span>
         </div>
       </div>
@@ -386,6 +405,10 @@ function DiceBoard({
   // Colors stay neutral through the whole count — confirmed against D21: "neutral during the count,
   // not before [the count lands]" — and resolve to green/red only once the numbers have settled.
   const numbersSettled = revealElapsed != null && revealElapsed >= REVEAL_SETTLE_MS;
+  // Ticket 2026-09-21#3 item 2 (D32): true exactly while `revealedRoll()` is producing a new value
+  // every rAF frame — see `CUBE_TRANSITION_COUNTING`'s own comment for why this needs to gate the
+  // cube/fill's position transitions off during that window.
+  const counting = revealElapsed != null && revealElapsed < REVEAL_SETTLE_MS;
   const meWon = numbersSettled && myRoll != null && oppRoll != null && myRoll > oppRoll;
   const oppWon = numbersSettled && myRoll != null && oppRoll != null && oppRoll > myRoll;
   const tie = numbersSettled && myRoll != null && oppRoll != null && myRoll === oppRoll;
@@ -403,9 +426,9 @@ function DiceBoard({
       className="flex h-[266px] flex-col justify-start gap-3.5 rounded-[22px] bg-surface px-4 py-5"
       style={{ paddingTop: 47, opacity: barSlideActive ? 0.28 : 1, transition: 'opacity 380ms ease' }}
     >
-      <DiceTrack pos="opp" roll={oppRollShown} numColor={oppNumColor} light={light} active />
+      <DiceTrack pos="opp" roll={oppRollShown} numColor={oppNumColor} light={light} active counting={counting} />
       <DiceScaleRow />
-      <DiceTrack pos="mine" roll={myRollShown} numColor={myNumColor} light={light} active />
+      <DiceTrack pos="mine" roll={myRollShown} numColor={myNumColor} light={light} active counting={counting} />
       {/* Ticket 2026-09-15#10 item 1: a "You rolled higher!"/"Rolling…" status paragraph used to
           render here — zero occurrences anywhere in the prototype's own source (confirmed by
           direct grep), leftover copy this app added on its own. Removing it also frees up the
