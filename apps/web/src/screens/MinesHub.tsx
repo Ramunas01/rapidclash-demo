@@ -741,6 +741,11 @@ export function MinesHubScreen(props: GameHubScreenProps) {
       onSectionTap={() => {
         if (resultPhase === 'final') setResultPhase('closed');
       }}
+      // Ticket 2026-09-21#10 (D37): hides the shared "Playing…" label the moment the opponent's
+      // OWN round ends — see `GameHubProps.oppLocked`'s own doc comment for the full collision
+      // this closes (the label used to linger through the whole post-lock holdResultMs window,
+      // well past the opponent's gem strip already fading in in the same bar).
+      oppLocked={opp?.locked ?? false}
       {...props}
     />
   );
