@@ -691,9 +691,11 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
 
   // Ticket 2026-09-17#3 items 1-2: the VS label extends to the result sequence (matchForming ||
   // resultConverge), and the gem-count CAPTIONS (separate from the icon strip above) appear on
-  // their own asymmetric beats — own caption from 'converge' (singularizing at exactly 1 gem),
-  // opponent's caption only at 'reveal' (never singularizes, even at 1).
-  it('items 1-2: the VS label reappears for the result sequence, and the gem-count captions singularize/timed correctly', async () => {
+  // their own asymmetric beats — own caption from 'converge', opponent's caption only at 'reveal'.
+  // Ticket 2026-09-21#2 (D31): both sides are now ALWAYS plural, even at exactly 1 gem — D31
+  // explicitly dropped the own caption's singular "1 gem" form that 2026-09-17#3 deliberately
+  // ported from the prototype at the time (a knowing override, applying as directed).
+  it('items 1-2: the VS label reappears for the result sequence, and the gem-count captions are timed correctly (always plural)', async () => {
     vi.useFakeTimers();
     try {
       const gameState = view(
@@ -717,16 +719,16 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
         />,
       );
 
-      // Converge (+1500ms, bust delay): VS reappears; own caption shows, singular at exactly 1 gem;
-      // opponent's caption is present (rendered, matching the icon row's own pattern) but still
-      // opacity 0 — not yet 'reveal'.
+      // Converge (+1500ms, bust delay): VS reappears; own caption shows, plural even at exactly 1
+      // gem; opponent's caption is present (rendered, matching the icon row's own pattern) but
+      // still opacity 0 — not yet 'reveal'.
       await act(async () => { await vi.advanceTimersByTimeAsync(1550); });
       expect(screen.getByTestId('hub-match-vs').style.opacity).toBe('1');
-      expect(screen.getByTestId('hub-gem-text-own').textContent).toBe('1 gem'); // singular
+      expect(screen.getByTestId('hub-gem-text-own').textContent).toBe('1 gems'); // never singular
       expect(screen.getByTestId('hub-gem-text-own').style.opacity).toBe('1');
       expect(screen.getByTestId('hub-gem-text-opponent').style.opacity).toBe('0');
 
-      // Reveal (+820ms further): opponent's caption appears — always plural, even at 1 gem.
+      // Reveal (+820ms further): opponent's caption appears — also always plural, even at 1 gem.
       await act(async () => { await vi.advanceTimersByTimeAsync(820); });
       expect(screen.getByTestId('hub-gem-text-opponent').textContent).toBe('1 gems'); // never singular
       expect(screen.getByTestId('hub-gem-text-opponent').style.opacity).toBe('1');
