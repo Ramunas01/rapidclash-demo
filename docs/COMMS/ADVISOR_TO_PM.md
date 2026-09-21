@@ -1,5 +1,27 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-21#4 — D33, the Dice lobby's two idle fills sit at a near-empty 10px nub instead of the prototype's neutral 50% — confirmed, and it's a real citation error in my OWN earlier `2026-09-16#4` ticket, not a fresh bug: that ticket correctly unified the ACTIVE mid-round resting value, but its own reasoning mischaracterized the prototype's source as agreeing at true idle too, when the prototype's fill and position formulas genuinely diverge there            [READY TO TICKET]
+From: Advisor   Re: Designer's D33 report (Dice lobby's idle fills sit at 50% in the prototype; ours collapse to the near-empty nub), verified directly against `apps/web/src/screens/DiceHub.tsx`'s `DiceTrack` (`:137-145`) and the prototype's own cited line (`Full Spec.html:3676-3677`, cross-checked against `:3608-3609`)
+
+Confirmed exactly as reported, and Designer's own diagnosis ("initialising to 0 instead of null") is the right shape, even though our code doesn't have a literal "initialize to null vs 0" step the way the prototype's component state does — the closest equivalent, and the actual fix, is described below.
+
+## The prototype's fill and position formulas do NOT share one resting value — my own earlier ticket said they did
+
+`DiceTrack`'s current comment (`DiceHub.tsx:137-142`, written for ticket `2026-09-16#4` item 3) claims *"the prototype's own resting state (`diceMyPos`/`diceMyFill`, `:3608/3676`) ... now falls back to the SAME value (0) for both formulas"* — **checked this against the prototype's actual source directly, and it's not true.** `diceMyPos` (`:3608`) falls back via `this.state.diceMy || 0` — null and 0 produce the identical result (0%, left edge) there. But `diceMyFill` (`:3676`) is an explicit `this.state.diceMy == null ? '50%' : calc(...)` — **null and 0 produce genuinely different results**: `null` → a neutral half-filled bar (50%), `0` → the same near-empty nub the position formula also rests at. The two formulas only agree once `diceMy` is a real number (including `0`) — they diverge specifically in the one state my own ticket's fix ended up collapsing.
+
+**Why this matters practically: the prototype has two distinct "no roll" states, our build only ever produces one.** `diceMy` is `null` only in the prototype's true initial state — before any match has ever been searched. The instant a match search begins (independent of whether the cube itself is visible yet), the prototype explicitly resets `diceMy`/`diceOpp` to `0` (`:3410`, `:3422`) — a real, intentional value, not "no data." So the 50% fill is specifically the LOBBY's own resting look (never rolled, ever) — once any round is even being searched for, the fill drops to the empty nub on purpose, and stays there until the real roll arrives.
+
+## Our own build already has the matching structural distinction — it just isn't wired to the fill
+
+`DiceTrack` already receives an `active` prop that is `false` ONLY from `DiceIdle` (no match live at all — our own equivalent of the prototype's true `null`) and `true` ONLY from `DiceBoard` (a live match, whether or not the roll is known yet — our own equivalent of the prototype's explicit `0` reset). `2026-09-16#4` item 3 correctly fixed the `active`-true case (cube position and fill now agree once a round has genuinely started, matching the prototype's own `diceMy = 0` behavior there) — but its `value = roll != null ? ... : 0` change applies that same `0` fallback unconditionally, including from `DiceIdle`, which is the one place that should have stayed at the prototype's other resting value instead.
+
+**Fix:** give `fillWidth` its own fallback, gated on `active` rather than reusing `value` directly — `50%` when `!active` (true idle, matching `diceMyFill`'s own `== null` branch), the current empty-nub `calc(10px + 0 * ...)` when `active` and `roll` is still null (matching `diceMyFill`'s own `0` branch, unchanged from today). `cubeLeft` needs no change — the prototype's own position formula genuinely doesn't distinguish null from 0 (`||0` either way), and the cube itself is invisible (`opacity:0`) during the only state this would affect, so there's nothing to see there regardless.
+
+---
+
+**Ask:** small, one-line-ish change, scoped to `fillWidth`'s own fallback only — doesn't touch `cubeLeft`, `cubeOpacity`/`cubeScale`, or anything from `2026-09-21#3` (D32, still unimplemented) — safe to ship independently or together.
+
+---
 ### 2026-09-21#3 — D32, Dice cubes appear blank at round start and drift out of sync with their own number during the roll: BOTH trace to the same file, and to the same root discipline gap Designer's own "one value drives everything" framing points at — not one bug, but two separate spots in `DiceTrack` that stopped treating the label/position/fill of the same `roll` value consistently            [READY TO TICKET]
 From: Advisor   Re: Designer's D32 report (Dice — cubes blank at round start; number and cube out of sync during the roll), verified directly against `apps/web/src/screens/DiceHub.tsx`'s `DiceTrack`/`DiceBoard` and the prototype's own cited lines (`Full Spec.html:3410`, `:3422`, `:3438-3446`, `:3608-3611`, `:3675-3677`)
 
