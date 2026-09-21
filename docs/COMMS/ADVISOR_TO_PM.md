@@ -1,5 +1,37 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-21#2 — D31, opponent's gems always 0 at reveal: confirmed real, and it's a server bug, not a client one — proved the client-side binding/rendering is already correct by feeding it a real score directly, then traced the actual cause to a genuine gap in `viewFor`'s own terminal branch, which returns an entirely different, raw shape that never constructs the `score` field the client reads. 100% reproducible, not intermittent — happens on literally every match, which is exactly why it always shows as 0, never a real number. Also: a deliberate wording correction from Designer, applying as directed            [READY TO TICKET]
+From: Advisor   Re: Designer's D31 report (opponent gem strip/caption always 0 at reveal despite a correct verdict), verified against `packages/games/mines/src/mines.ts`'s `viewFor`/`terminal`/`decide` functions directly, and a component-level render test confirming the client already displays whatever `opp.score` it's given correctly
+
+Confirmed real. Designer's own diagnosis ("the display is wrong, not the data... the strip and caption read something else") turned out to be almost, but not quite, right — the client isn't reading a WRONG value, it's reading a value that GENUINELY DOESN'T EXIST at the moment it's needed, because of a real gap in the server's own view construction. Worth being precise about this distinction since it changes where the fix belongs.
+
+## Ruled out the client first, by feeding it real data directly
+
+Rendered the actual `MinesHubScreen` component and fed it a `gameState` with the opponent's `score` already populated (both the "opponent already done" and "I lock first, they finish later" cases D31 itself describes) — in both, the strip and caption correctly rendered the real count (5, then 6), with the right SVG count and text. **The client's own binding and rendering are already correct** — `oppGemCount = opp?.score ?? 0` and its two consumers do exactly what they should, given a `score` to read.
+
+## The real bug: the server's own `viewFor` never constructs `score` once the match is terminal
+
+**`viewFor`'s terminal branch is an entirely different code path from the one that builds `score` at all.** The non-terminal branch carefully constructs `oppView` with `score: revealOppCount ? score(opp) : undefined` — this is the ONLY place `.score` is ever set. But the terminal branch (`if (terminal(s)) return {...s, mines: [...]}`, `mines.ts`) returns EARLY, spreading the raw internal state directly — it never runs the `oppView` construction at all, so there is no `score` field anywhere in what it returns.
+
+**And `terminal(s)` fires on the EXACT SAME CONDITION that would populate `score` in the first place.** `terminal(s)` is `s.winner !== undefined`, set by `decide(s)` requiring `b1.locked && b2.locked` — precisely `revealOppCount`'s own condition (`opp.locked && me.locked`). So the moment both players are locked — exactly the moment the client's own `resultPhase` sequence is designed to reach `reveal` — the server has ALREADY switched to the branch that never builds `score` at all. This isn't a race or an edge case: it fires on literally every single match, which is exactly why Designer's report says "always," not "sometimes."
+
+**The asymmetry — why the player's own count is fine but the opponent's isn't — has the same root, and it explains why this went unnoticed until now.** `myGemCount` reads `me?.uncovered?.length` — a field that genuinely exists on the raw board object in BOTH branches (terminal state includes the real, full `uncovered` array as part of its own "full reveal for verifiability" purpose). `oppGemCount` reads `opp?.score` — a field that only ever gets constructed in the non-terminal branch. One side happens to read a field that survives the branch switch; the other doesn't.
+
+**Fix:** the terminal branch needs to also include a `score` field for both players, computed the same way (`score(board)` = `uncovered.length`) the non-terminal branch already does for the opponent — either by building `myView`/`oppView`-shaped objects in the terminal branch too (consistent shape regardless of branch), or by adding `score` onto the existing spread for both players. Either way, the fix belongs in `viewFor`, not in the client — the client's own `opp?.score ?? 0` fallback is a legitimate, correct "not revealed yet" default; it shouldn't need to know about a server-side branch quirk to work.
+
+## A wording correction from Designer — a deliberate departure from the prototype's own literal source, applying as directed
+
+**D31 explicitly asks to remove the singular form (`"1 gem"`) from the player's own caption, leaving both sides always plural (`"0 gems"`, `"1 gems"`, `"7 gems"`).** Checked our own current code: `ownGemText` DOES currently singularize at exactly 1 (`` `${myGemCount} gem${myGemCount === 1 ? '' : 's'}` ``) — this was a deliberate, correct port of the prototype's own literal source at the time (`Full Spec.html:3781`, confirmed and cited in `2026-09-17#3`). D31 now explicitly names that same line and says not to carry it over — an acknowledged, deliberate override of the prototype's own citation, not a misreading of it. Applying as directed: drop the singular branch, always render `{n} gems` on both sides.
+
+## The "same value the verdict reads" framing doesn't map onto our own architecture — noting precisely, not silently reinterpreting
+
+D31's own check suggests grepping to confirm the strip/caption "reference the same value the verdict reads." In the prototype, that's literally true — one client-side field, `minesOppGems`, feeds the strip, the caption, AND the verdict. **In our own build, the verdict was never wired to a gem-count field at all** — the win/lose ring is driven by a separate, already-server-computed `Outcome` (from `match.end`), entirely independent of `opp.score`. This isn't a case of the strip/caption pointing at the wrong of two available values; there's only ever been one path for the count (`opp.score`), and it was simply missing at the moment it mattered. Noting this so nobody goes looking for a second gem-count source to reconcile against — there isn't one.
+
+---
+
+**Ask:** the fix is server-side, in `viewFor`'s terminal branch — small, but worth care since it's shared match-resolution code. The caption wording fix is a one-line client change, unrelated to the above, safe to ship together.
+
+---
 ### 2026-09-21#1 — D30, the bars move twice: confirmed real, and it's NONE of the 3 candidates Designer listed — empirically proved the bar transform VALUE never changes across converge/reveal/final (ruling out re-measurement and a second transform target outright), then traced the actual mechanism to an ordinary flex-column reflow: the round clock (a sibling of the bars, inside the board) collapses at the wrong moment, pulling the own bar upward via normal layout, independent of its own transform. Traces back to my own earlier ticket's timing choice, not a new regression — flagging the correction plainly            [READY TO TICKET]
 From: Advisor   Re: Designer's D30 report (bars shift a second time when `final` lands, covering VS), verified empirically via a rendered-DOM capture of the real bar transform values across all 3 phases, and the prototype's own source (`Full Spec.html:431` the shared flex-column game-wrap, `:3370`/`:3709` exactly when `minesPhase` becomes `'done'`, `:3534` `minesClockOp`'s own gate)
 

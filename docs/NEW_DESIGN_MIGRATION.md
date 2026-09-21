@@ -262,7 +262,19 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 - **Races (24h / Weekly) + Leaderboards tab** — genuine new feature work (time-windowed leaderboard logic), sized separately from the lobby/stake-entry/play/result → single-screen-with-phases collapse.
 - **lobby / stake-entry / play / result → one screen, internal phases** — real architectural simplification (`App.tsx:1292-1317` today).
 
-## Status snapshot — 2026-09-21 (D01-D29 + 2026-09-18#1/#2 all shipped/deployed, fully closed; D30 — Mines bars shift a second time at `final`, covering VS — investigated, ready to ticket as 2026-09-21#1, empirically ruled out all 3 of Designer's own candidates, traced to a genuine reflow bug (the round clock, a flex-sibling of the bars, collapses at the wrong moment) that dates back to an imprecise proxy in my own earlier `2026-09-16#5` ticket, not a new regression) — supersedes all earlier snapshots in this section
+## Status snapshot — 2026-09-21 (D01-D29 + 2026-09-18#1/#2 all shipped/deployed, fully closed; D30 (bars shift twice at `final`) — ticketed as 2026-09-21#1, dispatched, not yet implemented; D31 (opponent's gems always show 0) — investigated, ready to ticket as 2026-09-21#2, confirmed a genuine SERVER bug (not client) — `viewFor`'s terminal branch never constructs the `score` field the client reads, and fires on literally every match, 100% reproducible) — supersedes all earlier snapshots in this section
+
+**2026-09-21#2 — NEW, top item, ready to ticket. Designer's D31: the opponent's gem strip and caption always show 0 at reveal, despite a correct win/lose verdict. Full detail: `ADVISOR_TO_PM.md` 2026-09-21#2.**
+
+- **Ruled out the client first, by feeding it real data directly.** Rendered the real component with the opponent's `score` already populated (both the "already done" and "hold-and-release" cases D31 describes) — both correctly displayed the real count. The client's own binding is already correct.
+- **The real bug: a genuine server gap, 100% reproducible, not intermittent.** `viewFor`'s terminal branch (`packages/games/mines/src/mines.ts`) returns an entirely different, raw shape (`{...s, mines}`) instead of the carefully-constructed `oppView` the non-terminal branch builds — meaning `score` is never constructed at all once terminal. Confirmed `terminal(s)` fires on the EXACT SAME condition (`both locked`) that would populate `score` in the first place — so by the time the client's own `resultPhase` reaches `reveal`, the server has already switched to the branch that never builds it. Explains the asymmetry too: the player's own count reads `uncovered.length` (a field that survives both branches); the opponent's reads `score` (constructed only in one).
+- **Fix belongs server-side:** the terminal branch needs to also include a `score` field for both players, computed the same way the non-terminal branch already does.
+- **A deliberate wording correction from Designer, applying as directed:** drop the singular `"1 gem"` form from the player's own caption (a knowing, explicit override of the prototype's own literal citation this time, not a misreading) — both sides always `{n} gems`.
+- **One framing correction, not a silent reinterpretation:** D31's own "same value the verdict reads" check doesn't map onto our architecture — our verdict is a separate, already-server-computed `Outcome`, never wired to any gem-count field at all. Noting this so nobody looks for a second source to reconcile against.
+
+**Advisor next:** available, no open thread. **PM next:** dispatch — the main fix is server-side in shared match-resolution code, worth care; the wording fix is a small, unrelated client change, safe to ship together.
+
+---
 
 **2026-09-21#1 — NEW, top item, ready to ticket. Designer's D30: the bars converge, then shift again when `final` lands, closing over the VS label. Full detail: `ADVISOR_TO_PM.md` 2026-09-21#1.**
 
