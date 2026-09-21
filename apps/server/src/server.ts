@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Fastify, { type FastifyInstance } from 'fastify';
 import FastifyWs from '@fastify/websocket';
@@ -93,7 +93,33 @@ function maybeServeStatic(app: FastifyInstance, opts: AppOptions): void {
   // wildcard:true → real files (assets, sw.js, manifest, icons) are served by path; a
   // missing file calls the not-found handler below. Specific API routes and `/ws` are
   // more specific than the static `/*`, so they always win.
-  app.register(FastifyStatic, { root: webDist });
+  //
+  // Ticket 2026-09-21#11 (active-incident follow-up to D36): with no cache headers at all, every
+  // static file's default `Cache-Control` is effectively `max-age=0` — technically cacheable, but
+  // REQUIRES REVALIDATION (a real request to this one concurrency-capped instance) on every single
+  // use, even for `assets/`'s content-hashed, permanently-immutable files (Vite's own build output
+  // — confirmed the ONLY hashed directory here). A frustrated visitor reloading on broken tiles
+  // re-fetches EVERYTHING instead of hitting their browser's own cache, multiplying load right when
+  // the instance is already stressed — a self-reinforcing loop that actively undermines D36's own
+  // concurrency/heartbeat fix rather than being independent of it.
+  //
+  // Fix, deliberately narrow: `/assets/*` (and ONLY that path) gets a long-lived, immutable cache —
+  // everything else at the dist root (`index.html`, `manifest.webmanifest`, `sw.js`, `workbox-*.js`,
+  // `icons/`) keeps today's always-revalidate behavior completely untouched. Caching those long-
+  // term would be a real, serious bug: `index.html` is the SPA's own entry point (must always
+  // revalidate so a deploy's new JS/CSS references actually reach visitors), and a cached service
+  // worker is a well-known PWA footgun (it can get stuck controlling the page indefinitely). A
+  // blanket cache setting across the whole static root would silently break every future deploy's
+  // rollout — this is why only `/assets/` gets it, via `setHeaders`'s own per-file `path` argument,
+  // not a second `FastifyStatic` registration or route restructuring.
+  app.register(FastifyStatic, {
+    root: webDist,
+    setHeaders: (res, path) => {
+      if (path.includes(`${sep}assets${sep}`)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+    },
+  });
 
   app.setNotFoundHandler((request, reply) => {
     const url = request.url;
