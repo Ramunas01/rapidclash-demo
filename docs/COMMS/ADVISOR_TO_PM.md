@@ -1,5 +1,27 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-21#5 — D34, the Dice history belt vanishes entirely during matchmaking instead of just dimming with the rest of the card: confirmed, and it's a structural gap, not a state-clearing bug — the prototype keeps one persistent box with everything in it, our port split "idle preview" and "live board" into two separate component trees, and the belt was only ever added to one of them            [READY TO TICKET]
+From: Advisor   Re: Designer's D34 report (Dice history pills disappear the moment a search starts, should stay visible and dimmed underneath), verified directly against `apps/web/src/screens/DiceHub.tsx`'s `DicePanel`/`DiceIdle`/`DiceBoard` (`:284-298`, `:415`, `:427-432`) and the prototype's own cited lines (`Full Spec.html:3455`, `:595`, `:3470`, `:3756`)
+
+Confirmed exactly as reported. Checked all 4 of Designer's own named suspects first — nothing clears `history` on Play, nothing clears it in the search sequence, nothing clears it on `startDice`'s own reset. Designer's own instinct ("if the build is unmounting the belt while the card is in its search state, stop [and look there]") is exactly right, and that's precisely what's happening.
+
+## The actual mechanism: two separate component trees, and the belt only exists in one of them
+
+**Our own port renders the idle preview and the live board as two entirely different components, swapped by `DicePanel`** (`:427-432`): `live ? <DiceBoard .../> : <DiceIdle .../>`, where `live = phase === 'in-match' || phase === 'result'`. During the ENTIRE matchmaking window (idle, searching, `matchForming`/`'waiting'`) — every phase Designer describes as "the belt should still be there" — `live` is `false`, so `DicePanel` renders `<DiceIdle>` instead of `<DiceBoard>`. `<DiceHistoryBelt>` (`:415`) is only ever rendered from inside `<DiceBoard>` — `DiceIdle`'s own JSX (`:284-298`) never renders it at all. It isn't that `history` gets cleared; the component tree holding the belt simply isn't mounted during the whole search, exactly matching what Designer describes as "disappears."
+
+**The prototype never has this seam because it never splits these into two components.** Its own `isDice` block (`:531-604`) is ONE persistent wrapper div, opacity-dimmed as a whole (`minesBoardOp`, `:3756`, `rpsMatching || mConverged ? 0.28 : 1` — this app's own port of the exact same property already drives both `DiceIdle`'s and `DiceBoard`'s box opacity, confirmed each independently implements it correctly) — the belt (`:593-601`) is a direct child of that SAME div, alongside the tracks, so nothing about matchmaking ever un-mounts it. `diceHistory` itself is confirmed cleared only on leaving the screen (`:3470`) or written to on a landed result (`:3455`) — never touched by the search sequence — so Designer's own trace of the DATA lifecycle is exactly right; the gap is purely presentational, on our side, from the two-tree split.
+
+**This traces to the idle-preview split itself, not any single later ticket** — `DiceIdle` was built (per this file's own header comment) specifically as an "anchor" preview showing the resting tracks, and the belt simply wasn't part of that original scope; nothing since has gone back to add it. Not attributing this to a specific regression — just noting it's a coverage gap from the initial idle/live split, not a state bug introduced later.
+
+## Fix
+
+**Add `<DiceHistoryBelt history={history} light={light} />` to `DiceIdle`'s own render, and thread `history` down to it from `DicePanel`** (`args.history` is already available there — `DicePanel`'s own prop type already includes it, just not forwarded to `<DiceIdle>` today). Place it as a direct child of `DiceIdle`'s outer `hub-board` box (sibling to the existing inner tracks wrapper, not nested inside it) — `DiceHistoryBelt`'s own `mt-auto` needs to be a flex child of the OUTER 266px box to pin itself to the bottom edge, matching exactly how `DiceBoard` already lays it out. No changes needed to `DiceHistoryBelt` itself, to the opacity dimming (already correctly shared via `barSlideActive` on both boxes), or to `history`/`armedSig`/`pushHistory`'s own lifecycle in `DiceHubScreen` — this is purely "render the same belt from the other branch too."
+
+---
+
+**Ask:** small, one component gaining one already-available prop plus the belt render — no state/lifecycle changes. Independent of `2026-09-21#3` (D32) and `2026-09-21#4` (D33), both still unimplemented — safe to ship with either or separately.
+
+---
 ### 2026-09-21#4 — D33, the Dice lobby's two idle fills sit at a near-empty 10px nub instead of the prototype's neutral 50% — confirmed, and it's a real citation error in my OWN earlier `2026-09-16#4` ticket, not a fresh bug: that ticket correctly unified the ACTIVE mid-round resting value, but its own reasoning mischaracterized the prototype's source as agreeing at true idle too, when the prototype's fill and position formulas genuinely diverge there            [READY TO TICKET]
 From: Advisor   Re: Designer's D33 report (Dice lobby's idle fills sit at 50% in the prototype; ours collapse to the near-empty nub), verified directly against `apps/web/src/screens/DiceHub.tsx`'s `DiceTrack` (`:137-145`) and the prototype's own cited line (`Full Spec.html:3676-3677`, cross-checked against `:3608-3609`)
 
