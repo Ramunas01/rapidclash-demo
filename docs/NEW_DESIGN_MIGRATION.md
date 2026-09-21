@@ -262,7 +262,7 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 - **Races (24h / Weekly) + Leaderboards tab** — genuine new feature work (time-windowed leaderboard logic), sized separately from the lobby/stake-entry/play/result → single-screen-with-phases collapse.
 - **lobby / stake-entry / play / result → one screen, internal phases** — real architectural simplification (`App.tsx:1292-1317` today).
 
-## Status snapshot — 2026-09-21 (D01-D29 + 2026-09-18#1/#2 all shipped/deployed, fully closed; D30 (bars shift twice at `final`) — ticketed as 2026-09-21#1, dispatched, not yet implemented; D31 (opponent's gems always show 0) — investigated, ready to ticket as 2026-09-21#2, confirmed a genuine SERVER bug (not client) — `viewFor`'s terminal branch never constructs the `score` field the client reads, and fires on literally every match, 100% reproducible) — supersedes all earlier snapshots in this section
+## Status snapshot — 2026-09-21 (D01-D29 + 2026-09-18#1/#2 all shipped/deployed, fully closed; D30 — shipped, merged (PR #653), not yet deployed, independently re-verified against the diff and re-tested (30/30); D31 (opponent's gems always show 0) — investigated, ready to ticket as 2026-09-21#2, confirmed a genuine SERVER bug (not client) — `viewFor`'s terminal branch never constructs the `score` field the client reads, and fires on literally every match, 100% reproducible) — supersedes all earlier snapshots in this section
 
 **2026-09-21#2 — NEW, top item, ready to ticket. Designer's D31: the opponent's gem strip and caption always show 0 at reveal, despite a correct win/lose verdict. Full detail: `ADVISOR_TO_PM.md` 2026-09-21#2.**
 
@@ -276,14 +276,16 @@ These are scoped in their own sections/comms docs and sequence *after* the harne
 
 ---
 
-**2026-09-21#1 — NEW, top item, ready to ticket. Designer's D30: the bars converge, then shift again when `final` lands, closing over the VS label. Full detail: `ADVISOR_TO_PM.md` 2026-09-21#1.**
+**2026-09-21#1 — shipped in PR #653 (confirmed independently via `gh pr view` + `git show` against the diff), not yet deployed (`gcloud run services describe` still shows `rapidclash-00122-zkz`). Designer's D30: the bars converge, then shift again when `final` lands, closing over the VS label. Full detail: `ADVISOR_TO_PM.md` 2026-09-21#1.**
 
 - **Confirmed real; ruled out all 3 of Designer's own listed candidates by measurement, not reasoning.** Rendered the real component through the full converge→reveal→final sequence and read the bars' actual `transform` value out of the DOM at each phase — byte-identical across all three. Rules out re-measurement (candidate 1) and a second transform target (candidate 2) directly; also confirmed the win ring is box-shadow-based (no layout effect) and the fill/verdict text are both `position:absolute` (already out of flow), ruling out the literal form of candidate 3 too.
 - **The actual mechanism: an ordinary flex-column reflow, not the bar's own styling.** The round clock sits inside the board, a flex SIBLING of both bars in the shared column layout (matching the prototype's own identical `display:flex; flex-direction:column` game-wrap structure). The clock collapses to 0 height on `phase === 'result'` — a state that, by design, lands right around `final`. Collapsing an earlier sibling's height pulls every later sibling upward through normal reflow — the own bar moves up toward the opponent bar, closing the gap and covering VS, without the bar's own transform ever changing.
 - **Traced this to my own earlier `2026-09-16#5` ticket's own imprecise timing proxy, not a new regression, and correcting it plainly.** The prototype's own clock-collapse condition flips synchronously at the bust/timeout itself — 1500ms (or 500ms) BEFORE `converge` even starts — so any reflow it causes is fully settled long before the bars ever move. My own earlier ticket used `phase === 'result'` as "the cleanest local proxy available" at the time, checked in isolation before the bar-convergence feature existed — reasonable then, wrong once combined with the later-built sequence.
 - **Fix: swap the proxy for the real signal, already in scope in the same function.** `MinesBoard` already computes `myLocked` for its own tile logic — the same signal the prototype's own gate tracks, firing at the exact right moment. Swap both of the round clock's conditions from `phase === 'result'` to `myLocked` — a two-token change, no new props.
 
-**Advisor next:** available, no open thread. **PM next:** dispatch — small, precise, no new plumbing; worth a live-page re-check once shipped given how empirical this investigation had to be.
+**PM's implementation, independently verified against the diff — matches exactly, plus a small, sensible cleanup.** Both conditions swapped to `myLocked` verbatim; also dropped the now-unused `phase` parameter from `MinesBoard`'s own destructuring (no longer referenced anywhere in that function) — a correct bit of housekeeping, not scope creep. The test was meaningfully strengthened, not just updated: it now proves the clock collapses immediately at lock while STILL in-match (no result phase, no `currentMatchId` change at all) — precisely the earlier-timing behavior the fix establishes, not just "collapses eventually." Re-ran the suite myself: 30/30 green.
+
+D30 is now shipped and merged — deploy still pending (likely batched with `2026-09-21#2` once that lands). **Advisor next:** available, no open thread. **PM next:** nothing pending on this ticket.
 
 ---
 
