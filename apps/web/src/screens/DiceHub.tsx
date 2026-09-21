@@ -293,66 +293,85 @@ function DiceHistoryBelt({ history, light }: { history: HistoryPill[]; light: bo
   );
 }
 
-/** Idle preview — mirrors RpsIdle / MinesIdle / CoinflipIdle's "anchor" convention (this screen
- *  used to show a plain 🎲 + caption instead; T6a replaces it with the real gauges so the idle
- *  state previews the actual board). Full brightness, not dimmed: the prototype's own idle-state
- *  opacity for this panel (`minesBoardOp`, shared property name, also drives the Dice panel at
- *  `Full Spec.html:532`) is `rpsMatching || mConverged ? 0.28 : 1` (`:3756`) — outside
- *  matching/converged (plain idle), that's `1`; there is no dimmed-idle state for Dice at all.
- *  Nor is there any idle caption — the prototype's `isDice` idle block (`:531-604`) is just the two
- *  tracks + scale row + history belt, no copy (same redundant-idle-text cleanup already applied to
- *  RPS #551 and Mines #555). Sized to the prototype's own fixed box (`height:266px;
- *  padding:20px 16px; padding-top:47px; justify-content:flex-start`, `:532-604`'s one wrapper div
- *  spanning both idle and live states, no inner split) — see `DiceBoard`'s identical box below.
- *
- *  Ticket 2026-09-12#5 item 2 (ADVISOR_TO_PM.md): fades this box to 28% opacity while
- *  `barSlideActive` — the same matching-phase table-dim RPS (#551) and Mines (#555) already got,
- *  never applied here (`minesBoardOp`, the shared property name that also drives this panel,
- *  `Full Spec.html:3756`). Applied directly to this `hub-board` div (rather than a separate outer
- *  wrapper, the way `RpsPanel`/`MinesPanel` do it) since Dice's idle/board split has no such wrapper
- *  today and `hub-board` is already the single element every existing box-model test queries. */
-// Ticket 2026-09-21#5 (D34): the history belt (last-5-results pills) used to vanish entirely the
-// moment matchmaking started, instead of staying visible and dimmed underneath like the rest of
-// the card — a structural gap, not a state-clearing bug. `history`'s own lifecycle (written once
-// per landed result in `DiceHubScreen`, cleared only on unmount) was already correct; the belt was
-// simply never rendered from THIS component at all — `DicePanel` swaps entirely between `DiceIdle`
-// and `DiceBoard`, and `<DiceHistoryBelt>` previously only existed inside `DiceBoard`. The
-// prototype never has this seam (one persistent wrapper div holds both the tracks and the belt) —
-// this traces to the original idle/live component split simply never having the belt added to its
-// scope, not a specific later regression. Fix: render the same belt here too, as a SIBLING of the
-// tracks wrapper (not nested inside it) — `DiceHistoryBelt`'s own `mt-auto` needs to be a flex
-// child of the OUTER 266px box to pin to the bottom edge, exactly matching `DiceBoard`'s own layout.
-function DiceIdle({ light, barSlideActive, history }: { light: boolean; barSlideActive?: boolean; history: HistoryPill[] }) {
-  return (
-    <div
-      data-testid="hub-board"
-      className="flex h-[266px] flex-col justify-start gap-3.5 rounded-[22px] bg-surface px-4 py-5"
-      style={{ paddingTop: 47, opacity: barSlideActive ? 0.28 : 1, transition: 'opacity 380ms ease' }}
-    >
-      <div className="flex flex-col gap-3.5">
-        <DiceTrack pos="opp" roll={undefined} numColor={DICE_NEUTRAL_NUM} light={light} active={false} />
-        <DiceScaleRow />
-        <DiceTrack pos="mine" roll={undefined} numColor={DICE_NEUTRAL_NUM} light={light} active={false} />
-      </div>
-      <DiceHistoryBelt history={history} light={light} />
-    </div>
-  );
-}
+// Ticket 2026-09-21#6 (D35): `DiceIdle` and `DiceBoard` used to be two ENTIRELY SEPARATE React
+// components, swapped by `DicePanel` on every `live` flip — CSS transitions cannot bridge an
+// unmount/mount no matter what's declared on either side, so the cube/card opacity SNAPPED at
+// exactly the two moments that mattered (a match starting, a replay/leave) instead of animating.
+// Merged into ONE always-mounted component, matching the prototype's own single persistent
+// `isDice` wrapper div — `active`/`roll`/card-opacity are now ordinary variables derived from
+// `phase`/`gameState`, never a choice between two component trees. This alone makes every
+// existing transition string here genuinely interpolate across every phase boundary, including
+// ones that already had correct values (fixes the card's own opacity fade-in for free, and closes
+// D34/2026-09-21#5's "belt missing from idle" gap for free too — there's only one branch to render
+// it from now, so D34's own separate `DiceIdle` threading is superseded, not duplicated).
+//
+// Sized to the prototype's own fixed box (`height:266px; padding:20px 16px; padding-top:47px;
+// justify-content:flex-start`, `Full Spec.html:532-604`) — no idle caption either (the prototype's
+// own idle block is just the two tracks + scale row + history belt, no copy, matching the same
+// redundant-idle-text cleanup RPS #551 and Mines #555 already got).
+const CUBE_REVEAL_DELAY_MS = 660; // matches the bars' own 620ms slide-back transition (GameHub.tsx) + the prototype's own ~40ms scripted margin between mnM3 (shift ends, :3413) and mnM4 (diceCubeIn, :3421)
 
-/** The live Dice area: both players auto-commit a `reveal` (no decisions), then the higher of two
- *  independent rolls wins. Neither roll is shown until the simultaneous reveal (server redaction).
+/** The Dice area — idle preview AND live board, one component. Both players auto-commit a
+ *  `reveal` (no decisions) once live; the higher of two independent rolls wins. Neither roll is
+ *  shown until the simultaneous reveal (server redaction).
  *
  *  Ticket 2026-09-16#4 item 1: once the server delivers the real result, it's held back from the
  *  rendered UI and revealed on the REVEAL_* timeline above — an rAF-driven elapsed-time clock
  *  (`revealElapsed`), re-armed once per genuinely new resolved round via `armedSig` (computed once,
  *  in `DiceHubScreen`, off the same dedup key that already gated the old instant history-push/sound
- *  effect — kept there so that key isn't computed twice, per Advisor's own recommendation). Sound
- *  (item 2) and the history push both fire off this same clock, exactly once per `armedSig`, tracked
- *  via a ref (not state) so the ~60fps rAF re-renders below don't re-fire them on stale closures. */
-function DiceBoard({
-  gameState, legalMoves, onMove, playerId, opponentId, history, light, barSlideActive, armedSig, pushHistory, onRevealComplete,
-}: GameAreaArgs & { history: HistoryPill[]; light: boolean; armedSig: string | null; pushHistory(sig: string, mine: number, win: boolean): void }) {
-  const view = gameState as DiceView | null;
+ *  effect). Sound (item 2) and the history push both fire off this same clock, exactly once per
+ *  `armedSig`, tracked via a ref (not state) so the ~60fps rAF re-renders below don't re-fire them
+ *  on stale closures. */
+function DicePanel({
+  gameState, legalMoves, onMove, playerId, opponentId, history, phase, barSlideActive, armedSig, pushHistory, onRevealComplete,
+}: GameAreaArgs & { history: HistoryPill[]; armedSig: string | null; pushHistory(sig: string, mine: number, win: boolean): void }) {
+  const { resolved: themeResolved } = useTheme();
+  const light = themeResolved === 'light';
+  const live = phase === 'in-match' || phase === 'result';
+
+  // Ticket 2026-09-21#6 (D35) symptom 1: cubes used to pop in at the START of the bar-split (the
+  // exact render `holdSearch` clears and `phase` flips to 'in-match' — `live` flips false→true in
+  // that SAME render), not after it settles. The prototype gets its own gap for free because
+  // `diceCubeIn:true` is a genuinely LATER, separate `setState` than the one ending the shift; our
+  // simpler mechanism had no equivalent delay. `cubeActive` provides it: armed off `live`'s own
+  // false→true edge, flips true only after CUBE_REVEAL_DELAY_MS, and resets the instant `live`
+  // goes false again (so the NEXT match re-arms the same delay, not skips it).
+  //
+  // Initial values are seeded from `live` itself (not hardcoded false) — a component that mounts
+  // ALREADY live (a page reload/reconnect mid-match, no bar-slide to wait out at all) must show
+  // the cube immediately, not wait out an artificial delay meant for a genuine idle→in-match
+  // transition observed WITHIN this component's own lifetime. Only that within-lifetime edge (the
+  // effect's own `live && !wasLive.current` branch) ever arms the timer.
+  const [cubeActive, setCubeActive] = useState(live);
+  const wasLive = useRef(live);
+  useEffect(() => {
+    if (live && !wasLive.current) {
+      wasLive.current = true;
+      const t = setTimeout(() => setCubeActive(true), CUBE_REVEAL_DELAY_MS);
+      return () => clearTimeout(t);
+    }
+    if (!live) {
+      wasLive.current = false;
+      setCubeActive(false);
+    }
+  }, [live]);
+  // `active` (the same prop `DiceTrack` already reads for cube opacity/scale/label, AND — per
+  // ticket 2026-09-21#4/D33 — the fill's near-empty-nub-vs-50% fallback) is now gated on the new
+  // delay too, not just `live`. Deliberate simplification, documented rather than silent: the
+  // prototype's own `diceMy`/`diceOpp` reset to 0 (which the FILL alone reacts to) happens earlier
+  // than `diceCubeIn` (which only the CUBE's visibility reacts to) — a ~40ms gap between two
+  // separate `setState` calls. Splitting that out here would need a second prop on `DiceTrack`
+  // (fill-fallback timing vs. cube-visibility timing) for a difference on the order of tens of ms,
+  // not the reported symptom (the cube popping in during the bar-split) — not worth the added
+  // surface. The fill rests at 50% for the same ~660ms the cube is still hidden, then both switch
+  // together; cosmetically negligible, and still strictly more honest than snapping either early.
+  const active = live && cubeActive;
+
+  // Gated on `live` (not just presence) explicitly, now that this component stays mounted through
+  // idle/waiting too — `gameState`/`legalMoves` may still hold a previous match's stale values for
+  // a render or two around a phase transition; reading them unconditionally (safe when this only
+  // ever MOUNTED while live) would no longer be safe now that mounting isn't the guard.
+  const view = live ? (gameState as DiceView | null) : null;
   const me = playerId, opp = opponentId;
   const result = view?.result;
   const myRoll = me ? result?.rolls?.[me] : undefined;
@@ -360,7 +379,7 @@ function DiceBoard({
 
   // No decisions: auto-commit the reveal as soon as the server offers it. Gating on legalMoves
   // (cleared optimistically on send, re-armed by the next match's your_turn) sends it exactly once.
-  const canReveal = legalMoves.includes('reveal');
+  const canReveal = live && legalMoves.includes('reveal');
   useEffect(() => { if (canReveal) onMove('reveal'); }, [canReveal, onMove]);
 
   // The elapsed-time clock. Idle (no armed round yet) → null, so every downstream computation below
@@ -393,7 +412,8 @@ function DiceBoard({
   // Sound (item 2) + history push, each exactly once per armedSig, at their own beat on the clock
   // above — replacing the old effect that fired both the instant `result` existed. The ref resets
   // itself (inline, guarded by the sig check) rather than during render, now that `revealElapsed`
-  // itself can't go stale across an armedSig change (see above).
+  // itself can't go stale across an armedSig change (see above). Guarded on `myRoll`/`oppRoll`
+  // (already gated on `live` above) so a stale `armedSig` surviving into idle can't double-push.
   const firedRef = useRef<{ sig: string | null; sound: boolean; complete: boolean }>({ sig: null, sound: false, complete: false });
   useEffect(() => {
     if (revealElapsed == null || !armedSig || myRoll == null || oppRoll == null) return;
@@ -440,41 +460,21 @@ function DiceBoard({
   const oppNumColor = tie ? DICE_NEUTRAL_NUM : oppWon ? DICE_WIN_GREEN : meWon ? DICE_LOSE_RED : DICE_NEUTRAL_NUM;
 
   return (
-    // Same fixed box as `DiceIdle` above — the prototype's `isDice` wrapper (`:532-604`) is ONE div
-    // spanning both idle and live states, not two differently-sized ones. Same item-2 opacity dim
-    // as `DiceIdle` — `barSlideActive` is only ever true during the pre-match search/forming beat,
-    // never simultaneously with a resolved result, so this never fights the result reveal.
+    // ONE persistent box across idle/waiting/in-match/result — the prototype's own `isDice`
+    // wrapper (`:532-604`) is a single div spanning every state too, never two differently-sized
+    // ones. `barSlideActive` is only ever true during the pre-match search/forming beat, never
+    // simultaneously with a resolved result, so this never fights the result reveal.
     <div
       data-testid="hub-board"
       className="flex h-[266px] flex-col justify-start gap-3.5 rounded-[22px] bg-surface px-4 py-5"
       style={{ paddingTop: 47, opacity: barSlideActive ? 0.28 : 1, transition: 'opacity 380ms ease' }}
     >
-      <DiceTrack pos="opp" roll={oppRollShown} numColor={oppNumColor} light={light} active counting={counting} />
+      <DiceTrack pos="opp" roll={oppRollShown} numColor={oppNumColor} light={light} active={active} counting={active && counting} />
       <DiceScaleRow />
-      <DiceTrack pos="mine" roll={myRollShown} numColor={myNumColor} light={light} active counting={counting} />
-      {/* Ticket 2026-09-15#10 item 1: a "You rolled higher!"/"Rolling…" status paragraph used to
-          render here — zero occurrences anywhere in the prototype's own source (confirmed by
-          direct grep), leftover copy this app added on its own. Removing it also frees up the
-          vertical space the history belt's pills needed — this fixed-266px box had 5 flex children
-          fighting for ~199px of content height with no shrink-0 guard; the status text was the
-          overflow culprit for the pills rendering under their intended 28px size. */}
+      <DiceTrack pos="mine" roll={myRollShown} numColor={myNumColor} light={light} active={active} counting={active && counting} />
       <DiceHistoryBelt history={history} light={light} />
     </div>
   );
-}
-
-// Ticket 2026-09-12#5 item 1 (ADVISOR_TO_PM.md) — HIGH PRIORITY correction to #558: this used to
-// gate on `phase === 'in-match'` only, so the instant `phase` became `'result'` (after the reveal
-// hold) the panel unmounted `DiceBoard` and swapped to the blank `DiceIdle` gauges — discarding the
-// resolved cubes/history/status line right after they finally became visible. Fix: mirror
-// `CoinflipPanel`'s own `live` gate exactly (`CoinflipHub.tsx:120`) — `DiceBoard` reads only
-// `gameState`/`legalMoves` (never `phase` itself), so it renders the resolved roll correctly with
-// no further changes needed there.
-function DicePanel(args: GameAreaArgs & { history: HistoryPill[]; armedSig: string | null; pushHistory(sig: string, mine: number, win: boolean): void }) {
-  const { resolved: themeResolved } = useTheme();
-  const light = themeResolved === 'light';
-  const live = args.phase === 'in-match' || args.phase === 'result';
-  return live ? <DiceBoard {...args} light={light} /> : <DiceIdle light={light} barSlideActive={args.barSlideActive} history={args.history} />;
 }
 
 /**
