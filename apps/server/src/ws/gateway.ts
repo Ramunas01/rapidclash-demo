@@ -43,6 +43,15 @@ type WsSocket = SocketStream['socket'];
 // Track connected players so we can push to the waiter when a match forms.
 const connections = new Map<string, WsSocket>();
 
+// Ticket 2026-09-21#9 (D36): whether each live socket has answered a `pong` since its last
+// `ping` — the standard `ws` library heartbeat idiom, detecting a connection that died WITHOUT a
+// clean close (common on mobile: lost signal, backgrounding, network switch), which the existing
+// `close` handler below has no way to know about on its own. A `WeakMap` (not a plain `Map`) so a
+// closed/replaced socket's entry is garbage-collected automatically, never needing its own
+// cleanup — nothing else here reads this after a socket stops being connections' current value
+// for its player. See `heartbeatTimer` below for how this is set/consumed.
+const socketAlive = new WeakMap<WsSocket, boolean>();
+
 // Reverse-lookup: which matchId is a player currently in?
 const playerMatch = new Map<string, string>();
 
@@ -93,6 +102,7 @@ const SWEEP_INTERVAL_MS = (() => {
   const n = parseInt(process.env.CHALLENGE_SWEEP_MS ?? '', 10);
   return Number.isFinite(n) ? n : 1_000;
 })();
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000;
 
 function send<T>(socket: WsSocket, type: string, payload: T, matchId?: string): void {
   const env: Envelope<T> = { type, payload, ...(matchId ? { matchId } : {}) };
@@ -144,6 +154,18 @@ export function registerWsGateway(
   const forfeitDelayMs = (() => {
     const n = parseInt(process.env.FORFEIT_DELAY_MS ?? '', 10);
     return Number.isFinite(n) ? n : DEFAULT_FORFEIT_DELAY_MS;
+  })();
+
+  // Ticket 2026-09-21#9 (D36): read at registration, same pattern/reason as forfeitDelayMs above
+  // (NOT a module-level const — those are frozen at import time, before any test's `beforeEach`
+  // env-var override could ever take effect). Defaults to the standard ws-library heartbeat
+  // cadence, deliberately its own, much longer interval than SWEEP_INTERVAL_MS above (that one
+  // drives matchmaking sweeps, not connection liveness, and defaults to 1s — far too tight to
+  // ping every live socket on). 30s means a dead connection is detected and its concurrency slot
+  // freed within ~30-60s, instead of sitting occupied for up to Cloud Run's own 3600s hard cap.
+  const heartbeatIntervalMs = (() => {
+    const n = parseInt(process.env.HEARTBEAT_INTERVAL_MS ?? '', 10);
+    return Number.isFinite(n) ? n : DEFAULT_HEARTBEAT_INTERVAL_MS;
   })();
 
   // Issue #352: how long a guest's own resting stake sits before a bot-taker claims it —
@@ -585,6 +607,34 @@ export function registerWsGateway(
   sweepTimer.unref?.();
   app.addHook('onClose', async () => clearInterval(sweepTimer));
 
+  // Ticket 2026-09-21#9 (D36): the WS heartbeat. Same per-tick try/catch isolation shape as
+  // sweepTimer above (a fault here must not crash the whole process) and iterates the SAME
+  // `connections` Map every other liveness/broadcast path in this file already uses. A socket
+  // still marked NOT-alive from the PREVIOUS tick never answered its last ping — genuinely dead
+  // (common on mobile: lost signal, backgrounding, network switch) — `terminate()` it; this fires
+  // the connection's own existing `close` handler below (a forced close still emits `close` on a
+  // `ws` socket), so every existing cleanup path (feed/chat unsubscribe, forfeit/guest-eviction
+  // timers, queue refund) runs verbatim — no new cleanup logic needed. Otherwise, mark it
+  // not-alive and ping it; a `pong` reply (wired at connection time below) marks it alive again
+  // before the NEXT tick — so a socket only gets terminated after missing exactly one full
+  // heartbeat interval's response, never on the very first tick after it connects.
+  const heartbeatTimer = setInterval(() => {
+    for (const socket of connections.values()) {
+      try {
+        if (socketAlive.get(socket) === false) {
+          socket.terminate();
+          continue;
+        }
+        socketAlive.set(socket, false);
+        socket.ping();
+      } catch (err) {
+        console.error('[gateway] heartbeat tick failed for a socket', err);
+      }
+    }
+  }, heartbeatIntervalMs);
+  heartbeatTimer.unref?.();
+  app.addHook('onClose', async () => clearInterval(heartbeatTimer));
+
   app.get(
     '/ws',
     { websocket: true },
@@ -611,6 +661,13 @@ export function registerWsGateway(
       const mm: Matchmaking = isGuest && guest ? guest.matchmaking : matchmaking;
 
       connections.set(playerId, socket);
+
+      // Ticket 2026-09-21#9 (D36): start alive (the heartbeat only ever pings an ALREADY-alive
+      // socket, so a freshly-connected one must default true — never wait a full interval before
+      // it's even eligible to be pinged) — `heartbeatTimer` above flips this false right before
+      // each ping; a `pong` reply flips it back true before the next tick.
+      socketAlive.set(socket, true);
+      socket.on('pong', () => socketAlive.set(socket, true));
 
       // Cancel any pending forfeit for this player (reconnect before timer fired)
       const existingTimer = pendingForfeits.get(playerId);

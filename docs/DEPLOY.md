@@ -112,6 +112,7 @@ gcloud run deploy rapidclash \
   --timeout 3600 \
   --min-instances 1 \
   --max-instances 1 \
+  --concurrency 300 \
   --memory 1Gi \
   --session-affinity \
   --set-secrets ADMIN_PASSWORD=admin-password:latest \
@@ -124,6 +125,7 @@ Flag rationale (see ADR-009):
 - `--timeout 3600` — the 60-minute max for the WebSocket stream; `match.resume` handles reconnect on timeout.
 - `--max-instances 1` — **mandatory**: match state is in memory and the DB is a local file; neither survives scale-out (also makes the snapshot a single writer — no locking concern, ADR-011).
 - `--min-instances 1` — keeps a WebSocket-warm instance during demos (a few $/month). Set `0` when not demoing to drop to free (cold starts may delay/drop the first connection).
+- `--concurrency 300` — **not the Cloud Run default (80) — set it explicitly.** Ticket 2026-09-21#9/D36: the always-on bot-crowd VM holds ~32 WebSocket connections continuously (~40% of the 80-slot default budget before any real visitor arrives), and every deploy's bot-crowd restart reconnects all of them within seconds — briefly spiking real concurrency past 80 and getting real requests (page assets, `/games`, `/wallet`) rejected outright with HTTP 429. Confirmed via Cloud Logging: 1,129 of 8,213 requests (13.7%) over 24h, clustered almost entirely in the hours immediately after a deploy. 300 comfortably absorbs the worst-case burst with real headroom, well under Cloud Run's own 1000/instance ceiling, at zero extra cost unless genuinely used. Doesn't touch `--max-instances`/the single-writer architecture at all — still exactly one instance, just one that can accept more simultaneous requests before Cloud Run starts rejecting.
 - `--memory 1Gi` — **not the Cloud Run default (512Mi) — set it explicitly.** 2026-09-12: the service was OOM-killed repeatedly on 512Mi after the chat/RPS/chess-stakes feature batch grew per-connection in-memory state, dropping every WebSocket in a loop (revision `rapidclash-00104-djs` fixed it). See §5c below — re-check this after any future feature batch that adds real per-connection state.
 - `--session-affinity` — best-effort routing of reconnects back to the same instance.
 - `--set-env-vars GCS_BUCKET=…` — enables durable persistence (ADR-011): the server restores the DB snapshot on startup and snapshots it back after each settlement. Omit it (or drop the bucket) to fall back to the original ephemeral behaviour. Requires the bucket + IAM grant from §1b.
