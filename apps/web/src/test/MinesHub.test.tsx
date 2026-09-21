@@ -342,19 +342,31 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     expect(screen.getByTestId('hub-slot-opponent')).toBeInTheDocument();
   });
 
-  // Ticket 2026-09-16#5 item 4: the round clock collapses (max-height 46px→0, opacity 1→0) once the
-  // result phase lands — it used to render unconditionally, staying visible through the whole
-  // result-hold window. `Full Spec.html:3758-3759`'s own gating (`minesClockOp`/`minesClockH`)
+  // Ticket 2026-09-16#5 item 4: the round clock collapses (max-height 46px→0, opacity 1→0) outside
+  // the actively-running round — it used to render unconditionally, staying visible through the
+  // whole result-hold window. `Full Spec.html:3758-3759`'s own gating (`minesClockOp`/`minesClockH`)
   // confirms this is the prototype's real behavior, not a cosmetic nice-to-have.
-  it('item 4: the round clock collapses once the result phase lands', async () => {
-    const gameState = view({ uncovered: [0, 1, 2, 3], locked: true }, { locked: true });
-    const { rerender } = render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: asLegal([]) })} />);
+  // Ticket 2026-09-21#1 (D30): gated on `myLocked`, NOT `phase === 'result'` — the old proxy fired
+  // too late (near the result sequence's own 'final' beat), so the clock (an earlier flex sibling
+  // of the bars) was still collapsing WHILE the bars converged, pulling the own bar upward via
+  // ordinary reflow — a second, unintended shift. Collapsing immediately at lock (well before any
+  // bar movement begins) is what this test now proves, matching the prototype's own `minesPhase ===
+  // 'done'` timing exactly.
+  it('item 4/D30: the round clock collapses immediately at lock — well before the result sequence, not once it lands', async () => {
+    const gameState = view({ uncovered: [0, 1, 2] }, { locked: false });
+    const { rerender } = render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: asLegal([3, 4, 5]) })} />);
     const clockWrapper = screen.getByTestId('mines-round-clock').parentElement as HTMLElement;
     expect(clockWrapper.style.maxHeight).toBe('46px');
     expect(clockWrapper.style.opacity).toBe('1');
 
-    rerender(<MinesHubScreen {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'alice' }, lastSettlement: { delta: 18, newBalance: 1018 } })} />);
-    // Ticket 2026-09-17#1 item 2: see the equivalent comment on the "no separate overlay" test above.
+    // Locked, but STILL in-match — no result phase has landed at all yet (currentMatchId unchanged).
+    const lockedState = view({ uncovered: [0, 1, 2, 3], locked: true }, { locked: false });
+    rerender(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: lockedState, legalMoves: asLegal([]) })} />);
+    expect(clockWrapper.style.opacity).toBe('0'); // collapses synchronously at lock, no result yet
+    expect(clockWrapper.style.maxHeight).toMatch(/^0(px)?$/);
+
+    // Stays collapsed through the terminal state too (not just until lock).
+    rerender(<MinesHubScreen {...baseProps({ currentMatchId: null, gameState: lockedState, lastOutcome: { type: 'win', winner: 'alice' }, lastSettlement: { delta: 18, newBalance: 1018 } })} />);
     await waitFor(() => expect(clockWrapper.style.opacity).toBe('0'), { timeout: 4000 });
     expect(clockWrapper.style.maxHeight).toMatch(/^0(px)?$/); // React renders a 0 style value unitless
   });
