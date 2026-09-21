@@ -367,6 +367,24 @@ describe('minesModule.viewFor — redaction: opponent count hidden for the WHOLE
     expect(v.seed).toBe(SEED);
     expect(v.mines).toHaveLength(MINE_COUNT);
   });
+
+  // Ticket 2026-09-21#2 (D31): the terminal branch above is a SEPARATE code path from the
+  // non-terminal `revealOppCount` construction that normally builds `score` — it used to return
+  // the raw board spread with no `score` field at all, on literally every match (terminal(s)
+  // fires on the exact same both-locked condition `revealOppCount` does), which is why the
+  // opponent's gem-count strip/caption always read 0 at reveal. `score` must be present on BOTH
+  // boards, from BOTH players' own point of view, at terminal — not just the opponent's (the
+  // client's own myGemCount reads `uncovered.length` directly and never needed this, but a
+  // consistent shape is worth asserting explicitly rather than assuming asymmetry is fine).
+  it("D31: both boards carry `score` at terminal, from either player's own point of view", () => {
+    const s = state({ [A]: board([0, 1, 2], true), [B]: board([0], true) }, { winner: A });
+    const vFromB = as(mines.viewFor(s, B));
+    expect(vFromB.boards[A].score).toBe(3);
+    expect(vFromB.boards[B].score).toBe(1);
+    const vFromA = as(mines.viewFor(s, A));
+    expect(vFromA.boards[A].score).toBe(3);
+    expect(vFromA.boards[B].score).toBe(1);
+  });
 });
 
 // ── draws → replay (internal draws are NOT contract-draws) — UNCHANGED ───────

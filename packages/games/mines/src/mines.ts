@@ -294,8 +294,21 @@ export const minesModule: GameModule = {
     // Terminal → full reveal (both boards + the mine layout + seed, for verifiability). Since
     // early resolution is removed, this branch can only ever fire once BOTH players are done —
     // the one path that could once have exposed the seed prematurely no longer exists.
+    //
+    // Ticket 2026-09-21#2 (D31): `score` on each board — the non-terminal branch below is the
+    // ONLY place that field normally gets built (`oppView`'s `revealOppCount` gate), but
+    // `terminal(s)` fires on the EXACT SAME condition (`decide` requires both players locked,
+    // matching `revealOppCount`'s own `opp.locked && me.locked`) — so a terminal view, returned
+    // here instead, never ran that construction at all and had no `score` field anywhere. Fired
+    // on literally every match (not an edge case): the moment both players lock, `viewFor`
+    // switches to THIS branch, the one the client's own result-reveal sequence needs `score`
+    // from. `myGemCount` (client) survived unnoticed by reading `uncovered.length` directly —
+    // a field the raw spread below already carries for both sides.
     if (terminal(s)) {
-      return { ...s, mines: [...minesFor(s.seed, s.round, BOARD_SIZE, MINE_COUNT)].sort((a, b) => a - b) } as GameState;
+      const boards = Object.fromEntries(
+        s.players.map((p) => [p, { ...s.boards[p], score: score(s.boards[p]) }]),
+      );
+      return { ...s, boards, mines: [...minesFor(s.seed, s.round, BOARD_SIZE, MINE_COUNT)].sort((a, b) => a - b) } as GameState;
     }
 
     // Own board: full. The mine layout is revealed ONLY once this player has locked

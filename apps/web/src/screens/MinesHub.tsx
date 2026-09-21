@@ -712,8 +712,11 @@ export function MinesHubScreen(props: GameHubScreenProps) {
       // Ticket 2026-09-17#3 item 2: the gem-count CAPTION (oppGemText/myGemText,
       // Full Spec.html:3779/3781) — a genuinely separate mechanism from the icon strip above (it
       // sits OUTSIDE the bar box). Preserving the source's own asymmetry exactly: the opponent's
-      // text is ALWAYS "N gems" (no singular case), the player's own DOES singularize at exactly
-      // 1. Both only exist once the result sequence has actually started (resultPhase !== 'idle')
+      // text is ALWAYS "N gems" (no singular case) — as of ticket 2026-09-21#2 (D31), the player's
+      // own now matches: D31 explicitly asks to drop the singular "1 gem" form that 2026-09-17#3
+      // deliberately ported from the prototype's own literal source at the time — a knowing
+      // override of that earlier citation, not a correction of a misreading, applied as directed.
+      // Both only exist once the result sequence has actually started (resultPhase !== 'idle')
       // — unlike ownGemRow above, which is live from the very start of the round; this caption is
       // NOT (myGemTextOp: mGrown, which requires mActive, :3781). Visibility timing differs
       // between the two sides: the opponent's caption waits for reveal (oppGemTextOp: mReveal,
@@ -728,7 +731,7 @@ export function MinesHubScreen(props: GameHubScreenProps) {
       // and D27 is explicit the own caption fades out on dismiss.
       oppGemText={resultPhase !== 'idle' ? `${oppGemCount} gems` : undefined}
       oppGemTextVisible={resultPhase === 'reveal' || resultPhase === 'final'}
-      ownGemText={resultPhase !== 'idle' ? `${myGemCount} gem${myGemCount === 1 ? '' : 's'}` : undefined}
+      ownGemText={resultPhase !== 'idle' ? `${myGemCount} gems` : undefined}
       ownGemTextVisible={resultPhase !== 'idle' && resultPhase !== 'closed'}
       // Ticket 2026-09-17#4 (dismiss): a tap anywhere in the game section dismisses a landed
       // result — see `GameHubProps.onSectionTap`'s own doc comment for the full scoping rationale
