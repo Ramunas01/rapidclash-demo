@@ -154,14 +154,25 @@ function DiceTrack({ pos, roll, numColor, light, active, counting = false }: { p
   const trackColor = light ? DICE_TRACK.light : DICE_TRACK.dark;
   const grooveColor = light ? DICE_GROOVE.light : DICE_GROOVE.dark;
   // Ticket 2026-09-16#4 item 3: `roll == null` (no result yet, or the reveal hasn't started counting
-  // yet — see DiceBoard's reveal clock) now falls back to the SAME value (0) for both formulas below
-  // — the prototype's own resting state (`diceMyPos`/`diceMyFill`, `:3608/3676`), and the state this
-  // app flips to the instant a round begins (`startDice`, `:3422`). Previously these two formulas
-  // disagreed (cube at the left edge, fill at an unrelated 50%) for the entire wait on the server —
-  // resolved as a byproduct of the reveal machine's own "t=0" beat now feeding both consistently.
+  // yet — see DiceBoard's reveal clock) falls back to 0 for the POSITION formula — the prototype's
+  // own `diceMyPos`'s `|| 0` (`:3608`) never distinguishes null from 0 either, so `cubeLeft` uses
+  // this one shared fallback regardless of `active`.
   const value = roll != null ? Math.max(0, Math.min(100, roll / 100)) : 0;
-  const fillWidth = `calc(10px + ${value} * (100% - 36px) / 100)`; // lines 3676-3677
   const cubeLeft = `calc(18px + ${value} * (100% - 36px) / 100)`; // lines 3608-3609
+  // Ticket 2026-09-21#4 (D33): the FILL formula does NOT share that fallback in the prototype —
+  // `diceMyFill` (`:3676`) is an explicit `== null ? '50%' : calc(...)`, genuinely diverging from
+  // `diceMyPos` in the null case: true lobby idle (never searched, our `!active`) rests at a
+  // neutral 50%, while an active-but-not-yet-rolled round (our `active`, prototype's own explicit
+  // `diceMy = 0` reset at search-start, `:3410/:3422`) rests at the same near-empty nub `cubeLeft`
+  // does. `2026-09-16#4`'s own comment (previously here) claimed these two formulas agreed at rest
+  // — checked directly against the prototype's source and they don't; that fix correctly unified
+  // the ACTIVE case but over-applied the same 0 fallback to the idle case too, which should have
+  // kept the prototype's OTHER resting value instead. `active` is exactly this app's own equivalent
+  // of the prototype's null-vs-0 distinction (`DiceIdle` passes false, `DiceBoard` passes true) —
+  // no new state needed, just gate the existing prop.
+  const fillWidth = active
+    ? `calc(10px + ${value} * (100% - 36px) / 100)` // lines 3676-3677, diceMy === 0 branch
+    : '50%'; // line 3676, diceMy == null branch — true idle only
   const cubeOpacity = active ? 1 : 0; // lines 3612-3613 (`diceCubeIn` — true for the WHOLE roll, not just once resolved)
   const cubeScale = active ? 'scale(1)' : 'scale(0.55)'; // line 3614 (same `diceCubeIn` gate)
 
@@ -236,7 +247,7 @@ function DiceScaleRow() {
  *  and fades off the left edge under `overflow-hidden` instead of getting explicitly hidden by index. */
 function DiceHistoryBelt({ history, light }: { history: HistoryPill[]; light: boolean }) {
   return (
-    <div className="relative mt-auto overflow-hidden">
+    <div data-testid="dice-history-belt" className="relative mt-auto overflow-hidden">
       <div className="flex flex-row-reverse flex-nowrap gap-2 px-[22px]">
         <AnimatePresence initial={false}>
           {history.map((h) => {
@@ -300,7 +311,18 @@ function DiceHistoryBelt({ history, light }: { history: HistoryPill[]; light: bo
  *  `Full Spec.html:3756`). Applied directly to this `hub-board` div (rather than a separate outer
  *  wrapper, the way `RpsPanel`/`MinesPanel` do it) since Dice's idle/board split has no such wrapper
  *  today and `hub-board` is already the single element every existing box-model test queries. */
-function DiceIdle({ light, barSlideActive }: { light: boolean; barSlideActive?: boolean }) {
+// Ticket 2026-09-21#5 (D34): the history belt (last-5-results pills) used to vanish entirely the
+// moment matchmaking started, instead of staying visible and dimmed underneath like the rest of
+// the card — a structural gap, not a state-clearing bug. `history`'s own lifecycle (written once
+// per landed result in `DiceHubScreen`, cleared only on unmount) was already correct; the belt was
+// simply never rendered from THIS component at all — `DicePanel` swaps entirely between `DiceIdle`
+// and `DiceBoard`, and `<DiceHistoryBelt>` previously only existed inside `DiceBoard`. The
+// prototype never has this seam (one persistent wrapper div holds both the tracks and the belt) —
+// this traces to the original idle/live component split simply never having the belt added to its
+// scope, not a specific later regression. Fix: render the same belt here too, as a SIBLING of the
+// tracks wrapper (not nested inside it) — `DiceHistoryBelt`'s own `mt-auto` needs to be a flex
+// child of the OUTER 266px box to pin to the bottom edge, exactly matching `DiceBoard`'s own layout.
+function DiceIdle({ light, barSlideActive, history }: { light: boolean; barSlideActive?: boolean; history: HistoryPill[] }) {
   return (
     <div
       data-testid="hub-board"
@@ -312,6 +334,7 @@ function DiceIdle({ light, barSlideActive }: { light: boolean; barSlideActive?: 
         <DiceScaleRow />
         <DiceTrack pos="mine" roll={undefined} numColor={DICE_NEUTRAL_NUM} light={light} active={false} />
       </div>
+      <DiceHistoryBelt history={history} light={light} />
     </div>
   );
 }
@@ -451,7 +474,7 @@ function DicePanel(args: GameAreaArgs & { history: HistoryPill[]; armedSig: stri
   const { resolved: themeResolved } = useTheme();
   const light = themeResolved === 'light';
   const live = args.phase === 'in-match' || args.phase === 'result';
-  return live ? <DiceBoard {...args} light={light} /> : <DiceIdle light={light} barSlideActive={args.barSlideActive} />;
+  return live ? <DiceBoard {...args} light={light} /> : <DiceIdle light={light} barSlideActive={args.barSlideActive} history={args.history} />;
 }
 
 /**
