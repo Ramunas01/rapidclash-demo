@@ -1,5 +1,54 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-21#10 — D37, Mines' opponent "Playing…" label collides with the gem strip at reveal: confirmed exactly as reported (screenshot shows both in the same bar simultaneously), and traced to a precise, small fix — "Playing…" is gated on the SHARED cross-game `phase`, which stays 'in-match' through the whole post-lock hold window, with no awareness of Mines' own opponent-specific `resultPhase` sequence. Our existing reveal-timing constants already satisfy the ticket's own 260ms-fade requirement with room to spare — no timing changes needed, only the label's visibility condition            [READY TO TICKET]
+From: Advisor   Re: Designer's D37 report (design-ref/D37, a phone screenshot showing "Playing…" and the opponent's gem strip both visible in the opponent bar at once), verified against `apps/web/src/screens/GameHub.tsx`'s `OpponentSlot` (`:1077`, `:1143-1156`) and `apps/web/src/screens/MinesHub.tsx`'s `resultPhase` state machine (`:592-654`), cross-checked against RPS's and Dice's own equivalent mechanisms
+
+Confirmed exactly as reported and reproduced precisely why, tracing render-by-render rather than assuming the prototype's own stated mechanism ("tied to your phase") maps onto our architecture literally — it doesn't, and the real gap here is different from what the prototype's own bug looked like.
+
+## The real mechanism — not quite the prototype's own bug, but the same visible symptom
+
+**Designer's own diagnosis of the prototype's flaw (`minesPhase === 'run'`, tied to YOUR OWN phase) doesn't literally describe our code — but the practical bug is real anyway, for a different reason.** Our "Playing…" label (`GameHub.tsx:1155`, `phase === 'in-match' && <span>Playing…</span>`) is gated on the SHARED, whole-match `phase` — which already, correctly, only leaves `'in-match'` once the match is server-terminal (both players locked, not just "me"). That part isn't the bug.
+
+**The actual gap: `phase` stays `'in-match'` through the ENTIRE post-lock hold window (`holdResultMs`), which spans Mines' own converge→reveal→final sequence — and "Playing…" has no awareness of that sequence at all.** `MinesHub.tsx`'s own `resultPhase` state machine (`:592-654`) already, correctly, gates its `reveal` transition on `opp?.locked` (`:629`, `if (!opp?.locked) return;` — a real, deliberate, already-shipped fix from an earlier ticket, confirmed by the extensive comment block above it) — so the gem strip itself only ever appears once the opponent is genuinely done. But `phase` doesn't reflect any of that finer-grained sequencing; it stays `'in-match'` for the whole `holdResultMs` duration (which by design spans past `resultPhase` reaching `'reveal'`), so "Playing…" — knowing nothing about `resultPhase` — keeps showing well after the gem strip has already faded in. Two independently-correct mechanisms, never reconciled with each other.
+
+## Confirmed the existing reveal-timing constants already satisfy the ticket's own numbers — no timing changes needed
+
+**Worked through both of the ticket's own scenarios against our actual constants (`MinesHub.tsx:541-543`: `REASON_DELAY_MS.bust = 1500`, `REVEAL_AFTER_CONVERGE_MS = 820`, `FINAL_AFTER_REVEAL_MS = 700`) and they match exactly, with the fade-timing invariant already satisfied as a byproduct.**
+- **Opponent finishes after you bust:** the moment `opp?.locked` is observed true, our code already schedules `reveal` 820ms later (`:629-631`) — since the label's own fade only needs 260ms, fixing the label to hide at that SAME moment (`opp?.locked` becoming true) leaves 560ms of margin. `reveal` already can't fire before the fade completes.
+- **Opponent already finished when you bust:** `converge` at +1500, `reveal` at +2320, `final` at +3020 — byte-identical to the ticket's own stated numbers for this case. The label (once fixed) would already have faded out well before your own bust in this case, since the opponent locked earlier — no possible overlap.
+
+So the fix is precisely scoped: **only "Playing…"'s own visibility condition needs to change — not the reveal-scheduling logic, which was already correct.**
+
+## A second, pre-existing gap the fix needs to address to actually work: no real transition exists today
+
+**The prototype's own cited `transition:opacity 260ms ease` (`Full Spec.html:462`) has never actually been implemented — "Playing…" is a plain `phase === 'in-match' && <span>...</span>` conditional render (`GameHub.tsx:1155`), meaning it currently pops in/out INSTANTLY (an unmount, not a fade) regardless of what any CSS transition would claim.** This predates this ticket and isn't Mines-specific (the element and its styling are explicitly shared across every game, per the comment at `:1150`) — but the whole "let the label finish its 260ms fade before revealing the strip" mechanic this ticket asks for depends on that fade actually existing, so it needs fixing as part of this change, not separately.
+
+## Fix, precisely scoped
+
+1. **Add a new opt-in prop, `oppLocked?: boolean`, to `GameHubProps` and `OpponentSlot`** (same idiom as `oppGemRow`/`resultConverge` — undefined for every game that doesn't pass it, a byte-identical no-op there). Mines passes `oppLocked={opp?.locked ?? false}`.
+2. **Change `GameHub.tsx:1155`'s render from a conditional mount to an always-mounted, opacity-toggled element:**
+   ```
+   <span className="shrink-0 text-[13px] font-bold tracking-[0.3px] text-foreground/70"
+         style={{ opacity: phase === 'in-match' && !oppLocked ? 1 : 0, transition: 'opacity 260ms ease' }}>
+     Playing…
+   </span>
+   ```
+   For every game that doesn't pass `oppLocked` (`undefined` → `!undefined` → `true`), this reduces to today's exact `phase === 'in-match'` condition — now genuinely fading instead of popping, matching the prototype's own cited transition for the first time, for every game, not just Mines.
+3. **No changes needed to `resultPhase`'s own timing constants or scheduling** — confirmed above they already satisfy the invariant.
+
+**One layout side effect worth a look, not a blocker:** switching from conditional-mount to always-mounted+opacity means the label's own box now reserves its natural width even while invisible (opacity:0 doesn't collapse layout the way unmounting did) — previously, an absent "Playing…" freed that space entirely for `gemRow`'s own `flex-1`. Given "Playing…"'s text is short and the gem row's own content (tiny 17px icons) is compact, this is very likely visually negligible on a real device, but worth a quick look once shipped rather than assuming — flagging precisely rather than silently prescribing a fix for a tradeoff I can't fully verify without a live render.
+
+## Checked RPS and Dice — one is structurally exempt, the other has no equivalent collision to fix (verified, not assumed)
+
+**RPS:** confirmed via its own existing code comment (`RpsHub.tsx:674-682`) that it deliberately does NOT wire `holdResultMs` — RPS's reveal is gated on `outcome` directly, landing essentially the same tick the match ends, both players' results known simultaneously (a fixed server-side pick window, not an asymmetric per-player finish). `phase` never lingers at `'in-match'` past the actual reveal for RPS — this bug's precondition doesn't exist there.
+
+**Dice:** DOES use `holdResultMs` (`DiceHub.tsx:543-544`, the same pattern as Mines), so "Playing…" likely does stay visible through Dice's own ~1.8s reveal countdown too. But Dice's opponent BAR has no competing element in the same space (Dice's own `gemRow`/`gemText` props are Mines-exclusive; the actual dice values reveal in the BOARD area below, not the bar) — so there's no VISUAL COLLISION to fix the way Mines has one. The label saying "Playing…" slightly past the point both rolls are technically already known is a much smaller, different kind of imprecision (wording accuracy, not overlap) — not folding it into this ticket; flagging it as a separate, optional, much lower-priority item Designer may or may not want addressed.
+
+---
+
+**Ask:** small, precisely-scoped change in one shared file plus one new prop threaded from MinesHub — no timing/sequencing changes. Worth a live-page look at the layout side effect noted above once shipped.
+
+---
 ### 2026-09-21#9 — D36, Owner reports testers seeing half-loaded tiles + broken navigation for several days: confirmed with hard evidence — 1,129 of 8,213 requests (13.7%) over the last 24h got a literal Cloud Run infrastructure 429, not an app bug. Root cause: the single-instance concurrency ceiling (80, Cloud Run's default — never explicitly set) is too tight for the always-on 32-connection bot-crowd plus a deploy-time reconnect burst. Two items, both Owner-approved: raise the ceiling to 300, and add a WS heartbeat so dead mobile connections free their slot in seconds instead of up to an hour            [READY TO TICKET]
 From: Advisor   Re: Owner's own direct report (design-ref/D36: a Cloud Run metrics screenshot + 3 phone screenshots showing broken game-tile/banner images), verified against Cloud Logging (24h of real request data), the Cloud Monitoring concurrency metric (queried directly via the REST API, not eyeballed), `gcloud run services describe`'s live config, `docs/DEPLOY.md`'s canonical deploy command, `apps/server/src/ws/gateway.ts`'s connection lifecycle, and the demo-taker VM's actual running bot roster
 
