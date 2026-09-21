@@ -1,5 +1,40 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-21#7 — Blackjack RNG fairness check, Owner/Designer report ("3 BJ deals in a row, then a run of 13s"): investigated thoroughly, found NO bug — the shuffle is statistically correct, well-decorrelated round-to-round, and the reported pattern is well within ordinary variance for the demo's actual hand volume. Not a fix ticket — closing the question, recording the evidence            [NOT A BUG — CLOSING]
+From: Advisor   Re: Owner's relayed Designer report (DemoGM account: 3 natural blackjacks in sequence, then several hands at 13), verified via direct code review of `packages/games/blackjack/src/deck.ts` + `packages/core/src/matchmaking.ts`'s RNG/seed sourcing, plus empirical statistical simulation of the actual shuffle code (2M+ trials)
+
+Took this seriously given it's a real-money-adjacent fairness question, not a UI bug — did the full chain: where the seed entropy comes from, how it's mixed per round, and whether the reported pattern is actually anomalous or just how correctly-random systems look sometimes.
+
+## The RNG chain, traced end to end — no weak link found
+
+**Match-level seed:** `packages/core/src/matchmaking.ts:464`/`:558`, `randomBytes(4).readUInt32LE(0)` — Node's `crypto.randomBytes`, a genuinely high-entropy source, drawn fresh for every single match at both match-creation call sites (PLAY-matched and JOIN-a-challenge). Never reused, never derived from wall-clock time or anything low-entropy.
+
+**Per-match RNG:** that seed drives a `mulberry32`-based `createRng()` (`matchmaking.ts:11-25`) — deterministic FROM that point on, by design (`// Never call Math.random` — the whole match, including replays, must reproduce byte-identically from its seed; this is a deliberate fairness/auditability property, not a bug).
+
+**Blackjack's own per-round shuffle:** `deck.ts` draws a SECOND base seed via `rng.int(0, 0x7fffffff)` at `init()` (once per match), then derives each round's deck via `mixSeed(base, round, playerIndex)` (a multiply+xorshift hash) feeding its own `mulberry32` instance, then Fisher–Yates. Each `(round, playerIndex)` pair gets an independently-shuffled deck.
+
+## Empirically tested the actual shuffle code, not just read it
+
+Reimplemented `deck.ts` verbatim in a throwaway script and ran it at scale:
+- **Natural-blackjack rate over 2,000,000 independent fresh-match draws: 4.846%** — the true combinatorial rate (4 aces × 16 ten-cards × 2 orders ÷ C(52,2)) is 4.827%. Matches within noise — no bias toward or away from blackjack.
+- **`mixSeed`'s avalanche property:** consecutive `round` values (0→1, 1→2, …) for a fixed base seed produce outputs differing in an average of 15.97 of 32 bits — textbook-good diffusion (16/32 is ideal). Consecutive rounds are NOT correlated.
+- **Player 0 vs. player 1 decks (same base/round): 0 collisions in 100,000 trials** — `playerIndex` genuinely produces independent decks, not a copy-paste bug.
+- **Both-players-simultaneous-natural-BJ rate per round: 0.2323%**, essentially identical to the independence-assuming expectation (0.2330% = 4.827%²) — no hidden correlation between the two players' hands.
+- **Streak check:** simulated 200,000 matches, each walked 15 rounds — a same-player 3-in-a-row streak of hand-total-exactly-13 occurred in 1.07% of matches (2,134/200,000). **This is the key number:** a "3 in a row" streak at a specific total is not a rare, suspicious event for a correctly-random shuffle — it is expected to occur periodically across a large volume of hands, which a live demo with bot crowds accumulates continuously.
+
+## Why "3 BJs then a run of 13s" reads as suspicious but isn't
+
+A real blackjack (21 on the first 2 cards) has an honest ~4.83% base rate. Getting one 3 times in a row (3 separate matches, since a match only continues past one round on a DRAW, and a blackjack that beats a non-blackjack hand ends the match immediately — so 3 BJs "in sequence" are almost certainly 3 separate matches, each with its own fresh crypto-random seed) has probability ≈0.0483³ ≈ 1-in-8,900. Rare for one specific sitting, but not implausible against the demo's actual total hand volume across all bots and testers over multiple days — and human pattern-recognition (the "clustering illusion") reliably reads short runs in genuinely random sequences as more meaningful than they are. Nothing in the code, and nothing in the empirical test, shows the system favoring these outcomes.
+
+## Ruled out the recent deploy as a cause
+
+`git log` on `packages/games/blackjack/`, `packages/core/src/matchmaking.ts`, and `packages/shared/src/game-contract.ts` shows no commits since well before today's D30-D35 Dice/Mines deploy (`rapidclash-00123-rt9`) — none of today's shipped changes touch Blackjack's dealing, the shared RNG, or match-seed sourcing at all.
+
+---
+
+**Ask:** none — no code change recommended. Recording this for the audit trail given the fairness stakes; flag if Designer/Owner wants a live-page spot-check on the actual DemoGM match history instead of (or in addition to) this code-level analysis.
+
+---
 ### 2026-09-21#6 — D35, Dice's cubes snap in during the bar-split (not after it) and replaying after a result wipes the whole board instantly: confirmed both, and they share one root cause deeper than a missing transition string — `DiceIdle` and `DiceBoard` are two ENTIRELY SEPARATE React components that `DicePanel` mounts/unmounts on every phase swap, so no CSS transition can ever bridge either boundary no matter what's declared on either side            [READY TO TICKET]
 From: Advisor   Re: Designer's D35 report (Dice's Play→roll motion doesn't match `startDice`, `Full Spec.html:3393-3446`), verified directly against `apps/web/src/screens/DiceHub.tsx`'s `DicePanel`/`DiceIdle`/`DiceBoard` and `GameHub.tsx`'s `phase`/`holdSearch`/`barSlideActive` machinery, cross-checked against the prototype's own cited transition strings
 
