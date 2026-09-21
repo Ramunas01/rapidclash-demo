@@ -1,5 +1,48 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-21#6 — D35, Dice's cubes snap in during the bar-split (not after it) and replaying after a result wipes the whole board instantly: confirmed both, and they share one root cause deeper than a missing transition string — `DiceIdle` and `DiceBoard` are two ENTIRELY SEPARATE React components that `DicePanel` mounts/unmounts on every phase swap, so no CSS transition can ever bridge either boundary no matter what's declared on either side            [READY TO TICKET]
+From: Advisor   Re: Designer's D35 report (Dice's Play→roll motion doesn't match `startDice`, `Full Spec.html:3393-3446`), verified directly against `apps/web/src/screens/DiceHub.tsx`'s `DicePanel`/`DiceIdle`/`DiceBoard` and `GameHub.tsx`'s `phase`/`holdSearch`/`barSlideActive` machinery, cross-checked against the prototype's own cited transition strings
+
+Confirmed both symptoms exactly as reported, and worked out the precise render-by-render mechanism rather than checking transition strings in isolation — Designer's own suggested check ("confirm each transition string is on the element") wouldn't have caught this: the strings are already correct, the problem is which DOM element they're attached to.
+
+## The mechanism: two components, not one, swapped at exactly the two moments that matter
+
+**`DicePanel` renders either `<DiceIdle>` or `<DiceBoard>` — never the same element with changing props — based on `live = phase === 'in-match' || phase === 'result'`** (`DiceHub.tsx:430`). Everything else in this file (`GameHub.tsx`'s own bars, ring, VS label, card) is a single element whose STYLE VALUES change across renders, letting a declared `transition` actually interpolate. Dice's own board is the one place in this screen where the "before" and "after" states are two different mounted DOM subtrees — and CSS transitions cannot animate across an unmount/mount, regardless of what transition string is written on either side. Traced exactly which `phase` transitions cross that boundary:
+
+- **`idle`→`waiting` (search starts):** both map to `live = false` — `DiceIdle` stays mounted the whole time. The card correctly dims to 0.28 here; no bug.
+- **`waiting`→`in-match` (the moment `holdSearch` clears, `GameHub.tsx:609`):** `live` flips false→true in this exact render. `DiceIdle` unmounts, `DiceBoard` mounts already at its target values (cube opacity 1/scale 1, card opacity 1) — no prior frame to interpolate from, so nothing fades, it just paints.
+- **`in-match`→`result`:** both `live = true` — `DiceBoard` stays mounted; the reveal/ring/fill sequence that already runs here is unaffected by this bug.
+- **`result`→`waiting` (replay) or `in-match`→`waiting` (a fresh Play mid-round, if reachable):** `live` flips true→false. `DiceBoard` (holding the resolved cubes, fills, everything) unmounts in one render; `DiceIdle` mounts fresh at whatever card/track values are due. Nothing to see mid-transition — it's just gone.
+
+## Symptom 1 — cubes appear at the wrong INSTANT, not just without a fade
+
+**Confirmed the exact timing, not just the direction of the error.** Dice doesn't override `searchFloorMs` (`GameHub.tsx:424`'s default, 2400ms, applies) — RPS/Coinflip explicitly set `searchFloorMs={3800}` for their own presentation reasons, Dice never has. But the real issue isn't the floor's duration — it's that our bar-slide has no separate "found"/"split" sub-stage the way the prototype's own `rpsMatch` state machine does. `barSlideActive` (`GameHub.tsx:713`, `matchForming || searching || resultConverge`) is a single boolean: the bars slide TO their shift position the instant it goes true, and slide BACK the instant it goes false — and it goes false in the EXACT SAME RENDER that `holdSearch` clears and `phase` flips to `'in-match'`. So our bars' own 620ms slide-back transition (`GameHub.tsx:1102`/`:1221`, `transform 620ms cubic-bezier(0.3,0.9,0.32,1)` — matches the prototype's own value exactly) starts at the SAME instant `DiceBoard` mounts and its cube pops fully visible — i.e., **the cube appears at the START of the bar-split, not ~660ms after it settles**, which is exactly Designer's own wording ("during the bar split instead of after it"). The prototype gets this gap for free because `diceCubeIn:true` is a SEPARATE, later `setState` (`:3421`, `mnM4`) than the one that ends the shift (`rpsMatch:'split'`, `:3413`, `mnM3`) — a real scripted delay between the two, which our simpler `holdSearch`-only mechanism has no equivalent of.
+
+## Symptom 2 — replaying unmounts the resolved board in one frame
+
+**Same mechanism, reverse direction, confirmed for both of Designer's own two cases.** Whether the result overlay is still showing (`phase: 'result'`) or already dismissed (bars home, likely back at `'idle'`/`'waiting'` between-match state) — either way, starting a new search moves `phase` away from `{'in-match','result'}` into `'waiting'`, `live` flips true→false, and `DiceBoard`'s entire subtree (rolled cubes, ring, fills) disappears in the same render the card should merely start dimming to 0.28. Matches Designer's "everything leaves together over roughly half a second" expectation being violated exactly — currently nothing overlaps or fades, it's just gone.
+
+## A secondary effect of the same mechanism, not separately reported but worth noting
+
+**The card's own opacity fade-IN at `run` (spec: "Card back to opacity 1 (380ms)") is also currently a snap, for the identical reason** — `DiceIdle`'s and `DiceBoard`'s own `hub-board` boxes are two different elements, so the card pops straight to opacity 1 the instant `DiceBoard` mounts, same render as the cube. Any fix for the two headline symptoms fixes this for free, since it's the same underlying swap.
+
+## One separate, minor, NOT Dice-specific finding — flagging, not folding into this ticket
+
+**The player-bar ring's own box-shadow transition is a real 80ms short of the prototype's cited value, but it's shared code, not something `startDice` touches.** `OwnSlot`/`OpponentSlot` (`GameHub.tsx:1200`) use Tailwind's `transition-all duration-300` (300ms) for the win/lose/draw ring; the prototype's own literal value for this exact box-shadow transition is `380ms` (`Full Spec.html:437`, `:661` — the shared opp/player bar block, not Dice-specific). This affects every game equally, already existed before this ticket, and isn't part of Designer's own two reported symptoms — noting it for the record since the checklist asked to confirm it, not recommending a fix here (a 300ms→380ms bump on a shared component is its own decision, separate from this ticket's scope).
+
+## Fix, precisely scoped
+
+**Merge `DiceIdle` and `DiceBoard` into one always-mounted component**, matching the prototype's own architecture (one persistent `isDice` div; only VALUES change, never the element). `DicePanel` should render that one function continuously across every phase, with `active`/`roll`/card-opacity/etc. computed as ordinary variables inside it (from `phase`, `gameState`, and a NEW Dice-specific "cube reveal" gate) rather than picking between two components. That single change makes every existing `transition` string in `DiceTrack`/the card box start working across every phase boundary, including the ones already correct today (fixes symptom 2 and the card fade-in for free).
+
+**Symptom 1 additionally needs a real timing gap, not just a working transition** — a Dice-specific delay between "bars finish sliding home" and "cube becomes active," sized to the bar's own known 620ms transition (plus the prototype's own small ~40ms margin, though that's cosmetic) — something `holdSearch`'s generic floor doesn't provide today since it's shared, single-purpose, and already tuned for the search-dwell use case, not this. A `setTimeout` armed off the same `holdSearch`→false edge, gating a new `cubeActive` boolean 620-660ms later, is the most direct mirror of the prototype's own separate `mnM3`→`mnM4` scripted gap.
+
+**Worth flagging for coordination, not asking to hold on:** this unification would make `2026-09-21#5` (D34, history belt missing from `DiceIdle`) moot on its own — if this ticket lands first, D34's separate fix becomes unnecessary (the belt would just always be there once there's only one component). Neither is blocked on the other; whichever lands first, sanity-check the other doesn't duplicate it.
+
+---
+
+**Ask:** the biggest of the 4 open Dice tickets so far — a real structural change (one component instead of two), plus a new small timing gate. Independent of D32/D33 (both still open), but do check D34 doesn't end up redundant once this lands.
+
+---
 ### 2026-09-21#5 — D34, the Dice history belt vanishes entirely during matchmaking instead of just dimming with the rest of the card: confirmed, and it's a structural gap, not a state-clearing bug — the prototype keeps one persistent box with everything in it, our port split "idle preview" and "live board" into two separate component trees, and the belt was only ever added to one of them            [READY TO TICKET]
 From: Advisor   Re: Designer's D34 report (Dice history pills disappear the moment a search starts, should stay visible and dimmed underneath), verified directly against `apps/web/src/screens/DiceHub.tsx`'s `DicePanel`/`DiceIdle`/`DiceBoard` (`:284-298`, `:415`, `:427-432`) and the prototype's own cited lines (`Full Spec.html:3455`, `:595`, `:3470`, `:3756`)
 
