@@ -123,10 +123,55 @@ describe('DiceHubScreen', () => {
   // Ticket 2026-09-12#5 item 3 (ADVISOR_TO_PM.md): the cube must be visible (not just a flash once
   // resolved) for the entire live roll, resting at its known 0% start — traced the prototype's own
   // `diceCubeIn` state flip (Full Spec.html:3421), which happens at roll-START, before the count-up.
+  // Ticket 2026-09-21#6 (D35): a component that MOUNTS already live (a page reload/reconnect
+  // mid-match — exactly what a bare `render()` into a live state simulates) has no bar-slide to
+  // wait out at all, so the ~660ms reveal delay is correctly skipped here — see the DEDICATED
+  // delay test below for the genuine within-lifetime idle→in-match transition that DOES get it.
   it('item 3: both cubes are visible (opacity 1) from the moment the board goes live, before the roll resolves — never hidden until it "arrives"', () => {
     render(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState: preRoll(), legalMoves: ['reveal'] })} />);
     expect(screen.getByTestId('dice-cube-opp').style.opacity).toBe('1');
     expect(screen.getByTestId('dice-cube-mine').style.opacity).toBe('1');
+  });
+
+  // Ticket 2026-09-21#6 (D35) symptom 1: the cube used to pop in at the exact render the bars
+  // finished sliding home (mid bar-split, not after it settled) — a genuine WITHIN-LIFETIME
+  // idle→in-match transition (unlike the test above, which mounts already-live). `rerender` from
+  // idle to a live match exercises the real trigger: `cubeActive`'s delay should now hold the cube
+  // hidden for ~660ms even though `live` itself flips true immediately.
+  it('D35: a match starting WHILE already on the hub (not a fresh mount) delays the cube reveal ~660ms, matching the bar-slide settling', async () => {
+    const { rerender } = render(<DiceHubScreen {...baseProps()} />); // idle — board not live yet
+    expect(screen.getByTestId('dice-cube-opp').style.opacity).toBe('0');
+
+    rerender(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState: preRoll(), legalMoves: ['reveal'] })} />);
+    // Still hidden immediately after the transition — the bars are still sliding home.
+    expect(screen.getByTestId('dice-cube-opp').style.opacity).toBe('0');
+    expect(screen.getByTestId('dice-cube-opp').textContent).toBe('');
+    const fill = screen.getByTestId('dice-cube-opp').previousElementSibling as HTMLElement;
+    expect(fill.style.width).toBe('50%');
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 700)); }); // past the 660ms delay
+    expect(screen.getByTestId('dice-cube-opp').style.opacity).toBe('1');
+    expect(screen.getByTestId('dice-cube-opp').textContent).toBe('0.00');
+    expect(fill.style.width).not.toBe('50%');
+    expect(fill.style.width).toContain('10px');
+  });
+
+  // Ticket 2026-09-21#6 (D35) symptom 2: replaying after a result used to wipe the whole board
+  // instantly — `DiceIdle`/`DiceBoard` were two separate components, so leaving 'in-match'/'result'
+  // unmounted DiceBoard's entire resolved subtree in one render, nothing to fade or overlap with
+  // the card's own dim-in. Now ONE persistent element — this proves the structural fix directly:
+  // the exact same `hub-board` DOM node survives a live→waiting transition, so its existing opacity
+  // transition can actually animate instead of the node just vanishing.
+  it('D35 symptom 2: the board is the SAME DOM node across a replay/leave transition — never unmounted, so it can fade rather than vanish instantly', () => {
+    const gameState = resolved();
+    const { rerender } = render(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState })} />);
+    const boardBefore = screen.getByTestId('hub-board');
+    const cubeBefore = screen.getByTestId('dice-cube-mine');
+
+    rerender(<DiceHubScreen {...baseProps({ currentMatchId: null, gameState: null, waitingExpiresAt: Date.now() + 10_000 })} />);
+
+    expect(screen.getByTestId('hub-board')).toBe(boardBefore); // same node — no DiceIdle/DiceBoard remount boundary
+    expect(screen.getByTestId('dice-cube-mine')).toBe(cubeBefore);
   });
 
   it('item 3: idle preview keeps both cubes hidden (opacity 0) — only the live board activates them', () => {
@@ -138,7 +183,8 @@ describe('DiceHubScreen', () => {
   // Ticket 2026-09-21#3 (D32) item 1: the label used to fall back to '' whenever `roll` was null —
   // a real, noticeable blank stretch spanning the whole server round-trip plus the reveal clock's
   // first 460ms, even though the cube itself (opacity/scale) was already fully visible. Now matches
-  // `cubeLeft`/`fillWidth`'s own resting fallback: "0.00" whenever the cube is active at all.
+  // `cubeLeft`/`fillWidth`'s own resting fallback: "0.00" whenever the cube is active at all. (A
+  // fresh mount already live has no D35 reveal delay to wait out — see that dedicated test above.)
   it("D32 item 1: the cube's number label reads \"0.00\" (not blank) the moment the board goes live, before any roll data exists", () => {
     render(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState: preRoll(), legalMoves: ['reveal'] })} />);
     expect(screen.getByTestId('dice-cube-opp').textContent).toBe('0.00');
@@ -192,6 +238,8 @@ describe('DiceHubScreen', () => {
     expect(fillMine.style.width).toBe('50%');
   });
 
+  // (A fresh mount already live has no D35 reveal delay to wait out — the fill sits at the nub
+  // immediately, same as the cube; see the dedicated within-lifetime-transition test above.)
   it('D33: once a match is live (active, no roll yet), the fill rests at the near-empty nub, not 50%', () => {
     render(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState: preRoll(), legalMoves: ['reveal'] })} />);
     const fill = screen.getByTestId('dice-cube-opp').previousElementSibling as HTMLElement;
