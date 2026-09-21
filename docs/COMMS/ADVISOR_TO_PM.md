@@ -1,5 +1,37 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-21#11 — active-incident follow-up to D36 (2026-09-21#9): the missing-tiles report recurred, WORSE than before (26.5% request-rejection rate observed live, confirmed by 5/5 of my own test requests failing) — root cause is a genuinely different, second bug this time: static assets are served with no long-lived cache headers, so every reload re-fetches every hashed, never-changing image/font from the origin server instead of the browser's own cache, multiplying load on the single concurrency-capped instance well beyond what a visit should actually cost. Owner explicitly declined raising concurrency further (testers only, not real users) — this ticket is ONLY the cache-header fix            [READY TO TICKET]
+From: Advisor   Re: Owner's own direct live report ("check the socket situation - I get similar missing tiles problem again"), verified via `gcloud logging read` (live, real-time), the Cloud Monitoring concurrency metric (REST API), a direct `curl` smoke-test against the live site (5/5 requests rejected), and `@fastify/static@7.0.4`'s own installed source (`node_modules/.pnpm/@fastify+send@2.1.0/.../SendStream.js`)
+
+Owner asked me to check the socket situation again — found an ACTIVE incident (not historical), confirmed by making live requests myself, and traced it to something new: not primarily a bot-crowd/deploy-burst issue like D36, but a client re-fetch amplification bug that undermines D36's own fix.
+
+## Confirmed live, not just from logs
+
+**Made 5 direct `curl` requests to a game-tile image myself: 5/5 got HTTP 429 ("no available instance"), in a row, right now.** `gcloud logging read` over the prior 30 minutes: 244 of 922 requests (26.5%) rejected — WORSE than the 13.7% D36 originally reported, despite `containerConcurrency` confirmed still correctly at 300 (`gcloud run revisions describe rapidclash-00125-cnn` — the live-serving revision itself, not just the service template) and no crash/restart events in that window (`run.googleapis.com%2Fvarlog%2Fsystem` logs clean since the 19:28 deploy).
+
+## The real mechanism this time: repeat requests for files that should never be re-fetched at all
+
+**Traced ONE real visitor's own traffic (`remoteIp` from a live 429's full JSON payload) over 5 minutes: the SAME content-hashed image filenames (`keno-B2ChlCB2.webp`, `baccarat-DZVPX4L1.webp`, etc. — Vite's own hash-suffixed build output, which by construction NEVER changes for the same content) were each re-requested 13-24 TIMES.** A properly-cached hashed asset should be fetched from the network exactly ONCE, ever, then served from the browser's own disk/memory cache for every subsequent reference — no network round-trip, no concurrency slot consumed, no origin-server load at all.
+
+**Checked why: the static-file serving has no cache directives configured at all.** `server.ts:96`, `app.register(FastifyStatic, { root: webDist });` — no `maxAge`, `immutable`, or `cacheControl` option. Confirmed directly against the actual installed package source (`@fastify/send@2.1.0`'s `SendStream.js:105-143`): with no `maxAge` set, the default `Cache-Control` sent is effectively `max-age=0` — technically "cacheable," but REQUIRES REVALIDATION (a real request to the origin, even if it often resolves to a cheap 304) on every single use. Every page reload, every re-render that touches an `<img>` tag, re-issues a real HTTP request to the ONE, concurrency-capped Cloud Run instance for files that are, by design, permanently immutable.
+
+**This actively undermines D36's own concurrency/heartbeat fix — it doesn't fail on its own, it multiplies whatever load already exists.** A frustrated visitor seeing broken tiles and reloading the page is EXACTLY the failure mode this creates: each reload re-requests everything from the origin instead of the local cache, adding more load right when the instance is already stressed, plausibly causing MORE of the very failures that prompted the reload — a self-reinforcing loop.
+
+## Fix, precisely scoped — NOT a blanket change, one real correctness trap to avoid
+
+**Only `/assets/*` (Vite's content-hashed build output, confirmed via `ls apps/web/dist/` — `assets/` is the ONLY hashed directory) should get a long-lived, immutable cache.** Everything else at the dist root — `index.html`, `manifest.webmanifest`, `sw.js`, `workbox-*.js`, `icons/` — is either the SPA's own entry point (must always be revalidated so a deploy's new JS/CSS references actually reach visitors) or the service worker itself (caching this long-term is a well-known PWA footgun — a stale service worker can get stuck controlling the page indefinitely). **A blanket cache setting across the whole static root would be a real, serious bug — silently breaking every future deploy's rollout** (visitors stuck on old code, or an old service worker) — worth being precise about, not just "add caching."
+
+**Concretely: use `@fastify/static`'s own `setHeaders` option** (confirmed supported by the installed version — a callback receiving the response and the resolved file path), setting `Cache-Control: public, max-age=31536000, immutable` ONLY when the path is under `/assets/`, leaving every other file's existing (safe, always-revalidate) behavior completely untouched. This is a single registration, one small conditional function — no second `FastifyStatic` registration, no route restructuring needed.
+
+## Scope, per Owner's own explicit call
+
+**Owner has explicitly declined raising `containerConcurrency` further as part of this** — their own words: "not a solution... just testers, not real users." This ticket is ONLY the cache-header fix. Not reopening the concurrency question here.
+
+---
+
+**Ask:** small, one file, one new option on an existing plugin registration — no new dependencies, no route changes. Given this is reducing ORIGIN load (not raising a ceiling), it should measurably cut the 429 rate on repeat visits even without touching concurrency. Worth a live re-check (repeat `curl -I` on the same asset, confirm `Cache-Control` header + confirm a second request doesn't even reach the origin) once shipped.
+
+---
 ### 2026-09-21#10 — D37, Mines' opponent "Playing…" label collides with the gem strip at reveal: confirmed exactly as reported (screenshot shows both in the same bar simultaneously), and traced to a precise, small fix — "Playing…" is gated on the SHARED cross-game `phase`, which stays 'in-match' through the whole post-lock hold window, with no awareness of Mines' own opponent-specific `resultPhase` sequence. Our existing reveal-timing constants already satisfy the ticket's own 260ms-fade requirement with room to spare — no timing changes needed, only the label's visibility condition            [READY TO TICKET]
 From: Advisor   Re: Designer's D37 report (design-ref/D37, a phone screenshot showing "Playing…" and the opponent's gem strip both visible in the opponent bar at once), verified against `apps/web/src/screens/GameHub.tsx`'s `OpponentSlot` (`:1077`, `:1143-1156`) and `apps/web/src/screens/MinesHub.tsx`'s `resultPhase` state machine (`:592-654`), cross-checked against RPS's and Dice's own equivalent mechanisms
 
