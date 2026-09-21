@@ -132,7 +132,14 @@ export function buildApp(
   opts: AppOptions = {},
 ): FastifyInstance {
   const { identity, ledger, matchmaking, matchHistory, guest, rewards } = services;
-  const app = Fastify({ logger: false });
+  // Ticket 2026-09-21#8: `trustProxy: true` — this app always runs behind exactly one well-known
+  // reverse proxy (Cloud Run's Google Front End locally too, or any future single-hop proxy), which
+  // sets `X-Forwarded-For` to the real visitor's IP. Without this, `request.ip` is the proxy's own
+  // TCP peer address for EVERY request, collapsing the guest-login rate limit's per-visitor 5/minute
+  // bucket (guest-auth.ts) into one bucket shared by the whole site's traffic (bots included) — the
+  // reported "occasionally Rate exceeded" bug. `request.ip`/`req.ip` is read in exactly one place in
+  // this codebase (that rate-limit config), so this has no other blast radius.
+  const app = Fastify({ logger: false, trustProxy: true });
 
   // App-wide, every response (see FRAME_ANCESTORS_CSP above for why global vs scoped).
   app.addHook('onSend', async (_request, reply) => {
