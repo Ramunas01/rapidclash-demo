@@ -606,6 +606,37 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     }
   });
 
+  // Ticket 2026-09-21#10 (D37): the shared "Playing…" label used to stay visible through the
+  // WHOLE post-lock holdResultMs hold window (gated only on the cross-game `phase`, with no
+  // awareness of resultPhase at all) — well past the moment the opponent's own gem strip had
+  // already faded in, colliding with it in the same bar. `oppLocked` hides the label the instant
+  // the opponent's OWN round ends, independent of resultPhase/holdResultMs entirely.
+  it("D37: the opponent bar's \"Playing…\" label hides the instant the OPPONENT locks — not lingering through the reveal hold", async () => {
+    vi.useFakeTimers();
+    try {
+      // I haven't locked at all yet — opponent hasn't either. Ordinary in-match: label visible.
+      const gameState = view({ uncovered: [0, 1, 2] }, { locked: false });
+      const { rerender } = render(
+        <MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: asLegal([3, 4, 5]) })} />,
+      );
+      const oppBar = within(screen.getByTestId('hub-slot-opponent'));
+      expect(oppBar.getByText('Playing…').style.opacity).toBe('1');
+
+      // I bust; opponent is STILL not locked — label stays visible (their own round isn't over).
+      const myBustState = view({ uncovered: [0, 1, 2, 3], locked: true, bustedOn: 10 }, { locked: false });
+      rerender(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: myBustState, legalMoves: asLegal([]) })} />);
+      expect(oppBar.getByText('Playing…').style.opacity).toBe('1');
+
+      // Opponent locks — the label hides IMMEDIATELY (same render), well before reveal fires
+      // 820ms later (REVEAL_AFTER_CONVERGE_MS) — no timer advance needed here at all.
+      const bothLockedState = view({ uncovered: [0, 1, 2, 3], locked: true, bustedOn: 10 }, { locked: true, score: 5 });
+      rerender(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: bothLockedState, legalMoves: asLegal([]) })} />);
+      expect(oppBar.getByText('Playing…').style.opacity).toBe('0');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // Ticket 2026-09-17#1 item 2: the genuinely new behavior — a held 'converge' (opponent not yet
   // locked) releases once their `locked` is observed true, and 'reveal'/'final' fire relative to
   // THAT release moment, not the original convergence timestamp. This is the core of item 2's fix:

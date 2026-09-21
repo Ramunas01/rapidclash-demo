@@ -387,6 +387,14 @@ interface GameHubProps extends GameHubScreenProps {
    *  nav/wallet taps. Mines' own handler no-ops unless `resultPhase === 'final'`. Undefined (every
    *  hub but Mines) → byte-identical no-op, no handler attached. */
   onSectionTap?(): void;
+  /** Ticket 2026-09-21#10 (D37): hides the shared opponent-bar "Playing…" label the moment the
+   *  opponent's OWN round ends, closing a real collision — the shared `phase` alone stays
+   *  'in-match' through the whole post-lock `holdResultMs` hold window (which for Mines spans its
+   *  own `resultPhase` converge→reveal→final sequence), so without this the label kept showing
+   *  well after the opponent's gem strip had already faded in, in the same bar. Undefined (every
+   *  hub but Mines) → `!undefined` → `true` → byte-identical to today's plain `phase === 'in-match'`
+   *  condition. See `OpponentSlot`'s own matching comment for the full mechanism. */
+  oppLocked?: boolean;
 }
 
 /** Ticket 2026-09-12: generalizes the #381 "tap-again to escalate" gesture beyond the hardcoded
@@ -421,7 +429,7 @@ function useNow(active: boolean): number {
  */
 export function GameHub(props: GameHubProps) {
   const {
-    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar, searchFloorMs = 2400, matchBarSlide, pinDark = false, highStakeCycle, resultConverge, oppGemRow, ownGemRow, oppGemText, oppGemTextVisible, ownGemText, ownGemTextVisible, onSectionTap,
+    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar, searchFloorMs = 2400, matchBarSlide, pinDark = false, highStakeCycle, resultConverge, oppGemRow, ownGemRow, oppGemText, oppGemTextVisible, ownGemText, ownGemTextVisible, onSectionTap, oppLocked,
     token, playerId, username, avatarId = 'default', opponentId, opponentName, matchStake, serverClockOffset = 0, balance, currentMatchId, gameState, events,
     legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
@@ -860,7 +868,7 @@ export function GameHub(props: GameHubProps) {
                 VS
               </span>
             </div>
-            <OpponentSlot phase={phase} opponentName={opponentName} scanNames={scanNames} aside={renderSlotAside?.(areaArgs, 'opponent')} drawBeat={barDrawBeat} barShiftY={oppBarShiftY} gemRow={oppGemRow} gemText={oppGemText} gemTextVisible={oppGemTextVisible} />
+            <OpponentSlot phase={phase} opponentName={opponentName} scanNames={scanNames} aside={renderSlotAside?.(areaArgs, 'opponent')} drawBeat={barDrawBeat} barShiftY={oppBarShiftY} gemRow={oppGemRow} gemText={oppGemText} gemTextVisible={oppGemTextVisible} oppLocked={oppLocked} />
             {renderGameArea(areaArgs)}
             <OwnSlot
               label={loggedIn ? (username || 'You') : 'Sign in'}
@@ -1074,7 +1082,7 @@ function useNameScan(active: boolean, names: string[]): string | null {
  *  "Searching…" beat with a decorative online-name scan; In-match/Result → the REAL opponent's
  *  name in bright white (or a neutral "Opponent" when the joiner's name never reached the client).
  *  Never an opponentId, never a fabricated/cycled name (Charter #2 + DEMO_PRESENTATION honesty). */
-function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShiftY, gemRow, gemText, gemTextVisible }: { phase: Phase; opponentName?: string | null; scanNames: string[]; aside?: ReactNode; drawBeat?: boolean; barShiftY?: number; gemRow?: ReactNode; gemText?: string; gemTextVisible?: boolean }) {
+function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShiftY, gemRow, gemText, gemTextVisible, oppLocked }: { phase: Phase; opponentName?: string | null; scanNames: string[]; aside?: ReactNode; drawBeat?: boolean; barShiftY?: number; gemRow?: ReactNode; gemText?: string; gemTextVisible?: boolean; oppLocked?: boolean }) {
   const searching = phase === 'waiting';
   const inMatch = phase === 'in-match' || phase === 'result';
   const scan = useNameScan(searching, scanNames);
@@ -1152,7 +1160,25 @@ function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShif
       {aside ? (
         <span className="flex shrink-0 items-center gap-2">{aside}</span>
       ) : (
-        phase === 'in-match' && <span className="shrink-0 text-[13px] font-bold tracking-[0.3px] text-foreground/70">Playing…</span>
+        // Ticket 2026-09-21#10 (D37): was a plain conditional MOUNT (`phase === 'in-match' && ...`)
+        // — popped in/out instantly, not the prototype's own cited `transition:opacity 260ms ease`
+        // (Full Spec.html:462), which had never actually been implemented despite the citation.
+        // Now always-mounted, opacity-toggled — genuinely fades for every game using this shared
+        // label, not just Mines. `oppLocked` (new, opt-in — undefined for every hub but Mines, the
+        // same "byte-identical no-op elsewhere" shape as oppGemRow/resultConverge) additionally
+        // hides it the moment the opponent's OWN round ends, closing the real gap: `phase` alone
+        // stays 'in-match' through the whole post-lock holdResultMs window, which spans Mines' own
+        // resultPhase converge→reveal→final sequence — so "Playing…" (knowing nothing about
+        // resultPhase) used to keep showing well after the opponent's gem strip had already faded
+        // in, colliding with it in the same bar. For every other game, `oppLocked` is undefined →
+        // `!undefined` → `true` → this reduces to exactly `phase === 'in-match'`, byte-identical to
+        // before.
+        <span
+          className="shrink-0 text-[13px] font-bold tracking-[0.3px] text-foreground/70"
+          style={{ opacity: phase === 'in-match' && !oppLocked ? 1 : 0, transition: 'opacity 260ms ease' }}
+        >
+          Playing…
+        </span>
       )}
       {/* Ticket 2026-09-17#3 item 2: the gem-count CAPTION — see `GameHubProps.oppGemText`'s own doc
           comment for the citation. Sits outside the pill (bottom:calc(100% + 6px)), so it moves with
