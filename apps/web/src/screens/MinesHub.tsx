@@ -336,7 +336,7 @@ function RoundClock({ roundStartedAt, serverClockOffset, light }: { roundStarted
 // renderSlotAside) — this was pure duplicate chrome, not a missing-elsewhere feature. `onForfeit`
 // itself is untouched (still fully generic, shared infra — RPS/Chess/Blackjack's own real Resign
 // buttons still use it); only Mines' own now-orphaned Resign button is gone.
-function MinesBoard({ playerId, gameState, legalMoves, onMove, phase, serverClockOffset = 0 }: GameAreaArgs) {
+function MinesBoard({ playerId, gameState, legalMoves, onMove, serverClockOffset = 0 }: GameAreaArgs) {
   const { resolved: themeResolved } = useTheme();
   const light = themeResolved === 'light';
   const view = gameState as MinesView | null;
@@ -426,12 +426,18 @@ function MinesBoard({ playerId, gameState, legalMoves, onMove, phase, serverCloc
           prototype's own gating exactly — `minesClockOp`/`minesClockH` (`Full Spec.html:3758-3759`)
           are 1/46px only while a round is live, 0/0px everywhere else (including the result-hold
           window) — confirmed our own `RoundClock` rendered unconditionally, staying visible through
-          the whole result phase. `phase !== 'result'` is the cleanest local proxy MinesBoard already
-          has (it stays mounted through both 'in-match' and 'result', never remounting between). */}
+          the whole result phase.
+          Ticket 2026-09-21#1 (D30): `phase === 'result'` was the wrong proxy — it fires far too
+          late (near the result sequence's own 'final' beat, not near the lock), so collapsing this
+          EARLIER flex sibling's height still happened WHILE the bars were converging, pulling the
+          own bar upward through ordinary column-flex reflow — a second, unintended shift the bar's
+          own transform never actually changed for. `myLocked` is the same signal the prototype's
+          own `minesPhase === 'done'` tracks — flips immediately at lock, 1500ms/500ms before
+          converge even starts, so any reflow it causes is fully settled before the bars ever move. */}
       <div
         style={{
-          opacity: phase === 'result' ? 0 : 1,
-          maxHeight: phase === 'result' ? 0 : 46,
+          opacity: myLocked ? 0 : 1,
+          maxHeight: myLocked ? 0 : 46,
           overflow: 'hidden',
           transition: 'opacity 420ms ease, max-height 620ms cubic-bezier(0.3,0.9,0.32,1)',
         }}
