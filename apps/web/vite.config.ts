@@ -50,6 +50,18 @@ export default defineConfig({
         ],
       },
       workbox: {
+        // Ticket 2026-09-22#5: `registerType: 'autoUpdate'` alone does NOT make a newly-downloaded
+        // service worker take over — main.tsx's own registerSW() call never invokes the returned
+        // updateServiceWorker()/sendSkipWaitingMessage(), and vite-plugin-pwa's auto-generated
+        // client code (register.js) only ever calls that on the non-auto (prompt) branch. Without
+        // it, a new SW installs and sits `waiting` indefinitely — the only thing that has ever
+        // activated one was the browser's own native fallback (every controlled tab closing, then a
+        // fresh navigation). `skipWaiting`/`clientsClaim` bake the equivalent of that handshake
+        // directly into the GENERATED service worker's own install/activate handlers, so the
+        // existing `wb.addEventListener('activated', ...) → reload()` logic (already present,
+        // already correct) actually fires under normal operation instead of never.
+        skipWaiting: true,
+        clientsClaim: true,
         globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
         runtimeCaching: [
           {
