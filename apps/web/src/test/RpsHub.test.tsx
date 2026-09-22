@@ -588,3 +588,49 @@ describe('RpsHubScreen — opponent bar during matchmaking (ticket 2026-09-15#9)
     expect(scan.textContent).not.toContain('🤖');
   });
 });
+
+// Ticket 2026-09-22#4 (D41): the prototype's own pick-tile markup is genuinely just one `<svg>` —
+// no text label at either usage — plus 2 precise selection-ring value corrections and the (deliberately-
+// implemented, despite being unreferenced dead code in the prototype's own source) icon-colour swap.
+describe('RpsHubScreen — pick-tile labels and selection green (ticket 2026-09-22#4/D41)', () => {
+  it('item 1: no text label under the hand icon, in either the idle preview or the live picker', () => {
+    const { rerender } = render(<RpsHubScreen {...baseProps()} />);
+    expect(screen.queryByText(/rock/i)).toBeNull();
+    expect(screen.queryByText(/paper/i)).toBeNull();
+    expect(screen.queryByText(/scissors/i)).toBeNull();
+
+    const gameState: RpsView = { players: ['pid', 'bob'], choices: {} };
+    rerender(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
+    // aria-label carries the name for a11y — not a rendered text node — the live picker buttons
+    // still exist and are still accessible, just with no visible caption underneath the icon.
+    expect(screen.getByTestId('hub-move-rock').getAttribute('aria-label')).toBe('Rock');
+    expect(screen.queryByText(/^rock$/i)).toBeNull();
+    expect(screen.queryByText(/^paper$/i)).toBeNull();
+    expect(screen.queryByText(/^scissors$/i)).toBeNull();
+  });
+
+  it('item 2: the unselected ring is color-matched zero-alpha green, not CSS transparent black; selected uses --rc-green; easing is plain "ease"', () => {
+    const gameState: RpsView = { players: ['pid', 'bob'], choices: { pid: 'rock' } };
+    render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
+    const rock = screen.getByTestId('hub-move-rock');
+    const paper = screen.getByTestId('hub-move-paper');
+    expect(rock.style.boxShadow).toBe('inset 0 0 0 3px var(--rc-green)');
+    expect(paper.style.boxShadow).toBe('inset 0 0 0 3px rgba(52,211,153,0)');
+    expect(paper.className).toMatch(/(?:^|\s)ease(?:\s|$)/);
+    expect(paper.className).not.toMatch(/ease-out/);
+  });
+
+  it('item 3 (Gap 3): the picker icon goes white when selected, --rc-muted when not — the reveal-card/idle-preview usages of the same icon stay full multi-tone (no color override)', () => {
+    const gameState: RpsView = { players: ['pid', 'bob'], choices: { pid: 'rock' } };
+    render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
+    const rockIcon = within(screen.getByTestId('hub-move-rock')).getByRole('img', { name: 'Rock' });
+    const paperIcon = within(screen.getByTestId('hub-move-paper')).getByRole('img', { name: 'Paper' });
+    expect(rockIcon.querySelector('path')?.getAttribute('fill')).toBe('#FFFFFF'); // selected
+    expect(paperIcon.querySelector('path')?.getAttribute('fill')).toBe('var(--rc-muted)'); // unselected
+    // The idle preview's own icon (pre-match, no picker context) never gets a color override.
+    const { container, unmount } = render(<RpsHubScreen {...baseProps()} />);
+    const idleRock = container.querySelector('[data-rc-rps-icon="rock"]');
+    expect(idleRock?.querySelector('path')?.getAttribute('fill')).toBe('#B285F7'); // its original multi-tone literal
+    unmount();
+  });
+});
