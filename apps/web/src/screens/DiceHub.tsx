@@ -394,9 +394,23 @@ function DicePanel({
   // state would still hold the PREVIOUS round's (possibly already-past-threshold) value for that one
   // commit, letting the sound/history effect below misfire against stale data. Pairing them lets the
   // derived `revealElapsed` below fall back to `null` whenever the sig doesn't match yet.
+  // Ticket 2026-09-22#1 (D38, a regression from 2026-09-21#6/D35's own cubeActive delay): this
+  // clock's start used to be gated on armedSig alone — decoupled from cubeActive's own fixed
+  // 660ms cube-reveal delay (D35). Pre-D35, DiceBoard only ever mounted once already `active`, so
+  // the two always started in lockstep; D35 introduced a genuine gap between "could show" and
+  // "actually shows" without re-syncing this clock to it. On a fast round-trip (realistic vs.
+  // bots), armedSig could arm well before the 660ms delay elapsed, so by the time the cube/fill
+  // first became visible the count-up was already well underway — reads as "sometimes starts
+  // mid-track," purely a function of how fast the round-trip happens to land relative to the
+  // fixed delay. Gating on `active` too (the same prop DiceTrack already reads for cube
+  // opacity/scale) guarantees `start` is always set to whichever comes LATER — armedSig arriving,
+  // or the cube actually becoming visible — so the count-up can never begin before the cube can be
+  // seen. Bonus: this also reproduces the prototype's own 460ms gap between "cube visible" and
+  // "count-up producing nonzero values" for free (Full Spec.html:3421→3423) — the prototype gets
+  // it from its own nested-setTimeout structure; ours needed an explicit gate to replicate it.
   const [reveal, setReveal] = useState<{ sig: string; elapsed: number } | null>(null);
   useEffect(() => {
-    if (!armedSig) { setReveal(null); return; }
+    if (!armedSig || !active) { setReveal(null); return; }
     let raf = 0;
     const start = Date.now();
     const tick = () => {
@@ -406,7 +420,7 @@ function DicePanel({
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [armedSig]);
+  }, [armedSig, active]);
   const revealElapsed = reveal && reveal.sig === armedSig ? reveal.elapsed : null;
 
   // Sound (item 2) + history push, each exactly once per armedSig, at their own beat on the clock
