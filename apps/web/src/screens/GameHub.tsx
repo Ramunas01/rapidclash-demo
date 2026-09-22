@@ -1173,8 +1173,16 @@ function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShif
         // in, colliding with it in the same bar. For every other game, `oppLocked` is undefined →
         // `!undefined` → `true` → this reduces to exactly `phase === 'in-match'`, byte-identical to
         // before.
+        // Ticket 2026-09-22#3 (D40): a direct regression from the always-mounted switch above —
+        // `shrink-0` is in-flow, so even at opacity:0 it still reserved its own natural width,
+        // squeezing the gem strip's own `flex-1` sibling down to ~1/3 width (wrapping 3 rows
+        // instead of ~2). Reuses the same fix already proven correct one element above for
+        // "Searching…" (`absolute right-3.5 top-1/2 -translate-y-1/2`) — the prototype's own source
+        // stacks both labels in the literal SAME absolutely-positioned slot (`Full Spec.html:461`),
+        // mutually exclusive by opacity, one shared spot by design. Parent is already `relative` —
+        // no new positioning context needed.
         <span
-          className="shrink-0 text-[13px] font-bold tracking-[0.3px] text-foreground/70"
+          className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[13px] font-bold tracking-[0.3px] text-foreground/70"
           style={{ opacity: phase === 'in-match' && !oppLocked ? 1 : 0, transition: 'opacity 260ms ease' }}
         >
           Playing…
