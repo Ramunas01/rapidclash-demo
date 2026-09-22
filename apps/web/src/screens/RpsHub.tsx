@@ -72,37 +72,51 @@ const FRAME_DRAW = '#F79009';
  *  paths again behind `rpsFlipRot`), and the picker row buttons (:646-654, `width:54px`) — one set of
  *  paths, several render sizes, exactly like here (`size` is the only thing that varies per caller).
  *  Replaces the ✊/✋/✌️ emoji stand-ins (2026-09-11#8/C, ADVISOR_TO_PM.md). */
-function RpsHandIcon({ choice, size }: { choice: string | undefined; size: number }) {
+// Ticket 2026-09-22#4 (D41), the optional `color` param: the prototype's own `rpsChoice(k, light)`
+// (Full Spec.html:3244-3256) computes `color: on ? '#FFFFFF' : 'var(--rc-muted)'` alongside this
+// icon's state, but never actually references it anywhere in its own markup (:641-656) — every
+// `fill` there is a hardcoded literal, in both the picker tiles and the reveal-card usage. Dead
+// code in the prototype's own source, not a rendering behavior that exists on screen there — but
+// specific and deliberately grouped with the genuinely-rendered selection-ring values, so applied
+// here as a deliberate ask: when passed, every path's fill (and rock's stroke) is overridden to a
+// flat single tone, turning the icon into a silhouette. Scoped ONLY to the live picker's own call
+// site (`:544`ish, selected/unselected) — every other call site omits it, keeping its full
+// multi-tone look unchanged, matching the prototype's own scoping of `.color` to the picker alone.
+function RpsHandIcon({ choice, size, color }: { choice: string | undefined; size: number; color?: string }) {
+  // D41's own cited transition for the color swap (`220ms ease`) — shared across every path so the
+  // fill/stroke change animates rather than snapping, matching the citation exactly.
+  const fillT = { transition: 'fill 220ms ease' };
+  const strokeT = { transition: 'stroke 220ms ease' };
   switch (choice) {
     case 'rock':
       return (
         <svg viewBox="0 0 100 100" width={size} style={{ display: 'block' }} role="img" aria-label="Rock" data-rc-rps-icon="rock">
-          <path d="M24 44 A8 8 0 0 1 39.5 41 A8.5 8.5 0 0 1 56 40 A8 8 0 0 1 70 43 A7 7 0 0 1 78 51 L78 70 C78 83 69 92 57 92 L43 92 C31 92 24 84 24 71 Z" fill="#B285F7" />
-          <g stroke="#7B3BE0" strokeWidth={2.4} strokeLinecap="round" fill="none" opacity={0.85}>
+          <path d="M24 44 A8 8 0 0 1 39.5 41 A8.5 8.5 0 0 1 56 40 A8 8 0 0 1 70 43 A7 7 0 0 1 78 51 L78 70 C78 83 69 92 57 92 L43 92 C31 92 24 84 24 71 Z" fill={color ?? '#B285F7'} style={fillT} />
+          <g stroke={color ?? '#7B3BE0'} strokeWidth={2.4} strokeLinecap="round" fill="none" opacity={0.85} style={strokeT}>
             <path d="M39.5 42 v11" />
             <path d="M56 41 v11" />
             <path d="M70 44 v10" />
           </g>
-          <path d="M24 56 C29 54.6 35 55 40.4 57 C46.6 59.4 50 64.6 48.4 69.4 C46.6 74.8 39.6 77 33 75 C29 73.8 26 71.6 24 69 Z" fill="#8B45F0" />
-          <path d="M24 74 C30 78.6 38 81 46 81 C56 81 67 78.4 76 73.6 C75.4 84 66.6 92 57 92 L43 92 C32.6 92 24.6 84.6 24 74 Z" fill="#8B45F0" opacity={0.42} />
+          <path d="M24 56 C29 54.6 35 55 40.4 57 C46.6 59.4 50 64.6 48.4 69.4 C46.6 74.8 39.6 77 33 75 C29 73.8 26 71.6 24 69 Z" fill={color ?? '#8B45F0'} style={fillT} />
+          <path d="M24 74 C30 78.6 38 81 46 81 C56 81 67 78.4 76 73.6 C75.4 84 66.6 92 57 92 L43 92 C32.6 92 24.6 84.6 24 74 Z" fill={color ?? '#8B45F0'} opacity={color ? undefined : 0.42} style={fillT} />
         </svg>
       );
     case 'paper':
       return (
         <svg viewBox="0 0 100 100" width={size} style={{ display: 'block' }} role="img" aria-label="Paper" data-rc-rps-icon="paper">
-          <path d="M26 60 L25 26 A6.5 6.5 0 0 1 38 26 L39 56 C40 51 41 48 42 45 L42 15 A6.5 6.5 0 0 1 55 15 L55 46 C56 47 57 48 58 49 L58 20 A6.2 6.2 0 0 1 70.4 20 L69 52 C70.5 53 71.5 54 72.5 55 L75 33 A6 6 0 0 1 87 35 L82 62 C83 74 78 87 66 92 L40 92 C30 92 23 86 22 78 C18 74 10 66 8 58 C5 52 12 45 18 50 C22 54 24 57 26 62 Z" fill="#B285F7" />
-          <path d="M22 78 C21 68 22 60 26 55 C34 52 48 51 60 53 C70 55 78 58 82 62 C83 74 78 87 66 92 L40 92 C30 92 23 86 22 78 Z" fill="#8B45F0" />
-          <path d="M22 78 C18 74 10 66 8 58 C5 52 12 45 18 50 C22 54 24 57 26 62 C25 67 24 73 22 78 Z" fill="#7B3BE0" />
+          <path d="M26 60 L25 26 A6.5 6.5 0 0 1 38 26 L39 56 C40 51 41 48 42 45 L42 15 A6.5 6.5 0 0 1 55 15 L55 46 C56 47 57 48 58 49 L58 20 A6.2 6.2 0 0 1 70.4 20 L69 52 C70.5 53 71.5 54 72.5 55 L75 33 A6 6 0 0 1 87 35 L82 62 C83 74 78 87 66 92 L40 92 C30 92 23 86 22 78 C18 74 10 66 8 58 C5 52 12 45 18 50 C22 54 24 57 26 62 Z" fill={color ?? '#B285F7'} style={fillT} />
+          <path d="M22 78 C21 68 22 60 26 55 C34 52 48 51 60 53 C70 55 78 58 82 62 C83 74 78 87 66 92 L40 92 C30 92 23 86 22 78 Z" fill={color ?? '#8B45F0'} style={fillT} />
+          <path d="M22 78 C18 74 10 66 8 58 C5 52 12 45 18 50 C22 54 24 57 26 62 C25 67 24 73 22 78 Z" fill={color ?? '#7B3BE0'} style={fillT} />
         </svg>
       );
     case 'scissors':
       return (
         <svg viewBox="0 0 100 100" width={size} style={{ display: 'block' }} role="img" aria-label="Scissors" data-rc-rps-icon="scissors">
-          <path d="M28 58 L17 28 A6.5 6.5 0 0 1 29.6 23.5 L41 53 C43 49.6 45.6 47.6 48.5 46.8 L54 18 A6.5 6.5 0 0 1 66.6 20.4 L65 52 C71 55.4 74.5 61.4 74.5 69.5 C74.5 82 65.5 91 54 91 L43 91 C31.5 91 25 82.6 25 70.6 C25 65 25.8 60.6 28 58 Z" fill="#B285F7" />
-          <path d="M25 70.6 C25 62.6 29.6 56.4 37.6 53.8 C47 51.2 58 53 65.6 57.8 C71 61.2 74.5 64.6 74.5 69.5 C74.5 82 65.5 91 54 91 L43 91 C31.5 91 25 82.6 25 70.6 Z" fill="#8B45F0" />
-          <path d="M62 51.5 C70 51.5 74.6 58.4 71.6 64.6 C68.8 70.4 59.6 71 55.6 66.4 C51.6 61.8 53.6 54.4 59.4 52.2 C60.3 51.8 61.2 51.5 62 51.5 Z" fill="#6428BE" />
-          <path d="M65 66 C71.6 66.6 74.6 73.6 70.6 78.6 C66.6 83.6 58.4 82.6 55.4 77.6 C52.6 73 55.4 67 61 66.2 C62.3 66 63.6 65.9 65 66 Z" fill="#6428BE" opacity={0.72} />
-          <path d="M26 65 C31.6 63 38 63 43.6 65 C49.6 67.2 52.4 72.6 50 77.2 C47.4 82 39.6 83 33.6 79.8 C29.6 77.6 26.6 74.4 25.4 71 Z" fill="#7B3BE0" />
+          <path d="M28 58 L17 28 A6.5 6.5 0 0 1 29.6 23.5 L41 53 C43 49.6 45.6 47.6 48.5 46.8 L54 18 A6.5 6.5 0 0 1 66.6 20.4 L65 52 C71 55.4 74.5 61.4 74.5 69.5 C74.5 82 65.5 91 54 91 L43 91 C31.5 91 25 82.6 25 70.6 C25 65 25.8 60.6 28 58 Z" fill={color ?? '#B285F7'} style={fillT} />
+          <path d="M25 70.6 C25 62.6 29.6 56.4 37.6 53.8 C47 51.2 58 53 65.6 57.8 C71 61.2 74.5 64.6 74.5 69.5 C74.5 82 65.5 91 54 91 L43 91 C31.5 91 25 82.6 25 70.6 Z" fill={color ?? '#8B45F0'} style={fillT} />
+          <path d="M62 51.5 C70 51.5 74.6 58.4 71.6 64.6 C68.8 70.4 59.6 71 55.6 66.4 C51.6 61.8 53.6 54.4 59.4 52.2 C60.3 51.8 61.2 51.5 62 51.5 Z" fill={color ?? '#6428BE'} style={fillT} />
+          <path d="M65 66 C71.6 66.6 74.6 73.6 70.6 78.6 C66.6 83.6 58.4 82.6 55.4 77.6 C52.6 73 55.4 67 61 66.2 C62.3 66 63.6 65.9 65 66 Z" fill={color ?? '#6428BE'} opacity={color ? undefined : 0.72} style={fillT} />
+          <path d="M26 65 C31.6 63 38 63 43.6 65 C49.6 67.2 52.4 72.6 50 77.2 C47.4 82 39.6 83 33.6 79.8 C29.6 77.6 26.6 74.4 25.4 71 Z" fill={color ?? '#7B3BE0'} style={fillT} />
         </svg>
       );
     default:
@@ -248,11 +262,17 @@ function RpsIdle() {
         </RpsFrame>
       </div>
 
+      {/* Ticket 2026-09-22#4 (D41): the prototype's own tile markup (`Full Spec.html:641-656`) is
+          genuinely just one `<svg>` — no text label at all. Dropped here and at the live picker
+          below; `RPS_CHOICES`'s own `label` field stays (still used for the live picker's
+          `aria-label`, unrelated to this citation). `gap-1` (icon-to-label spacing) is dead weight
+          with only one child now — dropped too. Also added `px-1.5` (6px horizontal padding) to
+          match the citation's own `padding:16px 6px` in full — previously only the vertical half
+          (`py-4`) was implemented. */}
       <div className="grid w-full grid-cols-3 opacity-50" style={{ gap: 9 }}>
         {RPS_CHOICES.map((c) => (
-          <div key={c.id} className="flex flex-col items-center gap-1 rounded-[16px] py-4" style={{ background: tileBg }}>
+          <div key={c.id} className="flex items-center justify-center rounded-[16px] px-1.5 py-4" style={{ background: tileBg }}>
             <RpsHandIcon choice={c.id} size={54} />
-            <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{c.label}</span>
           </div>
         ))}
       </div>
@@ -518,6 +538,14 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, onForfeit, 
           transition: 'opacity 450ms ease, max-height 620ms ' + EXPAND_EASE,
         }}
       >
+        {/* Ticket 2026-09-22#4 (D41): dropped the text label (prototype's own tile markup,
+            `Full Spec.html:641-656`, is genuinely just one `<svg>`) and the now-dead-weight `gap-1`;
+            added `px-1.5` to match the citation's own `padding:16px 6px` in full. The unselected
+            ring is now color-matched zero-alpha (`rgba(52,211,153,0)`, not CSS `transparent`'s
+            transparent BLACK) so the box-shadow color transition fades cleanly rather than
+            hue-shifting; `ease` (not `ease-out`) matches the citation's own easing curve exactly.
+            `color` on the icon: see `RpsHandIcon`'s own doc comment for why this is implemented
+            despite being unreferenced dead code in the prototype's own markup. */}
         <div className="grid grid-cols-3" style={{ gap: 9 }} role="group" aria-label="RPS choices">
           {RPS_CHOICES.map(({ id, label }) => (
             <button
@@ -529,14 +557,13 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, onForfeit, 
               aria-pressed={myChoice === id}
               data-testid={`hub-move-${id}`}
               data-selected={myChoice === id || undefined}
-              className="flex flex-col items-center gap-1 rounded-[16px] py-4 transition-[background,box-shadow] duration-200 ease-out hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:hover:brightness-100"
+              className="flex items-center justify-center rounded-[16px] px-1.5 py-4 transition-[background,box-shadow] duration-200 ease hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:hover:brightness-100"
               style={{
                 background: tileBg,
-                boxShadow: myChoice === id ? 'inset 0 0 0 3px var(--rc-green)' : 'inset 0 0 0 3px transparent',
+                boxShadow: myChoice === id ? 'inset 0 0 0 3px var(--rc-green)' : 'inset 0 0 0 3px rgba(52,211,153,0)',
               }}
             >
-              <RpsHandIcon choice={id} size={54} />
-              <span className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{label}</span>
+              <RpsHandIcon choice={id} size={54} color={myChoice === id ? '#FFFFFF' : 'var(--rc-muted)'} />
             </button>
           ))}
         </div>
