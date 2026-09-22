@@ -660,7 +660,19 @@ export function registerWsGateway(
       // if guest mode isn't wired in (keeps every existing non-guest call site unchanged).
       const mm: Matchmaking = isGuest && guest ? guest.matchmaking : matchmaking;
 
+      // Ticket 2026-09-22#7: ACTIVE INCIDENT — a reconnecting playerId used to silently overwrite
+      // the map entry, leaving the OLD socket connected but unreachable by anything that iterates
+      // `connections.values()` (the heartbeat above included) — instead of the heartbeat freeing it
+      // within one interval as its own design intent states, it sat occupied for up to Cloud Run's
+      // full 3600s timeout. Explicitly terminate() the previous socket, AFTER the map is updated —
+      // this fires the SAME `close` handler below via `ws`'s own forced-close behavior, but by then
+      // `connections.get(playerId)` already points at the NEW socket, so the stale-close guard at
+      // that handler's own `if (connections.get(playerId) !== socket) return;` line correctly
+      // treats it as stale and skips every cleanup path meant for the live connection — reusing the
+      // exact terminate()-triggers-close pattern the heartbeat itself already relies on.
+      const previousSocket = connections.get(playerId);
       connections.set(playerId, socket);
+      if (previousSocket) previousSocket.terminate();
 
       // Ticket 2026-09-21#9 (D36): start alive (the heartbeat only ever pings an ALREADY-alive
       // socket, so a freshly-connected one must default true — never wait a full interval before
