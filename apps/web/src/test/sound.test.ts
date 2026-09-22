@@ -7,6 +7,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
  * plays (only after unlock, never when muted).
  */
 const startSpy = vi.fn();
+/** Ticket 2026-09-22#6: captures the one AudioContext instance sound.ts creates, so a test can
+ *  flip it back to 'suspended' (simulating a mobile browser re-suspending after screen lock/
+ *  backgrounding) and confirm a later visibilitychange revives it. */
+let lastCtx: FakeAudioContext | undefined;
+
+/** Captures the created instance into `lastCtx` — a plain function call, not a `this`-alias. */
+function captureInstance(instance: FakeAudioContext): void {
+  lastCtx = instance;
+}
 
 class FakeAudioContext {
   state: 'suspended' | 'running' | 'closed' = 'suspended';
@@ -15,6 +24,9 @@ class FakeAudioContext {
     this.state = 'running'; // set synchronously so play() sees 'running' right after unlock()
   });
   decodeAudioData = vi.fn(async () => ({ duration: 0.1 }) as AudioBuffer);
+  constructor() {
+    captureInstance(this);
+  }
   createBufferSource() {
     return {
       buffer: null as AudioBuffer | null,
@@ -32,6 +44,7 @@ async function freshSound() {
 
 beforeEach(() => {
   startSpy.mockClear();
+  lastCtx = undefined;
   vi.stubGlobal('AudioContext', FakeAudioContext as unknown as typeof AudioContext);
   // Preload fetches each manifest asset URL → give it a decodable ArrayBuffer.
   vi.stubGlobal('fetch', vi.fn(async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }) as Response));
@@ -105,5 +118,51 @@ describe('sound module', () => {
     unsub();
     sound.toggleMute();
     expect(listener).toHaveBeenCalledTimes(1); // unsubscribed → no further notifications
+  });
+
+  // Ticket 2026-09-22#6: the one-time gesture listener that unlocks audio removes itself after
+  // firing once — a mobile browser routinely suspends the AudioContext again later (screen lock,
+  // backgrounding), and nothing was left listening to revive it, permanently silencing sound for
+  // the rest of that session. Fix: a visibilitychange listener that re-unlocks on return to
+  // foreground, installed once alongside the gesture listener.
+  describe('visibilitychange re-unlock (ticket 2026-09-22#6)', () => {
+    it('a context re-suspended after the initial unlock is revived when the tab becomes visible again', async () => {
+      const sound = await freshSound();
+      await sound.preloadSounds();
+      sound.installUnlockOnFirstGesture();
+
+      window.dispatchEvent(new Event('pointerdown')); // the initial real-gesture unlock
+      expect(lastCtx?.state).toBe('running');
+
+      sound.play('move');
+      expect(startSpy).toHaveBeenCalledTimes(1);
+
+      // Simulate a mobile browser suspending the context again (screen lock/backgrounding) — no
+      // gesture listener left to revive it (it already removed itself).
+      lastCtx!.state = 'suspended';
+      sound.play('move');
+      expect(startSpy).toHaveBeenCalledTimes(1); // still just the one — correctly silent while suspended
+
+      Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      await Promise.resolve(); // let the (async) resume() microtask settle
+
+      expect(lastCtx?.state).toBe('running');
+      sound.play('move');
+      expect(startSpy).toHaveBeenCalledTimes(2); // revived — sound works again without any new tap
+    });
+
+    it('a visibilitychange to hidden does not attempt to resume', async () => {
+      const sound = await freshSound();
+      await sound.preloadSounds();
+      sound.installUnlockOnFirstGesture();
+      window.dispatchEvent(new Event('pointerdown'));
+      const resumeCalls = lastCtx!.resume.mock.calls.length;
+
+      Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+
+      expect(lastCtx!.resume.mock.calls.length).toBe(resumeCalls); // unchanged — no extra resume() attempt
+    });
   });
 });
