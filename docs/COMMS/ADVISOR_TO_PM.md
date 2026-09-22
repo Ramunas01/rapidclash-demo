@@ -1,5 +1,51 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-22#7 — ACTIVE INCIDENT: today's "lagging" report traced to a real WS connection leak on reconnect — the just-added heartbeat (2026-09-21#9) structurally cannot see the leaked socket, so instead of being freed in ~30-60s as designed, it occupies a concurrency slot for up to Cloud Run's full 3600s hard cap. Confirmed live right now: 42 HTTP 429s ("no available instance") in the last 15 minutes and climbing, on a service pinned to exactly ONE instance (`maxScale: 1`) — this single 1-vCPU instance is what's lagging            [READY TO TICKET]
+From: Advisor   Re: Owner's own live report ("we currently experience some lagging of the demo game"), investigated via `gcloud logging read` against the live service and a direct re-read of `apps/server/src/ws/gateway.ts`'s connection-registration and heartbeat code
+
+Owner asked me to check the logs for a cause of lag currently being experienced. Found an active, worsening incident with a precise, code-confirmed root cause — not a new bug, but one I'd previously discussed with Owner conversationally (the "missing tiles on reload" diagnosis) without confirming it was ever actually ticketed. It wasn't: the exact same gap is still live in today's code.
+
+## Confirmed live, right now, not just from history
+
+`gcloud logging read` for the last 15 minutes: 42× HTTP 429 ("no available instance"), in accelerating bursts (24 in one second at 14:07:28Z, 7 more at 14:07:56Z). `gcloud run services describe`: `containerConcurrency: 300`, but critically **`autoscaling.knative.dev/maxScale: '1'`** — this service is pinned to exactly one instance, 1 vCPU / 1Gi memory, and structurally cannot scale past it no matter how loaded it gets. Every 429 right now is that one instance's 300-connection ceiling being hit, not a cold-start or scale-up delay.
+
+## Root cause, confirmed directly in the code: a reconnect leaks the OLD socket past the heartbeat's own reach
+
+**`connections.set(playerId, socket)` (`gateway.ts:663`) unconditionally overwrites the map entry for a reconnecting player — the OLD socket object is simply dropped from the `Map`, never explicitly closed.** In the common case (a clean browser close/reload actually reaching the server), that old socket's own `close` event still fires soon after and cleans up correctly — the existing stale-close guard at `:705` (`if (connections.get(playerId) !== socket) return;`) was clearly written with this in mind. But when the old connection's `close` event DOESN'T arrive promptly — a dropped mobile network, a backgrounded tab, a reload that races the TCP teardown — nothing else can ever discover it.
+
+**The heartbeat added in `2026-09-21#9` cannot see it — this is the actual gap.** `gateway.ts:622`, `for (const socket of connections.values())` — this only iterates sockets CURRENTLY referenced in the map. The instant a new socket overwrites the old one at `:663`, the old socket falls out of that iteration permanently. It is never pinged, never marked not-alive, never `terminate()`'d by the mechanism built specifically to catch exactly this class of "network-level alive but application-level abandoned" connection.
+
+**The code's own comment on the heartbeat interval states the design intent this defeats, in the codebase's own words** (`:161-165`): "a dead connection is detected and its concurrency slot freed within ~30-60s, instead of sitting occupied for up to Cloud Run's own 3600s hard cap." For every orphaned-by-reconnect socket, that's exactly what happens — it sits occupied for up to the full hour, a 60-100x blowup versus the heartbeat's own designed guarantee, on a service that cannot scale past one instance.
+
+## This precisely matches Owner's own earlier diagnosis of the "missing tiles on reload" bug
+
+Owner's own words at the time: "it looks like one browser, when reloading, uses new socket per each time and the sockets hang up... ping mechanism not fast enough to release them... because the same browser/device is actually alive?" — confirmed exactly correct then, and confirmed STILL the case now on a direct re-read of today's code. That earlier conversation didn't result in a formal ticket; this is that fix, now.
+
+## Why today specifically: two compounding, recent factors
+
+**`2026-09-22#5` (shipped ~2 hours ago) means an open tab now auto-reloads the instant it detects a new deployed version — a behavior that didn't exist before today.** Every such reload is a fresh `/ws` connection for the SAME `playerId`, hitting this exact leak path if the old tab's socket doesn't tear down cleanly first. Two deploys have gone out since that fix landed. **`gcloud logging read` for `/ws` upgrades (HTTP 101) over the last 4 hours shows clear bursts of 30-60 at a time** (consistent with the demo-taker bot-crowd's own scripted restart-after-deploy cycle) rather than smooth organic growth — each such burst is a mass-reconnect event, and any fraction of those old sockets not torn down cleanly leaks permanently until Cloud Run's own hour-long idle cap, stacking on the single instance's fixed 300-slot ceiling.
+
+## Fix — reuses the exact mechanism the heartbeat already relies on, no new cleanup logic needed
+
+**At `gateway.ts:663`, explicitly terminate the previous socket (if any) for this `playerId`, AFTER the map is updated to point at the new one:**
+
+```ts
+const previous = connections.get(playerId);
+connections.set(playerId, socket);
+if (previous && previous !== socket) previous.terminate();
+```
+
+Ordering matters and is deliberately safe: updating the map FIRST means the old socket's own `close` handler (which fires from `terminate()`, same as any other close — `ws` sockets always emit `close` on a forced termination) sees `connections.get(playerId) !== socket` and correctly takes the EXISTING stale-close early-return at `:705` — no bogus forfeit, no guest eviction, no accidental deletion of the just-registered new connection. It still runs the unconditional, "always safe" cleanup just above that guard (challenge-feed/chat unsubscribe, `:697-700`) for the old socket specifically. This is exactly the same `terminate()` → `close` → existing-cleanup-path pattern the heartbeat itself already uses one function up (`:625`) — no new cleanup logic anywhere, just closing the one path that currently skips it.
+
+## Scope: `gateway.ts`-only, one connection-registration site
+
+No changes needed to the heartbeat itself, the client's reconnect logic, or `containerConcurrency`/`maxScale` — those remain a separate, standing question (Owner's own prior call on `2026-09-21#11` was to leave concurrency alone; `maxScale: 1` specifically hasn't been discussed with Owner at all and I'm not recommending a change there in this ticket — flagging it as a fact, not proposing to touch it, since raising it is Owner's own call to make, same standing practice as the concurrency question before it).
+
+---
+
+**Ask:** this is live and worsening right now, not just a historical bug — worth prioritizing ahead of the current queue. Once shipped, worth Owner doing a live multi-reload/reconnect test specifically (not just a fresh page load) to confirm concurrency pressure actually drops, plus a `gcloud logging read` check for 429s over the following hour.
+
+---
 ### 2026-09-22#6 — a SECOND, separate sound bug, unrelated to the just-deployed service-worker fix: the shared AudioContext only ever gets resumed by the FIRST tap/keydown on the entire page, ever — the one-time global gesture listener removes itself after firing once and nothing else ever calls resume() again. Once a mobile browser suspends the context (screen lock, backgrounding — routine, expected behavior, not a bug on the browser's part), sound stays silently dead for the rest of that page's life, with no way to recover short of a full reload. Confirmed via Owner's own live re-test AFTER the service-worker fix deployed — sound was still broken, then audibly "caught up" the moment the phone was unlocked, exactly matching this mechanism            [READY TO TICKET]
 From: Advisor   Re: Owner's own live re-test after `2026-09-22#5` deployed (still no Chess/Mines sound; "Play a Friend" — a universal, client-only sound trigger — was ALSO silent; a screensaver-unlock moment made a batch of already-past sounds suddenly play; a second tester reports SOME Mines sounds present but not the explosion specifically), verified directly against `apps/web/src/lib/sound.ts`'s `unlock()`/`play()`/`installUnlockOnFirstGesture()`, and against `packages/games/mines/src/mines.ts`'s `viewFor` to rule out a server-side `bustedOn` gap analogous to the D31 bug
 
