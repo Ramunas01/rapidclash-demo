@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import type { MinesView, MinesBoardView } from '../App.js';
 import { useTheme } from '../lib/theme.js';
+import { play } from '../lib/sound.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
 
 // 5×5 / 3-mine ruleset (Designer, 2026-09-11 — see docs/NEW_DESIGN_MIGRATION.md § "Canonical
@@ -336,7 +337,7 @@ function RoundClock({ roundStartedAt, serverClockOffset, light }: { roundStarted
 // renderSlotAside) — this was pure duplicate chrome, not a missing-elsewhere feature. `onForfeit`
 // itself is untouched (still fully generic, shared infra — RPS/Chess/Blackjack's own real Resign
 // buttons still use it); only Mines' own now-orphaned Resign button is gone.
-function MinesBoard({ playerId, gameState, legalMoves, onMove, serverClockOffset = 0 }: GameAreaArgs) {
+function MinesBoard({ playerId, gameState, legalMoves, onMove, serverClockOffset = 0, currentMatchId }: GameAreaArgs & { currentMatchId: string | null }) {
   const { resolved: themeResolved } = useTheme();
   const light = themeResolved === 'light';
   const view = gameState as MinesView | null;
@@ -350,6 +351,35 @@ function MinesBoard({ playerId, gameState, legalMoves, onMove, serverClockOffset
   const myUncovered = useMemo(() => new Set(me?.uncovered ?? []), [me?.uncovered]);
   const myLocked = me?.locked ?? false;
   const bustedOn = me?.bustedOn;
+
+  // Ticket 2026-09-22#2 (D39): fires the gem/mine SFX on a SERVER-CONFIRMED tile reveal — diffed
+  // against a "previously seen" snapshot, never on the optimistic tap itself (honest-data
+  // principle: the tap alone isn't confirmation). Keyed per `${currentMatchId}:${round}`, not just
+  // per match, because Mines' own internal draw-replay bumps `round` and resets `me.uncovered` to
+  // `[]` WITHIN the same match/escrow — a match-only key would silently skip the gem sound for any
+  // tile index that repeats across two rounds. On any baseline reset (new match, new round, or a
+  // fresh mid-round mount/reconnect) the snapshot is re-established from whatever's already present
+  // with no retroactive sound — only a genuinely NEW transition after the baseline is set plays.
+  const roundKey = `${currentMatchId ?? ''}:${view?.round ?? 0}`;
+  const seenRef = useRef<{ key: string; uncovered: Set<number>; bustedOn: number | undefined }>({
+    key: '',
+    uncovered: new Set(),
+    bustedOn: undefined,
+  });
+  useEffect(() => {
+    const seen = seenRef.current;
+    if (seen.key !== roundKey) {
+      seenRef.current = { key: roundKey, uncovered: new Set(me?.uncovered ?? []), bustedOn: me?.bustedOn };
+      return;
+    }
+    const nextUncovered = me?.uncovered ?? [];
+    for (const idx of nextUncovered) {
+      if (!seen.uncovered.has(idx)) play('mines-gem');
+    }
+    if (me?.bustedOn !== undefined && seen.bustedOn === undefined) play('mines-mine');
+    seenRef.current = { key: roundKey, uncovered: new Set(nextUncovered), bustedOn: me?.bustedOn };
+  }, [roundKey, me?.uncovered, me?.bustedOn]);
+
   // The mine layout is present in my view only once I've locked (busted/cleared); at terminal
   // it also arrives at the top level. Either way it's safe — I have no move left.
   const myMines = useMemo(
@@ -471,7 +501,12 @@ function MinesBoard({ playerId, gameState, legalMoves, onMove, serverClockOffset
  *  (`CoinflipHub.tsx:120`, `phase === 'in-match' || phase === 'result'`) — `MinesBoard` reads only
  *  `gameState`/`legalMoves` (never `phase` itself), so it renders the resolved board correctly with
  *  no further changes needed there. */
-function MinesPanel(args: GameAreaArgs) {
+// Ticket 2026-09-22#2 (D39): threads `currentMatchId` down to `MinesBoard` (not part of the
+// generic `GameAreaArgs` every other game's own render callback receives) — needed to scope the
+// tile-reveal sound effect's own "seen" baseline per MATCH, not just per round (see that effect's
+// own doc comment on `MinesBoard`). Mines-only extension; every other game's `renderGameArea`
+// callback is unaffected.
+function MinesPanel(args: GameAreaArgs & { currentMatchId: string | null }) {
   const live = args.phase === 'in-match' || args.phase === 'result';
   return (
     <div
@@ -659,11 +694,18 @@ export function MinesHubScreen(props: GameHubScreenProps) {
   const myGemCount = me?.uncovered?.length ?? 0;
   const oppGemCount = opp?.score ?? 0;
 
+  // Ticket 2026-09-22#2 (D39): threads currentMatchId down to MinesPanel/MinesBoard — see
+  // MinesPanel's own doc comment for why.
+  const renderGameArea = useCallback(
+    (args: GameAreaArgs) => <MinesPanel {...args} currentMatchId={props.currentMatchId} />,
+    [props.currentMatchId],
+  );
+
   return (
     <GameHub
       gameId="mines"
       gameName="Mines"
-      renderGameArea={MinesPanel}
+      renderGameArea={renderGameArea}
       // Ticket 2026-09-11#10 item 1: Mines measures the real bar-slide magnitude live, matching the
       // prototype's own `startMines()` (`Full Spec.html:3341-3348`) — never the flat ±123px RPS uses.
       matchBarSlide="measured"
