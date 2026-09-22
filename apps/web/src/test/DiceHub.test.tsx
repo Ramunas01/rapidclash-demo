@@ -156,6 +156,37 @@ describe('DiceHubScreen', () => {
     expect(fill.style.width).toContain('10px');
   });
 
+  // Ticket 2026-09-22#1 (D38, a regression from D35's own cubeActive delay): the reveal clock
+  // used to arm off `armedSig` alone, completely decoupled from `cubeActive`'s fixed 660ms
+  // cube-reveal delay — on a FAST round-trip (the result already present in `gameState` the
+  // instant the match goes live, exactly what this test simulates), the count-up could be well
+  // underway by the time the cube/fill first became visible at +660ms, reading as "starts
+  // mid-track." Gating the clock's own start on `active` too guarantees it can never begin
+  // counting before the cube is actually visible — this proves the fix directly: even with the
+  // result already known from the very first live render, the label/fill still read the fresh
+  // "0.00"/nub at the moment they become visible, not a value partway through the count.
+  it("D38: a FAST round-trip (result already known when the match goes live) still starts the count-up fresh at 0 once the cube becomes visible — not mid-track", async () => {
+    const { rerender } = render(<DiceHubScreen {...baseProps()} />); // idle — board not live yet
+
+    // Match goes live with the result ALREADY resolved — the fast round-trip case. armedSig arms
+    // essentially immediately, well before cubeActive's 660ms delay elapses.
+    rerender(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState: resolved() })} />);
+    expect(screen.getByTestId('dice-cube-mine').style.opacity).toBe('0'); // still within the delay
+
+    // Just past the 660ms cube-reveal delay: the cube is now visible. Without the fix, the reveal
+    // clock would already be ~700ms into its own count (past REVEAL_SETTLE_MS=904? no — but well
+    // into the eased ramp), showing a nonzero mid-track value here. With the fix, the clock only
+    // just started (gated on `active` becoming true), so it reads the fresh resting value.
+    await act(async () => { await new Promise((r) => setTimeout(r, 700)); });
+    expect(screen.getByTestId('dice-cube-mine').style.opacity).toBe('1');
+    expect(screen.getByTestId('dice-cube-mine').textContent).toBe('0.00'); // fresh, not mid-track
+    const fill = screen.getByTestId('dice-cube-mine').previousElementSibling as HTMLElement;
+    expect(fill.style.width).toContain('10px'); // the resting nub, not a partway value
+
+    // The count-up still lands on the real, correct values once it actually runs its course.
+    await waitFor(() => expect(screen.getByTestId('hub-board').textContent).toContain('50.00'), { timeout: 3000 });
+  });
+
   // Ticket 2026-09-21#6 (D35) symptom 2: replaying after a result used to wipe the whole board
   // instantly — `DiceIdle`/`DiceBoard` were two separate components, so leaving 'in-match'/'result'
   // unmounted DiceBoard's entire resolved subtree in one render, nothing to fade or overlap with
