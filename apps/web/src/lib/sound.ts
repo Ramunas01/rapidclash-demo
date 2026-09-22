@@ -3,6 +3,8 @@ import playUrl from '../assets/sounds/play.mp3';
 import diceRollUrl from '../assets/sounds/dice-roll.mp3';
 import diceWinUrl from '../assets/sounds/dice-win.mp3';
 import rejectUrl from '../assets/sounds/reject.wav';
+import minesGemUrl from '../assets/sounds/mines-gem.mp3';
+import minesMineUrl from '../assets/sounds/mines-mine.mp3';
 
 /**
  * Minimal, dependency-free Web Audio wrapper for short UI sound effects.
@@ -27,6 +29,15 @@ const MANIFEST: Record<string, string> = {
   // GameHub.tsx's guideToBet()/handlePlayFriend() call sites). Owner-approved: rejection-only, not
   // a success-click half — framed as a functional bug fix, not new sound design.
   reject: rejectUrl,
+  // Ticket 2026-09-22#2 (D39): Designer-provided (not self-synthesized, same precedent as
+  // play/dice-roll/dice-win) — fired on a SERVER-CONFIRMED tile reveal (see MinesBoard's own
+  // round-scoped diff effect in MinesHub.tsx, not the tap itself). No pooling/preload-on-Play
+  // code needed for either — this file's own buffer-source-per-call architecture already gives
+  // every play() call an independent, fully-overlapping playback, and preloadSounds() already
+  // decodes every MANIFEST entry uniformly on the first page-wide gesture, well before Mines is
+  // ever reached.
+  'mines-gem': minesGemUrl,
+  'mines-mine': minesMineUrl,
 };
 
 export type SoundName = keyof typeof MANIFEST | string;

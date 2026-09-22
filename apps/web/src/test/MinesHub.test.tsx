@@ -7,6 +7,21 @@ import type { MinesView, MinesBoardView } from '../App.js';
 // canvas-confetti needs a real <canvas> (absent in jsdom) — mock it (matches the other hub tests).
 vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
 
+// Web Audio is absent in jsdom — mock the sound module so we can assert the tile-reveal/bust SFX
+// wiring (ticket 2026-09-22#2/D39) without touching real AudioContext (same idiom as
+// DiceHub.test.tsx/RpsHub.test.tsx's equivalent mocks).
+const { playMock } = vi.hoisted(() => ({ playMock: vi.fn() }));
+vi.mock('../lib/sound.js', () => ({
+  play: playMock,
+  unlock: vi.fn(),
+  installUnlockOnFirstGesture: vi.fn(),
+  isMuted: () => false,
+  toggleMute: vi.fn(),
+  setMuted: vi.fn(),
+  subscribe: () => () => {},
+  preloadSounds: vi.fn(),
+}));
+
 type Props = Parameters<typeof MinesHubScreen>[0];
 
 function baseProps(over: Partial<Props> = {}): Props {
@@ -45,6 +60,7 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
       if (u.includes('/games') || u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
       return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
     }));
+    playMock.mockClear();
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -857,5 +873,87 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // Ticket 2026-09-22#2 (D39): tile-reveal/bust sound effects. Fired on a SERVER-CONFIRMED diff of
+  // me.uncovered/me.bustedOn against a "previously seen" snapshot, never on the optimistic tap —
+  // and scoped per `${currentMatchId}:${round}` so Mines' own draw-replay (round bumps, uncovered
+  // resets, same match) doesn't collide with an earlier round's already-seen tile indices.
+  describe('D39: tile-reveal/bust sound effects', () => {
+    it('a genuine server-confirmed tile reveal fires mines-gem exactly once per newly revealed tile', () => {
+      const { rerender } = render(
+        <MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [] }), legalMoves: asLegal(allCovered) })} />,
+      );
+      expect(playMock).not.toHaveBeenCalled(); // mount baseline — no retroactive sound
+
+      rerender(
+        <MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [3] }), legalMoves: asLegal(allCovered.filter((i) => i !== 3)) })} />,
+      );
+      expect(playMock).toHaveBeenCalledTimes(1);
+      expect(playMock).toHaveBeenCalledWith('mines-gem');
+
+      rerender(
+        <MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [3, 7] }), legalMoves: asLegal(allCovered.filter((i) => i !== 3 && i !== 7)) })} />,
+      );
+      expect(playMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('a genuine bust fires mines-mine exactly once', () => {
+      const { rerender } = render(
+        <MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [] }), legalMoves: asLegal(allCovered) })} />,
+      );
+      rerender(
+        <MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [], bustedOn: 5, locked: true }), legalMoves: asLegal([]) })} />,
+      );
+      expect(playMock).toHaveBeenCalledTimes(1);
+      expect(playMock).toHaveBeenCalledWith('mines-mine');
+    });
+
+    // Once locked, every remaining tile renders as 'autoSafe' (a pure rendering fallback — see
+    // cellKind in MinesHub.tsx) without ever being added to me.uncovered. Since the effect diffs
+    // me.uncovered itself, the ghosted reveal-at-lock tiles are excluded by construction.
+    it('locking (autoSafe reveal-at-lock rendering) does not fire extra gem sounds beyond real taps', () => {
+      const { rerender } = render(
+        <MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [] }), legalMoves: asLegal(allCovered) })} />,
+      );
+      rerender(
+        <MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [2] }), legalMoves: asLegal(allCovered.filter((i) => i !== 2)) })} />,
+      );
+      expect(playMock).toHaveBeenCalledTimes(1);
+
+      rerender(
+        <MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [2], locked: true }), legalMoves: asLegal([]) })} />,
+      );
+      expect(playMock).toHaveBeenCalledTimes(1); // unchanged — no extra sounds for the ghosted tiles
+    });
+
+    it('a fresh mount with tiles already uncovered (reconnect mid-round) does not retroactively fire sounds', () => {
+      render(
+        <MinesHubScreen
+          {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [1, 4, 9] }), legalMoves: asLegal(allCovered.filter((i) => ![1, 4, 9].includes(i))) })}
+        />,
+      );
+      expect(playMock).not.toHaveBeenCalled();
+    });
+
+    it('a round replay within the same match resets the sound baseline — a repeated tile index sounds again in the new round, without retroactively firing at the round transition itself', () => {
+      const { rerender } = render(
+        <MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [3] }, {}, { round: 0 }), legalMoves: asLegal(allCovered.filter((i) => i !== 3)) })} />,
+      );
+      expect(playMock).not.toHaveBeenCalled(); // fresh mount, already uncovered — no retroactive sound
+
+      // Round bumps (a tie replay) — server resets uncovered to [] for the new round.
+      rerender(
+        <MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [] }, {}, { round: 1 }), legalMoves: asLegal(allCovered) })} />,
+      );
+      expect(playMock).not.toHaveBeenCalled(); // the round transition itself never fires a sound
+
+      // Same tile index tapped again in the new round: must sound — NOT skipped as "already seen".
+      rerender(
+        <MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [3] }, {}, { round: 1 }), legalMoves: asLegal(allCovered.filter((i) => i !== 3)) })} />,
+      );
+      expect(playMock).toHaveBeenCalledTimes(1);
+      expect(playMock).toHaveBeenCalledWith('mines-gem');
+    });
   });
 });
