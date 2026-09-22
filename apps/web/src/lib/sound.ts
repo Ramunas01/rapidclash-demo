@@ -182,4 +182,16 @@ export function installUnlockOnFirstGesture(): void {
   };
   window.addEventListener('pointerdown', handler, { once: false });
   window.addEventListener('keydown', handler, { once: false });
+  // Ticket 2026-09-22#6: the gesture listener above fires ONCE, ever, then removes itself — but a
+  // mobile browser routinely SUSPENDS the AudioContext again later (screen lock, backgrounding),
+  // and nothing was left listening to revive it. play() correctly stays silent on a suspended
+  // context (never force autoplay) — so once suspended a second time, sound went permanently dead
+  // for the rest of that session, with no tap/PLAY/tile-reveal able to bring it back. The browser's
+  // gesture requirement only applies to a context's FIRST-EVER resume() — once genuinely unlocked
+  // by a real gesture (already guaranteed above), later resume() calls from a non-gesture context
+  // like this listener are standardly permitted. unlock() is already idempotent/safe to call
+  // repeatedly, so this is a permanent listener (unlike the gesture one, never removed).
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') unlock();
+  });
 }
