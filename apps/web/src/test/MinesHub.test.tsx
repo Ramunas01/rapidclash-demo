@@ -653,6 +653,20 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     }
   });
 
+  // Ticket 2026-09-22#3 (D40): direct regression from D37 above — switching "Playing…" to
+  // always-mounted+opacity made it an in-flow `shrink-0` flex sibling, which reserves its own
+  // natural width even at opacity:0, squeezing the gem strip's own `flex-1` sibling down to ~1/3
+  // width (wrapping 3 rows instead of ~2). Fix: take it out of flow, mirroring "Searching…"'s own
+  // already-correct `absolute right-3.5 top-1/2 -translate-y-1/2` positioning one element above.
+  it("D40: the opponent bar's \"Playing…\" label is taken OUT OF FLOW (absolute), not an in-flow shrink-0 sibling that would squeeze the gem strip's width", () => {
+    const gameState = view({ uncovered: [0, 1, 2] }, { locked: false });
+    render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: asLegal([3, 4, 5]) })} />);
+    const oppBar = within(screen.getByTestId('hub-slot-opponent'));
+    const label = oppBar.getByText('Playing…');
+    expect(label.className).toMatch(/(?:^|\s)absolute(?:\s|$)/);
+    expect(label.className).not.toMatch(/shrink-0/);
+  });
+
   // Ticket 2026-09-17#1 item 2: the genuinely new behavior — a held 'converge' (opponent not yet
   // locked) releases once their `locked` is observed true, and 'reveal'/'final' fire relative to
   // THAT release moment, not the original convergence timestamp. This is the core of item 2's fix:
