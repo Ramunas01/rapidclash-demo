@@ -36,6 +36,21 @@ export interface Ledger {
    *  belt-and-suspenders alongside the Rewards module's own atomic zero-then-credit guard. */
   creditRewardClaim(accountId: string, amount: number, idempotencyKey: string): LedgerEntry;
   accountExists(accountId: string): boolean;
+  /** Ticket 2026-09-24#1: prunes `ledger_entry` rows for a fully-refunded match_id group —
+   *  every row in the group is BET_ESCROW/SETTLE_REFUND (never a win, and never a still-open
+   *  escrow with no settlement at all), AND the group's own MAX(created_at) is older than
+   *  `retentionDays`. Money-neutral by construction: a BET_ESCROW and its matching
+   *  SETTLE_REFUND always sum to exactly zero, so deleting both never changes any account's
+   *  `getBalance()`. Root cause: bot resters' own post→expire→refund→repost cycle (ADR-010,
+   *  working as designed) drove the live DB to 371MB, almost entirely this one signature.
+   *  Batched (bounded chunk size, `setImmediate` between chunks) regardless of backlog size —
+   *  a single large synchronous DELETE would recreate the exact 2026-09-22#7 incident (a big
+   *  blocking DB op stalling the single-threaded server inline with live requests). Resolves
+   *  once every eligible group has been deleted. */
+  cleanupSettled(
+    retentionDays: number,
+    batchSize?: number,
+  ): Promise<{ matchesDeleted: number; rowsDeleted: number }>;
   /** True if the account holds any escrowed stake that has not yet been settled —
    *  i.e. a BET_ESCROW on a match with no settlement entry (SETTLE_WIN, SETTLE_REFUND
    *  or RAKE). Covers both a live match in progress and a resting open challenge
@@ -208,6 +223,52 @@ export function createLedger(db: Database.Database): Ledger {
     txn();
   }
 
+  const DEFAULT_CLEANUP_BATCH_SIZE = 500;
+
+  // A fully-refunded group: every row is BET_ESCROW/SETTLE_REFUND (excludes a win, which
+  // always has SETTLE_WIN/RAKE) AND at least one row IS a SETTLE_REFUND (excludes a still-open
+  // escrow — a resting challenge not yet expired, or a live in-progress match — which has no
+  // settlement row of any kind yet). The age cutoff is applied against the group's OWN latest
+  // row, not the escrow's — so a group only qualifies once every row in it (escrow AND
+  // refund) predates the retention window.
+  const stmtEligibleMatches = db.prepare<[string], { match_id: string }>(
+    `SELECT match_id FROM ledger_entry
+     WHERE match_id IS NOT NULL
+     GROUP BY match_id
+     HAVING SUM(CASE WHEN type NOT IN ('BET_ESCROW', 'SETTLE_REFUND') THEN 1 ELSE 0 END) = 0
+        AND SUM(CASE WHEN type = 'SETTLE_REFUND' THEN 1 ELSE 0 END) >= 1
+        AND MAX(created_at) < ?`,
+  );
+
+  async function cleanupSettled(
+    retentionDays: number,
+    batchSize: number = DEFAULT_CLEANUP_BATCH_SIZE,
+  ): Promise<{ matchesDeleted: number; rowsDeleted: number }> {
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+    const eligible = stmtEligibleMatches.all(cutoff).map((r) => r.match_id);
+
+    let matchesDeleted = 0;
+    let rowsDeleted = 0;
+    for (let i = 0; i < eligible.length; i += batchSize) {
+      const chunk = eligible.slice(i, i + batchSize);
+      const placeholders = chunk.map(() => '?').join(',');
+      const deleteChunk = db.transaction((ids: string[]) =>
+        db.prepare(`DELETE FROM ledger_entry WHERE match_id IN (${placeholders})`).run(...ids),
+      );
+      const result = deleteChunk(chunk);
+      matchesDeleted += chunk.length;
+      rowsDeleted += result.changes;
+
+      // Yield the event loop between batches — regardless of backlog size — so a large
+      // (e.g. the first-ever backlog-clearing) pass never blocks a live request the way the
+      // 2026-09-22#7 incident's unbounded socket-cleanup path did.
+      if (i + batchSize < eligible.length) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+    }
+    return { matchesDeleted, rowsDeleted };
+  }
+
   function accountExists(accountId: string): boolean {
     return stmtHasEntries.get(accountId)!.cnt > 0;
   }
@@ -234,6 +295,7 @@ export function createLedger(db: Database.Database): Ledger {
     adminCredit,
     creditRewardClaim,
     accountExists,
+    cleanupSettled,
     hasOpenEscrow,
     getBalance,
     getEntries,

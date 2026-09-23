@@ -209,7 +209,7 @@ export function buildApp(
   // normal HTTP handler (→ 500). buildApp is synchronous, so we register the gateway in a
   // nested plugin that avvio loads after FastifyWs rather than awaiting the registration.
   app.register(async (instance) => {
-    registerWsGateway(instance, identity, matchmaking, gameModules, services.db, guest);
+    registerWsGateway(instance, identity, matchmaking, gameModules, services.db, guest, ledger, opts.onWrite);
   });
 
   // Serve the built PWA on the same origin (prod only — see maybeServeStatic).

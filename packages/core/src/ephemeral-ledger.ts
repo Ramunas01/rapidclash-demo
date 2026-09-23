@@ -162,6 +162,15 @@ export function createEphemeralLedger(opts: { grantAmount?: number } = {}): Ephe
     return writeEntry(accountId, null, 'REWARD_CLAIM', amount, idempotencyKey);
   }
 
+  // Ticket 2026-09-24#1: exists solely to satisfy the `Ledger` interface EphemeralLedger
+  // extends, same reason as creditRewardClaim above — a guest session's ledger is in-memory
+  // and already bounded by `evict()` above (fired per-session on WS close/eviction grace
+  // window expiry), not by a durable-disk-growth problem the real, SQLite-backed ledger has.
+  // A genuine no-op: nothing here ever needs pruning the way `ledger_entry` on disk does.
+  async function cleanupSettled(): Promise<{ matchesDeleted: number; rowsDeleted: number }> {
+    return { matchesDeleted: 0, rowsDeleted: 0 };
+  }
+
   function evict(accountId: string): void {
     const list = entriesByAccount.get(accountId);
     if (!list) return;
@@ -187,6 +196,7 @@ export function createEphemeralLedger(opts: { grantAmount?: number } = {}): Ephe
     adminCredit,
     creditRewardClaim,
     accountExists,
+    cleanupSettled,
     hasOpenEscrow,
     getBalance,
     getEntries,
