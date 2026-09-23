@@ -674,20 +674,49 @@ export function registerWsGateway(
   // at boot, then on the interval" shape as index.ts's rewardsMonthCloseTimer) and then on
   // ledgerCleanupIntervalMs. `ledger` is optional (mirrors `guest` above) so a call site/test
   // that omits it simply never arms this — no behavior change for anything that doesn't pass it.
-  async function runLedgerCleanup(): Promise<void> {
+  // Ticket 2026-09-24#3: DELETE alone frees pages for reuse WITHIN the file — SQLite never
+  // shrinks the file itself without a VACUUM (no auto_vacuum is set anywhere in this codebase).
+  // Confirmed live: the snapshot was still ~390MB after 2026-09-24#1's own 654K-row backlog
+  // pass. VACUUM is a single, un-chunkable statement (unlike the DELETE above, this codebase's
+  // own batching pattern can't wrap it) — but measured at ~1s against this app's actual data
+  // scale, a bounded, short stall, not the open-ended risk a multi-minute VACUUM-of-a-bloated-
+  // file would have been.
+  //
+  // `checkForExistingBloat` (true only for the one-shot startup call) reads `PRAGMA
+  // freelist_count` directly — the actual number of pages already freed-but-unreclaimed,
+  // regardless of whether THIS pass's own DELETE found anything. This is what reclaims dead
+  // space left over from BEFORE this fix ever shipped (tonight's own 2026-09-24#1 backlog pass
+  // already ran once, pre-VACUUM): a naive "always VACUUM at startup" would instead fire on
+  // every single boot forever, even once the file is already fully compact — wasteful, and
+  // (confirmed via the existing onWrite-precision tests elsewhere in this app, e.g.
+  // routes/admin.test.ts / routes/auth.test.ts) indistinguishable from a real write to anything
+  // sharing the same onWrite hook. Checking the actual freelist instead of blindly trusting
+  // "startup == dirty" means a truly-clean boot (freelist_count === 0 — nothing to reclaim, the
+  // common case for a fresh test DB or a steady-state redeploy after this fix has already run
+  // once) correctly costs nothing. The hourly timer's own pass stays gated on rowsDeleted > 0
+  // only (no freelist check needed — any prior tick's own DELETE was already reclaimed by that
+  // SAME tick's own VACUUM, so there is never stale bloat sitting between hourly ticks the way
+  // there was before this fix ever existed).
+  async function runLedgerCleanup(checkForExistingBloat: boolean): Promise<void> {
     if (!ledger) return;
     try {
       const { matchesDeleted, rowsDeleted } = await ledger.cleanupSettled(ledgerCleanupRetentionDays);
       if (rowsDeleted > 0) {
         console.log(`[gateway] ledger cleanup: pruned ${matchesDeleted} match(es), ${rowsDeleted} row(s)`);
+      }
+      const hasExistingBloat =
+        checkForExistingBloat && (db.pragma('freelist_count', { simple: true }) as number) > 0;
+      if (rowsDeleted > 0 || hasExistingBloat) {
+        db.exec('VACUUM');
+        console.log('[gateway] ledger cleanup: VACUUM complete');
         onWrite?.();
       }
     } catch (err) {
       console.error('[gateway] ledger cleanup pass failed', err);
     }
   }
-  void runLedgerCleanup();
-  const ledgerCleanupTimer = setInterval(() => void runLedgerCleanup(), ledgerCleanupIntervalMs);
+  void runLedgerCleanup(true);
+  const ledgerCleanupTimer = setInterval(() => void runLedgerCleanup(false), ledgerCleanupIntervalMs);
   ledgerCleanupTimer.unref?.();
   app.addHook('onClose', async () => clearInterval(ledgerCleanupTimer));
 

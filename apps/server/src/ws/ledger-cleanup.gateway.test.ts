@@ -9,6 +9,14 @@ import { createServices, buildApp, type AppServices } from '../server.js';
 // manual step), that the independent hourly timer also runs (not just the startup pass), that
 // a pass which deletes nothing correctly no-ops (no spurious snapshot trigger), and that a
 // still-open escrow survives both the startup pass and a later timer tick.
+//
+// Ticket 2026-09-24#3: proves VACUUM's own two-mode gating — the startup pass checks the REAL
+// `PRAGMA freelist_count` (not just "it is startup") so it reclaims dead space genuinely left
+// over from BEFORE this fix ever shipped, while a truly clean boot (nothing ever deleted, the
+// common case for a fresh test DB or a steady-state redeploy after this fix has already run
+// once) costs nothing; the hourly timer's own pass stays gated on rowsDeleted > 0 only. Verified
+// via PRAGMA freelist_count directly — SQLite's own ground truth for "did a VACUUM actually
+// reclaim space," not just "did some function run."
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -87,12 +95,12 @@ describe('WS gateway ledger cleanup wiring (ticket 2026-09-24#1)', () => {
     expect(onWrite).toHaveBeenCalled();
   });
 
-  it('a still-open escrow (never refunded) survives both the startup pass and a later timer tick', async () => {
+  it('a still-open escrow (never refunded) survives both the startup pass and a later timer tick — a genuinely clean DB never VACUUMs/triggers onWrite (ticket #3: checks the real freelist, not just "it is startup")', async () => {
     process.env.LEDGER_CLEANUP_INTERVAL_MS = '40';
     const db = new Database(':memory:');
     const services = createServices(db, []);
     services.ledger.grant('carol');
-    services.ledger.escrow('carol', 'still-open-1', 30); // resting, not yet expired/refunded
+    services.ledger.escrow('carol', 'still-open-1', 30); // resting, not yet expired/refunded — never deleted, so freelist stays empty
 
     const onWrite = vi.fn();
     app = buildApp(services, [], { seedAdmin: false, onWrite });
@@ -100,7 +108,78 @@ describe('WS gateway ledger cleanup wiring (ticket 2026-09-24#1)', () => {
 
     await delay(150); // past the startup pass AND at least one periodic tick
 
-    expect(rowCount(db, 'still-open-1')).toBe(1); // untouched
-    expect(onWrite).not.toHaveBeenCalled(); // nothing was ever deleted — no spurious snapshot trigger
+    expect(rowCount(db, 'still-open-1')).toBe(1); // untouched — the prune rule itself is unaffected
+    expect(onWrite).not.toHaveBeenCalled(); // nothing was ever deleted anywhere — no freelist bloat to reclaim, no spurious trigger
+  });
+});
+
+describe('WS gateway ledger cleanup: VACUUM (ticket 2026-09-24#3)', () => {
+  let app: FastifyInstance | undefined;
+  let savedRetention: string | undefined;
+  let savedInterval: string | undefined;
+
+  beforeEach(() => {
+    savedRetention = process.env.LEDGER_CLEANUP_RETENTION_DAYS;
+    savedInterval = process.env.LEDGER_CLEANUP_INTERVAL_MS;
+    process.env.LEDGER_CLEANUP_RETENTION_DAYS = '0';
+  });
+
+  afterEach(async () => {
+    if (app) await app.close();
+    app = undefined;
+    if (savedRetention === undefined) delete process.env.LEDGER_CLEANUP_RETENTION_DAYS; else process.env.LEDGER_CLEANUP_RETENTION_DAYS = savedRetention;
+    if (savedInterval === undefined) delete process.env.LEDGER_CLEANUP_INTERVAL_MS; else process.env.LEDGER_CLEANUP_INTERVAL_MS = savedInterval;
+  });
+
+  function freelistCount(db: Database.Database): number {
+    return db.pragma('freelist_count', { simple: true }) as number;
+  }
+
+  it('the startup pass VACUUMs and reclaims dead space left over from BEFORE this fix ever shipped, purely by checking the real freelist — even though THIS boot deletes nothing itself', async () => {
+    const db = new Database(':memory:');
+    const services = createServices(db, []);
+    // Simulate the exact real-world state this ticket targets: a prior cleanup pass already
+    // deleted rows (freeing pages), but nothing ever VACUUMed — done here via raw SQL, bypassing
+    // cleanupSettled entirely, so it's unambiguously "space freed before this fix existed."
+    const insertMany = db.prepare(
+      `INSERT INTO ledger_entry (id, account_id, match_id, type, amount, idempotency_key, created_at)
+       VALUES (?, 'bloat-acct', 'pre-existing-bloat', 'BET_ESCROW', -1, ?, ?)`,
+    );
+    const now = new Date().toISOString();
+    for (let i = 0; i < 2000; i++) insertMany.run(`pre-${i}`, `pre-key-${i}`, now);
+    db.prepare(`DELETE FROM ledger_entry WHERE match_id = 'pre-existing-bloat'`).run();
+    expect(freelistCount(db)).toBeGreaterThan(0); // real, unreclaimed dead space — the exact bug
+
+    const onWrite = vi.fn();
+    app = buildApp(services, [], { seedAdmin: false, onWrite });
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    await delay(100);
+
+    expect(freelistCount(db)).toBe(0); // VACUUM ran and reclaimed it — even though this pass pruned 0 rows
+    expect(onWrite).toHaveBeenCalled();
+  });
+
+  it('the hourly timer VACUUMs (and reclaims space) only on a tick that actually deleted rows', async () => {
+    process.env.LEDGER_CLEANUP_INTERVAL_MS = '40';
+    const db = new Database(':memory:');
+    const services = createServices(db, []);
+    const onWrite = vi.fn();
+    app = buildApp(services, [], { seedAdmin: false, onWrite });
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    await delay(60); // let the (no-op-but-still-VACUUMs-once) startup pass settle
+    onWrite.mockClear();
+
+    services.ledger.grant('dave');
+    for (let i = 0; i < 200; i++) {
+      services.ledger.escrow('dave', `hourly-bloat-${i}`, 1);
+      services.ledger.refundEscrow('dave', `hourly-bloat-${i}`);
+    }
+    expect(rowCount(services.db, 'hourly-bloat-0')).toBe(2); // still present — not yet swept
+
+    await delay(150); // past at least one periodic tick — DELETE + this tick's own VACUUM both run
+
+    expect(rowCount(services.db, 'hourly-bloat-0')).toBe(0); // the rows themselves were pruned
+    expect(freelistCount(services.db)).toBe(0); // AND this tick's own VACUUM reclaimed the space
+    expect(onWrite).toHaveBeenCalled();
   });
 });
