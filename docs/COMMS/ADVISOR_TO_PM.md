@@ -1,5 +1,70 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-24#1 — new: a periodic ledger-cleanup pass, purging fully-resolved-as-cancelled BET_ESCROW/SETTLE_REFUND pairs older than 2 days. Root cause chain from the 2026-09-22#7 lag incident traced one level deeper: the live SQLite DB has grown to 371MB (5,849 GCS snapshot versions/428GB already cleaned up separately), and `ledger_entry` — 755K+ rows for only 8,751 real completed matches — is nearly all of it. Verified directly against a full downloaded copy of the live DB: 359,358 of those rows are bot "resters" posting an open challenge, having it expire unclaimed ~90s later, and reposting 4s after that, forever, every ~95s, per resting bot, since 2026-08-21 — working as designed (ADR-010's whole point is a human always has something to join), but nothing ever prunes the resulting dead rows            [READY TO TICKET]
+From: Owner's own explicit request after reviewing the live DB directly ("I would delete the older records... maybe with every young hour BET_ESCROW record creation?" — see below for why that specific cadence is not what's being proposed), verified via a full local copy of the production snapshot (`ledger_entry` type-signature grouped by `match_id`, cross-checked against `match_results`)
+
+Owner asked directly for a cleanup mechanism, floated two candidate cadences, and asked me to design the actual process. Full reasoning below; Owner has already reviewed and agreed with this shape before this ticket was written.
+
+## Exactly what's safe to delete — verified against real data, not assumed
+
+Grouped every `match_id` in `ledger_entry` by its own set of row types and counted:
+
+| type-signature | count | meaning | delete? |
+|---|---|---|---|
+| `BET_ESCROW, SETTLE_REFUND` | 359,196 | one-sided posting, never claimed | **yes** |
+| `BET_ESCROW×2, SETTLE_REFUND×2` | 162 | both sides escrowed, match cancelled, both refunded | **yes** |
+| `BET_ESCROW×2, SETTLE_WIN, RAKE` | 8,216 | genuine completed match | no |
+| `BET_ESCROW×2, SETTLE_WIN` | 373 | genuine completed match, no rake | no |
+| `BET_ESCROW` alone | 1,992 | still open, or stuck | **no — separate investigation, out of scope for this ticket** |
+| `BET_ESCROW×2` alone | 5 | both escrowed, neither resolved | **no — same, out of scope** |
+
+**The correct rule is not "match_ids with only 2 rows"** — that naive version would also sweep up the last two rows (open/stuck escrows Owner explicitly wants left alone for now). The precise, safe rule: a `match_id` is a delete candidate only if EVERY row for it has `type IN ('BET_ESCROW','SETTLE_REFUND')` AND at least one of those rows IS a `SETTLE_REFUND` (this second clause is what excludes the still-open cases — an escrow with zero refunds is never touched). Combined with an age cutoff on `MAX(created_at)` for the group, so a match_id isn't touched until every one of its rows is safely in the past:
+
+```sql
+DELETE FROM ledger_entry
+WHERE match_id IN (
+  SELECT match_id FROM ledger_entry
+  WHERE match_id IS NOT NULL
+  GROUP BY match_id
+  HAVING
+    SUM(CASE WHEN type NOT IN ('BET_ESCROW','SETTLE_REFUND') THEN 1 ELSE 0 END) = 0
+    AND SUM(CASE WHEN type = 'SETTLE_REFUND' THEN 1 ELSE 0 END) > 0
+    AND MAX(created_at) < :cutoff
+);
+```
+
+## Cadence — Owner's own two proposals both re-create the exact bug 2026-09-22#7 just fixed; here's the concrete reason, and what to do instead
+
+**Owner's idea #1 (trigger cleanup on bet-placement activity, e.g. "every young hour's first `BET_ESCROW`") couples an unrelated housekeeping concern to a live, latency-sensitive request path.** `better-sqlite3` is synchronous — every DB call blocks the ONE Node event loop for its full duration, and nothing else on the server (no other request, no other player's move) can run while it does. A `DELETE` touching hundreds of thousands of rows across `ledger_entry`'s own 3 indexes is not instant. Running it inline inside an ordinary bet request means an ordinary bet can now occasionally stall the entire server for however long that takes — the exact mechanism behind 2026-09-22#7, just relocated from the snapshot upload to a DELETE.
+
+**Owner's idea #2 (rely on natural request serialization to "spread bots out") doesn't change this.** The server is already fully serial today (one thread, no real concurrency for synchronous work) — that's not a lever that can be pulled further; the actual risk is one long call blocking every *other* concurrent connection for its duration, which serialization doesn't fix, it *is* the mechanism.
+
+**Proposed instead: an independent, fixed-interval timer, decoupled entirely from bet activity — reusing the exact idiom `gateway.ts` already uses for the heartbeat and sweep timers** (`setInterval(..., intervalMs).unref()`, wrapped in the same per-tick try/catch isolation so a fault here can't crash the process). No new process, no new infrastructure — just one more scheduled task inside the already-running server, same shape as what's already there twice.
+
+**Batched within every run, regardless of backlog size, so no single pass can ever block for long.** Select a bounded batch of matching `match_id`s (e.g. 2,000), delete just those rows, yield via `setImmediate`, repeat until nothing old is left this tick, then sleep until the next one. This is the identical chunking pattern `better-sqlite3`'s own `backup()` API already uses internally (`runBackup()`'s `setImmediate`-per-chunk loop, confirmed by reading its installed source for `2026-09-22#5`) — a pattern already proven appropriate in this exact codebase's own dependency, not a novel technique.
+
+## Retention + config
+
+`LEDGER_CLEANUP_RETENTION_DAYS` env var, default `2` (Owner's own number) — matching this codebase's existing convention of tunable-with-sane-defaults constants (same shape as `HEARTBEAT_INTERVAL_MS`, `GUEST_BOT_THINK_MIN_MS`, etc.). `LEDGER_CLEANUP_INTERVAL_MS` for the timer itself, default 1 hour.
+
+## The one-time backlog — handled by running the SAME batched pass once at startup, not a separate manual step
+
+There's currently ~1 month of backlog (359K+ matching rows). Rather than treating "clear the backlog" as a distinct one-off operation, wire the batched cleanup function to also run once immediately after `restore()` at server startup (same batching/yielding, so it doesn't block startup either) — **deploying this fix tonight IS the one-time cleanup, executed automatically and safely.** Owner has explicitly confirmed tonight is a safe window (off-hours, no active testers) for that first, larger batched pass to run. After that, every subsequent hourly tick only ever has about a day's worth of newly-stale rows — small and fast.
+
+## One deliberate choice worth flagging, not silently deciding
+
+**A real cleanup pass should trigger the existing debounced snapshot (`onWrite`/`onSettled`'s `snapshotter.trigger()`), the same as any other settlement write** — so the next Cloud Run restart restores the now-much-smaller file, not the bloated one. Recommending this be wired in deliberately rather than left as an accidental omission.
+
+## Scope
+
+`apps/server/src/`-only (wherever the ledger-cleanup logic best lives alongside the existing sweep/heartbeat timers — likely `gateway.ts` or a new sibling module, PM's call). No schema change, no changes to the escrow/refund logic itself (which is correct and unrelated) — purely pruning old, fully-resolved-as-cancelled rows that carry no ongoing meaning. The 1,992+5 still-open/ambiguous escrow rows are explicitly out of scope for this ticket, per Owner's own instruction — a separate investigation, not blocking this one.
+
+---
+
+**Ask:** Owner has already approved this design and explicitly confirmed tonight (off-hours, no active testers) as a safe window for the first, larger batched pass to run — ship it and let the startup-time batch handle the backlog. Test coverage should prove: (1) the exact signature rule above (both delete-eligible signatures, AND both still-open signatures correctly left untouched), (2) the age cutoff (a today's-timestamp match in either eligible signature is NOT deleted), (3) batching genuinely yields between chunks rather than running as one unbounded transaction, (4) the startup pass and the hourly timer both correctly no-op when there's nothing left to clean.
+
+---
+
 ### 2026-09-22#7 — ACTIVE INCIDENT: today's "lagging" report traced to a real WS connection leak on reconnect — the just-added heartbeat (2026-09-21#9) structurally cannot see the leaked socket, so instead of being freed in ~30-60s as designed, it occupies a concurrency slot for up to Cloud Run's full 3600s hard cap. Confirmed live right now: 42 HTTP 429s ("no available instance") in the last 15 minutes and climbing, on a service pinned to exactly ONE instance (`maxScale: 1`) — this single 1-vCPU instance is what's lagging            [READY TO TICKET]
 From: Advisor   Re: Owner's own live report ("we currently experience some lagging of the demo game"), investigated via `gcloud logging read` against the live service and a direct re-read of `apps/server/src/ws/gateway.ts`'s connection-registration and heartbeat code
 
