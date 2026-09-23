@@ -1,12 +1,14 @@
-import { describe, beforeEach, it, expect } from 'vitest';
+import { describe, beforeEach, it, expect, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import { createLedger, GRANT_AMOUNT, PLATFORM_ACCOUNT } from './ledger.js';
 
 describe('ledger', () => {
+  let db: Database.Database;
   let ledger: ReturnType<typeof createLedger>;
 
   beforeEach(() => {
-    ledger = createLedger(new Database(':memory:'));
+    db = new Database(':memory:');
+    ledger = createLedger(db);
   });
 
   it('starting balance equals one GRANT', () => {
@@ -176,6 +178,143 @@ describe('ledger', () => {
       ledger.settle('m-done', 'win', 'bob', 200, 0.1);
       ledger.escrow('alice', 'm-open', 100); // still in flight
       expect(ledger.hasOpenEscrow('alice')).toBe(true);
+    });
+  });
+
+  // Ticket 2026-09-24#1: prunes ledger_entry rows for a fully-refunded match_id group, old
+  // enough per the retention window. Root cause: bot resters' own post→expire→refund→repost
+  // cycle (ADR-010, working as designed) drove the live DB to 371MB, almost entirely this one
+  // signature. Money-neutral by construction (a BET_ESCROW and its matching SETTLE_REFUND
+  // always sum to zero) — verified directly via getBalance, not assumed.
+  describe('cleanupSettled', () => {
+    /** Backdates every ledger_entry row for matchId by `days`, so it clears the retention
+     *  cutoff without needing a real clock — writeEntry always stamps "now". */
+    function backdate(matchId: string, days: number): void {
+      const iso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      db.prepare(`UPDATE ledger_entry SET created_at = ? WHERE match_id = ?`).run(iso, matchId);
+    }
+    function rowCount(matchId: string): number {
+      return (db.prepare(`SELECT COUNT(*) AS cnt FROM ledger_entry WHERE match_id = ?`).get(matchId) as { cnt: number }).cnt;
+    }
+
+    it('deletes an old resting-challenge-expiry refund (BET_ESCROW + SETTLE_REFUND, one account)', async () => {
+      ledger.grant('alice');
+      ledger.escrow('alice', 'expired-1', 50);
+      ledger.refundEscrow('alice', 'expired-1');
+      backdate('expired-1', 5);
+
+      const result = await ledger.cleanupSettled(2);
+      expect(result).toEqual({ matchesDeleted: 1, rowsDeleted: 2 });
+      expect(rowCount('expired-1')).toBe(0);
+    });
+
+    it('deletes an old draw (BET_ESCROW×2 + SETTLE_REFUND×2, two accounts)', async () => {
+      ledger.grant('alice');
+      ledger.grant('bob');
+      ledger.escrow('alice', 'old-draw', 100);
+      ledger.escrow('bob', 'old-draw', 100);
+      ledger.settle('old-draw', 'draw', undefined, 200, 0.1);
+      backdate('old-draw', 5);
+
+      const result = await ledger.cleanupSettled(2);
+      expect(result).toEqual({ matchesDeleted: 1, rowsDeleted: 4 });
+      expect(rowCount('old-draw')).toBe(0);
+    });
+
+    it('leaves a still-open resting challenge untouched (BET_ESCROW only, no refund yet — not expired)', async () => {
+      ledger.grant('alice');
+      ledger.escrow('alice', 'still-resting', 50);
+      backdate('still-resting', 5); // old, but never refunded — must survive
+
+      const result = await ledger.cleanupSettled(2);
+      expect(result).toEqual({ matchesDeleted: 0, rowsDeleted: 0 });
+      expect(rowCount('still-resting')).toBe(1);
+    });
+
+    it('leaves a still-open live match untouched (BET_ESCROW×2, unsettled)', async () => {
+      ledger.grant('alice');
+      ledger.grant('bob');
+      ledger.escrow('alice', 'live-match', 100);
+      ledger.escrow('bob', 'live-match', 100);
+      backdate('live-match', 5);
+
+      const result = await ledger.cleanupSettled(2);
+      expect(result).toEqual({ matchesDeleted: 0, rowsDeleted: 0 });
+      expect(rowCount('live-match')).toBe(2);
+    });
+
+    it('leaves a won match untouched (SETTLE_WIN/RAKE present — never eligible, regardless of age)', async () => {
+      ledger.grant('alice');
+      ledger.grant('bob');
+      ledger.escrow('alice', 'old-win', 100);
+      ledger.escrow('bob', 'old-win', 100);
+      ledger.settle('old-win', 'win', 'alice', 200, 0.1);
+      backdate('old-win', 5);
+
+      const result = await ledger.cleanupSettled(2);
+      expect(result).toEqual({ matchesDeleted: 0, rowsDeleted: 0 });
+      expect(rowCount('old-win')).toBe(4); // 2 escrows + SETTLE_WIN + RAKE
+    });
+
+    it('age cutoff: an otherwise-eligible refund NEWER than the retention window is left alone', async () => {
+      ledger.grant('alice');
+      ledger.escrow('alice', 'recent-refund', 50);
+      ledger.refundEscrow('alice', 'recent-refund'); // created_at = now, no backdating
+
+      const result = await ledger.cleanupSettled(2);
+      expect(result).toEqual({ matchesDeleted: 0, rowsDeleted: 0 });
+      expect(rowCount('recent-refund')).toBe(2);
+    });
+
+    it('is money-neutral: getBalance for the pruned account is unchanged before/after cleanup', async () => {
+      ledger.grant('alice');
+      ledger.escrow('alice', 'neutral-check', 50);
+      ledger.refundEscrow('alice', 'neutral-check');
+      backdate('neutral-check', 5);
+      const before = ledger.getBalance('alice');
+
+      await ledger.cleanupSettled(2);
+
+      expect(ledger.getBalance('alice')).toBe(before);
+      expect(ledger.getBalance('alice')).toBe(GRANT_AMOUNT); // escrow(-50) + refund(+50) = net 0
+    });
+
+    it('nothing eligible: no-ops cleanly, no DELETE ever runs', async () => {
+      ledger.grant('alice');
+      const result = await ledger.cleanupSettled(2);
+      expect(result).toEqual({ matchesDeleted: 0, rowsDeleted: 0 });
+    });
+
+    it('batches genuinely yield the event loop between chunks — not one unbounded transaction', async () => {
+      // 3 eligible match groups, batchSize 1 → 3 chunks, 2 yields between them.
+      for (const m of ['b1', 'b2', 'b3']) {
+        ledger.grant(`acct-${m}`);
+        ledger.escrow(`acct-${m}`, m, 10);
+        ledger.refundEscrow(`acct-${m}`, m);
+        backdate(m, 5);
+      }
+      const immediateSpy = vi.spyOn(global, 'setImmediate');
+      try {
+        const result = await ledger.cleanupSettled(2, 1);
+        expect(result).toEqual({ matchesDeleted: 3, rowsDeleted: 6 });
+        expect(immediateSpy).toHaveBeenCalledTimes(2); // yields BETWEEN chunks, not after the last
+      } finally {
+        immediateSpy.mockRestore();
+      }
+    });
+
+    it('a single chunk (backlog fits in one batch) never yields at all', async () => {
+      ledger.grant('alice');
+      ledger.escrow('alice', 'one-chunk', 50);
+      ledger.refundEscrow('alice', 'one-chunk');
+      backdate('one-chunk', 5);
+      const immediateSpy = vi.spyOn(global, 'setImmediate');
+      try {
+        await ledger.cleanupSettled(2, 500);
+        expect(immediateSpy).not.toHaveBeenCalled();
+      } finally {
+        immediateSpy.mockRestore();
+      }
     });
   });
 });

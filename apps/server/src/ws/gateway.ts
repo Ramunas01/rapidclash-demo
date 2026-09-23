@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { SocketStream } from '@fastify/websocket';
 import type Database from 'better-sqlite3';
-import type { Identity, Matchmaking, JoinMatched, MatchRecord, ChatTransport } from '@rapidclash/core';
+import type { Identity, Ledger, Matchmaking, JoinMatched, MatchRecord, ChatTransport } from '@rapidclash/core';
 import {
   ChallengeError,
   usesPlayerTimers,
@@ -103,6 +103,14 @@ const SWEEP_INTERVAL_MS = (() => {
   return Number.isFinite(n) ? n : 1_000;
 })();
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000;
+// Ticket 2026-09-24#1: how long a fully-refunded ledger_entry group must sit before it's
+// pruned, and how often the sweep runs. Defaults chosen so a resting bot's own recent
+// post→expire→refund cycle (ADR-010) stays visible in a fresh wallet-history read for a
+// couple of days, while the sweep itself checks hourly (cheap no-op once the backlog is
+// clear — see cleanupSettled's own doc comment for why a bigger backlog still can't block a
+// live request even on an hourly cadence).
+const DEFAULT_LEDGER_CLEANUP_RETENTION_DAYS = 2;
+const DEFAULT_LEDGER_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
 function send<T>(socket: WsSocket, type: string, payload: T, matchId?: string): void {
   const env: Envelope<T> = { type, payload, ...(matchId ? { matchId } : {}) };
@@ -139,14 +147,24 @@ export function registerWsGateway(
   identity: Identity,
   matchmaking: Matchmaking,
   gameModules: GameModule[],
-  /** The shared server DB — needed here ONLY for a read-only VIP-tier lookup backing chat's
-   *  `resolveTier` (see below); every other handler in this file still reaches persistence
-   *  exclusively through `identity`/`matchmaking`/`guest`. */
+  /** The shared server DB — a read-only VIP-tier lookup backing chat's `resolveTier` (see
+   *  below); every other handler in this file still reaches persistence exclusively through
+   *  `identity`/`matchmaking`/`guest`/`ledger`. */
   db: Database.Database,
   /** Guest mode's isolated world (issue #267) — a second Matchmaking + its own ledger, wired in
    *  by `server.ts`. Optional so existing call sites (and tests) that don't care about guest
    *  mode need no change; a guest token then simply falls back to the real matchmaking below. */
   guest?: GuestServices,
+  /** Ticket 2026-09-24#1: the REAL ledger instance (same one `matchmaking` writes through),
+   *  needed here for the periodic `cleanupSettled` sweep — never the guest world's ephemeral
+   *  ledger (that one's `cleanupSettled` is a documented no-op; guest data is already bounded
+   *  by per-session eviction). Optional so an existing call site/test omitting it simply never
+   *  arms the cleanup timer, same "byte-identical no-op elsewhere" shape as `guest` above. */
+  ledger?: Ledger,
+  /** Called after a cleanup pass that ACTUALLY deleted rows — same debounced-snapshot-trigger
+   *  hook `AppOptions.onWrite` already wires up for registration/admin-credit/reward-claim
+   *  (issue #378); a pass that deletes nothing never calls this (no DB write happened). */
+  onWrite?: () => void,
 ): void {
   const moduleByGame = new Map<string, GameModule>(gameModules.map((m) => [m.meta.id, m]));
 
@@ -166,6 +184,17 @@ export function registerWsGateway(
   const heartbeatIntervalMs = (() => {
     const n = parseInt(process.env.HEARTBEAT_INTERVAL_MS ?? '', 10);
     return Number.isFinite(n) ? n : DEFAULT_HEARTBEAT_INTERVAL_MS;
+  })();
+
+  // Ticket 2026-09-24#1: read at registration, same pattern/reason as forfeitDelayMs/
+  // heartbeatIntervalMs above.
+  const ledgerCleanupRetentionDays = (() => {
+    const n = parseInt(process.env.LEDGER_CLEANUP_RETENTION_DAYS ?? '', 10);
+    return Number.isFinite(n) ? n : DEFAULT_LEDGER_CLEANUP_RETENTION_DAYS;
+  })();
+  const ledgerCleanupIntervalMs = (() => {
+    const n = parseInt(process.env.LEDGER_CLEANUP_INTERVAL_MS ?? '', 10);
+    return Number.isFinite(n) ? n : DEFAULT_LEDGER_CLEANUP_INTERVAL_MS;
   })();
 
   // Issue #352: how long a guest's own resting stake sits before a bot-taker claims it —
@@ -634,6 +663,33 @@ export function registerWsGateway(
   }, heartbeatIntervalMs);
   heartbeatTimer.unref?.();
   app.addHook('onClose', async () => clearInterval(heartbeatTimer));
+
+  // Ticket 2026-09-24#1: periodic ledger cleanup. Deliberately its OWN independent timer, NOT
+  // triggered off bet-placement/settlement activity — that would recreate the exact
+  // 2026-09-22#7 incident shape (a heavy DB op running inline with a live request) instead of
+  // avoiding it. `cleanupSettled` itself is already batched/yielding (see its own doc comment
+  // in ledger.ts), so even the very first, backlog-clearing pass never blocks the event loop
+  // for longer than one batch's worth of work at a time. Runs once immediately at registration
+  // (this is how an existing backlog gets cleared — not a separate manual step, same "run once
+  // at boot, then on the interval" shape as index.ts's rewardsMonthCloseTimer) and then on
+  // ledgerCleanupIntervalMs. `ledger` is optional (mirrors `guest` above) so a call site/test
+  // that omits it simply never arms this — no behavior change for anything that doesn't pass it.
+  async function runLedgerCleanup(): Promise<void> {
+    if (!ledger) return;
+    try {
+      const { matchesDeleted, rowsDeleted } = await ledger.cleanupSettled(ledgerCleanupRetentionDays);
+      if (rowsDeleted > 0) {
+        console.log(`[gateway] ledger cleanup: pruned ${matchesDeleted} match(es), ${rowsDeleted} row(s)`);
+        onWrite?.();
+      }
+    } catch (err) {
+      console.error('[gateway] ledger cleanup pass failed', err);
+    }
+  }
+  void runLedgerCleanup();
+  const ledgerCleanupTimer = setInterval(() => void runLedgerCleanup(), ledgerCleanupIntervalMs);
+  ledgerCleanupTimer.unref?.();
+  app.addHook('onClose', async () => clearInterval(ledgerCleanupTimer));
 
   app.get(
     '/ws',
