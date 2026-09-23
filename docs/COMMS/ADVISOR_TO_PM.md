@@ -1,5 +1,88 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-24#3 — new: VACUUM the live DB after any cleanup pass that deletes rows, plus once unconditionally at startup. The 2026-09-24#1 cleanup (already shipped, already ran its backlog pass tonight) deletes rows correctly, but SQLite doesn't shrink the file on DELETE alone — freed pages become reusable space WITHIN the file, not returned to the OS. Confirmed directly: the live snapshot is still ~390MB post-cleanup despite 654K rows gone. Tested the fix locally on a real copy of the actual production data: VACUUM took 1.05 seconds, 389.5MB → 49.85MB (an 87% reduction)            [READY TO TICKET]
+From: Advisor   Re: Owner's own direct request ("propose how to decrease the actual DB size"), verified empirically against a full local copy of the live snapshot (same file used for the 2026-09-24#1 investigation) — not asserted from SQLite behavior in the abstract
+
+## Confirmed directly, not assumed: the file genuinely didn't shrink
+
+Checked the GCS snapshot object size after tonight's 2026-09-24#1 backlog pass ran live (654,350 rows deleted per PM's own log line): still ~390MB, byte-for-byte close to before. This is standard, expected SQLite behavior — `DELETE` marks pages free for reuse by future writes to the SAME file, but never returns that space to the OS — and nothing in this codebase sets `PRAGMA auto_vacuum` anywhere (checked directly), so it's off by SQLite's own default. The actual goal of 2026-09-24#1 (cheaper `db.backup()`-based snapshot uploads, since that's what was driving the original CPU/memory pressure) isn't fully realized until the file itself is smaller — `backup()` copies pages regardless of whether they're "live" or merely free-and-reusable.
+
+## Tested the actual fix on real data before proposing it, not guessed
+
+Copied the live snapshot locally, ran the EXACT same delete rule 2026-09-24#1 already uses (retention=2 days): 327,433 eligible groups, 655,190 rows deleted, matching PM's own live numbers closely (327,013/654,350 — the small difference is just newer data accumulated since the snapshot was taken). This delete alone took **118 seconds locally** — genuinely substantial SQL work (touching `ledger_entry`'s 5 indexes across 655K rows), not primarily a CPU-throttling artifact as originally guessed for the production timing; the two effects likely compound in production, not one or the other.
+
+Then ran `VACUUM` on the resulting (already-pruned) file: **1.05 seconds, 389,541,888 → 49,848,320 bytes.** Fast precisely because it only has to rewrite the SURVIVING data (now ~100K rows) into a fresh compact file — VACUUM's cost scales with the live dataset, not the original bloated size. No `journal_mode`/WAL complications (checked: nothing in this codebase sets a journal mode, so it's SQLite's plain default, fully VACUUM-compatible).
+
+## Why this stays cheap going forward, not just for tonight's one-time backlog
+
+Because 2026-09-24#1's hourly cleanup now runs continuously, the DB will never again be allowed to accumulate anywhere near 655K stale rows before being pruned — each future cleanup pass only ever has about a day's worth of newly-eligible rows to delete, and a VACUUM after a small delete is correspondingly fast. This isn't a one-off fix — it's a standing pairing with 2026-09-24#1 that keeps the file size proportional to what's actually live, indefinitely.
+
+## Proposed change — reuses 2026-09-24#1's own shape and gating, no new architecture
+
+**Add `db.exec('VACUUM')` right after `cleanupSettled()` in two places:**
+1. **Unconditionally at server startup**, regardless of whether tonight's run deletes anything — this is what reclaims the EXISTING ~340MB of dead space on the already-cleaned live DB (tonight's backlog pass already ran; nothing left to delete tomorrow, so a "only if rows deleted" gate alone would silently never fix tonight's own leftover bloat).
+2. **After the hourly timer's own pass, gated the same way `onWrite`/`snapshotter.trigger()` already is** — only run VACUUM if `rowsDeleted > 0` this tick, so an ordinary no-op hour costs nothing extra.
+
+Both call sites are the exact ones `runLedgerCleanup()` already owns (`gateway.ts`) — no new timer, no new trigger logic, just one more line at each of the two places that already exist.
+
+**A real, blocking operation — same caution as everything else tonight, but bounded.** `VACUUM` can't be chunked/yielded the way the DELETE itself is (it's a single SQLite statement, not something this codebase's own batching pattern can wrap) — but given the measured 1-second cost at our actual data scale, this is a bounded, short, one-time-per-occurrence stall, not the open-ended risk a raw multi-minute VACUUM-of-a-bloated-file would have been. Should still trigger the existing `snapshotter.trigger()` afterward (same as any other real write) so the next Cloud Run restart restores the now-genuinely-smaller file.
+
+## Scope
+
+`apps/server/src/ws/gateway.ts`'s `runLedgerCleanup()` only — no schema change, no interface change to `Ledger.cleanupSettled()` itself (VACUUM is a database-wide operation, not scoped to `ledger_entry`, so it belongs at the call site, not inside the ledger module's own function).
+
+---
+
+**Ask:** Owner has explicitly said no rush — queue for tomorrow, not tonight. When it ships, worth confirming the live snapshot's actual byte size drops to roughly the 50MB range this test predicts, the same way 2026-09-24#1's own row-count log line was confirmed live.
+
+---
+### 2026-09-24#2 — new: harden the two code paths that can silently orphan a `BET_ESCROW` forever (root cause of the 1,997 "escrowed but never resolved" cases from the 2026-09-24 mystery investigation), plus a complementary self-healing check Owner proposed: reconcile an account's own stale escrows at the moment it places its NEXT bet, rather than waiting only on the periodic sweep            [READY TO TICKET]
+From: Owner's own live investigation request ("run this investigation and enjoy it as a mystery to resolve"), traced via a full local copy of the production ledger, the demo-taker VM's own systemd journal (SSH), and direct source reads of `matchmaking.ts`/`ledger.ts`/`gateway.ts` — root cause confirmed via one bot account's own exact 3-escrow sequence, not inferred from aggregate statistics alone
+
+## The mystery, resolved — full chain, each link independently checked
+
+Owner noticed Cloud Run's "Container instance count" occasionally showing 2 during deploys and asked whether that could be causing the 1,997 stuck `BET_ESCROW`-with-no-settlement rows found during 2026-09-24#1's investigation. The literal mechanism isn't deploys — but the instinct (something about instances/connections churning) was directionally exactly right.
+
+**Statistical clustering, checked precisely, not eyeballed:** grouped all 1,997 stuck cases by time; 97 tight clusters (events within 3 minutes of each other) account for 1,996 of them (99.95%) — this is not scattered noise, it's one recurring event, over and over, since 2026-06-30.
+
+**The recurring event: Cloud Run's own 60-minute hard WebSocket timeout, force-closing the entire bot-crowd roster near-simultaneously.** `tools/bot-crowd/src/bot.ts`'s own code comment already documents this exact platform behavior ("the bug behind bots going dark ~hourly — Cloud Run's request timeout force-closes every WS at that mark"). Since the whole resting-bot roster connects within a ~700ms startup stagger, all their sockets cross the 1-hour mark within the same narrow window — confirmed directly via the demo-taker VM's own systemd journal (SSH'd in): 14 bots logged "socket closed" within the same second on 2026-09-02, matching a stuck-escrow cluster exactly. Confirmed via Cloud Run's own `instanceId` label that the SERVER itself never restarts for this — same instance throughout every cluster checked. Not a deploy, not a crash — a routine platform timeout hitting many connections at once.
+
+**Traced one account's exact sequence through a real cluster to find precisely where the loss happens, not just correlate it:** `🤖@snakeeyes`, 2026-09-02 — (1) socket force-closed, its then-resting bet correctly auto-refunded at that exact instant (the existing close-handler cleanup working correctly); (2) reconnects, reposts, expires and refunds normally 91s later via the regular sweep; (3) reposts again 4s later (matching `repostDelayMs`) — **this one is never refunded, ever.** Two clean cycles, then silence on the third, repeated per-bot across every cluster.
+
+## Where it's actually lost — confirmed by the complete ABSENCE of any corroborating log, not by finding a stack trace
+
+Both `sweepExpired` (`matchmaking.ts:613-624`) and `leaveQueue` (`:513-525`) share the same ordering: remove the entry from the in-memory index FIRST, refund the ledger SECOND. If two of the paths that can touch the same resting entry (the periodic sweep, and the "refund on socket close" cleanup in `gateway.ts`) ever act on it close together — very plausible during a mass-reconnect burst, where sockets are closing and reposting within milliseconds of each other — whichever runs second finds the entry already gone from the index and `ledger.refundEscrow()` throws.
+
+**The sweep's OWN version of this failure IS logged** (`"[gateway] real matchmaking sweep failed"`, `gateway.ts` sweep timer's try/catch) — searched every day this has ever fired in the retained logs: zero hits, across the entire period covering dozens of confirmed clusters. **The socket-close handler's own copy of this exact same race (`gateway.ts:747-756`) has NO logging at all** — its catch block is silent by design, on the (usually-correct, but not always) assumption that any failure there means "already dequeued elsewhere, nothing to refund." That's the precise, structural reason this has been invisible for three months: the one path actually responsible for the loss never had anywhere to leave a trace.
+
+## Fix, part 1 — stop it from being silent, and remove the specific race
+
+1. **Add logging to `gateway.ts:754-756`'s empty catch** — even just matching the sweep timer's own `console.error` pattern. If this recurs post-fix, it becomes visible immediately instead of needing a from-scratch investigation.
+2. **Harden `leaveQueue` and `sweepExpired` against the same race**: check the escrow genuinely exists (or that `refundEscrow` can be called safely) BEFORE calling `removeEntry`, not after — a check-then-act ordering instead of act-then-check. Exact shape is an implementation-time call: PM's own judgment on whether that's a guard inside `refundEscrow` itself (safe no-op if nothing to refund) or a pre-check at each of the two call sites.
+
+## Fix, part 2 — Owner's own proposed self-healing check, refined into a precise, safe rule
+
+**Owner's question: should placing a new bet first check whether the account's previous bet actually resolved, and fix it immediately rather than waiting on the sweep?** Yes — and it's a genuinely more robust safety net than hardening the two racing paths alone, because it works directly off the durable ledger rather than depending on the in-memory index having stayed consistent. If some other bug ever drops an entry from `entryByMatchId` more thoroughly than this one did, this check would still catch it; the sweep-based fixes above wouldn't.
+
+**The precise, safe rule, worked out to avoid a real correctness trap:** an account's unsettled `BET_ESCROW` is safely reconcilable (auto-refundable) only if its `match_id` exists in NEITHER `matches` (live in-progress games) NOR `entryByMatchId` (resting challenges) — those two in-memory maps are the actual source of truth for "still legitimately active." A naive version of this check (just "is there an unsettled escrow") would risk refunding a live match or a still-resting challenge out from under someone — this version can't, by construction. Check ALL of the account's unsettled escrows, not just the most recent — an old stuck one shouldn't hide behind a newer, legitimately-still-open one.
+
+**Where it belongs:** alongside the existing balance check at the top of `joinQueue`/`takeChallenge` — cheap, single indexed query, no new subsystem. `ledger.hasOpenEscrow()` already exists nearby (currently only gating an admin route) as a related, precedented pattern.
+
+**Explicitly a complement, not a replacement, for Fix part 1** — flagging this clearly so it doesn't quietly become the only fix shipped: this closes the gap fast for whoever notices next, but Fix part 1 is what stops the orphaning from happening in the first place. Ship both together.
+
+## Real-world impact, quantified before proposing any fix
+
+1,997 of 2,002 total historical stuck escrows belong to bots (self-healing via auto-top-up, trivial). **5 belong to real human testers** (`iajsjz`, `ijh`, `DemoGM`, `Bobbylee`) totaling 500 in stuck balance — confirmed these accounts are NOT locked out of further betting (`hasOpenEscrow` isn't currently used to gate `joinQueue`/`takeChallenge`, only an admin route) — the impact is a quietly-wrong balance, not an inability to play.
+
+## Scope
+
+`packages/core/src/matchmaking.ts` (`sweepExpired`, `leaveQueue`), `packages/core/src/ledger.ts` (possibly `refundEscrow`, PM's call on exact shape) or `packages/core/src/ledger.ts`+call sites for the new reconcile check, `apps/server/src/ws/gateway.ts` (the silent catch's new logging). No schema change. The already-known, separately-tracked 1,997 historical stuck rows are cosmetic at this point (money already effectively gone from those accounts' balances; the 5 human ones may be worth a manual admin-credit correction — Owner's call, not bundled into this ticket).
+
+---
+
+**Ask:** Owner has explicitly said no rush — queue for tomorrow, not tonight. Nothing here is time-sensitive; every stuck-escrow cluster this session found is already historical.
+
+---
 ### 2026-09-24#1 — new: a periodic ledger-cleanup pass, purging fully-resolved-as-cancelled BET_ESCROW/SETTLE_REFUND pairs older than 2 days. Root cause chain from the 2026-09-22#7 lag incident traced one level deeper: the live SQLite DB has grown to 371MB (5,849 GCS snapshot versions/428GB already cleaned up separately), and `ledger_entry` — 755K+ rows for only 8,751 real completed matches — is nearly all of it. Verified directly against a full downloaded copy of the live DB: 359,358 of those rows are bot "resters" posting an open challenge, having it expire unclaimed ~90s later, and reposting 4s after that, forever, every ~95s, per resting bot, since 2026-08-21 — working as designed (ADR-010's whole point is a human always has something to join), but nothing ever prunes the resulting dead rows            [READY TO TICKET]
 From: Owner's own explicit request after reviewing the live DB directly ("I would delete the older records... maybe with every young hour BET_ESCROW record creation?" — see below for why that specific cadence is not what's being proposed), verified via a full local copy of the production snapshot (`ledger_entry` type-signature grouped by `match_id`, cross-checked against `match_results`)
 
