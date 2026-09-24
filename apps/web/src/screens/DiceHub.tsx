@@ -247,7 +247,18 @@ function DiceScaleRow() {
  *  and fades off the left edge under `overflow-hidden` instead of getting explicitly hidden by index. */
 function DiceHistoryBelt({ history, light }: { history: HistoryPill[]; light: boolean }) {
   return (
-    <div data-testid="dice-history-belt" className="relative mt-auto overflow-hidden">
+    // Ticket 2026-09-24#6: this wrapper is a flex ITEM (mt-auto, inside hub-board's own
+    // `flex flex-col`) with no explicit width/min-width — `overflow-hidden` clips PAINTING, not
+    // LAYOUT SIZING. `history` is capped at 6, not 5 (below), specifically so a 6th/evicted pill
+    // can still exit-animate under AnimatePresence — but each pill is `flex: '0 0 calc(...)'`
+    // (flex-shrink:0), so briefly having 7 non-shrinking "1-of-5" pills mounted (the array holds
+    // 6, plus AnimatePresence keeps the one exiting) can still pull THIS wrapper's own
+    // shrink-to-fit layout width wider during sizing, even though the excess is visually clipped
+    // once that width is settled — the wrapper itself widens the parent flex row, briefly forcing
+    // the whole page to jump left before snapping back. `min-w-0` is the standard fix for exactly
+    // this flex-item/overflow interaction: it lets the wrapper shrink to its INTENDED size
+    // instead of being pulled wide by non-shrinking descendants.
+    <div data-testid="dice-history-belt" className="relative mt-auto min-w-0 overflow-hidden">
       <div className="flex flex-row-reverse flex-nowrap gap-2 px-[22px]">
         <AnimatePresence initial={false}>
           {history.map((h) => {

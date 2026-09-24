@@ -274,8 +274,20 @@
     @apply border-border outline-ring/50;
   }
 
+  /* Ticket 2026-09-24#6: the prototype's own fixed 390px `overflow:hidden` phone-frame
+   * (`Full Spec.html:159`) has no equivalent in this real fluid-width responsive build — nothing
+   * here stops an over-wide descendant from widening the whole document and forcing a visible
+   * horizontal jump/scroll. Confirmed directly: no `overflow-x` existed anywhere on `html`/`body`
+   * before this. Applied at the true document root (not a per-hub wrapper) so it defends every
+   * screen uniformly, not just the one (Dice's history belt) that surfaced this report. Purely
+   * defensive — can only ever suppress an ALREADY-over-wide descendant's visible symptom; never
+   * changes anything for content that's already correctly sized. */
+  html {
+    @apply overflow-x-hidden;
+  }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground overflow-x-hidden;
   }
 }
 
