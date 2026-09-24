@@ -111,6 +111,13 @@ const DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000;
 // live request even on an hourly cadence).
 const DEFAULT_LEDGER_CLEANUP_RETENTION_DAYS = 2;
 const DEFAULT_LEDGER_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+// Ticket 2026-09-24#4: how long an account's own REAL transaction history (GRANT/SETTLE_WIN/
+// RAKE/ADMIN_CREDIT/REWARD_CLAIM, and a prior OPENING_BALANCE itself) sits before being folded
+// into one checkpoint. A longer default than LEDGER_CLEANUP_RETENTION_DAYS above on purpose —
+// this touches money history a human might actually want to browse (GET /matches/recent), not
+// meaningless bot noise, so it stays around longer by default (Owner's own number).
+const DEFAULT_COMPACTION_RETENTION_DAYS = 10;
+const DEFAULT_COMPACTION_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
 function send<T>(socket: WsSocket, type: string, payload: T, matchId?: string): void {
   const env: Envelope<T> = { type, payload, ...(matchId ? { matchId } : {}) };
@@ -195,6 +202,16 @@ export function registerWsGateway(
   const ledgerCleanupIntervalMs = (() => {
     const n = parseInt(process.env.LEDGER_CLEANUP_INTERVAL_MS ?? '', 10);
     return Number.isFinite(n) ? n : DEFAULT_LEDGER_CLEANUP_INTERVAL_MS;
+  })();
+
+  // Ticket 2026-09-24#4: read at registration, same pattern as the cleanup vars above.
+  const compactionRetentionDays = (() => {
+    const n = parseInt(process.env.LEDGER_COMPACTION_RETENTION_DAYS ?? '', 10);
+    return Number.isFinite(n) ? n : DEFAULT_COMPACTION_RETENTION_DAYS;
+  })();
+  const compactionIntervalMs = (() => {
+    const n = parseInt(process.env.LEDGER_COMPACTION_INTERVAL_MS ?? '', 10);
+    return Number.isFinite(n) ? n : DEFAULT_COMPACTION_INTERVAL_MS;
   })();
 
   // Issue #352: how long a guest's own resting stake sits before a bot-taker claims it —
@@ -719,6 +736,34 @@ export function registerWsGateway(
   const ledgerCleanupTimer = setInterval(() => void runLedgerCleanup(false), ledgerCleanupIntervalMs);
   ledgerCleanupTimer.unref?.();
   app.addHook('onClose', async () => clearInterval(ledgerCleanupTimer));
+
+  // Ticket 2026-09-24#4: an INDEPENDENT timer (not folded into runLedgerCleanup above) — its own
+  // retention window and cadence, its own VACUUM/onWrite gating, same shape and reasoning as
+  // runLedgerCleanup: the startup call checks the real freelist (reclaims dead space genuinely
+  // left over from before this fix shipped, without wastefully VACUUMing every boot forever);
+  // the hourly tick stays gated on rowsDeleted > 0 only.
+  async function runTransactionCompaction(checkForExistingBloat: boolean): Promise<void> {
+    if (!ledger) return;
+    try {
+      const { accountsCompacted, rowsDeleted } = await ledger.compactOldTransactions(compactionRetentionDays);
+      if (rowsDeleted > 0) {
+        console.log(`[gateway] transaction compaction: compacted ${accountsCompacted} account(s), ${rowsDeleted} row(s)`);
+      }
+      const hasExistingBloat =
+        checkForExistingBloat && (db.pragma('freelist_count', { simple: true }) as number) > 0;
+      if (rowsDeleted > 0 || hasExistingBloat) {
+        db.exec('VACUUM');
+        console.log('[gateway] transaction compaction: VACUUM complete');
+        onWrite?.();
+      }
+    } catch (err) {
+      console.error('[gateway] transaction compaction pass failed', err);
+    }
+  }
+  void runTransactionCompaction(true);
+  const compactionTimer = setInterval(() => void runTransactionCompaction(false), compactionIntervalMs);
+  compactionTimer.unref?.();
+  app.addHook('onClose', async () => clearInterval(compactionTimer));
 
   app.get(
     '/ws',

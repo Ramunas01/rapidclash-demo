@@ -317,4 +317,162 @@ describe('ledger', () => {
       }
     });
   });
+
+  // Ticket 2026-09-24#4: unlike cleanupSettled (only ever deletes zero-sum BET_ESCROW/
+  // SETTLE_REFUND pairs), this compacts REAL, non-zero-sum transaction history — a GRANT,
+  // SETTLE_WIN, RAKE, ADMIN_CREDIT, REWARD_CLAIM, or a prior OPENING_BALANCE itself — into one
+  // checkpoint per account. getBalance() is a bare SUM over every row an account has ever had,
+  // so correctness hinges entirely on the checkpoint's own amount being exact, and on never
+  // compacting away one side of a match's rows while leaving the other (which would either hide
+  // a still-open escrow from hasOpenEscrow forever, or make an already-settled match look open
+  // again).
+  describe('compactOldTransactions', () => {
+    function backdateMatch(matchId: string, days: number): void {
+      const iso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      db.prepare(`UPDATE ledger_entry SET created_at = ? WHERE match_id = ?`).run(iso, matchId);
+    }
+    function backdateStandalone(accountId: string, days: number): void {
+      const iso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      db.prepare(`UPDATE ledger_entry SET created_at = ? WHERE account_id = ? AND match_id IS NULL`).run(iso, accountId);
+    }
+    function rowsFor(accountId: string): { type: string; amount: number; match_id: string | null }[] {
+      return db.prepare(`SELECT type, amount, match_id FROM ledger_entry WHERE account_id = ? ORDER BY rowid`).all(accountId) as { type: string; amount: number; match_id: string | null }[];
+    }
+
+    it('compacts a real completed match (win + rake) into OPENING_BALANCE — every account\'s getBalance() is byte-identical before/after', async () => {
+      ledger.grant('alice');
+      ledger.grant('bob');
+      ledger.escrow('alice', 'real-win-1', 100);
+      ledger.escrow('bob', 'real-win-1', 100);
+      ledger.settle('real-win-1', 'win', 'alice', 200, 0.1); // alice +180 net, PLATFORM +20
+      backdateMatch('real-win-1', 15);
+      backdateStandalone('alice', 15);
+      backdateStandalone('bob', 15);
+
+      const aliceBefore = ledger.getBalance('alice');
+      const bobBefore = ledger.getBalance('bob');
+      const platformBefore = ledger.getBalance(PLATFORM_ACCOUNT);
+
+      const result = await ledger.compactOldTransactions(10);
+      expect(result.accountsCompacted).toBeGreaterThan(0);
+
+      expect(ledger.getBalance('alice')).toBe(aliceBefore);
+      expect(ledger.getBalance('bob')).toBe(bobBefore);
+      expect(ledger.getBalance(PLATFORM_ACCOUNT)).toBe(platformBefore);
+
+      // alice's whole history (GRANT + BET_ESCROW + SETTLE_WIN, all backdated) folds to one row.
+      const aliceRows = rowsFor('alice');
+      expect(aliceRows).toHaveLength(1);
+      expect(aliceRows[0].type).toBe('OPENING_BALANCE');
+      expect(aliceRows[0].amount).toBe(aliceBefore);
+    });
+
+    it('does NOT touch a still-open (stuck) escrow\'s own row, even if old — hasOpenEscrow keeps seeing it', async () => {
+      ledger.grant('alice');
+      ledger.escrow('alice', 'stuck-1', 50); // never settled — genuinely stuck/still-open
+      backdateMatch('stuck-1', 15);
+      backdateStandalone('alice', 15);
+
+      const before = ledger.getBalance('alice');
+      await ledger.compactOldTransactions(10);
+
+      expect(ledger.getBalance('alice')).toBe(before); // unaffected either way, but confirm
+      expect(ledger.hasOpenEscrow('alice')).toBe(true); // the escrow row itself must still exist
+      expect(ledger.getOpenEscrowMatchIds('alice')).toContain('stuck-1');
+    });
+
+    it('a match with only PARTIALLY old rows is excluded entirely (the whole group must age out together)', async () => {
+      ledger.grant('alice');
+      ledger.grant('bob');
+      ledger.escrow('alice', 'mixed-age-1', 100);
+      ledger.escrow('bob', 'mixed-age-1', 100);
+      ledger.settle('mixed-age-1', 'win', 'alice', 200, 0.1);
+      // Only backdate alice's own escrow row directly — bob's escrow + the settlement rows stay
+      // "now", so MAX(created_at) for the group is recent. Uses raw SQL since the ledger API has
+      // no per-row backdating.
+      const oldIso = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString();
+      db.prepare(`UPDATE ledger_entry SET created_at = ? WHERE match_id = 'mixed-age-1' AND account_id = 'alice' AND type = 'BET_ESCROW'`).run(oldIso);
+
+      const result = await ledger.compactOldTransactions(10);
+      const aliceRows = rowsFor('alice');
+      expect(aliceRows.some((r) => r.match_id === 'mixed-age-1')).toBe(true); // still there, untouched
+      expect(aliceRows.some((r) => r.type === 'OPENING_BALANCE')).toBe(false);
+      expect(result.accountsCompacted).toBe(0);
+    });
+
+    it('BOTH accounts on an old completed match compact together in the same pass (winner AND the platform\'s rake)', async () => {
+      ledger.grant('alice');
+      ledger.grant('bob');
+      ledger.escrow('alice', 'both-sides-1', 100);
+      ledger.escrow('bob', 'both-sides-1', 100);
+      ledger.settle('both-sides-1', 'win', 'alice', 200, 0.1);
+      backdateMatch('both-sides-1', 15);
+      backdateStandalone('alice', 15);
+      backdateStandalone('bob', 15);
+
+      const result = await ledger.compactOldTransactions(10);
+      expect(result.accountsCompacted).toBeGreaterThanOrEqual(3); // alice, bob, PLATFORM
+
+      for (const acct of ['alice', 'bob', PLATFORM_ACCOUNT]) {
+        expect(rowsFor(acct).some((r) => r.match_id === 'both-sides-1')).toBe(false);
+      }
+    });
+
+    it('a second, later compaction round folds the prior OPENING_BALANCE into the next one rather than accumulating multiple', async () => {
+      ledger.grant('alice');
+      backdateStandalone('alice', 15);
+      const r1 = await ledger.compactOldTransactions(10);
+      expect(r1.accountsCompacted).toBe(1);
+      expect(rowsFor('alice')).toHaveLength(1);
+      const firstCheckpoint = rowsFor('alice')[0].amount;
+
+      // New activity, then the checkpoint itself (stamped "now" at compaction time) also ages out.
+      ledger.adminCredit('alice', 250, 'admin-1');
+      backdateStandalone('alice', 15); // backdates BOTH the checkpoint and the new credit
+
+      const r2 = await ledger.compactOldTransactions(10);
+      expect(r2.accountsCompacted).toBe(1);
+
+      const rows = rowsFor('alice');
+      expect(rows).toHaveLength(1); // still exactly one — folded, not accumulated
+      expect(rows[0].type).toBe('OPENING_BALANCE');
+      expect(rows[0].amount).toBe(firstCheckpoint + 250);
+      expect(ledger.getBalance('alice')).toBe(firstCheckpoint + 250);
+    });
+
+    it('standalone rows (ADMIN_CREDIT/REWARD_CLAIM) compact independently of any match grouping', async () => {
+      ledger.grant('alice');
+      ledger.adminCredit('alice', 40, 'admin-2');
+      ledger.creditRewardClaim('alice', 15, 'reward-1');
+      backdateStandalone('alice', 15);
+
+      const before = ledger.getBalance('alice');
+      await ledger.compactOldTransactions(10);
+
+      expect(ledger.getBalance('alice')).toBe(before);
+      expect(rowsFor('alice')).toHaveLength(1);
+    });
+
+    it('nothing eligible: no-ops cleanly', async () => {
+      ledger.grant('alice'); // fresh, not backdated
+      const result = await ledger.compactOldTransactions(10);
+      expect(result).toEqual({ accountsCompacted: 0, rowsDeleted: 0 });
+      expect(rowsFor('alice')).toHaveLength(1); // untouched
+    });
+
+    it('batches genuinely yield the event loop between account chunks', async () => {
+      for (const name of ['a1', 'a2', 'a3']) {
+        ledger.grant(name);
+        backdateStandalone(name, 15);
+      }
+      const immediateSpy = vi.spyOn(global, 'setImmediate');
+      try {
+        const result = await ledger.compactOldTransactions(10, 1); // batch size 1 -> 3 chunks, 2 yields
+        expect(result.accountsCompacted).toBe(3);
+        expect(immediateSpy).toHaveBeenCalledTimes(2);
+      } finally {
+        immediateSpy.mockRestore();
+      }
+    });
+  });
 });

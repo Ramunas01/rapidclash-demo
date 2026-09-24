@@ -64,6 +64,33 @@ export interface Ledger {
    *  actual list to test each one against the in-memory "still legitimately active" maps
    *  (`matches`/`entryByMatchId` in matchmaking.ts), not merely "does at least one exist." */
   getOpenEscrowMatchIds(accountId: string): string[];
+  /** Ticket 2026-09-24#4: compacts each account's own REAL transaction history older than
+   *  `retentionDays` into one synthetic OPENING_BALANCE checkpoint (amount = exact sum of what
+   *  was deleted) — the standard ledger-checkpoint pattern. Unlike {@link cleanupSettled}
+   *  (which only ever deletes zero-sum BET_ESCROW/SETTLE_REFUND pairs, safe to remove outright),
+   *  this touches non-zero-sum rows (GRANT, SETTLE_WIN, RAKE, ADMIN_CREDIT, REWARD_CLAIM, and a
+   *  prior OPENING_BALANCE itself), so `getBalance()` (a bare SUM over every row) would be
+   *  silently understated forever without the compensating checkpoint entry first.
+   *
+   *  A match-scoped row (BET_ESCROW/SETTLE_WIN/SETTLE_REFUND/RAKE) is only ever included if the
+   *  WHOLE match_id group — every row, across every account, not just this one — is both fully
+   *  resolved (has at least one settlement-type row) AND older than the cutoff. This is the
+   *  correctness-critical guard: compacting away a still-open (stuck) escrow's own row would
+   *  make it silently invisible to {@link hasOpenEscrow}/{@link getOpenEscrowMatchIds} forever
+   *  (ticket 2026-09-24#2's own reconciliation depends on that row existing to detect it);
+   *  compacting one side of an already-settled match's rows while leaving the other would make
+   *  an already-resolved match look "open" again, risking a double-refund. A standalone row
+   *  (NULL match_id: GRANT/ADMIN_CREDIT/REWARD_CLAIM/OPENING_BALANCE) has no such grouping
+   *  concern and is eligible purely on its own age.
+   *
+   *  Self-maintaining: the new checkpoint's own `created_at` is stamped at compaction time (now,
+   *  not backdated), so it naturally becomes eligible for a LATER compaction round on its own —
+   *  an account only ever holds one OPENING_BALANCE at a time. Batched per-account (bounded
+   *  chunk size, `setImmediate` between chunks), same reasoning as {@link cleanupSettled}. */
+  compactOldTransactions(
+    retentionDays: number,
+    batchSize?: number,
+  ): Promise<{ accountsCompacted: number; rowsDeleted: number }>;
   getBalance(accountId: string): number;
   getEntries(accountId: string): LedgerEntry[];
 }
@@ -287,6 +314,98 @@ export function createLedger(db: Database.Database): Ledger {
     return { matchesDeleted, rowsDeleted };
   }
 
+  const DEFAULT_COMPACTION_BATCH_SIZE = 200; // accounts per batch, not rows
+
+  // Ticket 2026-09-24#4: a match_id group is compaction-eligible only if it's fully RESOLVED
+  // (has at least one settlement-type row — excludes a still-open/stuck escrow, whose own row
+  // must never silently vanish from hasOpenEscrow's reach) AND the WHOLE group — every row,
+  // across EVERY account, not just one — is older than the cutoff. Deliberately more permissive
+  // than stmtEligibleMatches above (which only matches the zero-sum BET_ESCROW/SETTLE_REFUND
+  // signature, safe to delete outright): this also covers a genuine completed match
+  // (BET_ESCROW×2 + SETTLE_WIN + RAKE), whose rows are NOT zero-sum per account and so need the
+  // compensating OPENING_BALANCE checkpoint below rather than an outright delete.
+  const stmtEligibleCompactionMatchIds = db.prepare<[string], { match_id: string }>(
+    `SELECT match_id FROM ledger_entry
+     WHERE match_id IS NOT NULL
+     GROUP BY match_id
+     HAVING MAX(created_at) < ?
+        AND SUM(CASE WHEN type IN ('SETTLE_WIN', 'SETTLE_REFUND', 'RAKE') THEN 1 ELSE 0 END) > 0`,
+  );
+
+  // Candidate accounts: anyone with at least one non-checkpoint row older than the cutoff. May
+  // include an account whose only old row turns out to be a still-open escrow (excluded by the
+  // eligibility query above) — a harmless no-op for that account that pass, not a correctness
+  // concern.
+  const stmtCompactionCandidateAccounts = db.prepare<[string], { account_id: string }>(
+    `SELECT DISTINCT account_id FROM ledger_entry WHERE created_at < ? AND type != 'OPENING_BALANCE'`,
+  );
+
+  // This account's own standalone (NULL match_id) rows older than the cutoff — always
+  // individually eligible; no match-grouping concern (never shared with another account).
+  const stmtAccountStandaloneRows = db.prepare<[string, string], { id: string; amount: number }>(
+    `SELECT id, amount FROM ledger_entry WHERE account_id = ? AND match_id IS NULL AND created_at < ?`,
+  );
+
+  // This account's own match-scoped rows (any age) — filtered in JS against the eligible-match-
+  // id set computed ONCE per pass above, so the expensive GROUP BY only ever runs once, not
+  // once per candidate account.
+  const stmtAccountMatchRows = db.prepare<[string], { id: string; match_id: string; amount: number }>(
+    `SELECT id, match_id, amount FROM ledger_entry WHERE account_id = ? AND match_id IS NOT NULL`,
+  );
+
+  /**
+   * Ticket 2026-09-24#4: compacts each account's own real transaction history older than
+   * `retentionDays` into one OPENING_BALANCE checkpoint. See the {@link Ledger} interface's own
+   * doc comment for the full correctness reasoning (why match-scoped rows need the whole-group
+   * eligibility check, why standalone rows don't).
+   */
+  async function compactOldTransactions(
+    retentionDays: number,
+    batchSize: number = DEFAULT_COMPACTION_BATCH_SIZE,
+  ): Promise<{ accountsCompacted: number; rowsDeleted: number }> {
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+    const eligibleMatchIds = new Set(stmtEligibleCompactionMatchIds.all(cutoff).map((r) => r.match_id));
+    const candidateAccounts = stmtCompactionCandidateAccounts.all(cutoff).map((r) => r.account_id);
+
+    let accountsCompacted = 0;
+    let rowsDeleted = 0;
+
+    for (let i = 0; i < candidateAccounts.length; i += batchSize) {
+      const chunk = candidateAccounts.slice(i, i + batchSize);
+      for (const accountId of chunk) {
+        const standalone = stmtAccountStandaloneRows.all(accountId, cutoff);
+        const matchRows = stmtAccountMatchRows.all(accountId).filter((r) => eligibleMatchIds.has(r.match_id));
+        const rows: { id: string; amount: number }[] = [...standalone, ...matchRows];
+        if (rows.length === 0) continue; // nothing eligible for this account this pass
+
+        const total = rows.reduce((sum, r) => sum + r.amount, 0);
+        const ids = rows.map((r) => r.id);
+        const placeholders = ids.map(() => '?').join(',');
+
+        // Delete the originals, THEN write the compensating checkpoint — same atomic-transaction
+        // shape as settle()'s own writes; a fresh, always-unique idempotency key (this is a NEW
+        // checkpoint every pass, never intentionally idempotent-collapsible the way an
+        // escrow/refund retry is).
+        const compactAccount = db.transaction(() => {
+          db.prepare(`DELETE FROM ledger_entry WHERE id IN (${placeholders})`).run(...ids);
+          writeEntry(accountId, null, 'OPENING_BALANCE', total, `compaction:${accountId}:${randomUUID()}`);
+        });
+        compactAccount();
+
+        accountsCompacted += 1;
+        rowsDeleted += rows.length;
+      }
+
+      // Yield the event loop between account batches — same reasoning as cleanupSettled's own
+      // batching (2026-09-22#7: a large synchronous pass must never block a live request).
+      if (i + batchSize < candidateAccounts.length) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+    }
+
+    return { accountsCompacted, rowsDeleted };
+  }
+
   function accountExists(accountId: string): boolean {
     return stmtHasEntries.get(accountId)!.cnt > 0;
   }
@@ -318,6 +437,7 @@ export function createLedger(db: Database.Database): Ledger {
     creditRewardClaim,
     accountExists,
     cleanupSettled,
+    compactOldTransactions,
     hasOpenEscrow,
     getOpenEscrowMatchIds,
     getBalance,

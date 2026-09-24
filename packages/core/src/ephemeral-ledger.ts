@@ -185,6 +185,14 @@ export function createEphemeralLedger(opts: { grantAmount?: number } = {}): Ephe
     return { matchesDeleted: 0, rowsDeleted: 0 };
   }
 
+  // Ticket 2026-09-24#4: same reasoning as cleanupSettled above — a guest session's own
+  // transaction history is already ephemeral and session-bounded (gone entirely on `evict()` or
+  // process restart), never persisted to disk. There's no durable-disk-growth problem here for
+  // compaction to solve; a genuine no-op.
+  async function compactOldTransactions(): Promise<{ accountsCompacted: number; rowsDeleted: number }> {
+    return { accountsCompacted: 0, rowsDeleted: 0 };
+  }
+
   function evict(accountId: string): void {
     const list = entriesByAccount.get(accountId);
     if (!list) return;
@@ -211,6 +219,7 @@ export function createEphemeralLedger(opts: { grantAmount?: number } = {}): Ephe
     creditRewardClaim,
     accountExists,
     cleanupSettled,
+    compactOldTransactions,
     hasOpenEscrow,
     getOpenEscrowMatchIds,
     getBalance,

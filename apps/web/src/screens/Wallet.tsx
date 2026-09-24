@@ -41,6 +41,13 @@ const ENTRY_ART: Record<LedgerEntryType, { icon: LucideIcon; credit: boolean }> 
   // this map is exhaustive over LedgerEntryType, so adding the new type to the shared union
   // forces this entry; the Rewards frontend itself (issue #307) is a separate, later ticket.
   REWARD_CLAIM: { icon: Trophy, credit: true },
+  // Ticket 2026-09-24#4: a synthetic checkpoint written by periodic transaction compaction
+  // (server-side bookkeeping, NULL matchId) — same mechanical reason as REWARD_CLAIM above.
+  // Reuses Receipt (already this row's own fallback icon for an unrecognized type) since the
+  // concept — "a summary standing in for older activity" — is the same either way. `credit`
+  // here is a static per-type label only; the actual +/- sign shown below is always derived
+  // straight from `entry.amount > 0`, not from this field.
+  OPENING_BALANCE: { icon: Receipt, credit: true },
 };
 
 /** Render the ledger type as its raw token with underscores spaced — GRANT stays "GRANT". */
