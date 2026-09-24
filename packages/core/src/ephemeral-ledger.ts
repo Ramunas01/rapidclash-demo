@@ -148,6 +148,20 @@ export function createEphemeralLedger(opts: { grantAmount?: number } = {}): Ephe
     });
   }
 
+  // Ticket 2026-09-24#2: same "open" definition as hasOpenEscrow above, returning the actual
+  // match_ids — guest mode is equally subject to the socket force-close race this backs up
+  // (guest connections go through the same gateway.ts close-handler/sweepExpired paths), so
+  // this needs a genuine implementation here too, not a stub.
+  function getOpenEscrowMatchIds(accountId: string): string[] {
+    return (entriesByAccount.get(accountId) ?? [])
+      .filter((e): e is StoredEntry & { matchId: string } => e.type === 'BET_ESCROW' && e.matchId !== undefined)
+      .filter((e) => {
+        const matchEntries = entriesByMatch.get(e.matchId) ?? [];
+        return !matchEntries.some((s) => s.type === 'SETTLE_WIN' || s.type === 'SETTLE_REFUND' || s.type === 'RAKE');
+      })
+      .map((e) => e.matchId);
+  }
+
   function adminCredit(accountId: string, amount: number, idempotencyKey: string): LedgerEntry {
     if (amount <= 0) throw new RangeError('Credit amount must be a positive integer');
     return writeEntry(accountId, null, 'ADMIN_CREDIT', amount, idempotencyKey);
@@ -198,6 +212,7 @@ export function createEphemeralLedger(opts: { grantAmount?: number } = {}): Ephe
     accountExists,
     cleanupSettled,
     hasOpenEscrow,
+    getOpenEscrowMatchIds,
     getBalance,
     getEntries,
     evict,

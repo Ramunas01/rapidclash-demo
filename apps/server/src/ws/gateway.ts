@@ -823,6 +823,7 @@ export function registerWsGateway(
         if (queuedGameId !== null && queuedStake !== null) {
           const g = queuedGameId;
           const s = queuedStake;
+          const expectedMatchId = queuedMatchId ?? undefined; // ticket 2026-09-24#2 identity guard
           queuedGameId = null;
           queuedStake = null;
           if (queuedMatchId !== null) {
@@ -830,14 +831,20 @@ export function registerWsGateway(
             queuedMatchId = null;
           }
           try {
-            const refund = mm.leaveQueue(playerId, g, s);
+            const refund = mm.leaveQueue(playerId, g, s, expectedMatchId);
             // Guest activity must never publish into the real, shared challenge-feed channel
             // (see the pushChallengesUpdate guards below for the full rationale).
             if (refund.matchId && !isGuest) {
               pushChallengesUpdate(g, { gameId: g, removed: { matchId: refund.matchId, reason: 'cancelled' } });
             }
-          } catch {
-            // Already dequeued (matched / cancelled / TTL-swept) — nothing to refund.
+          } catch (err) {
+            // Ticket 2026-09-24#2: this used to be a SILENT catch — the exact, structural
+            // reason a real refund-loss race went unnoticed for three months (the sweep's own
+            // analogous failure was already logged; this one wasn't). Usually a genuinely
+            // benign race (already dequeued by the sweep/leaveQueue elsewhere — nothing to
+            // refund), but logging it costs nothing and makes any FUTURE recurrence visible
+            // immediately instead of needing a from-scratch investigation.
+            console.error('[gateway] socket-close leaveQueue cleanup failed', err);
           }
         }
 
@@ -963,7 +970,9 @@ export function registerWsGateway(
                 sendError(socket, 'NOT_IN_QUEUE', `Not in queue for game "${gameId}"`);
                 break;
               }
-              const refund = mm.leaveQueue(playerId, gameId, stake);
+              // Ticket 2026-09-24#2: pass the expected matchId too — defense-in-depth identity
+              // guard, same as the socket-close cleanup path above.
+              const refund = mm.leaveQueue(playerId, gameId, stake, queuedMatchId ?? undefined);
               queuedGameId = null;
               queuedStake = null;
               if (queuedMatchId !== null) {

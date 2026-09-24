@@ -269,7 +269,14 @@ export interface Matchmaking {
    *  (or 'none' for untimed games); an explicit unknown id throws. Pairing is on
    *  (game, stake, time-control). */
   joinQueue(playerId: PlayerId, gameId: string, stake: number, timeControlId?: string): JoinQueueResult;
-  leaveQueue(playerId: PlayerId, gameId: string, stake: number): LedgerEntry;
+  /** `expectedMatchId` (ticket 2026-09-24#2): `playerEntry` can only ever hold ONE resting
+   *  entry per (playerId, gameId) — if a caller's own knowledge of "which entry I meant" is
+   *  stale (e.g. a delayed socket-close cleanup firing after the player's own expire-refund-
+   *  repost cycle has already moved on to a newer entry), a bare stake match isn't a strong
+   *  enough identity guarantee once the same stake gets reposted repeatedly. When the caller
+   *  knows which matchId it means, pass it — the call refuses to act on a DIFFERENT entry that
+   *  happens to share the same (playerId, gameId, stake) instead of silently touching it. */
+  leaveQueue(playerId: PlayerId, gameId: string, stake: number, expectedMatchId?: string): LedgerEntry;
   /** Atomic specific-claim of a resting bet (OC3). Escrow on success only; throws ChallengeError on refusal. */
   takeChallenge(takerId: PlayerId, matchId: string): JoinMatched;
   /** Eligible (rested + safe margin), self-excluded, longest-waiting-first, capped, username-joined (OC2). */
@@ -422,6 +429,33 @@ export function createMatchmaking(
     match.playerDeadlines = deadlines;
   }
 
+  /**
+   * Ticket 2026-09-24#2: self-healing check, complementary to (not a replacement for) the
+   * check-then-act hardening in `leaveQueue`/`sweepExpired` above — this works directly off the
+   * durable ledger rather than depending on the in-memory index having stayed consistent, so it
+   * also catches a residual orphan even if some OTHER bug ever drops an entry from these maps
+   * more thoroughly than this one did.
+   *
+   * An escrow is safely auto-refundable only if its match_id exists in NEITHER `matches` (a
+   * live in-progress game) NOR `entryByMatchId` (a still-resting challenge) — those two maps
+   * are the actual source of truth for "still legitimately active." Checks ALL of the account's
+   * unsettled escrows, not just the most recent, so an old stuck one can't hide behind a newer,
+   * legitimately-still-open one. A failure to refund one entry must never block the caller's
+   * own bet placement — logged and skipped, not swallowed silently (ticket 2026-09-24#2's own
+   * root-cause finding was specifically that a silent catch elsewhere is what let this go
+   * unnoticed for three months).
+   */
+  function reconcileStaleEscrows(playerId: PlayerId): void {
+    for (const matchId of ledger.getOpenEscrowMatchIds(playerId)) {
+      if (matches.has(matchId) || entryByMatchId.has(matchId)) continue; // still legitimately active
+      try {
+        ledger.refundEscrow(playerId, matchId);
+      } catch (err) {
+        console.error(`[matchmaking] reconcileStaleEscrows: failed to refund ${playerId}/${matchId}`, err);
+      }
+    }
+  }
+
   function joinQueue(playerId: PlayerId, gameId: string, stake: number, timeControlId?: string): JoinQueueResult {
     const mod = moduleByGame.get(gameId);
     if (!mod) throw new Error(`Unknown gameId: ${gameId}`);
@@ -432,6 +466,11 @@ export function createMatchmaking(
         `Stake ${stake} out of range [${minStake}, ${maxStake}] for game "${gameId}"`,
       );
     }
+
+    // Ticket 2026-09-24#2: reconcile any stale escrow BEFORE the balance check — a stuck
+    // escrow from a past race is exactly the kind of thing that could wrongly make an
+    // otherwise-affordable bet look insufficient.
+    reconcileStaleEscrows(playerId);
 
     const balance = ledger.getBalance(playerId);
     if (balance < stake) {
@@ -510,18 +549,32 @@ export function createMatchmaking(
     return { status: 'waiting', matchId, since, expiresAt, timeControlId: tcId };
   }
 
-  function leaveQueue(playerId: PlayerId, gameId: string, stake: number): LedgerEntry {
+  function leaveQueue(playerId: PlayerId, gameId: string, stake: number, expectedMatchId?: string): LedgerEntry {
     const entryKey = `${playerId}:${gameId}`;
     const entry = playerEntry.get(entryKey);
     if (!entry) throw new Error(`Player ${playerId} is not in the queue for game "${gameId}"`);
     if (entry.stake !== stake) {
       throw new Error(`Stake mismatch: expected ${entry.stake}, got ${stake}`);
     }
+    // Ticket 2026-09-24#2: refuse to act on a DIFFERENT entry that happens to share this same
+    // (playerId, gameId, stake) key — see this function's own interface doc comment for why a
+    // bare stake match isn't strong enough once the same stake reposts repeatedly.
+    if (expectedMatchId !== undefined && entry.matchId !== expectedMatchId) {
+      throw new Error(
+        `Queue entry for ${playerId}/${gameId} has already changed (expected match ${expectedMatchId}, found ${entry.matchId})`,
+      );
+    }
 
-    // Remove from queue (and the open-challenge index).
+    // Ticket 2026-09-24#2: refund BEFORE removing from the index (was: remove then refund) —
+    // root cause of the historical stuck-escrow mystery. refundEscrow is itself idempotency-
+    // keyed (`refund:escrow:${matchId}:${accountId}`), so calling it here even when another
+    // path already refunded this exact matchId is a safe no-op, returning the existing entry.
+    // If it throws for a genuine reason, the entry stays in the index for the NEXT sweep/close-
+    // handler attempt instead of being silently, permanently orphaned (the old ordering's bug:
+    // a throw here used to leave the entry already removed, with nothing left to retry it).
+    const refund = ledger.refundEscrow(playerId, entry.matchId);
     removeEntry(entry);
-
-    return ledger.refundEscrow(playerId, entry.matchId);
+    return refund;
   }
 
   // ── Open challenges (ADR-008) ──────────────────────────────────────────────
@@ -541,6 +594,10 @@ export function createMatchmaking(
     }
     const mod = moduleByGame.get(entry.gameId);
     if (!mod) throw new Error(`Unknown gameId: ${entry.gameId}`);
+
+    // Ticket 2026-09-24#2: same reconciliation as joinQueue — before the balance check, so a
+    // stale stuck escrow can't wrongly make an otherwise-affordable take look insufficient.
+    reconcileStaleEscrows(takerId);
 
     const balance = ledger.getBalance(takerId);
     if (balance < entry.stake) {
@@ -614,10 +671,17 @@ export function createMatchmaking(
     const expired: ExpiredChallenge[] = [];
     for (const entry of [...entryByMatchId.values()]) {
       if (now < entry.expiresAt) continue;
-      // Remove first so the same bet can never be swept (or refunded) twice. The
-      // ledger refund is itself idempotency-keyed, so this is doubly safe (OC6).
-      removeEntry(entry);
+      // Ticket 2026-09-24#2: refund BEFORE removing from the index (was: remove then refund,
+      // pre-dating this ticket's own comment about it being "doubly safe" via idempotency —
+      // true for a THROW-FREE double-call, but a throw used to leave the entry already removed
+      // from the index with nothing left to retry it: the actual root cause of the historical
+      // stuck-escrow mystery, surfaced during a mass-reconnect event racing this sweep against
+      // gateway.ts's own socket-close cleanup). refundEscrow is still idempotency-keyed, so this
+      // reorder changes nothing about the normal, non-racing case — a throw here now leaves the
+      // entry in place for this SAME try/catch-wrapped sweep tick's caller to retry next time
+      // (see gateway.ts's runSweeps/sweepTimer), instead of orphaning it permanently.
       ledger.refundEscrow(entry.playerId, entry.matchId);
+      removeEntry(entry);
       expired.push({ matchId: entry.matchId, ownerId: entry.playerId, gameId: entry.gameId });
     }
     return expired;

@@ -1,4 +1,4 @@
-import { describe, beforeEach, afterEach, it, expect } from 'vitest';
+import { describe, beforeEach, afterEach, it, expect, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import { WebSocket } from 'ws';
 import type { FastifyInstance } from 'fastify';
@@ -165,5 +165,35 @@ describe('#152 — interrupted-search queue cleanup on socket close', () => {
     bob.send('queue.join', { gameId: 'rps', stake: 10 });
     await bob.waitFor('match.start');
     await alice2.waitFor('match.start');
+  });
+
+  // Ticket 2026-09-24#2: this catch used to be silent — the exact, structural reason a real
+  // stuck-escrow race went unnoticed for three months (the sweep's own analogous failure was
+  // already logged; the socket-close cleanup's copy of it wasn't). This case (a resting bet
+  // taken by someone else, then the OWNER's own now-stale socket closes) is a genuinely benign
+  // race — no money lost, `takeChallenge` already correctly escrowed the taker and formed the
+  // match — but it's exactly the SHAPE of race that, in the real historical incident, sometimes
+  // wasn't benign. Confirms the catch now logs instead of swallowing silently.
+  it("a benign already-consumed race (owner's resting bet taken by someone else, then their own socket closes) now logs instead of staying silent", async () => {
+    const alice = await openSocket(port, aliceToken);
+    sockets.push(alice);
+    alice.send('queue.join', { gameId: 'rps', stake: 10 });
+    const waitMsg = await alice.waitFor('queue.waiting');
+    const matchId = (waitMsg.payload as QueueWaitingPayload).matchId;
+
+    const bob = await openSocket(port, bobToken);
+    sockets.push(bob);
+    bob.send('challenge.take', { matchId });
+    await bob.waitFor('match.start');
+    await alice.waitFor('match.start'); // alice's own connection also gets match.start as the owner
+
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      alice.close();
+      await tick();
+      expect(errorSpy).toHaveBeenCalledWith('[gateway] socket-close leaveQueue cleanup failed', expect.anything());
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });

@@ -58,6 +58,12 @@ export interface Ledger {
    *  The single money-safety guard for the soft reset: never free an alias whose
    *  stake is still locked in a pot. */
   hasOpenEscrow(accountId: string): boolean;
+  /** Ticket 2026-09-24#2: same definition of "open" as {@link hasOpenEscrow} (a BET_ESCROW with
+   *  no settlement entry of any kind yet), but returns every matching match_id instead of just
+   *  a boolean — the self-healing reconciliation check at `joinQueue`/`takeChallenge` needs the
+   *  actual list to test each one against the in-memory "still legitimately active" maps
+   *  (`matches`/`entryByMatchId` in matchmaking.ts), not merely "does at least one exist." */
+  getOpenEscrowMatchIds(accountId: string): string[];
   getBalance(accountId: string): number;
   getEntries(accountId: string): LedgerEntry[];
 }
@@ -116,6 +122,18 @@ export function createLedger(db: Database.Database): Ledger {
   // SETTLE_REFUND) does not. This is the money-safety guard for the soft reset.
   const stmtOpenEscrow = db.prepare<[string], { cnt: number }>(
     `SELECT COUNT(*) AS cnt FROM ledger_entry e
+     WHERE e.account_id = ? AND e.type = 'BET_ESCROW'
+       AND NOT EXISTS (
+         SELECT 1 FROM ledger_entry s
+         WHERE s.match_id = e.match_id
+           AND s.type IN ('SETTLE_WIN', 'SETTLE_REFUND', 'RAKE')
+       )`,
+  );
+
+  // Same "open" definition as stmtOpenEscrow above, returning the actual match_ids instead of
+  // just a count (ticket 2026-09-24#2's self-healing reconciliation check).
+  const stmtOpenEscrowMatchIds = db.prepare<[string], { match_id: string }>(
+    `SELECT e.match_id AS match_id FROM ledger_entry e
      WHERE e.account_id = ? AND e.type = 'BET_ESCROW'
        AND NOT EXISTS (
          SELECT 1 FROM ledger_entry s
@@ -277,6 +295,10 @@ export function createLedger(db: Database.Database): Ledger {
     return stmtOpenEscrow.get(accountId)!.cnt > 0;
   }
 
+  function getOpenEscrowMatchIds(accountId: string): string[] {
+    return stmtOpenEscrowMatchIds.all(accountId).map((r) => r.match_id);
+  }
+
   function adminCredit(accountId: string, amount: number, idempotencyKey: string): LedgerEntry {
     if (amount <= 0) throw new RangeError('Credit amount must be a positive integer');
     return writeEntry(accountId, null, 'ADMIN_CREDIT', amount, idempotencyKey);
@@ -297,6 +319,7 @@ export function createLedger(db: Database.Database): Ledger {
     accountExists,
     cleanupSettled,
     hasOpenEscrow,
+    getOpenEscrowMatchIds,
     getBalance,
     getEntries,
   };
