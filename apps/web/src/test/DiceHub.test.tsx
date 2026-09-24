@@ -187,6 +187,80 @@ describe('DiceHubScreen', () => {
     await waitFor(() => expect(screen.getByTestId('hub-board').textContent).toContain('50.00'), { timeout: 3000 });
   });
 
+  // Ticket 2026-09-24#7: the fills must reset to their zero nub DURING the search (bars still
+  // converged, board still dimmed, cube still hidden) — a fixed 680ms from the moment PLAY is
+  // pressed, not tied to `live`/the match actually forming. Confirms the fill and the cube are
+  // now genuinely independent signals: the fill activates here while `live` is still false and
+  // the cube is still fully hidden.
+  it('D54: pressing Play resets the fills to their nub at +680ms, well before the match forms — the cube stays hidden throughout', async () => {
+    const onPlay = vi.fn();
+    render(<DiceHubScreen {...baseProps({ onPlay })} />);
+    fireEvent.click(screen.getByTestId('hub-bet-10'));
+    fireEvent.click(screen.getByTestId('hub-play'));
+    expect(onPlay).toHaveBeenCalledWith(10);
+
+    const fillOpp = screen.getByTestId('dice-cube-opp').previousElementSibling as HTMLElement;
+    expect(fillOpp.style.width).toBe('50%'); // not yet — still well before the delay
+
+    // Still searching (no match yet) — simulates the real, variable-length round-trip: the wait
+    // here is what "press, then a while later a match forms" looks like from this component's
+    // own perspective, since it stays mounted through the whole idle→waiting transition.
+    await act(async () => { await new Promise((r) => setTimeout(r, 700)); }); // past 680ms
+
+    expect(fillOpp.style.width).not.toBe('50%');
+    expect(fillOpp.style.width).toContain('10px'); // the resting nub
+    // The cube itself is UNCHANGED by this ticket — still fully hidden, no match has formed yet.
+    expect(screen.getByTestId('dice-cube-opp').style.opacity).toBe('0');
+  });
+
+  // Ticket 2026-09-24#7: closes a gap the ticket's own literal spec would have missed — taking an
+  // existing open challenge (`onTakeChallenge`, a separate prop from `onPlay`) never fires the
+  // Play-press signal at all. The fill must still correctly activate for a taker, via the SAME
+  // existing cube-reveal timing (`active`) as a fallback — reproducing this component's own
+  // pre-existing (never-reported-as-buggy) JOIN-path behavior, not a new regression.
+  it("D54: the JOIN path (no local Play press this session) still activates the fill — via the existing cube-reveal timing, not left permanently at 50%", async () => {
+    const { rerender } = render(<DiceHubScreen {...baseProps()} />); // idle — no Play ever pressed here
+    rerender(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState: preRoll(), legalMoves: ['reveal'] })} />);
+
+    const fillOpp = screen.getByTestId('dice-cube-opp').previousElementSibling as HTMLElement;
+    expect(fillOpp.style.width).toBe('50%'); // no press, no fillPrimed — correctly still at rest
+
+    await act(async () => { await new Promise((r) => setTimeout(r, 700)); }); // past CUBE_REVEAL_DELAY_MS (660ms)
+
+    // The cube's own existing reveal mechanism activates — the fill rides along with it (the
+    // `|| active` fallback), exactly matching this component's pre-existing JOIN-path timing.
+    expect(screen.getByTestId('dice-cube-opp').style.opacity).toBe('1');
+    expect(fillOpp.style.width).not.toBe('50%');
+    expect(fillOpp.style.width).toContain('10px');
+  });
+
+  // Ticket 2026-09-24#7: the fill must reset back to 50% once a match genuinely ends, and a SECOND
+  // Play press (a fresh round on the same, still-mounted DicePanel) must correctly re-arm the
+  // 680ms timer rather than silently skipping it (e.g. from a stale "already primed" flag).
+  it('D54: the fill resets to 50% after a match ends, and a SECOND Play press re-arms the same 680ms delay correctly', async () => {
+    const onPlay = vi.fn();
+    const { rerender } = render(<DiceHubScreen {...baseProps({ onPlay })} />);
+    fireEvent.click(screen.getByTestId('hub-bet-10'));
+    fireEvent.click(screen.getByTestId('hub-play'));
+    await act(async () => { await new Promise((r) => setTimeout(r, 700)); });
+    const fillOpp = screen.getByTestId('dice-cube-opp').previousElementSibling as HTMLElement;
+    expect(fillOpp.style.width).toContain('10px'); // primed from round 1's own press
+
+    // The match actually forms and completes — `live` must genuinely flip true then false for
+    // this component's own reset-on-`!live` effect to have anything to react to (round 1's press
+    // alone, with no match ever forming, would never exercise that reset path at all).
+    rerender(<DiceHubScreen {...baseProps({ onPlay, currentMatchId: 'm1', gameState: resolved() })} />);
+    rerender(<DiceHubScreen {...baseProps({ onPlay })} />); // match ends — back to true idle
+    expect(fillOpp.style.width).toBe('50%'); // reset
+
+    // A SECOND Play press for round 2.
+    fireEvent.click(screen.getByTestId('hub-bet-10'));
+    fireEvent.click(screen.getByTestId('hub-play'));
+    expect(fillOpp.style.width).toBe('50%'); // not yet — the new delay hasn't elapsed
+    await act(async () => { await new Promise((r) => setTimeout(r, 700)); });
+    expect(fillOpp.style.width).toContain('10px'); // re-armed and fired correctly for round 2
+  });
+
   // Ticket 2026-09-21#6 (D35) symptom 2: replaying after a result used to wipe the whole board
   // instantly — `DiceIdle`/`DiceBoard` were two separate components, so leaving 'in-match'/'result'
   // unmounted DiceBoard's entire resolved subtree in one render, nothing to fade or overlap with

@@ -149,7 +149,7 @@ function DieCubeIcon() {
  *  honest "resting position" those two already commit to before a real roll exists, applied to the
  *  label too. Item 2: `counting` (new prop, threaded down from `DiceBoard`'s own reveal clock) gates
  *  `left`/`width`'s transitions off — see `CUBE_TRANSITION_COUNTING`'s own comment above for why. */
-function DiceTrack({ pos, roll, numColor, light, active, counting = false }: { pos: 'opp' | 'mine'; roll: number | undefined; numColor: string; light: boolean; active: boolean; counting?: boolean }) {
+function DiceTrack({ pos, roll, numColor, light, active, fillActive, counting = false }: { pos: 'opp' | 'mine'; roll: number | undefined; numColor: string; light: boolean; active: boolean; fillActive: boolean; counting?: boolean }) {
   const isOpp = pos === 'opp';
   const trackColor = light ? DICE_TRACK.light : DICE_TRACK.dark;
   const grooveColor = light ? DICE_GROOVE.light : DICE_GROOVE.dark;
@@ -167,10 +167,19 @@ function DiceTrack({ pos, roll, numColor, light, active, counting = false }: { p
   // does. `2026-09-16#4`'s own comment (previously here) claimed these two formulas agreed at rest
   // — checked directly against the prototype's source and they don't; that fix correctly unified
   // the ACTIVE case but over-applied the same 0 fallback to the idle case too, which should have
-  // kept the prototype's OTHER resting value instead. `active` is exactly this app's own equivalent
-  // of the prototype's null-vs-0 distinction (`DiceIdle` passes false, `DiceBoard` passes true) —
-  // no new state needed, just gate the existing prop.
-  const fillWidth = active
+  // kept the prototype's OTHER resting value instead.
+  //
+  // Ticket 2026-09-24#7: the FILL's own reset moment is a SEPARATE prop (`fillActive`) from the
+  // CUBE's `active` — the prototype resets the fills (`diceMy:0`/`diceOpp:0`) 3.12 SECONDS before
+  // `diceCubeIn` ever flips true (confirmed by walking its own nested-setTimeout chain precisely),
+  // not the ~40ms this file's own earlier ticket (2026-09-21#6/D35) wrongly estimated — that
+  // mistaken assessment is why this used to share ONE gate with the cube. `fillActive` is armed
+  // off the moment PLAY is pressed (a fixed delay, `DicePanel`'s own doc comment below) — well
+  // before `active`/`live` ever go true for a genuine search — so the fill reaches its resting
+  // nub DURING the search, bars still converged, matching Designer's own report exactly.
+  // `cubeOpacity`/`cubeScale`/the number label below are UNTOUCHED — still gated on `active` alone,
+  // since Designer's own report confirms the cube's own reveal timing isn't the problem.
+  const fillWidth = fillActive
     ? `calc(10px + ${value} * (100% - 36px) / 100)` // lines 3676-3677, diceMy === 0 branch
     : '50%'; // line 3676, diceMy == null branch — true idle only
   const cubeOpacity = active ? 1 : 0; // lines 3612-3613 (`diceCubeIn` — true for the WHOLE roll, not just once resolved)
@@ -321,6 +330,11 @@ function DiceHistoryBelt({ history, light }: { history: HistoryPill[]; light: bo
 // own idle block is just the two tracks + scale row + history belt, no copy, matching the same
 // redundant-idle-text cleanup RPS #551 and Mines #555 already got).
 const CUBE_REVEAL_DELAY_MS = 660; // matches the bars' own 620ms slide-back transition (GameHub.tsx) + the prototype's own ~40ms scripted margin between mnM3 (shift ends, :3413) and mnM4 (diceCubeIn, :3421)
+// Ticket 2026-09-24#7: the prototype's own `mnM1` timeout (`Full Spec.html:3410`) — the FILLS
+// reset to their zero nub this many ms after Play is pressed, a full 3.12s BEFORE `diceCubeIn`
+// (`mnM4`, matched by CUBE_REVEAL_DELAY_MS's own anchor above, though off a different moment —
+// see DicePanel's own fillPrimed doc comment for why these two delays are no longer shared).
+const FILL_RESET_DELAY_MS = 680;
 
 /** The Dice area — idle preview AND live board, one component. Both players auto-commit a
  *  `reveal` (no decisions) once live; the higher of two independent rolls wins. Neither roll is
@@ -334,8 +348,8 @@ const CUBE_REVEAL_DELAY_MS = 660; // matches the bars' own 620ms slide-back tran
  *  `armedSig`, tracked via a ref (not state) so the ~60fps rAF re-renders below don't re-fire them
  *  on stale closures. */
 function DicePanel({
-  gameState, legalMoves, onMove, playerId, opponentId, history, phase, barSlideActive, armedSig, pushHistory, onRevealComplete,
-}: GameAreaArgs & { history: HistoryPill[]; armedSig: string | null; pushHistory(sig: string, mine: number, win: boolean): void }) {
+  gameState, legalMoves, onMove, playerId, opponentId, history, phase, barSlideActive, armedSig, pushHistory, onRevealComplete, playPressSignal,
+}: GameAreaArgs & { history: HistoryPill[]; armedSig: string | null; pushHistory(sig: string, mine: number, win: boolean): void; playPressSignal: number }) {
   const { resolved: themeResolved } = useTheme();
   const light = themeResolved === 'light';
   const live = phase === 'in-match' || phase === 'result';
@@ -366,17 +380,48 @@ function DicePanel({
       setCubeActive(false);
     }
   }, [live]);
-  // `active` (the same prop `DiceTrack` already reads for cube opacity/scale/label, AND — per
-  // ticket 2026-09-21#4/D33 — the fill's near-empty-nub-vs-50% fallback) is now gated on the new
-  // delay too, not just `live`. Deliberate simplification, documented rather than silent: the
-  // prototype's own `diceMy`/`diceOpp` reset to 0 (which the FILL alone reacts to) happens earlier
-  // than `diceCubeIn` (which only the CUBE's visibility reacts to) — a ~40ms gap between two
-  // separate `setState` calls. Splitting that out here would need a second prop on `DiceTrack`
-  // (fill-fallback timing vs. cube-visibility timing) for a difference on the order of tens of ms,
-  // not the reported symptom (the cube popping in during the bar-split) — not worth the added
-  // surface. The fill rests at 50% for the same ~660ms the cube is still hidden, then both switch
-  // together; cosmetically negligible, and still strictly more honest than snapping either early.
+  // `active` gates the CUBE's own opacity/scale/label (unchanged by ticket 2026-09-24#7 — the
+  // cube's own reveal timing was never the reported problem).
   const active = live && cubeActive;
+
+  // Ticket 2026-09-24#7: the FILL's own reset needs a genuinely SEPARATE, EARLIER gate than
+  // `active` — see `DiceTrack`'s own doc comment on `fillWidth` for the full reasoning (the
+  // prototype resets its fills 3.12s before the cube reveals, not the ~40ms this file's own
+  // earlier ticket, 2026-09-21#6/D35, mistakenly estimated). `playPressSignal` (a plain counter,
+  // bumped by `DiceHubScreen`'s own wrapped `onPlay` — see its doc comment) is anchored to the
+  // moment PLAY IS PRESSED, well before `live` (a real, variable-length matchmaking round-trip)
+  // ever goes true for a genuine search — arming a fixed FILL_RESET_DELAY_MS timer from THAT
+  // moment lets the fill reach its resting nub DURING the search, bars still converged, matching
+  // Designer's own report.
+  //
+  // `fillPrimed` alone would miss the JOIN path though (tapping an existing open challenge in the
+  // carousel skips `onPlay`/the search phase entirely — `GameHub.tsx`'s `onTakeChallenge` is a
+  // wholly separate prop) — checked directly, not assumed: for a taker, `playPressSignal` never
+  // fires in this component's own lifetime, so `fillPrimed` would incorrectly stay false for the
+  // whole match. `fillActive = fillPrimed || active` closes that gap for free: once `active` goes
+  // true (the taker's own cube-reveal, via the SAME existing `cubeActive` mechanism above,
+  // unaffected by this ticket), the fill activates too — reproducing this component's own
+  // PRE-EXISTING (never-reported-as-buggy) JOIN-path timing exactly, not a new behavior. This is
+  // also the "guaranteed no-op fallback" Designer's own ticket asks to keep (matching the
+  // prototype's own redundant `mnM4` fill-reset write) — `fillPrimed` will already be true by the
+  // time `active` flips, in the ordinary Play-then-search case, so the `|| active` term is a
+  // true no-op there.
+  //
+  // Initial value seeded from `live` (not hardcoded false) for the SAME reconnect-mid-match reason
+  // `cubeActive` above is: a component that mounts already live must show a real fill immediately,
+  // not wait out a delay meant for a within-lifetime transition. `playPressSignal === 0` is this
+  // component's own "no press yet this lifetime" sentinel (`DiceHubScreen` only ever increments
+  // it, never resets it) — skips arming on mount, since a mere re-render must never re-arm.
+  const [fillPrimed, setFillPrimed] = useState(live);
+  useEffect(() => {
+    if (playPressSignal === 0) return;
+    const t = setTimeout(() => setFillPrimed(true), FILL_RESET_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [playPressSignal]);
+  useEffect(() => {
+    if (!live) setFillPrimed(false);
+  }, [live]);
+  const fillActive = fillPrimed || active;
 
   // Gated on `live` (not just presence) explicitly, now that this component stays mounted through
   // idle/waiting too — `gameState`/`legalMoves` may still hold a previous match's stale values for
@@ -494,9 +539,9 @@ function DicePanel({
       className="flex h-[266px] flex-col justify-start gap-3.5 rounded-[22px] bg-surface px-4 py-5"
       style={{ paddingTop: 47, opacity: barSlideActive ? 0.28 : 1, transition: 'opacity 380ms ease' }}
     >
-      <DiceTrack pos="opp" roll={oppRollShown} numColor={oppNumColor} light={light} active={active} counting={active && counting} />
+      <DiceTrack pos="opp" roll={oppRollShown} numColor={oppNumColor} light={light} active={active} fillActive={fillActive} counting={active && counting} />
       <DiceScaleRow />
-      <DiceTrack pos="mine" roll={myRollShown} numColor={myNumColor} light={light} active={active} counting={active && counting} />
+      <DiceTrack pos="mine" roll={myRollShown} numColor={myNumColor} light={light} active={active} fillActive={fillActive} counting={active && counting} />
       <DiceHistoryBelt history={history} light={light} />
     </div>
   );
@@ -543,9 +588,32 @@ export function DiceHubScreen(props: GameHubScreenProps) {
     setHistory((h) => (h[0]?.id === sig ? h : [{ id: sig, value: mine, win }, ...h].slice(0, 6))); // line 3455 — `.slice(0, 6)`
   }, []);
 
+  // Ticket 2026-09-24#7: the exact "Play was pressed" moment, well before any server round-trip —
+  // `GameHub.tsx`'s own `handlePlay()` calls `onPlay` synchronously the instant a bet is armed and
+  // Play is tapped. Wrapping it here (rather than reaching into GameHub) bumps a plain counter
+  // DicePanel arms its own fixed FILL_RESET_DELAY_MS timer from — see DicePanel's own `fillPrimed`
+  // doc comment for the full reasoning (why this needs to be anchored to the press, not to `live`,
+  // and why 0 is reserved as "no press yet this lifetime"). Starts at 0 (never a real signal value,
+  // since a real press always increments past it) and only ever increments — never reset — so
+  // DicePanel's own effect can tell "a NEW press happened" apart from "an unrelated re-render" via
+  // a plain dependency-array comparison, no ref needed there.
+  const [playPressSignal, setPlayPressSignal] = useState(0);
+  const handlePlayPress = useCallback(
+    (stake: number, timeControlId?: string) => {
+      setPlayPressSignal((n) => n + 1);
+      // Dice is untimed and never passes a control, but forward call shape exactly as GameHub's
+      // own handlePlay() does (an explicit two-arg call only when a control is actually selected)
+      // rather than always passing a second `undefined` argument — keeps this a transparent
+      // pass-through of whatever GameHub itself would have called, byte-identical either way.
+      if (timeControlId) props.onPlay(stake, timeControlId);
+      else props.onPlay(stake);
+    },
+    [props.onPlay],
+  );
+
   const renderGameArea = useCallback(
-    (args: GameAreaArgs) => <DicePanel {...args} history={history} armedSig={armedSig} pushHistory={pushHistory} />,
-    [history, armedSig, pushHistory],
+    (args: GameAreaArgs) => <DicePanel {...args} history={history} armedSig={armedSig} pushHistory={pushHistory} playPressSignal={playPressSignal} />,
+    [history, armedSig, pushHistory, playPressSignal],
   );
 
   return (
@@ -571,6 +639,10 @@ export function DiceHubScreen(props: GameHubScreenProps) {
       // prototype's own `startDice()` (`Full Spec.html:3396-3403`) — never the flat ±123px RPS uses.
       matchBarSlide="measured"
       {...props}
+      // Ticket 2026-09-24#7: placed AFTER the `{...props}` spread deliberately — `props.onPlay` is
+      // the real handler this wrapper still calls through to, so it must lose this override, not
+      // win it, or the fill-reset timer would never arm.
+      onPlay={handlePlayPress}
     />
   );
 }
