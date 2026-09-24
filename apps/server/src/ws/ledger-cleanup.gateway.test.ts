@@ -183,3 +183,67 @@ describe('WS gateway ledger cleanup: VACUUM (ticket 2026-09-24#3)', () => {
     expect(onWrite).toHaveBeenCalled();
   });
 });
+
+// Ticket 2026-09-24#5: dbstat on the live snapshot showed the meaningless-pair category is the
+// correct, working steady-state floor for the ORIGINAL 2-day retention against the bot-crowd's
+// actual posting rate, not leftover bloat — shortened the default to 6 hours (0.25 days). The
+// env var's own parsing was `parseInt`, which truncates a fractional-day value like "0.25" to 0
+// — a silent, far-more-aggressive-than-intended zero-retention bug this fix (parseFloat) closes.
+describe('WS gateway ledger cleanup retention parsing (ticket 2026-09-24#5)', () => {
+  let app: FastifyInstance | undefined;
+  let savedRetention: string | undefined;
+
+  beforeEach(() => {
+    savedRetention = process.env.LEDGER_CLEANUP_RETENTION_DAYS;
+  });
+
+  afterEach(async () => {
+    if (app) await app.close();
+    app = undefined;
+    if (savedRetention === undefined) delete process.env.LEDGER_CLEANUP_RETENTION_DAYS; else process.env.LEDGER_CLEANUP_RETENTION_DAYS = savedRetention;
+  });
+
+  it('a fractional-day env value (e.g. "0.25") is honored, not truncated to zero — a group younger than 6h is NOT touched, but IS eligible once older', async () => {
+    process.env.LEDGER_CLEANUP_RETENTION_DAYS = '0.25'; // 6 hours
+    const db = new Database(':memory:');
+    const services = createServices(db, []);
+    services.ledger.grant('alice');
+    services.ledger.escrow('alice', 'fresh-1', 50);
+    services.ledger.refundEscrow('alice', 'fresh-1'); // created_at = now — well under 6h old
+
+    app = buildApp(services, [], { seedAdmin: false });
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    await delay(100); // past the startup pass
+
+    // If parseInt("0.25", 10) === 0 had silently won (the bug this fix closes), the cutoff would
+    // be "now" and this fresh group would be wrongly deleted immediately.
+    expect(rowCount(db, 'fresh-1')).toBe(2);
+
+    // Same group, backdated 7h (older than the 6h window) — a SEPARATE server instance (fresh
+    // startup pass, retention unchanged) now correctly prunes it.
+    const oldIso = new Date(Date.now() - 7 * 60 * 60 * 1000).toISOString();
+    db.prepare(`UPDATE ledger_entry SET created_at = ? WHERE match_id = 'fresh-1'`).run(oldIso);
+    await app.close();
+    app = buildApp(services, [], { seedAdmin: false });
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    await delay(100);
+
+    expect(rowCount(db, 'fresh-1')).toBe(0);
+  });
+
+  it('the default retention is now 6 hours (0.25 days), not the old 2 days — a group aged 12h is eligible, matching 6h but not the old 2-day window', async () => {
+    const db = new Database(':memory:');
+    const services = createServices(db, []);
+    services.ledger.grant('bob');
+    services.ledger.escrow('bob', 'default-window-1', 50);
+    services.ledger.refundEscrow('bob', 'default-window-1');
+    const oldIso = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(); // 12h old
+    db.prepare(`UPDATE ledger_entry SET created_at = ? WHERE match_id = 'default-window-1'`).run(oldIso);
+
+    app = buildApp(services, [], { seedAdmin: false }); // no env var set — exercises the default
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    await delay(100);
+
+    expect(rowCount(db, 'default-window-1')).toBe(0); // 12h > 6h default — eligible now
+  });
+});
