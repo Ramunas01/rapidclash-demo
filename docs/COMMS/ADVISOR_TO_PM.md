@@ -1,5 +1,41 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-24#7 — Designer's report: Dice's green fills slide to zero AFTER the search bars split (cubes already visible), when they should slide to zero DURING the search, while the bars are still converged. Confirmed the prototype's exact timing precisely against its own source (not approximated) — this build is conflating two moments the prototype deliberately keeps ~3.1 SECONDS apart into one shared timer, and I traced it to a mistaken assessment in my OWN earlier ticket, flagging that plainly rather than as an unattributed regression            [READY TO TICKET]
+From: Designer's own report (relayed by Owner), verified via a direct read of the prototype's own nested `setTimeout` chain in `startDice()` (`Full Spec.html:3405-3436`) and this build's own `DiceHub.tsx` (`DiceTrack`'s `fillWidth`/`active` logic, `cubeActive`'s own arming effect) — corrects an explicit timing claim in my own prior ticket (2026-09-21#6/D35)
+
+## The prototype's real timing, confirmed precisely against its own source — not approximated
+
+Designer's own 3-moment table is exactly right; read the prototype's nested timer chain directly to confirm the precise delays, not just the relative order:
+
+- **+0 (Play):** `diceCubeIn:false` — cubes fade out in place. Search begins (`rpsMatch:'searching'`).
+- **+680ms (`mnM1`):** `diceMy:0, diceOpp:0` — **the fills reset to the zero nub here**, while the search is still scrambling names, bars still converged, card still dimmed to 0.28.
+- **+680+1700ms (`mnM2`, opponent "found"), +2380+760ms (`mnM3`, bars start to split), +3140+660ms = +3800ms total (`mnM4`, `minesPhase:'run'`):** `diceCubeIn:true` (plus a redundant `diceMy:0, diceOpp:0` — a no-op by then, since the fills are already at zero).
+
+**The gap between the fill-reset (+680ms) and the cube-reveal (+3800ms) is 3,120ms** — confirmed by walking the actual nested-`setTimeout` delays (`680`, then `1700`, `760`, `660` deeper inside), not estimated.
+
+## Correcting my own earlier work — flagged plainly, not treated as someone else's regression
+
+**`DiceHub.tsx:358-367`'s own comment (from ticket 2026-09-21#6/D35, mine) explicitly claims this gap is "~40ms... not worth the added surface"** — and concludes, on that basis, that the fill and the cube can safely share ONE timer (`cubeActive`, `CUBE_REVEAL_DELAY_MS = 660`, armed off `live`'s own false→true edge). Having now walked the prototype's actual nested-timeout chain precisely, that estimate was wrong by two orders of magnitude — the real gap is 3.12 SECONDS, not 40ms. That mistaken assessment is the direct, sole reason this build conflates the two moments into one, which is exactly Designer's reported symptom. Correcting the record rather than filing this as an unattributed regression.
+
+## Why "keep it as one timer" doesn't work for the real, non-scripted app either
+
+The prototype's own delays are fixed, scripted `setTimeout`s simulating a fake search with no real backend. This build's actual matchmaking round-trip is a real, variable-length network operation — `live` (this build's `phase === 'in-match' || 'result'`) only flips true once a match has genuinely formed, which could take more or less than 680ms. **Designer's own note is the load-bearing constraint for the real fix:** the new fill-reset timer must be a fixed 680ms from the moment PLAY IS PRESSED, not tied to the opponent being found — "in production, with a variable-length search, keep the fixed 680ms from Play; the fills will always be at zero long before `run`."
+
+## The fix — a second, earlier, independently-armed timer, using a hook that already exists
+
+**Checked: the exact "Play was pressed" moment is already available, well before the network round-trip.** `GameHub.tsx`'s shared `handlePlayPress()` calls `onPlay()` (`:1471`) the instant a bet is armed and Play is tapped — before any server call. `DiceHubScreen` (`DiceHub.tsx:505`) receives this same `onPlay` via `GameHubScreenProps` and is what forwards it into the shared `GameHubScreen`. **Recommending `DiceHubScreen` wrap that callback locally** — arm a plain `setTimeout(680ms)` the instant its own wrapped `onPlay` fires (setting a new piece of state, e.g. `fillsReset: boolean`), THEN call the real `onPlay(...)` through — entirely decoupled from `live`'s own async, network-latency-dependent transition.
+
+**Thread the new signal into `DiceTrack` as a THIRD variant, alongside (not replacing) the existing `active` prop.** `fillWidth` (`:173-175`) should react to the new early signal; `cubeOpacity`/`cubeScale` (`:176-177`) should keep reacting to the existing `active`/`cubeActive` (the cube-reveal timing is correct today and untouched by this ticket — Designer's own report confirms the CUBE's own reveal moment isn't the problem, only the fill). Keep the existing `run`-equivalent reset too (the `cubeActive` flip at `CUBE_REVEAL_DELAY_MS`) exactly as Designer asks — "it's a no-op for the fills at that point but it guarantees the state," matching the prototype's own redundant `mnM4` write precisely.
+
+## Scope
+
+`apps/web/src/screens/DiceHub.tsx` only — `DiceHubScreen`'s own `onPlay` wrapping, a new state var, and `DiceTrack`'s `fillWidth` gate. No change to `cubeActive`/`CUBE_REVEAL_DELAY_MS`/the cube-reveal timing itself, no change to matchmaking/server logic.
+
+---
+
+**Ask:** **Check** (Designer's own, reproduces the fix precisely): play a round, then Play again. Cubes fade out first, fills unmoved. ~0.7s in, bars still converged, board still dim — both green fills slide left to the zero nub. When the bars split moments later, tracks are already empty; cubes appear on them, reading "0.00."
+
+---
 ### 2026-09-24#6 — Designer's report: pressing Play for a second Dice round (without leaving the screen) makes the page jump left ~460-540ms, then snap back. Confirmed the structural cause Designer named (no horizontal clip anywhere on the app shell — genuinely missing, checked directly) and investigated both of their two named suspects directly against this build's actual code, not the prototype's: one is definitively ruled out, the other doesn't literally match this codebase's implementation but pointed me to a real, different, confirmed hazard in the exact same component — with one honest timing gap flagged rather than papered over            [READY TO TICKET]
 From: Designer's own report (relayed by Owner), verified via direct reads of `apps/web/src/index.css` (root/body rules), `apps/web/src/screens/DiceHub.tsx` (`DiceHistoryBelt`, its exact array-slicing logic), and `apps/web/src/screens/GameHub.tsx` (`playShake`'s exact trigger gate) — no live browser reproduction available in this environment, flagged precisely where that matters
 
