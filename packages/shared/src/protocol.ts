@@ -271,7 +271,13 @@ export type LedgerEntryType =
   /** A player claiming their accrued Rewards `claimable_balance` (rakeback + volume bonus,
    *  issue #306) into their wallet. Always a positive credit, NULL match_id (like ADMIN_CREDIT
    *  — it isn't tied to one settlement). */
-  | 'REWARD_CLAIM';
+  | 'REWARD_CLAIM'
+  /** Ticket 2026-09-24#4: a synthetic checkpoint written by periodic transaction compaction,
+   *  replacing a batch of an account's own older real rows with one entry summing to the exact
+   *  same total — mathematically balance-neutral. NULL match_id (like ADMIN_CREDIT/REWARD_CLAIM
+   *  — not tied to one settlement). An account holds at most one at a time; a later compaction
+   *  pass folds it into the next checkpoint rather than accumulating multiple. */
+  | 'OPENING_BALANCE';
 
 export interface LedgerEntry {
   id: string;
