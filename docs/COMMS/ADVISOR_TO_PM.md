@@ -1,5 +1,31 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-24#5 — new: shorten `LEDGER_CLEANUP_RETENTION_DAYS` (meaningless bot-noise pruning, 2026-09-24#1) from 2 days to 6 hours — mostly a config value, but the existing parser needs a one-line fix first to actually support a fractional-day value. Owner's own follow-up after asking for the real live DB size (36.42MB, checked directly) against their own ~10MB expectation: table-by-table breakdown found `ledger_entry` + its 4 indexes are 91.6% of that total, and 97.5% of its current 70,631 rows are STILL `BET_ESCROW`/`SETTLE_REFUND` — the exact meaningless-pair category 2026-09-24#1 already prunes, just sitting inside its own 2-day retention window            [READY TO TICKET]
+From: Owner's own direct question ("What is the real number now?") after the full 2026-09-24#1-#4 chain shipped, verified via a fresh download of the live production snapshot and a `dbstat`-based table/index breakdown, cross-checked against `gateway.ts`'s actual retention-parsing code
+
+## Why it's 36MB and not ~10MB — checked table-by-table, not guessed
+
+Downloaded the live snapshot fresh and ran `dbstat`: `ledger_entry` (17.14MB) plus its own 4 indexes (16.23MB combined) account for 33.37MB of the total 36.42MB — 91.6%. `match_results` (never pruned by design) is a distant second at 2.97MB; everything else is negligible.
+
+**Of `ledger_entry`'s current 70,631 rows, 68,841 (97.5%) are `BET_ESCROW`/`SETTLE_REFUND`** — the exact zero-sum, meaningless-pair signature 2026-09-24#1 already deletes. This isn't leftover bloat from an incomplete cleanup; it's the correct, working steady-state floor implied by that ticket's own 2-day retention window (Owner's own number at the time) against the bot-crowd's actual posting rate (~95s cycle per resting bot, continuously). The genuinely valuable rows (compacted `OPENING_BALANCE` checkpoints, real wins/rakes/grants) are only ~1,790 of the 70,631 — under 3%.
+
+## The lever: shorten that 2-day window, not the 10-day real-history one
+
+This category (unclaimed bot postings) has zero human-facing value once expired — nobody would ever want to look at an expired challenge from yesterday, let alone today. Shortening `LEDGER_CLEANUP_RETENTION_DAYS` shrinks the dominant 91.6% contributor roughly proportionally to the ratio of new retention to old. **Recommending 6 hours** (a healthy margin past the ~95s posting cycle, still leaves room to glance at "did this look right a few hours ago" if ever needed) — at that ratio (6h vs 48h, an 8x cut), the dominant `ledger_entry`+indexes component should land around ~4-5MB, bringing the whole database to roughly the 8-9MB range Owner was expecting. **Not touching `LEDGER_COMPACTION_RETENTION_DAYS` (2026-09-24#4's 10-day window)** — it's already a tiny fraction of the total (~1MB) and holds real transaction history, not noise.
+
+## One thing that stops this from being a pure config change — checked directly, not assumed
+
+**`gateway.ts`'s own parsing is `parseInt(process.env.LEDGER_CLEANUP_RETENTION_DAYS ?? '', 10)`.** `parseInt("0.25", 10)` evaluates to `0`, not a fraction of a day — the current parser silently truncates any sub-1-day value to a retention of ZERO, which is materially more aggressive than intended (anything already resolved becomes eligible for deletion the instant it happens, with no buffer at all, rather than the intended 6-hour grace window). This needs a one-line fix — `parseInt` → `parseFloat` — before a fractional-day env var value will actually do what it says. Flagging this precisely rather than letting a silent truncation ship unnoticed: Owner's own hope was "just a parameter change, no coding needed," and this is about as close to that as it gets, but it isn't literally zero lines of code.
+
+## Scope
+
+`apps/server/src/ws/gateway.ts`, two things: (1) `parseInt` → `parseFloat` on the `ledgerCleanupRetentionDays` parsing (line ~199) — the exact same one-line change should probably also apply to `compactionRetentionDays`'s own parsing for consistency, even though today's ask doesn't need it there; (2) change `DEFAULT_LEDGER_CLEANUP_RETENTION_DAYS` from `2` to `0.25` (or set `LEDGER_CLEANUP_RETENTION_DAYS=0.25` as a Cloud Run env var instead of changing the code default — PM/Owner's call on which). No other logic changes anywhere — the eligibility rule, batching, and VACUUM gating in 2026-09-24#1 are already correct and untouched.
+
+---
+
+**Ask:** no urgency — queue normally. Worth confirming live afterward the same way as the rest of tonight's chain: check the actual GCS object size lands in the expected range once the shorter retention has had a full cycle to take effect (not instantly — existing rows already past the OLD 2-day mark clear on the very next hourly tick, but the file itself needs its own VACUUM pass, already wired, to actually shrink).
+
+---
 ### 2026-09-24#4 — new: periodically compact each account's own real transaction history older than a retention window into one synthetic `OPENING_BALANCE` entry, so genuine wins/rakes/grants — not just the meaningless escrow/refund noise 2026-09-24#1 already prunes — stop accumulating forever too. Owner's own request, following up after 2026-09-24#1/#3: "this is not a real system... could we keep the DB size still smaller... remove records which would never be investigated." A real correctness trap checked and worked around before proposing anything: `getBalance()` is a bare `SUM(amount)` over EVERY row an account has ever had, with no stored running total anywhere — naively deleting an old real GRANT/WIN would permanently and silently understate that account's balance forever            [READY TO TICKET]
 From: Owner's own direct request after reviewing 2026-09-24#1/#3, verified via a direct read of `ledger.ts`'s `getBalance`/`stmtBalance` (confirmed it's a pure SQL `SUM`, no cached/stored total) and `match-history.ts`'s `getRecentMatches`/`matchNetStmt` (confirmed the offset-based pagination has no hard ceiling on how far back a client can page, so an old compacted match's `net` delta IS reachable, not just theoretical)
 
