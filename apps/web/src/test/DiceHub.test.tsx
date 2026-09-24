@@ -289,6 +289,17 @@ describe('DiceHubScreen', () => {
     expect(screen.getByTestId('dice-history-belt')).toBeInTheDocument();
   });
 
+  // Ticket 2026-09-24#6: the belt's own wrapper is a flex ITEM (mt-auto inside hub-board's
+  // flex-col) with non-shrinking pills (flex-shrink:0) — overflow-hidden clips PAINTING, not
+  // LAYOUT SIZING, so a 7th momentarily-mounted pill (AnimatePresence keeping an evicted one
+  // exiting alongside 6 incoming) could still pull the wrapper's own shrink-to-fit width wider,
+  // briefly widening the whole page. min-w-0 is the standard fix — lets the wrapper shrink to its
+  // intended size instead of being pulled wide by its own non-shrinking descendants.
+  it("D53: the history belt's own wrapper has min-w-0 — a flex item, needs this to resist being pulled wide by non-shrinking pills", () => {
+    render(<DiceHubScreen {...baseProps()} />);
+    expect(screen.getByTestId('dice-history-belt').className).toMatch(/(?:^|\s)min-w-0(?:\s|$)/);
+  });
+
   it("D34: a landed result's history pill survives the transition back to idle — not cleared, just previously unrendered", async () => {
     const { rerender } = render(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState: resolved(), legalMoves: [] })} />);
     // REVEAL_COMPLETE_MS=1804 is when pushHistory actually fires — generous timeout past it.
