@@ -104,12 +104,13 @@ const SWEEP_INTERVAL_MS = (() => {
 })();
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000;
 // Ticket 2026-09-24#1: how long a fully-refunded ledger_entry group must sit before it's
-// pruned, and how often the sweep runs. Defaults chosen so a resting bot's own recent
-// post→expire→refund cycle (ADR-010) stays visible in a fresh wallet-history read for a
-// couple of days, while the sweep itself checks hourly (cheap no-op once the backlog is
-// clear — see cleanupSettled's own doc comment for why a bigger backlog still can't block a
-// live request even on an hourly cadence).
-const DEFAULT_LEDGER_CLEANUP_RETENTION_DAYS = 2;
+// pruned, and how often the sweep runs. Ticket 2026-09-24#5 (dbstat on the live snapshot: this
+// meaningless-pair category was 97.5% of ledger_entry's own row count, still just the correct,
+// working steady-state floor for the ORIGINAL 2-day window against the bot-crowd's actual
+// posting rate — not leftover bloat) shortened the default to 6 hours; the sweep itself still
+// checks hourly (cheap no-op once the backlog is clear — see cleanupSettled's own doc comment
+// for why a bigger backlog still can't block a live request even on an hourly cadence).
+const DEFAULT_LEDGER_CLEANUP_RETENTION_DAYS = 0.25; // 6 hours
 const DEFAULT_LEDGER_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 // Ticket 2026-09-24#4: how long an account's own REAL transaction history (GRANT/SETTLE_WIN/
 // RAKE/ADMIN_CREDIT/REWARD_CLAIM, and a prior OPENING_BALANCE itself) sits before being folded
@@ -194,9 +195,12 @@ export function registerWsGateway(
   })();
 
   // Ticket 2026-09-24#1: read at registration, same pattern/reason as forfeitDelayMs/
-  // heartbeatIntervalMs above.
+  // heartbeatIntervalMs above. Ticket 2026-09-24#5: parseFloat, not parseInt — the default
+  // itself is now a fraction of a day (0.25 = 6 hours), and parseInt("0.25", 10) truncates to 0,
+  // silently producing zero retention (far more aggressive than intended) for anyone who sets
+  // this env var to a sub-1-day value.
   const ledgerCleanupRetentionDays = (() => {
-    const n = parseInt(process.env.LEDGER_CLEANUP_RETENTION_DAYS ?? '', 10);
+    const n = parseFloat(process.env.LEDGER_CLEANUP_RETENTION_DAYS ?? '');
     return Number.isFinite(n) ? n : DEFAULT_LEDGER_CLEANUP_RETENTION_DAYS;
   })();
   const ledgerCleanupIntervalMs = (() => {
@@ -204,9 +208,11 @@ export function registerWsGateway(
     return Number.isFinite(n) ? n : DEFAULT_LEDGER_CLEANUP_INTERVAL_MS;
   })();
 
-  // Ticket 2026-09-24#4: read at registration, same pattern as the cleanup vars above.
+  // Ticket 2026-09-24#4: read at registration, same pattern as the cleanup vars above. Ticket
+  // 2026-09-24#5: parseFloat for the same reason as ledgerCleanupRetentionDays above — kept
+  // consistent even though today's own ask only touches the cleanup window, not this one.
   const compactionRetentionDays = (() => {
-    const n = parseInt(process.env.LEDGER_COMPACTION_RETENTION_DAYS ?? '', 10);
+    const n = parseFloat(process.env.LEDGER_COMPACTION_RETENTION_DAYS ?? '');
     return Number.isFinite(n) ? n : DEFAULT_COMPACTION_RETENTION_DAYS;
   })();
   const compactionIntervalMs = (() => {
