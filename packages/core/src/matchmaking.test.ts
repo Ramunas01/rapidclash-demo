@@ -1255,3 +1255,179 @@ describe('time control — pairing on (game, stake, control)', () => {
     expect(clockOfMatch(m, r.matchId).remainingMs['bob']).toBe(20_000);
   });
 });
+
+// ─── Ticket 2026-09-24#2: escrow-orphan hardening + self-healing reconciliation ────────────────
+//
+// Root cause of the historical "1,997 stuck BET_ESCROW" mystery: leaveQueue/sweepExpired
+// removed the in-memory entry BEFORE refunding the ledger. If refundEscrow ever threw after
+// that point (confirmed live during a mass-reconnect race between the periodic sweep and the
+// socket-close cleanup in gateway.ts), the entry was already gone — permanently unretriable,
+// with no trace (the socket-close path's own catch was silent). Two independent fixes:
+// (1) reorder to refund-BEFORE-remove in both leaveQueue/sweepExpired, so a throw leaves the
+// entry retriable instead of orphaning it, plus an optional expectedMatchId identity guard on
+// leaveQueue (playerEntry can only ever hold ONE entry per playerId:gameId, so a stale caller
+// could otherwise wrongly act on a DIFFERENT, newer entry sharing the same key); (2) a
+// self-healing reconciliation check at joinQueue/takeChallenge that auto-refunds any of the
+// account's own open escrows whose match_id is in neither `matches` nor `entryByMatchId` — a
+// backstop that works directly off the durable ledger, catching a residual orphan regardless of
+// exactly how it got orphaned.
+describe('ticket 2026-09-24#2: escrow-orphan hardening + self-healing reconciliation', () => {
+  const mockModule2: GameModule = { ...mockModule, meta: { ...mockModule.meta, id: 'mock2' } };
+
+  describe('reconcileStaleEscrows (via joinQueue/takeChallenge)', () => {
+    it('refunds an escrow whose matchId is in neither matches nor entryByMatchId when the player next bets', () => {
+      const { ledger, matchmaking } = setup();
+      ledger.grant('alice');
+      // Simulate a stuck escrow directly via the ledger's own API — money escrowed under a
+      // matchId that was NEVER posted through joinQueue/takeChallenge, so it's in neither
+      // in-memory index. This IS the historical bug's end state: the ledger write succeeded,
+      // the in-memory bookkeeping never (or no longer) knows about it.
+      ledger.escrow('alice', 'orphan-1', 300);
+      expect(ledger.getOpenEscrowMatchIds('alice')).toContain('orphan-1');
+
+      const before = ledger.getBalance('alice');
+      matchmaking.joinQueue('alice', 'mock', 100);
+
+      expect(ledger.getOpenEscrowMatchIds('alice')).not.toContain('orphan-1');
+      // orphan-1 (300) refunded, then 100 escrowed for the new bet: net +300 -100.
+      expect(ledger.getBalance('alice')).toBe(before + 300 - 100);
+    });
+
+    it('does NOT touch a genuinely still-resting escrow', () => {
+      const { ledger, matchmaking } = setup();
+      ledger.grant('alice');
+      const r1 = matchmaking.joinQueue('alice', 'mock', 100);
+      if (r1.status !== 'waiting') throw new Error('expected waiting');
+
+      ledger.escrow('alice', 'orphan-2', 50); // a separate stuck orphan alongside the real one
+
+      // Re-joining the same game/stake returns the existing resting entry without re-escrowing —
+      // but reconciliation still runs on the way in.
+      matchmaking.joinQueue('alice', 'mock', 100);
+
+      expect(ledger.getOpenEscrowMatchIds('alice')).toContain(r1.matchId); // untouched
+      expect(ledger.getOpenEscrowMatchIds('alice')).not.toContain('orphan-2'); // reconciled
+    });
+
+    it('does NOT touch an escrow for a LIVE in-progress match', () => {
+      const { ledger, matchmaking } = setup([mockModule, mockModule2]);
+      ledger.grant('alice');
+      ledger.grant('bob');
+      matchmaking.joinQueue('alice', 'mock', 100);
+      const r2 = matchmaking.joinQueue('bob', 'mock', 100);
+      if (r2.status !== 'matched') throw new Error('expected matched');
+
+      ledger.escrow('alice', 'orphan-3', 20);
+
+      // A different game triggers reconciliation without touching alice's live 'mock' match.
+      matchmaking.joinQueue('alice', 'mock2', 50);
+
+      expect(ledger.getOpenEscrowMatchIds('alice')).toContain(r2.matchId); // untouched — live match
+      expect(ledger.getOpenEscrowMatchIds('alice')).not.toContain('orphan-3'); // reconciled
+    });
+
+    it('checks ALL of the account\'s open escrows, not just the most recent', () => {
+      const { ledger, matchmaking } = setup();
+      ledger.grant('alice');
+      ledger.escrow('alice', 'orphan-old', 40);
+      ledger.escrow('alice', 'orphan-newer', 25);
+
+      matchmaking.joinQueue('alice', 'mock', 10);
+
+      expect(ledger.getOpenEscrowMatchIds('alice')).not.toContain('orphan-old');
+      expect(ledger.getOpenEscrowMatchIds('alice')).not.toContain('orphan-newer');
+    });
+
+    it('takeChallenge also reconciles the taker\'s own stale escrows', () => {
+      const { ledger, matchmaking } = setup();
+      ledger.grant('alice');
+      ledger.grant('bob');
+      const w = matchmaking.joinQueue('alice', 'mock', 100);
+      if (w.status !== 'waiting') throw new Error('expected waiting');
+
+      ledger.escrow('bob', 'orphan-4', 15);
+      matchmaking.takeChallenge('bob', w.matchId);
+
+      expect(ledger.getOpenEscrowMatchIds('bob')).not.toContain('orphan-4');
+    });
+  });
+
+  describe('leaveQueue: refund-before-remove ordering + expectedMatchId identity guard', () => {
+    it('a throwing refundEscrow leaves the entry in the index for a later retry, instead of orphaning it', () => {
+      const { ledger, matchmaking } = setup();
+      ledger.grant('alice');
+      const r1 = matchmaking.joinQueue('alice', 'mock', 100);
+      if (r1.status !== 'waiting') throw new Error('expected waiting');
+
+      const spy = vi.spyOn(ledger, 'refundEscrow').mockImplementationOnce(() => {
+        throw new Error('simulated failure');
+      });
+      try {
+        expect(() => matchmaking.leaveQueue('alice', 'mock', 100)).toThrow('simulated failure');
+      } finally {
+        spy.mockRestore();
+      }
+
+      // Still resting — provably, by confirming it's still takeable (the old remove-then-refund
+      // ordering would have already deleted it from entryByMatchId before the throw).
+      // takeChallenge (unlike listOpenChallenges) has no min-rest gate, so it's a direct proof
+      // of index presence, not entangled with listing eligibility.
+      ledger.grant('bob');
+      expect(() => matchmaking.takeChallenge('bob', r1.matchId)).not.toThrow();
+      // The escrow is still "open" — now backing a live match instead of a resting challenge,
+      // never lost (no double-spend, no orphan).
+      expect(ledger.getOpenEscrowMatchIds('alice')).toContain(r1.matchId);
+    });
+
+    it('succeeds normally when expectedMatchId matches the currently-resting entry', () => {
+      const { ledger, matchmaking } = setup();
+      ledger.grant('alice');
+      const r1 = matchmaking.joinQueue('alice', 'mock', 100);
+      if (r1.status !== 'waiting') throw new Error('expected waiting');
+
+      const refund = matchmaking.leaveQueue('alice', 'mock', 100, r1.matchId);
+      expect(refund.matchId).toBe(r1.matchId);
+      expect(ledger.getOpenEscrowMatchIds('alice')).not.toContain(r1.matchId);
+    });
+
+    it('refuses to act on a DIFFERENT entry sharing the same (playerId, gameId, stake) when expectedMatchId is given', () => {
+      const { ledger, matchmaking } = setup();
+      ledger.grant('alice');
+      const r1 = matchmaking.joinQueue('alice', 'mock', 100);
+      if (r1.status !== 'waiting') throw new Error('expected waiting');
+
+      expect(() => matchmaking.leaveQueue('alice', 'mock', 100, 'some-stale-matchid')).toThrow(/already changed/);
+
+      // The real, currently-resting entry must be untouched — provably, by confirming it's
+      // still takeable (no min-rest gate, unlike listOpenChallenges).
+      ledger.grant('bob');
+      expect(() => matchmaking.takeChallenge('bob', r1.matchId)).not.toThrow();
+      expect(ledger.getOpenEscrowMatchIds('alice')).toContain(r1.matchId); // still open, unaffected
+    });
+  });
+
+  describe('sweepExpired: refund-before-remove ordering', () => {
+    it('a throwing refundEscrow leaves the entry in the index for the next sweep to retry', () => {
+      const { ledger, matchmaking } = setup();
+      ledger.grant('alice');
+      const r1 = matchmaking.joinQueue('alice', 'mock', 100);
+      if (r1.status !== 'waiting') throw new Error('expected waiting');
+
+      const spy = vi.spyOn(ledger, 'refundEscrow').mockImplementationOnce(() => {
+        throw new Error('simulated failure');
+      });
+      try {
+        expect(() => matchmaking.sweepExpired(r1.expiresAt + 1)).toThrow('simulated failure');
+      } finally {
+        spy.mockRestore();
+      }
+
+      // A genuine retry (refundEscrow no longer mocked) succeeds and clears it. Under the OLD
+      // remove-then-refund ordering, the first (throwing) call would have already deleted the
+      // entry from entryByMatchId — this retry would then find NOTHING to expire at all.
+      const expired = matchmaking.sweepExpired(r1.expiresAt + 1);
+      expect(expired.some((e) => e.matchId === r1.matchId)).toBe(true);
+      expect(ledger.getOpenEscrowMatchIds('alice')).not.toContain(r1.matchId);
+    });
+  });
+});
