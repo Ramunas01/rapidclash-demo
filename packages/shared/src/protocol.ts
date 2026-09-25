@@ -147,6 +147,14 @@ export interface MatchStartPayload {
    *  open-challenge feed — NOT hidden game state, so redaction (invariant #2) is intact. Lets
    *  every game show the real opponent's name on both the PLAY and JOIN paths. */
   opponentName: string;
+  /** Ticket 2026-09-25#6 (ADVISOR_TO_PM.md): the opponent's chosen avatar, mirroring
+   *  `opponentName` above exactly — the same public-alias-level identity, not hidden game state.
+   *  Fully resolved server-side before send (same shape as `RecentMatchEntry.opponentAvatarId`,
+   *  already populated this way for the recent-games list): the real stored avatarId, or — for a
+   *  simulated opponent with no stored avatar — the same name-hash fallback the searching-state
+   *  scramble already uses, so the found opponent's face never flickers to a DIFFERENT one once
+   *  matched. The client renders whatever arrives; no bot-detection logic on this side. */
+  opponentAvatarId: AvatarId;
   gameId: string; // authoritative game to route to (Charter invariant #2: server-authoritative)
   state: GameState; // viewFor result — opponent's hidden info already stripped
   /** The server's wall-clock `now` (ms) at send time. The client computes a one-time clock offset
@@ -171,6 +179,10 @@ export interface MatchStatePayload {
    *  so the name survives a reconnect/reload. Omitted on per-move broadcasts (the client already
    *  has it from match.start). Public alias only — never hidden game state. */
   opponentName?: string;
+  /** Ticket 2026-09-25#6: the opponent's avatar — carried on the resume path (same reasoning as
+   *  `opponentName` above) so it survives a reconnect/reload too, not just the initial
+   *  match.start. Omitted on per-move broadcasts. */
+  opponentAvatarId?: AvatarId;
   /** Server wall-clock `now` (ms) at send time — carried on the resume path so a reconnecting
    *  client can re-align its clock offset for in-progress timer-based games (see MatchStartPayload). */
   serverNow?: number;
@@ -218,7 +230,7 @@ export interface AuthLoginBody {
 }
 
 /** The canonical avatar identity — the single source of truth shared by client and server.
- *  `'default'` = the derived disc + person glyph (no stored preset); `rc-01`..`rc-10` are the
+ *  `'default'` = the derived disc + person glyph (no stored preset); `rc-01`..`rc-24` are the
  *  selectable avatars (PNG). Presets-only (a string id, no file storage). The client `Avatar`
  *  component imports this and maps each preset id → its bundled asset.
  *
@@ -231,11 +243,19 @@ export interface AuthLoginBody {
  *  `AVATAR_IDS` and silently resets anything unrecognized (including any of the six retired
  *  ids) to `'default'` — which, per the Owner's explicit decision on this ticket, renders as
  *  this app's own per-user disc color (`Avatar.tsx`'s `discColor`/`glyphColor`), not a fixed
- *  purple circle. */
-export type AvatarId = 'default' | 'rc-01' | 'rc-02' | 'rc-03' | 'rc-04' | 'rc-05' | 'rc-06' | 'rc-07' | 'rc-08' | 'rc-09' | 'rc-10';
+ *  purple circle.
+ *
+ *  Ticket 2026-09-25#6: widened `rc-10` → `rc-24` — 14 new presets from the SAME Designer asset
+ *  export (`rc-11`-`rc-24`, byte-identical whether sourced from the standalone zip this ticket
+ *  shipped or the copy already sitting, unpulled, in `design/prototype/assets/avatars/` since
+ *  the original PR #458 drop — see CREDITS.md). Not a new licensing question. `ProfileHub.tsx`'s
+ *  own account picker deliberately stays at its original ten (a separate, hand-picked
+ *  `AVATAR_PRESETS` literal there, not derived from this full set) — this widening is scoped to
+ *  the opponent-bar's own hash pool (`avatarIdForName`), not the picker. */
+export type AvatarId = 'default' | 'rc-01' | 'rc-02' | 'rc-03' | 'rc-04' | 'rc-05' | 'rc-06' | 'rc-07' | 'rc-08' | 'rc-09' | 'rc-10' | 'rc-11' | 'rc-12' | 'rc-13' | 'rc-14' | 'rc-15' | 'rc-16' | 'rc-17' | 'rc-18' | 'rc-19' | 'rc-20' | 'rc-21' | 'rc-22' | 'rc-23' | 'rc-24';
 
 /** Every valid AvatarId, for server-side validation of the set-avatar endpoint. */
-export const AVATAR_IDS: readonly AvatarId[] = ['default', 'rc-01', 'rc-02', 'rc-03', 'rc-04', 'rc-05', 'rc-06', 'rc-07', 'rc-08', 'rc-09', 'rc-10'];
+export const AVATAR_IDS: readonly AvatarId[] = ['default', 'rc-01', 'rc-02', 'rc-03', 'rc-04', 'rc-05', 'rc-06', 'rc-07', 'rc-08', 'rc-09', 'rc-10', 'rc-11', 'rc-12', 'rc-13', 'rc-14', 'rc-15', 'rc-16', 'rc-17', 'rc-18', 'rc-19', 'rc-20', 'rc-21', 'rc-22', 'rc-23', 'rc-24'];
 
 export interface AuthResponse {
   token: string;

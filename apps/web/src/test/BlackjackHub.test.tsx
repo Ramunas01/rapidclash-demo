@@ -276,9 +276,10 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
     );
     const scan = screen.getByTestId('hub-search-scan');
     // Own challenge ('me') is excluded; only the rival remains in the pool. Ticket 2026-09-15#9
-    // item 4: the scan now reads through displayHostName (strips any bot emoji, @-prefixes),
-    // same already-approved formatting GamesCarousel.tsx uses — '@rival', not the raw 'rival'.
-    expect(scan.textContent).toBe('@rival');
+    // item 4: the scan reads through displayHostName (strips any bot emoji, prepends '@'), same
+    // formatting GamesCarousel.tsx uses. Ticket 2026-09-25#6, Part 1: OpponentSlot's own
+    // stripBotDisclosure then strips that '@' too, so the scan reads the bare 'rival'.
+    expect(scan.textContent).toBe('rival');
     expect(scan.textContent).not.toMatch(/me/);
   });
 

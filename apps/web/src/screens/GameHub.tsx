@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { motion } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { Trophy, X } from 'lucide-react';
-import { GUEST_HUMAN_RESERVED_STAKE, type AvatarId, type GameEvent, type GameMeta, type OpenChallenge, type Outcome, type SettlementSummary } from '@rapidclash/shared';
+import { GUEST_HUMAN_RESERVED_STAKE, stripBotDisclosure, type AvatarId, type GameEvent, type GameMeta, type OpenChallenge, type Outcome, type SettlementSummary } from '@rapidclash/shared';
 import type { GameView } from '../App.js';
 import { api } from '../api.js';
 import { formatClock } from '../format.js';
@@ -111,6 +111,10 @@ export interface GameAreaArgs {
    *  Lets a game area name the opponent in its own reveal (Chess's "[name] Won" result line).
    *  Same public alias the slot pill shows — never a hidden identity. */
   opponentName?: string | null;
+  /** Ticket 2026-09-25#6 (ADVISOR_TO_PM.md): mirrors `opponentName` above exactly — the opponent's
+   *  real, server-resolved avatar (a bot's own name-hash fallback already baked in server-side when
+   *  applicable). Same public-identity-level info the slot pill shows, not hidden game state. */
+  opponentAvatarId?: AvatarId;
   /** Client→server clock offset (ms): add to `Date.now()` to align a display-only animation with
    *  server-authoritative timers — Crash's live altitude must match the altitude the server banks.
    *  Defaults to 0 (no skew) when the payload didn't carry the server clock. */
@@ -150,15 +154,23 @@ export interface GameHubScreenProps {
   token: string;
   playerId: string | null;
   username: string | null;
-  /** The player's OWN avatar (preset id or 'default'), threaded into the own slot bar. Own-session
-   *  only — the opponent slot NEVER receives an avatarId (it stays the neutral silhouette, per
-   *  Charter #2 redaction). Defaults to 'default'. */
+  /** The player's OWN avatar (preset id or 'default'), threaded into the own slot bar.
+   *  Own-session only — distinct from `opponentAvatarId` below, the opponent's own equivalent
+   *  field. Defaults to 'default'. */
   avatarId?: AvatarId;
   opponentId: string | null;
-  /** The real opponent's display name, known only when we JOINed their open challenge (the owner
-   *  name from the feed). Null on the PLAY/post path (the joiner's name never reaches the client)
-   *  → the slot falls back to a neutral "Opponent". Never a fabricated/cycled name (Charter #2). */
+  /** The real opponent's display name — server-resolved on BOTH the PLAY and JOIN paths as of
+   *  ticket 2026-09-12#1-era work (`MatchStartPayload.opponentName`, App.tsx's own `onMatchStart`).
+   *  Null only pre-match/idle → the slot falls back to a neutral "Opponent". Never a
+   *  fabricated/cycled name. */
   opponentName?: string | null;
+  /** Ticket 2026-09-25#6 (ADVISOR_TO_PM.md): mirrors `opponentName` above exactly — see
+   *  `GameAreaArgs.opponentAvatarId`'s own doc comment for the full citation. Corrects a
+   *  previously-stale assumption (found while implementing this ticket) that the opponent's
+   *  avatar should stay permanently redacted — that claim mis-cited Charter invariant #2, which is
+   *  about server authority, not identity redaction; `opponentName` right above it was already
+   *  shown unredacted, so the avatar was simply an unfinished feature, not a deliberate policy. */
+  opponentAvatarId?: AvatarId;
   /** Ticket 2026-09-18#2 item 4: the real, server-confirmed stake for the CURRENT match — mirrors
    *  `opponentName` above exactly. `armedStake` (this component's own bet-amount display state)
    *  only ever gets populated locally, when the player taps a bet preset themselves before
@@ -436,7 +448,7 @@ function useNow(active: boolean): number {
 export function GameHub(props: GameHubProps) {
   const {
     gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar, searchFloorMs = 2400, matchBarSlide, pinDark = false, highStakeCycle, resultConverge, oppGemRow, ownGemRow, oppGemText, oppGemTextVisible, ownGemText, ownGemTextVisible, onSectionTap, oppLocked, drawRingActive,
-    token, playerId, username, avatarId = 'default', opponentId, opponentName, matchStake, serverClockOffset = 0, balance, currentMatchId, gameState, events,
+    token, playerId, username, avatarId = 'default', opponentId, opponentName, opponentAvatarId, matchStake, serverClockOffset = 0, balance, currentMatchId, gameState, events,
     legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
     onPlay, onCancel, onTakeChallenge, onTakePublicChallenge, onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, onTrackChallenges,
@@ -795,7 +807,7 @@ export function GameHub(props: GameHubProps) {
 
   // Built once and fed to the game area, the per-game slot asides (chess clocks) and the play action.
   const timeControlBaseMs = timeControl?.options.find((o) => o.id === selectedControl)?.baseMs;
-  const areaArgs: GameAreaArgs = { phase, gameState, events, legalMoves, onMove: onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, playerId, opponentId, username, opponentName, serverClockOffset, timeControlBaseMs, outcome: overlay?.outcome ?? null, drawBeat, onRevealComplete: handleRevealComplete, barSlideActive };
+  const areaArgs: GameAreaArgs = { phase, gameState, events, legalMoves, onMove: onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, playerId, opponentId, username, opponentName, opponentAvatarId, serverClockOffset, timeControlBaseMs, outcome: overlay?.outcome ?? null, drawBeat, onRevealComplete: handleRevealComplete, barSlideActive };
   // The bar-level draw outline: on for every game EXCEPT the ones that carry the draw on their own
   // surface (Blackjack → cards + "Push" label). The board still gets the full `drawBeat` via areaArgs.
   const barDrawBeat = suppressDrawBar ? false : drawBeat;
@@ -874,7 +886,7 @@ export function GameHub(props: GameHubProps) {
                 VS
               </span>
             </div>
-            <OpponentSlot phase={phase} opponentName={opponentName} scanNames={scanNames} aside={renderSlotAside?.(areaArgs, 'opponent')} drawBeat={barDrawBeat} barShiftY={oppBarShiftY} gemRow={oppGemRow} gemText={oppGemText} gemTextVisible={oppGemTextVisible} oppLocked={oppLocked} drawRingActive={drawRingActive} drawRingColor={gameId === 'mines' ? '#FF8A1E' : undefined} />
+            <OpponentSlot phase={phase} opponentName={opponentName} opponentAvatarId={opponentAvatarId} scanNames={scanNames} aside={renderSlotAside?.(areaArgs, 'opponent')} drawBeat={barDrawBeat} barShiftY={oppBarShiftY} gemRow={oppGemRow} gemText={oppGemText} gemTextVisible={oppGemTextVisible} oppLocked={oppLocked} drawRingActive={drawRingActive} drawRingColor={gameId === 'mines' ? '#FF8A1E' : undefined} />
             {renderGameArea(areaArgs)}
             <OwnSlot
               label={loggedIn ? (username || 'You') : 'Sign in'}
@@ -1094,9 +1106,9 @@ function useNameScan(active: boolean, names: string[]): string | null {
 
 /** Item 1/2 — the opponent slot above the board. Idle → neutral "Opponent"; Waiting → the
  *  "Searching…" beat with a decorative online-name scan; In-match/Result → the REAL opponent's
- *  name in bright white (or a neutral "Opponent" when the joiner's name never reached the client).
- *  Never an opponentId, never a fabricated/cycled name (Charter #2 + DEMO_PRESENTATION honesty). */
-function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShiftY, gemRow, gemText, gemTextVisible, oppLocked, drawRingActive, drawRingColor }: { phase: Phase; opponentName?: string | null; scanNames: string[]; aside?: ReactNode; drawBeat?: boolean; barShiftY?: number; gemRow?: ReactNode; gemText?: string; gemTextVisible?: boolean; oppLocked?: boolean; drawRingActive?: boolean; drawRingColor?: string }) {
+ *  name (and, since ticket 2026-09-25#6, real avatar) in bright white. Never an opponentId, never
+ *  a fabricated/cycled name (DEMO_PRESENTATION honesty). */
+function OpponentSlot({ phase, opponentName, opponentAvatarId, scanNames, aside, drawBeat, barShiftY, gemRow, gemText, gemTextVisible, oppLocked, drawRingActive, drawRingColor }: { phase: Phase; opponentName?: string | null; opponentAvatarId?: AvatarId; scanNames: string[]; aside?: ReactNode; drawBeat?: boolean; barShiftY?: number; gemRow?: ReactNode; gemText?: string; gemTextVisible?: boolean; oppLocked?: boolean; drawRingActive?: boolean; drawRingColor?: string }) {
   const searching = phase === 'waiting';
   const inMatch = phase === 'in-match' || phase === 'result';
   const scan = useNameScan(searching, scanNames);
@@ -1147,15 +1159,23 @@ function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShif
           byte-identical no-op for every other hub) and let `gemRow` itself claim the freed space
           instead (see its own span below). */}
       <span className={cn('flex items-center gap-2.5 transition-[filter] duration-300', gemRow ? 'shrink-0' : 'min-w-0 flex-1', searching && 'blur-[4.5px]')}>
-        {/* NEUTRAL avatar outside search — the in-match opponent stays redacted: never their real
-            name/avatar (Charter #2). Only the DECORATIVE scan (never the real opponent) drives it
-            while actively searching. */}
-        <Avatar avatarId={searching && scan ? avatarIdForName(scan) : 'default'} />
+        {/* Ticket 2026-09-25#6, Part 2: the real, server-resolved opponent avatar once in-match —
+            previously unconditionally 'default' (the literal grey-circle bug) regardless of who the
+            opponent was or what they picked. The DECORATIVE scan hash still drives it while
+            actively searching (never the real opponent — that flicker is intentionally fake).
+            Part 3's own continuity note: hashes the FULLY stripped bare name (`stripBotDisclosure`,
+            not the raw `@`-prefixed scan) — the server's own simulated-opponent fallback hashes the
+            same bare stored username, so a matching name flickers, then settles on the SAME face
+            rather than jumping to a different one the instant the match forms. */}
+        <Avatar avatarId={searching && scan ? avatarIdForName(stripBotDisclosure(scan)) : inMatch ? (opponentAvatarId ?? 'default') : 'default'} />
+        {/* Ticket 2026-09-25#6, Part 1: `stripBotDisclosure` (from `@rapidclash/shared` — see its
+            own doc comment) at both display sites — the scan text and the settled name each
+            carried a DIFFERENT half of the "🤖 @name" bug, not the same bug twice. */}
         {searching ? (
-          scan && <span data-testid="hub-search-scan" className="min-w-0 truncate text-sm font-bold text-muted-foreground/50">{scan}</span>
+          scan && <span data-testid="hub-search-scan" className="min-w-0 truncate text-sm font-bold text-muted-foreground/50">{stripBotDisclosure(scan)}</span>
         ) : (
           <span className={cn('min-w-0 flex-1 truncate text-sm font-bold', inMatch ? 'text-foreground' : 'text-muted-foreground')}>
-            {inMatch ? (opponentName || 'Opponent') : 'Opponent'}
+            {inMatch ? (opponentName ? stripBotDisclosure(opponentName) : 'Opponent') : 'Opponent'}
           </span>
         )}
       </span>

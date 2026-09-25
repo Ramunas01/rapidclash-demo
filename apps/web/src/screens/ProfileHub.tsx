@@ -792,6 +792,14 @@ function MatchRow({ m, index, nameByGame }: { m: RecentMatchEntry; index: number
         </div>
         <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
           <span style={{ fontFamily: ARIAL, fontSize: 11, fontWeight: 'bold', letterSpacing: '1px', color: vsColor, flex: '0 0 auto' }}>VS</span>
+          {/* Ticket 2026-09-25#6's own "Everywhere else" section recommends adding an opponent
+              Avatar here — NOT implemented, pending confirmation. This directly contradicts ticket
+              2026-09-13#8 item 3's own explicit, tested finding (see this file's test suite: "never
+              renders an opponent Avatar in a match row") that the prototype's own recent-games row
+              is genuinely `VS → tier icon → @username`, no avatar element at all — re-verified
+              directly against Full Spec.html:1416-1437 myself, confirms zero avatar markup there.
+              `m.opponentAvatarId` IS now correctly populated server-side either way (`match-history.ts`'s
+              own `avatarFor` fix, same ticket) — only this specific UI addition is held. */}
           {opponentTier !== 'Unranked' && <TierIcon tier={opponentTier} size={14} />}
           <span style={{ fontFamily: ARIAL, fontSize: 12, fontWeight: 'bold', color: RC.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {normalizeOpponentName(m.opponentDisplayName)}

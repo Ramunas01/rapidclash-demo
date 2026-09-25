@@ -1,14 +1,16 @@
 import type Database from 'better-sqlite3';
-import type {
-  AvatarId,
-  EloLeaderboardEntry,
-  LeaderboardEntry,
-  NetWinningsLeaderboardEntry,
-  RankingType,
-  RecentMatchEntry,
-  RecentMatchesResponse,
-  VipTier,
-  WinRateLeaderboardEntry,
+import {
+  avatarIdForName,
+  stripBotDisclosure,
+  type AvatarId,
+  type EloLeaderboardEntry,
+  type LeaderboardEntry,
+  type NetWinningsLeaderboardEntry,
+  type RankingType,
+  type RecentMatchEntry,
+  type RecentMatchesResponse,
+  type VipTier,
+  type WinRateLeaderboardEntry,
 } from '@rapidclash/shared';
 import { PLATFORM_ACCOUNT } from './ledger.js';
 import type { AvatarLookup, UsernameLookup } from './identity.js';
@@ -90,7 +92,20 @@ export function createMatchHistory(
   lookupAvatar?: AvatarLookup,
 ): MatchHistory {
   const displayNameFor = (playerId: string): string => lookupUsername?.(playerId) ?? playerId;
-  const avatarFor = (playerId: string): AvatarId => lookupAvatar?.(playerId) ?? 'default';
+  // Ticket 2026-09-25#6 (ADVISOR_TO_PM.md): the identical "bot with no stored avatar" gap
+  // `gateway.ts`'s own `resolveAvatarId` closes for the live-match opponent bar — fixed here too,
+  // per Designer's own "one source per opponent" instruction, rather than left half-done. Same
+  // 3-way split: a stored, non-'default' avatar wins outright; otherwise, if the resolved name
+  // carries the 🤖 disclosure prefix (the only existing bot signal — no separate `isBot` schema
+  // flag anywhere in this codebase), fall back to the SAME name-hash `avatarIdForName` the live
+  // opponent bar and its own searching-state scramble already use, so one account's avatar reads
+  // identically everywhere it appears; otherwise a genuine avatarless human's 'default'.
+  const avatarFor = (playerId: string): AvatarId => {
+    const stored = lookupAvatar?.(playerId);
+    if (stored && stored !== 'default') return stored;
+    const name = displayNameFor(playerId);
+    return name.startsWith('🤖') ? avatarIdForName(stripBotDisclosure(name)) : 'default';
+  };
   db.exec(`
     CREATE TABLE IF NOT EXISTS match_results (
       match_id   TEXT PRIMARY KEY,

@@ -391,6 +391,10 @@ export function App() {
   // name). Null on the PLAY/post path — the joiner's name never reaches the client. Never derived
   // from an id and never fabricated (the hub falls back to a neutral "Opponent").
   const [opponentName, setOpponentName] = useState<string | null>(null);
+  // Ticket 2026-09-25#6 (ADVISOR_TO_PM.md): mirrors `opponentName` above exactly, same
+  // PLAY-vs-JOIN-symmetric, server-resolved shape (`MatchStartPayload.opponentAvatarId`). 'default'
+  // (not null) so GameHub's OpponentSlot always has a valid AvatarId to render pre-match.
+  const [opponentAvatarId, setOpponentAvatarId] = useState<AvatarId>('default');
   // Ticket 2026-09-18#2 item 4: the real, server-confirmed stake for the CURRENT match — mirrors
   // `opponentName` above exactly (same reasoning, same PLAY-vs-JOIN asymmetry it fixes). A PLAY-
   // initiator's own bet-amount display already worked off their own locally-armed selection;
@@ -772,6 +776,9 @@ export function App() {
         // Server-authoritative opponent alias — the real name on BOTH the PLAY and JOIN paths
         // (a public alias, not hidden state). Supersedes the JOIN-only ownerName capture below.
         setOpponentName(payload.opponentName ?? null);
+        // Ticket 2026-09-25#6: same reasoning as opponentName above — the real, server-resolved
+        // avatar on both paths.
+        setOpponentAvatarId(payload.opponentAvatarId ?? 'default');
         // Ticket 2026-09-18#2 item 4: same reasoning as opponentName above — server-confirmed on
         // BOTH the PLAY and JOIN paths, so a JOIN-initiator's bet-amount display finally has
         // something to read.
@@ -805,6 +812,9 @@ export function App() {
         // On reconnect/reload, restore the opponent's real alias from the resume payload (the
         // in-memory name is lost on reload; per-move broadcasts omit it and must not clear it).
         if (payload.opponentName) setOpponentName(payload.opponentName);
+        // Ticket 2026-09-25#6: same reasoning — restore the real avatar on resume too; per-move
+        // broadcasts omit it (undefined) and must not clear an already-known value.
+        if (payload.opponentAvatarId) setOpponentAvatarId(payload.opponentAvatarId);
         // Ticket 2026-09-18#2 item 4: same reasoning — restore the real stake on resume too;
         // per-move broadcasts omit it (undefined) and must not clear an already-known value.
         if (payload.stake != null) setMatchStake(payload.stake);
@@ -1260,6 +1270,7 @@ export function App() {
           avatarId={avatarId}
           opponentId={opponentId}
           opponentName={opponentName}
+          opponentAvatarId={opponentAvatarId}
           matchStake={matchStake}
           serverClockOffset={serverClockOffset}
           balance={balance}

@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import type { AvatarId } from '@rapidclash/shared';
+import { avatarIdForName as avatarIdForNameShared } from '@rapidclash/shared';
 import { cn } from '@/lib/utils';
 import rc01 from '../../assets/avatars/rc-01.png';
 import rc02 from '../../assets/avatars/rc-02.png';
@@ -11,6 +12,20 @@ import rc07 from '../../assets/avatars/rc-07.png';
 import rc08 from '../../assets/avatars/rc-08.png';
 import rc09 from '../../assets/avatars/rc-09.png';
 import rc10 from '../../assets/avatars/rc-10.png';
+import rc11 from '../../assets/avatars/rc-11.png';
+import rc12 from '../../assets/avatars/rc-12.png';
+import rc13 from '../../assets/avatars/rc-13.png';
+import rc14 from '../../assets/avatars/rc-14.png';
+import rc15 from '../../assets/avatars/rc-15.png';
+import rc16 from '../../assets/avatars/rc-16.png';
+import rc17 from '../../assets/avatars/rc-17.png';
+import rc18 from '../../assets/avatars/rc-18.png';
+import rc19 from '../../assets/avatars/rc-19.png';
+import rc20 from '../../assets/avatars/rc-20.png';
+import rc21 from '../../assets/avatars/rc-21.png';
+import rc22 from '../../assets/avatars/rc-22.png';
+import rc23 from '../../assets/avatars/rc-23.png';
+import rc24 from '../../assets/avatars/rc-24.png';
 
 /** `AvatarId` is the canonical shared contract type (`@rapidclash/shared`) — the single source of
  *  truth for client + server. Re-exported here so existing `Avatar`-relative imports keep working.
@@ -35,6 +50,20 @@ export const PRESETS: Record<Exclude<AvatarId, 'default'>, string> = {
   'rc-08': rc08,
   'rc-09': rc09,
   'rc-10': rc10,
+  'rc-11': rc11,
+  'rc-12': rc12,
+  'rc-13': rc13,
+  'rc-14': rc14,
+  'rc-15': rc15,
+  'rc-16': rc16,
+  'rc-17': rc17,
+  'rc-18': rc18,
+  'rc-19': rc19,
+  'rc-20': rc20,
+  'rc-21': rc21,
+  'rc-22': rc22,
+  'rc-23': rc23,
+  'rc-24': rc24,
 };
 
 /** djb2 — a tiny, deterministic, dependency-free string hash. Stable across sessions/machines so a
@@ -62,15 +91,17 @@ export function glyphColor(username?: string | null): string {
   return `hsl(${hashStr(username) % 360}, 45%, 40%)`;
 }
 
-/** Ticket 2026-09-15#9 item 3: hashes a name into one of the 10 real presets — the same djb2 hash
- *  already used for discColor/glyphColor, applied to the preset id set instead of a hue. Used by
- *  GameHub.tsx's OpponentSlot so the avatar flickers in sync with the scrambling scanned name
- *  during matchmaking search, matching the prototype's own `avForName`. Deterministic per name
- *  (the same name always hashes to the same preset), not random per render. */
-export function avatarIdForName(name: string): Exclude<AvatarId, 'default'> {
-  const ids = Object.keys(PRESETS) as Exclude<AvatarId, 'default'>[];
-  return ids[hashStr(name) % ids.length];
-}
+/** Ticket 2026-09-15#9 item 3, hash swapped by ticket 2026-09-25#6 (was the generic djb2 `hashStr`
+ *  above, used for `discColor`/`glyphColor`'s per-user hue — now the prototype's own `avForName`
+ *  formula, verified directly against `Full Spec.html:3132-3136`): hashes a name into one of the 24
+ *  real presets. Re-exported from `@rapidclash/shared` (not a local implementation) — the SERVER
+ *  needs the exact same hash for its own simulated-opponent avatar fallback (`gateway.ts`), and two
+ *  independently-maintained copies would risk drifting; see that shared module's own doc comment
+ *  for why that specifically matters here (a simulated opponent's avatar must settle on the SAME
+ *  face once matched, not jump to a different one). Used by GameHub.tsx's OpponentSlot so the
+ *  avatar flickers in sync with the scrambling scanned name during matchmaking search. Deterministic
+ *  per name (the same name always hashes to the same preset), not random per render. */
+export const avatarIdForName = avatarIdForNameShared;
 
 /** The person silhouette (relocated from GameHub). Takes a colour via `style.color` / `className`
  *  (fill="currentColor") so it is never hardcoded white — the default glyph must darken on the

@@ -5,7 +5,8 @@ import type { FastifyInstance } from 'fastify';
 import { createServices, buildApp, type AppServices } from '../server.js';
 import { rpsModule } from '@rapidclash/game-rps';
 import { PLATFORM_ACCOUNT, GRANT_AMOUNT } from '@rapidclash/core';
-import type { Envelope, MatchStartPayload } from '@rapidclash/shared';
+import { avatarIdForName, stripBotDisclosure } from '@rapidclash/shared';
+import type { Envelope, MatchStartPayload, MatchStatePayload } from '@rapidclash/shared';
 
 // ─── Test harness ──────────────────────────────────────────────────────────────
 //
@@ -375,4 +376,101 @@ describe('#31 — stuck-but-connected match resolves via the timeout sweep', () 
       services.ledger.getBalance(PLATFORM_ACCOUNT);
     expect(total).toBe(GRANT_AMOUNT * 2);
   }, 20000);
+});
+
+// Ticket 2026-09-25#6 (ADVISOR_TO_PM.md): `match.start`'s new `opponentAvatarId` field — the real
+// protocol addition the ticket's Part 2 needed. `resolveAvatarId` (gateway.ts, private) is only
+// reachable through the live match.start flow, so these drive it end-to-end rather than unit-test
+// it in isolation — the same shape `S8`'s own tests above already use for `resolveUsername`.
+describe('2026-09-25#6 — match.start carries the opponent\'s real, resolved avatar', () => {
+  let app: FastifyInstance;
+  let port: number;
+  const sockets: SocketRecorder[] = [];
+  let prevWindow: string | undefined;
+
+  beforeEach(async () => {
+    prevWindow = process.env.RC_PICK_WINDOW_MS;
+    process.env.RC_PICK_WINDOW_MS = '1500';
+    const db = new Database(':memory:');
+    const services = createServices(db, [rpsModule]);
+    app = buildApp(services, [rpsModule], { seedAdmin: false });
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const addr = app.server.address();
+    port = typeof addr === 'object' && addr ? addr.port : 0;
+  });
+
+  afterEach(async () => {
+    for (const s of sockets) s.close();
+    sockets.length = 0;
+    await app.close();
+    if (prevWindow === undefined) delete process.env.RC_PICK_WINDOW_MS;
+    else process.env.RC_PICK_WINDOW_MS = prevWindow;
+  });
+
+  async function register(username: string): Promise<{ token: string; playerId: string }> {
+    const res = await app.inject({ method: 'POST', url: '/auth/register', payload: { username, password: 'pw' } });
+    return res.json<{ token: string; playerId: string }>();
+  }
+
+  async function setAvatar(token: string, avatarId: string): Promise<void> {
+    await app.inject({ method: 'POST', url: '/auth/avatar', payload: { avatarId }, headers: { authorization: `Bearer ${token}` } });
+  }
+
+  /** Pair two already-registered players and return each side's own match.start payload. */
+  async function startMatch(aToken: string, bToken: string): Promise<[MatchStartPayload, MatchStartPayload]> {
+    const a = await openSocket(port, aToken);
+    const b = await openSocket(port, bToken);
+    sockets.push(a, b);
+    a.send('queue.join', { gameId: 'rps', stake: STAKE });
+    await a.waitFor('queue.waiting');
+    b.send('queue.join', { gameId: 'rps', stake: STAKE });
+    const aStart = await a.waitFor('match.start');
+    const bStart = await b.waitFor('match.start');
+    return [aStart.payload as MatchStartPayload, bStart.payload as MatchStartPayload];
+  }
+
+  it('a real stored avatar always wins outright, regardless of username', async () => {
+    const alice = await register('alice');
+    const bob = await register('bob');
+    await setAvatar(bob.token, 'rc-04');
+    const [aStart] = await startMatch(alice.token, bob.token);
+    expect(aStart.opponentAvatarId).toBe('rc-04');
+  });
+
+  it('a bot-prefixed username with NO stored avatar falls back to the SAME name-hash the client\'s own avatarIdForName computes — never plain \'default\'', async () => {
+    const alice = await register('alice');
+    const bot = await register('🤖@skyhook'); // no /auth/avatar call — stored avatar stays 'default'
+    const [aStart] = await startMatch(alice.token, bot.token);
+    // Independently re-derive the expected value via the SAME shared function the server itself
+    // calls — not a hardcoded literal, so this stays correct if the hash formula ever changes,
+    // while still proving the server is genuinely calling it (not just returning 'default').
+    expect(aStart.opponentAvatarId).toBe(avatarIdForName(stripBotDisclosure('🤖@skyhook')));
+    expect(aStart.opponentAvatarId).not.toBe('default');
+  });
+
+  it('a genuine avatarless human (no bot prefix, no stored avatar) gets plain \'default\' — never guessed at', async () => {
+    const alice = await register('alice');
+    const bob = await register('bob'); // no /auth/avatar call, no bot prefix either
+    const [aStart] = await startMatch(alice.token, bob.token);
+    expect(aStart.opponentAvatarId).toBe('default');
+  });
+
+  it('survives a reconnect/resume: match.state carries the same resolved avatar on the resume path', async () => {
+    const alice = await register('alice');
+    const bot = await register('🤖@nightowl');
+    const [aStart] = await startMatch(alice.token, bot.token);
+    const matchId = aStart.matchId;
+
+    // Same reconnect shape as S8's own tests above: drop alice's socket, reopen with the same
+    // token, resume.
+    const alice1 = sockets[0];
+    alice1.close();
+    sockets.splice(sockets.indexOf(alice1), 1);
+    const alice2 = await openSocket(port, alice.token);
+    sockets.push(alice2);
+    alice2.send('match.resume', { matchId });
+
+    const resumed = await alice2.waitFor('match.state');
+    expect((resumed.payload as MatchStatePayload).opponentAvatarId).toBe(avatarIdForName(stripBotDisclosure('🤖@nightowl')));
+  });
 });

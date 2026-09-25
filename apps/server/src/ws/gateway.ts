@@ -9,10 +9,11 @@ import {
   createChatTransport,
   CHAT_MAX_MESSAGE_LENGTH,
 } from '@rapidclash/core';
-import { IllegalMove, isDemoBotId } from '@rapidclash/shared';
+import { IllegalMove, isDemoBotId, avatarIdForName, stripBotDisclosure } from '@rapidclash/shared';
 import type { GuestServices } from '../guest/index.js';
 import { createTierResolver } from '../tier.js';
 import type {
+  AvatarId,
   Envelope,
   QueueJoinPayload,
   QueueLeavePayload,
@@ -254,6 +255,30 @@ export function registerWsGateway(
     return guest?.usernameFor(id) ?? identity.getUsername(id) ?? id;
   }
 
+  /** Ticket 2026-09-25#6 (ADVISOR_TO_PM.md): resolves the FULLY-RESOLVED opponent avatar for ANY
+   *  id, mirroring `resolveUsername`'s own shape and the same "resolve once, server-side, client
+   *  just renders whatever arrives" pattern `opponentName` already established. The 3-way
+   *  real/real-no-avatar/simulated split, resolved here rather than guessed client-side: a bot
+   *  account's own stored avatar would ALSO come back `'default'` (bot-crowd accounts never go
+   *  through the avatar picker) — indistinguishable from a genuine human who simply hasn't chosen
+   *  one, unless something else marks the account as simulated. There is no separate `isBot` schema
+   *  flag anywhere in this codebase — the only existing signal is the same one the client's own
+   *  `stripBotDisclosure` strips: a raw stored username starting with the 🤖 disclosure prefix (the
+   *  app's own established ADR-010 convention). If the real stored avatar is unset AND the raw
+   *  username carries that prefix, compute the SAME name-hash fallback the client's own searching-
+   *  state scramble would (`avatarIdForName`, from `@rapidclash/shared` — the single source both
+   *  sides import, so they can never drift out of sync) — hashing the bare, stripped name, matching
+   *  what the client hashes for its own decorative scan. Otherwise send the real stored value
+   *  (`'default'` included, for a genuine avatarless human — the client renders that as the
+   *  ordinary derived disc, same as it already does for the player's own account). */
+  function resolveAvatarId(id: string): AvatarId {
+    const stored = identity.getAvatarId(id);
+    if (stored !== 'default') return stored;
+    const username = resolveUsername(id);
+    if (username.startsWith('🤖')) return avatarIdForName(stripBotDisclosure(username));
+    return 'default';
+  }
+
   /** Read-only VIP-tier lookup for ANY playerId, backing chat's `resolveTier` AND (ticket
    *  2026-09-13#6 item 3) the open-challenges feed's `ownerTier` (`openChallengeOf` below).
    *  Deliberately NOT `Rewards.getSnapshot` (the route-layer API `apps/server/src/routes/
@@ -342,6 +367,7 @@ export function registerWsGateway(
         matchId: result.matchId,
         opponent: result.opponentId,
         opponentName: resolveUsername(result.opponentId),
+        opponentAvatarId: resolveAvatarId(result.opponentId),
         gameId,
         state: curState,
         serverNow: Date.now(), // lets the client align its clock to server-authoritative timers
@@ -356,6 +382,7 @@ export function registerWsGateway(
         matchId: result.matchId,
         opponent: curId,
         opponentName: resolveUsername(curId),
+        opponentAvatarId: resolveAvatarId(curId),
         gameId,
         state: oppState,
         serverNow: Date.now(),
@@ -1178,6 +1205,7 @@ export function registerWsGateway(
                   {
                     state, events: [],
                     opponentName: oppId ? resolveUsername(oppId) : undefined,
+                    opponentAvatarId: oppId ? resolveAvatarId(oppId) : undefined,
                     serverNow: Date.now(),
                     // Ticket 2026-09-18#2 item 4: same reasoning as opponentName above — survives
                     // a reconnect/reload for a JOIN-initiator too, not just the initial match.start.
