@@ -61,8 +61,8 @@ const EXPAND_EASE = 'cubic-bezier(0.3,0.9,0.32,1)';
  *  `--rc-green`/`--rc-danger` would make them theme-dependent, which the design source itself never
  *  is here. */
 const FRAME_NEUTRAL = '#FFFFFF';
-const FRAME_WIN = '#34D399';
-const FRAME_LOSE = '#F04438';
+const FRAME_WIN = '#16A34A';
+const FRAME_LOSE = 'var(--rc-loss)';
 const FRAME_DRAW = '#F79009';
 
 /** The prototype's real flat-vector purple hand illustrations, ported verbatim (path data copied
@@ -298,34 +298,42 @@ function RpsIdle() {
  *
  * Redaction: your pick always shows; the opponent stays hidden (solid #4F4CEA + bolt icon,
  * 2026-09-11#8/C) EXCEPT for two deliberate reveal beats, both reusing the SAME
- * `RpsRevealFlipCard` (Full Spec.html:625-637's 3D flip) at
- * different moments — see "Composing the two reveals" below:
- *   1. A brief beat right after a TIED round (2026-09-11#9 item 2) — non-terminal, auto-resets.
- *   2. The match's TERMINAL reveal (this ticket) — win/lose/void, gated on `outcome` (set only once
- *      the match actually ends, `GameHub.tsx`'s `areaArgs.outcome`), and persists (no reset) since
- *      there's no next round to reset into.
+ * `RpsRevealFlipCard` (Full Spec.html:625-637's 3D flip) AND, since ticket 2026-09-25#2/#3, the SAME
+ * shared `revealStage` staged timing (grow → 700ms pause → flip → +900ms → done) — see "Composing
+ * the two reveals" below:
+ *   1. A brief beat right after a TIED round (2026-09-11#9 item 2; staged timing since 2026-09-25#3)
+ *      — non-terminal, auto-resets ~1.5s after `done`, back to the redacted tile for the next round.
+ *   2. The match's TERMINAL reveal (2026-09-11#10 item 2) — win/lose/void, gated on `outcome` (set
+ *      only once the match actually ends, `GameHub.tsx`'s `areaArgs.outcome`), and persists (no
+ *      reset) since there's no next round to reset into.
  *
  * Visual rebuild (T6b): two square "photo-frame" cards either side of a VS + digit-flip countdown
  * (Full Spec.html:605-658) — your card shows your live pick (an opacity/scale swap between the
- * three icons, Full Spec.html:611-613's `op`/`scale` treatment). At terminal, both frames also pick
- * up the outcome color (`myFrame`/`oppFrame` below, ported byte-for-byte from the now-removed
- * `RpsReveal` overlay component's identical formula — Full Spec.html:3808-3810's `rpsLeftFrame`/
- * `rpsRightFrame`: mine turns green/red/orange on win/lose/void, the opponent's only ever turns
- * orange on void, otherwise stays the neutral white frame both cards use pre-terminal).
+ * three icons, Full Spec.html:611-613's `op`/`scale` treatment; frozen to the tie's own snapshot
+ * during an active tie-reveal — see `myCardChoice`). Once a reveal's own `done` stage lands, both
+ * frames pick up the outcome color (`myFrame`/`oppFrame` below, ported byte-for-byte from the now-
+ * removed `RpsReveal` overlay component's identical formula — Full Spec.html:3808-3810's
+ * `rpsLeftFrame`/`rpsRightFrame`): mine turns green/red/orange on win/lose/void, the opponent's only
+ * ever turns orange on void or an ordinary tie, otherwise stays the neutral white frame both cards
+ * use pre-reveal. Card SIZE growth (`cardW`/`cardH` big geometry) stays terminal-only, unchanged
+ * from ticket 2026-09-12#1 item 2 — an ordinary tie's reveal plays at the small geometry.
  *
  * Composing the two reveals (a terminal outcome can never actually race a pending tie-reveal — the
- * tie-reveal window is `TIE_REVEAL_FLIP_MS + TIE_REVEAL_HOLD_MS` ≈ 2.3s, while the very next round's
- * EARLIEST possible resolution is a full fresh `PICK_WINDOW_MS` ≈ 10s later, since a round only ever
- * resolves at window expiry — `rps.ts`'s `resolve()`/`isLockTime()` — never early on "both chosen";
- * but this renders defensively rather than leaning on that timing margin alone, e.g. for a future
- * shortened test window): the terminal reveal ALWAYS wins the render over `tieReveal` state (see the
- * effect that clears any pending tie-reveal the instant `terminal` goes true, and the render's
- * `terminal ? … : tieReveal ? … : …` ordering below) — the two can never mount competing flips into
- * the same opponent-card slot.
+ * tie-reveal's own full window is `REVEAL_PAUSE_MS + REVEAL_FLIP_TO_DONE_MS + TIE_REVEAL_HOLD_MS` ≈
+ * 3.1s, while the very next round's EARLIEST possible resolution is a full fresh `PICK_WINDOW_MS` ≈
+ * 10s later, since a round only ever resolves at window expiry — `rps.ts`'s `resolve()`/
+ * `isLockTime()` — never early on "both chosen"; but this renders defensively rather than leaning on
+ * that timing margin alone, e.g. for a future shortened test window): the terminal reveal ALWAYS
+ * wins over `tieReveal` state (see the effect that clears any pending tie-reveal the instant
+ * `terminal` goes true, and `revealKey`'s own `terminal ? … : tieReveal ? … : null` priority order)
+ * — the two can never mount competing flips into the same opponent-card slot, and share one
+ * `revealStage` machine rather than two independent timers.
  *
- * `suppressResultOverlay` is wired on the `<GameHub>` call below (no `ownBarResult` — 2026-09-12#1
- * item 3, see that call's comment for the citation chain — and no `holdResultMs`, see the same call's
- * comment for why RPS's short 820ms flip doesn't need Coinflip's artificial hold).
+ * `suppressResultOverlay` is wired on the `<GameHub>` call below. Ticket 2026-09-25#3 item 2 adds
+ * `ownBarResult`+`gateResultOnReveal` (a DELIBERATE divergence from the prototype — see that call's
+ * comment for the citation chain that both introduces and justifies it); no `holdResultMs` — RPS's
+ * reveal is gated on its own `revealStage` reaching 'done' via `onRevealComplete`, the same
+ * mechanism `holdResultMs` would otherwise exist to approximate, so adding both would be redundant.
  *
  * Timer-only-resolve model (#164): the pick is CLIENT-LOCAL and FREELY CHANGEABLE for the whole
  * window — tapping a throw rings it PURPLE immediately (no wait for the server echo) and re-tapping
@@ -334,7 +342,7 @@ function RpsIdle() {
  * both at window expiry. No same-side/"taken-throw" restriction (it would leak the opponent's pick).
  * Once terminal, the grid locks (see `terminal` below) — there is no round left to pick into.
  */
-function RpsBoard({ playerId, opponentId, gameState, events, onMove, outcome, serverClockOffset = 0 }: GameAreaArgs) {
+function RpsBoard({ playerId, opponentId, gameState, events, onMove, outcome, onRevealComplete, serverClockOffset = 0 }: GameAreaArgs) {
   const view = gameState as RpsView | null;
   const tileBg = useRpsTileBg();
   // Terminal outcome (win/draw/void) — set by GameHub only once the match has actually ended
@@ -342,13 +350,97 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, outcome, se
   // overlay component's identical formula (Full Spec.html:3808-3810's `rpsLeftFrame`/`rpsRightFrame`).
   // RPS never actually produces a terminal `draw` (ties auto-replay server-side, `rps.ts`'s
   // `resolve()`) — only a decisive `win` or, at the replay cap, `void`; `void` gets the same neutral
-  // "neither side" treatment `draw` would.
+  // "neither side" treatment `draw` would. Ticket 2026-09-25#3 (D49): at the replay cap this becomes
+  // a genuine TERMINAL void (`rps.ts`'s `resolve()` sets `forcedOutcome`) — it already flows through
+  // this exact `terminal`/`outcome` path, never through the ordinary tie-reveal mechanism below, so
+  // it automatically gets the same orange `done` coloring AND the terminal path's own "stays
+  // expanded, no auto-continue" behavior with zero special-casing — there is no live match left to
+  // auto-continue into, and this path never has one.
   const terminal = outcome != null;
   const mineWon = outcome?.type === 'win' && outcome.winner === playerId;
   const oppWon = outcome?.type === 'win' && outcome.winner !== playerId;
   const neutralOutcome = outcome?.type === 'draw' || outcome?.type === 'void';
-  const myFrame = mineWon ? FRAME_WIN : oppWon ? FRAME_LOSE : neutralOutcome ? FRAME_DRAW : FRAME_NEUTRAL;
-  const oppFrame = neutralOutcome ? FRAME_DRAW : FRAME_NEUTRAL;
+
+  // 2026-09-11#9 item 2 (deliberate, Owner-approved redaction rollback — see rps.ts's resolve()):
+  // a tied round's `new_round` event carries `revealedChoices`, both players' real throws for the
+  // round that just ended. Flip the opponent's card from the redacted blue-bolt face to that real
+  // throw, hold it, then fall back to the redacted tile as the fresh round's window opens.
+  // Ticket 2026-09-25#3 item 2 (ADVISOR_TO_PM.md): also snapshots the caller's OWN throw
+  // (`revealed[playerId]`, same payload, previously unread) — `optimisticPick`/`serverChoice` both
+  // go blank immediately once the round bumps and the fresh round's `choices` clears server-side,
+  // so without this the OWN card's hand would vanish mid-reveal while only the opponent's stayed
+  // visible. See `myCardChoice` below for how this snapshot is scoped to the own CARD display only,
+  // not the picker tiles (which must stay live so a fresh tap for the new round still registers).
+  const [tieReveal, setTieReveal] = useState<{ seq: number; myChoice: string | undefined; oppChoice: string | undefined } | null>(null);
+  const tieRevealSeq = useRef(0);
+  const tieRevealTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (tieRevealTimer.current) clearTimeout(tieRevealTimer.current); }, []);
+  useEffect(() => {
+    if (terminal) return; // match already over — no more rounds, nothing to tie-reveal.
+    const newRound = events?.find((e) => e.type === 'new_round');
+    const revealed = (newRound?.payload as { revealedChoices?: Record<string, string> } | undefined)?.revealedChoices;
+    const oppChoice = opponentId ? revealed?.[opponentId] : undefined;
+    if (!oppChoice) return; // not a tie's new_round (or no opponent id yet) — nothing to reveal.
+    tieRevealSeq.current += 1;
+    setTieReveal({ seq: tieRevealSeq.current, myChoice: playerId ? revealed?.[playerId] : undefined, oppChoice });
+    if (tieRevealTimer.current) clearTimeout(tieRevealTimer.current);
+    tieRevealTimer.current = setTimeout(() => setTieReveal(null), REVEAL_PAUSE_MS + REVEAL_FLIP_TO_DONE_MS + TIE_REVEAL_HOLD_MS);
+  }, [events, opponentId, playerId, terminal]);
+  // 2026-09-11#10 item 2: a terminal outcome always wins over any still-pending tie-reveal — see
+  // "Composing the two reveals" in the doc comment above for why this can't actually race in
+  // practice, and why this clears defensively anyway rather than relying on timing margin alone.
+  useEffect(() => {
+    if (!terminal) return;
+    if (tieRevealTimer.current) { clearTimeout(tieRevealTimer.current); tieRevealTimer.current = null; }
+    setTieReveal(null);
+  }, [terminal]);
+
+  // Ticket 2026-09-25#2/#3 item 1 (ADVISOR_TO_PM.md): the reveal's own three staggered beats —
+  // confirmed precisely against the prototype's own `rpsTimer` chain (Full Spec.html:3083-3102) —
+  // now drive BOTH the terminal reveal AND an ordinary tie's reveal identically. D49 definitively
+  // answers D48's own open question: yes, the same staged sequence applies to both, at the same
+  // timestamps. `revealKey` is whichever reveal is currently active (`'terminal'`, or the tie's own
+  // seq) — a fresh key restarts the 700ms pause → 'flip' (the opponent card mounts, 820ms rotateY +
+  // translateX nudge) → +900ms more → 'done' (frame colors land, ~80ms after the 820ms flip
+  // finishes). `null` (no active reveal) holds at 'grow'.
+  // Card SIZE (`cardW`/`cardH` below) stays a SEPARATE, terminal-only concern, unchanged from
+  // ticket 2026-09-12#1 item 2's still-valid decision — D49's "identical beats" is read here as the
+  // STATE-MACHINE TIMING all three outcomes now share, not a reopening of that geometry decision
+  // (D49's own text frames itself as answering D48's specifically pause-timing-scoped open question,
+  // not the separate, explicitly-preserved card-growth one) — flagged explicitly to Advisor/Owner as
+  // an interpretation worth a sanity check rather than assumed silently.
+  const REVEAL_PAUSE_MS = 700;
+  const REVEAL_FLIP_TO_DONE_MS = 900;
+  const TIE_REVEAL_HOLD_MS = 1500;
+  const revealKey = terminal ? 'terminal' : tieReveal ? `tie-${tieReveal.seq}` : null;
+  const [revealStage, setRevealStage] = useState<'grow' | 'flip' | 'done'>('grow');
+  useEffect(() => {
+    if (revealKey == null) { setRevealStage('grow'); return; }
+    setRevealStage('grow');
+    const t = setTimeout(() => setRevealStage('flip'), REVEAL_PAUSE_MS);
+    return () => clearTimeout(t);
+  }, [revealKey]);
+  useEffect(() => {
+    if (revealStage !== 'flip') return;
+    const t = setTimeout(() => setRevealStage('done'), REVEAL_FLIP_TO_DONE_MS);
+    return () => clearTimeout(t);
+  }, [revealStage]);
+  const revealActive = terminal || tieReveal != null;
+  const revealDone = revealActive && revealStage === 'done';
+  // Ticket 2026-09-25#3 item 2 (ADVISOR_TO_PM.md): fires the shared bar-lighting signal the instant
+  // the TERMINAL reveal (not an ordinary tie's own 'done') finishes. `onRevealComplete` sets a
+  // once-per-MATCH flag on the GameHub side (`revealDone`) — in this build, GameHub's own
+  // `currentMatchId`-keyed reset of that flag happens to ALSO protect against a tie's own 'done'
+  // corrupting a later terminal reveal in the same match (confirmed empirically: match-end always
+  // changes `currentMatchId`, resetting the flag in the same render). Guarded to terminal-only here
+  // anyway, defensively — `RpsBoard`'s own contract shouldn't depend on a caller-side reset it
+  // doesn't control, matching this file's established philosophy elsewhere (e.g. the tie-vs-terminal
+  // render-priority effect below, "renders defensively rather than leaning on timing margin alone").
+  useEffect(() => {
+    if (terminal && revealDone) onRevealComplete?.();
+  }, [terminal, revealDone, onRevealComplete]);
+  const myFrame = mineWon ? FRAME_WIN : oppWon ? FRAME_LOSE : neutralOutcome ? FRAME_DRAW : tieReveal ? FRAME_DRAW : FRAME_NEUTRAL;
+  const oppFrame = neutralOutcome ? FRAME_DRAW : tieReveal ? FRAME_DRAW : FRAME_NEUTRAL;
   // Ticket 2026-09-12#1 item 2 (ADVISOR_TO_PM.md): `rpsExpanded()`'s big geometry, keyed off
   // `terminal` — deliberately match-end ONLY, not the tied-round reveal beat below. In the
   // prototype's own single phase machine `rpsExpanded()` (reveal/flip/done) actually also covers a
@@ -375,42 +467,16 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, outcome, se
     setOptimisticPick(null);
   }, [round]);
   const myChoice = optimisticPick ?? serverChoice;
+  // Ticket 2026-09-25#3 item 2: the OWN CARD's displayed choice, separate from `myChoice` above.
+  // `myChoice` stays LIVE (drives the picker tiles + `handlePick`, so a fresh tap for the NEW round
+  // always visibly registers even while the PREVIOUS round's tie-reveal is still holding) —
+  // `myCardChoice` freezes to the tie's own snapshot for the own card's icon specifically, so that
+  // icon doesn't vanish while a tie-reveal plays, without freezing tile-selection interactivity.
+  const myCardChoice = tieReveal ? tieReveal.myChoice : myChoice;
   function handlePick(id: string) {
     setOptimisticPick(id);
     onMove(id);
   }
-
-  // 2026-09-11#9 item 2 (deliberate, Owner-approved redaction rollback — see rps.ts's resolve()):
-  // a tied round's `new_round` event carries `revealedChoices`, both players' real throws for the
-  // round that just ended. Flip the opponent's card from the redacted blue-bolt face to that real throw
-  // (RpsRevealFlipCard's existing 820ms flip, Full Spec.html:625-637), hold it ~1.5s (matching the
-  // prototype's own tie hold, Full Spec.html:3084-3099), then fall back to the redacted tile as the
-  // fresh round's window opens (the `round` bump above already clears the optimistic pick then).
-  const TIE_REVEAL_HOLD_MS = 1500;
-  const TIE_REVEAL_FLIP_MS = 820;
-  const [tieReveal, setTieReveal] = useState<{ seq: number; choice: string | undefined } | null>(null);
-  const tieRevealSeq = useRef(0);
-  const tieRevealTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => { if (tieRevealTimer.current) clearTimeout(tieRevealTimer.current); }, []);
-  useEffect(() => {
-    if (terminal) return; // match already over — no more rounds, nothing to tie-reveal.
-    const newRound = events?.find((e) => e.type === 'new_round');
-    const revealed = (newRound?.payload as { revealedChoices?: Record<string, string> } | undefined)?.revealedChoices;
-    const oppChoice = opponentId ? revealed?.[opponentId] : undefined;
-    if (!oppChoice) return; // not a tie's new_round (or no opponent id yet) — nothing to reveal.
-    tieRevealSeq.current += 1;
-    setTieReveal({ seq: tieRevealSeq.current, choice: oppChoice });
-    if (tieRevealTimer.current) clearTimeout(tieRevealTimer.current);
-    tieRevealTimer.current = setTimeout(() => setTieReveal(null), TIE_REVEAL_FLIP_MS + TIE_REVEAL_HOLD_MS);
-  }, [events, opponentId, terminal]);
-  // 2026-09-11#10 item 2: a terminal outcome always wins over any still-pending tie-reveal — see
-  // "Composing the two reveals" in the doc comment above for why this can't actually race in
-  // practice, and why this clears defensively anyway rather than relying on timing margin alone.
-  useEffect(() => {
-    if (!terminal) return;
-    if (tieRevealTimer.current) { clearTimeout(tieRevealTimer.current); tieRevealTimer.current = null; }
-    setTieReveal(null);
-  }, [terminal]);
 
   // Cosmetic countdown, driven by the server's authoritative window close (`windowEndsAt`) when
   // present — accurate and RESTARTS automatically on each tie-replay round (re-stamped server-side).
@@ -437,16 +503,16 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, outcome, se
       {/* You — VS + countdown — Opponent (opponent hidden until the terminal reveal beat below).
           Full Spec.html:608 (gap), :616 (VS column width), :618 (countdown float). */}
       <div className="flex items-center justify-center" style={{ gap: cardGap, transition: `gap 620ms ${EXPAND_EASE}` }}>
-        <RpsFrame frame={terminal ? myFrame : FRAME_NEUTRAL} tileBg={tileBg} size={cardW} height={cardH} testid="hub-my-pick-frame">
+        <RpsFrame frame={revealDone ? myFrame : FRAME_NEUTRAL} tileBg={tileBg} size={cardW} height={cardH} testid="hub-my-pick-frame">
           <span
             className="flex items-center justify-center transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.34,1.7,0.5,1)]"
             // Ticket 2026-09-12#1 item 2: icon scale 1 → 1.6 at `terminal` (Full Spec.html:3252's
             // `rpsChoice()`, `on ? (big ? 1.6 : 1) : 0.4`) — moved off the old fixed `scale-100`
             // Tailwind class since the "on" scale is no longer a single constant.
-            style={{ opacity: myChoice ? 1 : 0, transform: `scale(${myChoice ? (terminal ? 1.6 : 1) : 0.4})` }}
+            style={{ opacity: myCardChoice ? 1 : 0, transform: `scale(${myCardChoice ? (terminal ? 1.6 : 1) : 0.4})` }}
             data-testid="hub-my-pick-icon"
           >
-            {myChoice ? <RpsHandIcon choice={myChoice} size={70} /> : null}
+            {myCardChoice ? <RpsHandIcon choice={myCardChoice} size={70} /> : null}
           </span>
         </RpsFrame>
 
@@ -458,45 +524,46 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, outcome, se
             VS
           </span>
           {/* Full Spec.html:618 — a 52×52 box centred on the VS column, floated translateY(-42px)
-              above it (rpsClockOp/rpsClockScale gate on the live pick window; here the board only
-              ever mounts during that window, so the countdown is simply always shown). */}
+              above it. Ticket 2026-09-25#2 item 1: `rpsClockOp`/`rpsClockScale` (Full Spec.html:
+              3749/3803) gate opacity 1→0 / scale 1→0.55 on `rpsPhase !== 'run'` — i.e. the instant
+              the pick window closes, same as this file's own `terminal`. `RpsBoard` stays mounted
+              through the whole result phase (`suppressResultOverlay`), so unlike a component that
+              unmounts at that boundary, the fade is genuinely needed here — confirmed via direct
+              read of the citation's own transition list (`opacity 450ms ease, transform 450ms
+              cubic-bezier(0.34,1.5,0.5,1)`), Beat 1 (keyed on `terminal` directly, no staging). */}
           <div
             className="pointer-events-none absolute left-1/2 top-1/2"
-            style={{ transform: 'translate(-50%, calc(-50% - 42px))' }}
+            style={{
+              transform: `translate(-50%, calc(-50% - 42px)) scale(${terminal ? 0.55 : 1})`,
+              opacity: terminal ? 0 : 1,
+              transition: 'opacity 450ms ease, transform 450ms cubic-bezier(0.34,1.5,0.5,1)',
+            }}
           >
             <RpsCountdown seconds={seconds} />
           </div>
         </div>
 
-        {terminal ? (
-          // 2026-09-11#10 item 2: the match's terminal reveal, relocated in-place from the (now
+        {revealStage !== 'grow' && revealActive ? (
+          // 2026-09-11#10 item 2 / 2026-09-25#3 item 1: the reveal, relocated in-place from the (now
           // removed) `RpsReveal` overlay component — same `RpsRevealFlipCard`, same 820ms flip
-          // (Full Spec.html:625-637), just mounted on the persistent board instead of a popup. No
-          // reset timer: unlike the tie-reveal beat below, this stays revealed — the match is over.
-          // `cardW`/`cardH` are the BIG geometry here (terminal is true) — see `rpsExpanded()`'s
-          // comment above `cardW`'s declaration for why the tie-reveal branch below deliberately
-          // keeps passing the small `CARD_W`/`CARD_H` instead.
+          // (Full Spec.html:625-637), mounted on the persistent board instead of a popup. Shared by
+          // BOTH the terminal reveal (stays revealed — the match is over, no reset timer) and an
+          // ordinary tie's reveal (the tie's own hold/reset timer above unmounts it later) — the
+          // `revealKey`/`terminal ? oppThrow : tieReveal?.oppChoice` branches below are the only
+          // per-kind differences. `cardW`/`cardH` are the BIG geometry only when `terminal` — see
+          // `rpsExpanded()`'s comment above `cardW`'s declaration for why an ordinary tie keeps the
+          // small `CARD_W`/`CARD_H` instead (a deliberately preserved, unchanged decision).
+          // Mount gated on `revealStage !== 'grow'` (Beat 2 — the 700ms pause), not `terminal`/
+          // `tieReveal` directly — the redacted tile stays put through the pause even though the
+          // cards have already grown (terminal case). `frame` stays neutral through 'flip', only
+          // taking `oppFrame`'s real color at `revealStage === 'done'` (Beat 3).
           <RpsRevealFlipCard
-            key="terminal"
-            frame={oppFrame}
+            key={revealKey}
+            frame={revealDone ? oppFrame : FRAME_NEUTRAL}
             tileBg={tileBg}
-            choice={oppThrow}
+            choice={terminal ? oppThrow : tieReveal?.oppChoice}
             size={cardW}
             height={cardH}
-            testid="hub-opponent-pick-revealed"
-          />
-        ) : tieReveal ? (
-          // 2026-09-11#9 item 2: a just-tied round's real opponent throw, flipped into view then
-          // held before falling back to the redacted tile below — see the effect above. Always the
-          // SMALL geometry (never `cardW`/`cardH` — those are the terminal-only big values, and
-          // `terminal` is false in this branch by construction).
-          <RpsRevealFlipCard
-            key={tieReveal.seq}
-            frame={FRAME_NEUTRAL}
-            tileBg={tileBg}
-            choice={tieReveal.choice}
-            size={CARD_W}
-            height={CARD_H}
             testid="hub-opponent-pick-revealed"
           />
         ) : (
@@ -511,8 +578,12 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, outcome, se
 
       {/* Choice buttons — client-local, freely changeable for the whole window (never gated by
           legalMoves/your_turn). The selected throw rings the win-green ring (the selection
-          language) — Full Spec.html:645-654 (grid gap:9px) + :3245's `ring` formula (`var(--rc-green)`
-          resolves to the exact same #0B8F5A light / #34D399 dark pair that formula produces).
+          language) — Full Spec.html:645-654 (grid gap:9px) + :3245's `ring` formula.
+          Ticket 2026-09-25#2 item 2 (ADVISOR_TO_PM.md): the ring color is now the literal `#16A34A`
+          win-green, not `var(--rc-green)` — the RPS/Mines/Dice color-unification rule. Its
+          zero-alpha unselected value moved with it (`rgba(22,163,74,0)`, `#16A34A`'s own RGB at
+          zero alpha) so the box-shadow color transition still fades cleanly at the SAME hue rather
+          than hue-shifting through the old green on its way to the new one.
           Ticket 2026-09-12#1 item 2: at `terminal` the whole row now genuinely COLLAPSES (max-height
           + opacity → 0, Full Spec.html:643's `rpsChoicesH`/`rpsChoicesOp` going to 0px/0 — the outer
           wrapper below owns that, `opacity 450ms ease, max-height 620ms cubic-bezier(0.3,0.9,0.32,1)`,
@@ -549,7 +620,7 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, outcome, se
               className="flex items-center justify-center rounded-[16px] px-1.5 py-4 transition-[background,box-shadow] duration-200 ease hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:hover:brightness-100"
               style={{
                 background: tileBg,
-                boxShadow: myChoice === id ? 'inset 0 0 0 3px var(--rc-green)' : 'inset 0 0 0 3px rgba(52,211,153,0)',
+                boxShadow: myChoice === id ? 'inset 0 0 0 3px #16A34A' : 'inset 0 0 0 3px rgba(22,163,74,0)',
               }}
             >
               <RpsHandIcon choice={id} size={54} />
@@ -617,15 +688,36 @@ function RpsPanel({ currentMatchId, ...args }: GameAreaArgs & { currentMatchId: 
  *  there's no longer a separate, smaller overlay-card usage to default for. The flip itself plays
  *  once per MOUNT (fixed `initial`/`animate` values) — callers that need it to replay must remount
  *  via a changing `key`, which `RpsBoard` does per tie (the terminal reveal never needs to replay —
- *  it's keyed once and stays). */
+ *  it's keyed once and stays).
+ *
+ *  Ticket 2026-09-25#2 item 1 (ADVISOR_TO_PM.md): the translateX 16px-then-back nudge (Full
+ *  Spec.html:625/3091/3808 — `rpsFlipX`, `transform 410ms ease-in-out`) lives here rather than in
+ *  `RpsBoard`, since it's shared by BOTH the terminal reveal and the mid-match tie-reveal below —
+ *  one change covers both call sites for free. `slide` starts `true` (matching `rpsSlide: true` set
+ *  the same instant the prototype's own flip begins) and flips to `false` 410ms after mount; since
+ *  this component only ever mounts at the moment its own flip starts (fresh per `key`, per the doc
+ *  above), a plain mount-time effect reproduces the prototype's "nudge starts exactly when the flip
+ *  does" timing without needing to coordinate with `RpsBoard`'s own `revealStage`. */
 function RpsRevealFlipCard({ frame, tileBg, choice, size, height, testid }: { frame: string; tileBg: string; choice: string | undefined; size: number; height: number; testid?: string }) {
+  const [slide, setSlide] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setSlide(false), 410);
+    return () => clearTimeout(t);
+  }, []);
   return (
     <div
       data-testid={testid}
       className="shrink-0 rounded-[14px] p-[6px] shadow-[0_6px_16px_rgba(0,0,0,0.28)]"
       // Ticket 2026-09-12#1 item 2: same width/height growth as `RpsFrame` above (Full Spec.html:625's
       // transition list — width/height 620ms cubic-bezier(0.3,0.9,0.32,1), background 420ms ease).
-      style={{ width: size, height, background: frame, perspective: 900, transition: `background 420ms ease, width 620ms ${EXPAND_EASE}, height 620ms ${EXPAND_EASE}` }}
+      style={{
+        width: size,
+        height,
+        background: frame,
+        perspective: 900,
+        transform: `translateX(${slide ? '16px' : '0px'})`,
+        transition: `background 420ms ease, width 620ms ${EXPAND_EASE}, height 620ms ${EXPAND_EASE}, transform 410ms ease-in-out`,
+      }}
     >
       <motion.div
         className="relative h-full w-full"
@@ -667,27 +759,45 @@ function RpsRevealFlipCard({ frame, tileBg, choice, size, height, testid }: { fr
  * `RpsPanel` above) so the terminal reveal — relocated from the removed `RpsReveal` overlay component
  * into `RpsBoard` itself — plays on the board in place of a popup.
  *
- * Deliberately NOT wiring `ownBarResult` (2026-09-12#1 item 3, ADVISOR_TO_PM.md — a real correction
- * to a prior PR, not new information): `ownBarResult` was wired here briefly (2026-09-11#10 item 2)
- * mirroring Coinflip's identical prop, but the prototype's own `renderVals()` proves RPS structurally
- * cannot use this mechanism — the bar-level win-fill/"You Win" text (`winFillAnim`/`winTextAnim`/
- * `playerBarRing`) is driven by `mOutcome`, which is gated entirely on `gameV = view === 'mines' ||
- * isDice` (`Full Spec.html:3519`) — `view === 'rps'` is never included, so `mOutcome` is `null` for
- * every RPS state, unconditionally. RPS's real, already-correct win indication is the card frame
- * color (`myFrame`/`oppFrame` above, ported from `rpsLeftFrame`/`rpsRightFrame`, `:3810-3811`)
- * combined with the card enlarging at the same moment (item 2 above) — there is no bar treatment
- * layered on top of it, ever, for RPS. Do not re-add `ownBarResult` here assuming RPS should match
- * Coinflip/Mines/Dice's pattern — it structurally doesn't, per the prototype's own source.
+ * Ticket 2026-09-25#3 item 2 (ADVISOR_TO_PM.md): `ownBarResult`+`gateResultOnReveal` are now WIRED —
+ * REVERSING ticket 2026-09-12#1 item 3's earlier removal, on new information, not a re-litigation of
+ * that correction. 2026-09-12#1 item 3 was right that the prototype's own `mOutcome` (`gameV = view
+ * === 'mines' || isDice`, `Full Spec.html:3519`) never includes RPS — the prototype genuinely never
+ * puts a bar treatment on RPS. This ticket is Designer's own EXPLICIT, deliberate departure from
+ * that prototype behavior for THIS build specifically — confirmed directly against Designer's own
+ * report, not inferred — asking for the exact Dice-style ring+fill+"you won" text RPS never had.
+ * `GameHub.tsx`'s `OwnSlot` already implements everything this needs (built for Dice); RPS copies
+ * the same `winRingColor`/`winFillColor`/`lossRingColor` values as the card frames just above
+ * (`#16A34A`/`#16A34A`/`var(--rc-loss)`, ticket 2026-09-25#2 item 2), gated by `gameId === 'rps'`
+ * alongside Dice/Mines in `GameHub.tsx`. `gateResultOnReveal` (not the fixed generic beat) lets
+ * `RpsBoard` light the bar itself, from its own `revealStage`, the instant its own reveal — win,
+ * lose, OR the rare replay-cap void — reaches 'done' (`onRevealComplete`), never ahead of it. An
+ * ordinary mid-match tie never lights this at all: `phase` never reaches `'result'` during one
+ * (`GameHub.tsx`'s own `phase` formula), and `RpsBoard` itself only ever calls `onRevealComplete`
+ * when `terminal` is true — see that component's own doc comment for why calling it from a tie's
+ * own 'done' would corrupt the LATER genuine terminal reveal's own gating.
  *
- * Deliberately NOT wiring `holdResultMs` (unlike Coinflip's `HOLD_RESULT_MS={2600}`): Coinflip needs
- * it because its coin's flip visual is gated on `gameState` directly (immediate at match end) while
- * `holdResultMs` only delays the BAR (`phase`/`outcome`) behind it, giving the ~1.8-2.4s coin flip
- * room to land first. RPS's terminal reveal is gated on `outcome` itself (see `RpsBoard`'s doc
+ * Ticket 2026-09-25#3: also wires `suppressDrawBar` — the SAME flag `BlackjackHub.tsx` already uses
+ * for the identical reason. The shared, game-agnostic `drawBeat` mechanism (`GameHub.tsx:762-788`,
+ * #161) pulses an orange outline on BOTH bars on every rise in the public `replays` counter, for
+ * every pick-based tie-replay game — this predates and is UNRELATED to `ownBarResult`/`myFrame`/
+ * `oppFrame` above (it fires even when `ownBarResult` is unset, as it did before this ticket). Now
+ * that RPS shows every tie via its own card frames (orange, via `RpsBoard`'s `tieReveal`-driven
+ * `myFrame`/`oppFrame`), the generic bar pulse is a redundant, uncoordinated second signal — the
+ * exact root cause of Designer's own "yellow rings on both bars" report, confirmed directly rather
+ * than assumed. The board still receives the full `drawBeat` via `areaArgs` regardless (unused by
+ * RPS today; `suppressDrawBar` only silences the BAR's own copy, matching Blackjack's own pattern).
+ *
+ * Deliberately still NOT wiring `holdResultMs` (unlike Coinflip's `HOLD_RESULT_MS={2600}`): Coinflip
+ * needs it because its coin's flip visual is gated on `gameState` directly (immediate at match end)
+ * while `holdResultMs` only delays the BAR (`phase`/`outcome`) behind it, giving the ~1.8-2.4s coin
+ * flip room to land first. RPS's terminal reveal is gated on `outcome` itself (see `RpsBoard`'s doc
  * comment for why — `RpsView`'s client type carries no `winner` field to derive it from `gameState`
  * directly), so an added hold would delay the FLIP'S OWN START by the same amount, not just the bar —
  * doubling total reveal latency instead of sequencing it. Without a hold, `outcome`/phase='result'
- * land essentially the same tick the match ends (RPS had zero hold in the old overlay path too, and
- * that flip already played correctly).
+ * land essentially the same tick the match ends; `gateResultOnReveal` alone already keeps the BAR
+ * itself waiting for `RpsBoard`'s own `revealStage` to finish, which is all `holdResultMs` would
+ * otherwise exist to approximate here.
  */
 export function RpsHubScreen(props: GameHubScreenProps) {
   return (
@@ -696,12 +806,13 @@ export function RpsHubScreen(props: GameHubScreenProps) {
       gameId="rps"
       gameName="Rock Paper Scissors"
       suppressResultOverlay
-      // Ticket 2026-09-12#1 item 3 (ADVISOR_TO_PM.md): `ownBarResult` REMOVED here — a real
-      // correction to 2026-09-11#10 item 2, which wired it mirroring `CoinflipHub.tsx`'s pattern.
-      // The prototype's `mOutcome` (the bar-fill mechanism `ownBarResult` renders) is gated on
-      // `gameV = view === 'mines' || isDice` (`Full Spec.html:3519`) — RPS is structurally excluded,
-      // unconditionally, not by omission. See the doc comment above this component for the full
-      // citation chain. Do not re-add this prop assuming RPS should match Coinflip/Mines/Dice.
+      // Ticket 2026-09-25#3 item 2 (ADVISOR_TO_PM.md): `ownBarResult`+`gateResultOnReveal`+
+      // `suppressDrawBar` — see the doc comment above this component for the full citation chain
+      // (a deliberate divergence from the prototype, on new information, not a re-litigation of
+      // 2026-09-12#1 item 3's earlier removal of `ownBarResult` alone).
+      ownBarResult
+      gateResultOnReveal
+      suppressDrawBar
       // Ticket 2026-09-11#9 (ADVISOR_TO_PM.md), a DELIBERATE REVERSAL of #387's `searchFloorMs={0}`
       // above — not a regression, not new information #387 missed. #387's reasoning was real: RPS's
       // entire round IS the server's fixed 10s pick window (PICK_WINDOW_MS, `packages/games/rps/src/
