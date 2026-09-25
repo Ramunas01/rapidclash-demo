@@ -281,13 +281,22 @@
    * before this. Applied at the true document root (not a per-hub wrapper) so it defends every
    * screen uniformly, not just the one (Dice's history belt) that surfaced this report. Purely
    * defensive — can only ever suppress an ALREADY-over-wide descendant's visible symptom; never
-   * changes anything for content that's already correctly sized. */
+   * changes anything for content that's already correctly sized.
+   *
+   * Ticket 2026-09-25#4 (D50, ADVISOR_TO_PM.md — Advisor's own regression from the above): `hidden`
+   * (not `clip`) on ONE axis triggers a real CSS spec rule that silently promotes the OTHER axis's
+   * `overflow: visible` to `auto` too — turning `body` into its own scroll container. Once that
+   * happens, every `position: sticky` descendant (the header) resolves against BODY's own box
+   * instead of the real page scroll, so it just scrolls away with everything else instead of
+   * pinning. `clip` is explicitly exempt from that coercion rule in the spec — same visual clipping
+   * for the original purpose, never promotes the other axis, never turns the element into a scroll
+   * container. Confirmed `overflow-x-clip` is available in the installed Tailwind (3.4.17). */
   html {
-    @apply overflow-x-hidden;
+    @apply overflow-x-clip;
   }
 
   body {
-    @apply bg-background text-foreground overflow-x-hidden;
+    @apply bg-background text-foreground overflow-x-clip;
   }
 }
 
