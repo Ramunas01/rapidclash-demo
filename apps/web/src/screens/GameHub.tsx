@@ -395,6 +395,12 @@ interface GameHubProps extends GameHubScreenProps {
    *  hub but Mines) → `!undefined` → `true` → byte-identical to today's plain `phase === 'in-match'`
    *  condition. See `OpponentSlot`'s own matching comment for the full mechanism. */
   oppLocked?: boolean;
+  /** Ticket 2026-09-25#5 (ADVISOR_TO_PM.md): true while MinesHubScreen's own internal-draw hold
+   *  is active -- an ordinary mid-match Mines draw, NOT a terminal outcome. Lights the SAME
+   *  drawRingColor on BOTH bars (Mines-only, #FF8A1E) -- a genuinely new capability on
+   *  OpponentSlot, which had zero ring mechanism before this. Undefined (every hub but Mines)
+   *  is a byte-identical no-op on both slots. */
+  drawRingActive?: boolean;
 }
 
 /** Ticket 2026-09-12: generalizes the #381 "tap-again to escalate" gesture beyond the hardcoded
@@ -429,7 +435,7 @@ function useNow(active: boolean): number {
  */
 export function GameHub(props: GameHubProps) {
   const {
-    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar, searchFloorMs = 2400, matchBarSlide, pinDark = false, highStakeCycle, resultConverge, oppGemRow, ownGemRow, oppGemText, oppGemTextVisible, ownGemText, ownGemTextVisible, onSectionTap, oppLocked,
+    gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar, searchFloorMs = 2400, matchBarSlide, pinDark = false, highStakeCycle, resultConverge, oppGemRow, ownGemRow, oppGemText, oppGemTextVisible, ownGemText, ownGemTextVisible, onSectionTap, oppLocked, drawRingActive,
     token, playerId, username, avatarId = 'default', opponentId, opponentName, matchStake, serverClockOffset = 0, balance, currentMatchId, gameState, events,
     legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
@@ -868,7 +874,7 @@ export function GameHub(props: GameHubProps) {
                 VS
               </span>
             </div>
-            <OpponentSlot phase={phase} opponentName={opponentName} scanNames={scanNames} aside={renderSlotAside?.(areaArgs, 'opponent')} drawBeat={barDrawBeat} barShiftY={oppBarShiftY} gemRow={oppGemRow} gemText={oppGemText} gemTextVisible={oppGemTextVisible} oppLocked={oppLocked} />
+            <OpponentSlot phase={phase} opponentName={opponentName} scanNames={scanNames} aside={renderSlotAside?.(areaArgs, 'opponent')} drawBeat={barDrawBeat} barShiftY={oppBarShiftY} gemRow={oppGemRow} gemText={oppGemText} gemTextVisible={oppGemTextVisible} oppLocked={oppLocked} drawRingActive={drawRingActive} drawRingColor={gameId === 'mines' ? '#FF8A1E' : undefined} />
             {renderGameArea(areaArgs)}
             <OwnSlot
               label={loggedIn ? (username || 'You') : 'Sign in'}
@@ -913,6 +919,9 @@ export function GameHub(props: GameHubProps) {
               // per-verdict draw override until now (win/lose already did). Mines' own draw literal
               // (Full Spec.html:3787) is #FF8A1E — no other game currently needs this overridden.
               drawRingColor={gameId === 'mines' ? '#FF8A1E' : undefined}
+              // Ticket 2026-09-25#5: the own-bar half of the same new internal-draw ring — see
+              // OpponentSlot's own call site + this file's GameHubProps doc comment for the chain.
+              drawRingActive={drawRingActive}
             />
           </section>
 
@@ -1087,7 +1096,7 @@ function useNameScan(active: boolean, names: string[]): string | null {
  *  "Searching…" beat with a decorative online-name scan; In-match/Result → the REAL opponent's
  *  name in bright white (or a neutral "Opponent" when the joiner's name never reached the client).
  *  Never an opponentId, never a fabricated/cycled name (Charter #2 + DEMO_PRESENTATION honesty). */
-function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShiftY, gemRow, gemText, gemTextVisible, oppLocked }: { phase: Phase; opponentName?: string | null; scanNames: string[]; aside?: ReactNode; drawBeat?: boolean; barShiftY?: number; gemRow?: ReactNode; gemText?: string; gemTextVisible?: boolean; oppLocked?: boolean }) {
+function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShiftY, gemRow, gemText, gemTextVisible, oppLocked, drawRingActive, drawRingColor }: { phase: Phase; opponentName?: string | null; scanNames: string[]; aside?: ReactNode; drawBeat?: boolean; barShiftY?: number; gemRow?: ReactNode; gemText?: string; gemTextVisible?: boolean; oppLocked?: boolean; drawRingActive?: boolean; drawRingColor?: string }) {
   const searching = phase === 'waiting';
   const inMatch = phase === 'in-match' || phase === 'result';
   const scan = useNameScan(searching, scanNames);
@@ -1111,8 +1120,18 @@ function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShif
         barShiftY != null && 'z-[3]',
         // Shared draw→rematch beat (#161): both bars flash the orange push outline for ~2 s.
         drawBeat && outlineClasses('draw'),
+        // Ticket 2026-09-25#5 (ADVISOR_TO_PM.md): a genuinely NEW capability — `OpponentSlot` had
+        // ZERO win/lose/draw ring capability before this. `drawRingActive` (Mines-only, today) is a
+        // deliberate divergence from the prototype's own own-bar-only rule, driven by
+        // `MinesHubScreen`'s own internal-draw hold state (NOT `barVerdict`/`outcome` — Mines never
+        // produces a `type:'draw'` outcome; this is a mid-match, non-terminal event). Same
+        // `ring-[3px]` + inline `--tw-ring-color` shape `OwnSlot`'s own `drawRingColor` already uses.
+        drawRingActive && (drawRingColor ? 'ring-[3px]' : 'ring-[3px] ring-amber-400'),
       )}
-      style={barShiftY != null ? { transform: `translateY(${barShiftY}px)`, transition: 'transform 620ms cubic-bezier(0.3,0.9,0.32,1)' } : undefined}
+      style={{
+        ...(barShiftY != null ? { transform: `translateY(${barShiftY}px)`, transition: 'transform 620ms cubic-bezier(0.3,0.9,0.32,1)' } : undefined),
+        ...(drawRingActive && drawRingColor ? { '--tw-ring-color': drawRingColor } as CSSProperties : undefined),
+      }}
     >
       {/* Ticket 2026-09-15#9 items 1-3: split into the prototype's own two-piece layout
           (`Full Spec.html:446/461`) — the avatar+name group on the left, blurred while searching
@@ -1224,7 +1243,7 @@ function OpponentSlot({ phase, opponentName, scanNames, aside, drawBeat, barShif
  *  plays the SHARED win animation (`useWinReveal`): a green fill + "You Win" kept ALONGSIDE the
  *  username (never swapped out), the green a background layer — 0.5 s fill-in → 2 s hold → 0.5 s
  *  fade-out → the persistent green outline. Loss/draw are outline-only (no fill/text). */
-function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdict, drawBeat, barShiftY, lossRingColor, winRingColor, winFillColor, drawRingColor, gemRow, gemText, gemTextVisible }: { label: string; username?: string | null; avatarId?: AvatarId; isOwn: boolean; aside?: ReactNode; barVerdict?: Verdict | null; drawBeat?: boolean; barShiftY?: number; lossRingColor?: string; winRingColor?: string; winFillColor?: string; drawRingColor?: string; gemRow?: ReactNode; gemText?: string; gemTextVisible?: boolean }) {
+function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdict, drawBeat, barShiftY, lossRingColor, winRingColor, winFillColor, drawRingColor, drawRingActive, gemRow, gemText, gemTextVisible }: { label: string; username?: string | null; avatarId?: AvatarId; isOwn: boolean; aside?: ReactNode; barVerdict?: Verdict | null; drawBeat?: boolean; barShiftY?: number; lossRingColor?: string; winRingColor?: string; winFillColor?: string; drawRingColor?: string; drawRingActive?: boolean; gemRow?: ReactNode; gemText?: string; gemTextVisible?: boolean }) {
   const win = barVerdict === 'win';
   const { contentVisible, fillShown, settled } = useWinReveal(win);
 
@@ -1247,7 +1266,11 @@ function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdi
         barVerdict === 'lose' && (lossRingColor ? 'ring-[3px]' : 'ring-[3px] ring-destructive'),
         // Ticket 2026-09-16#7 item 4: same shape again — an opt-in `drawRingColor` (Mines only,
         // today) swaps the shared `ring-amber-400` for Mines' own #FF8A1E.
-        barVerdict === 'draw' && (drawRingColor ? 'ring-[3px]' : 'ring-[3px] ring-amber-400'),
+        // Ticket 2026-09-25#5: `barVerdict === 'draw'` never actually fires for Mines — its own
+        // `outcome()` only ever returns `win`/`void` (an internal draw always replays instead) —
+        // so this was dormant infrastructure until now. `drawRingActive` is the real trigger,
+        // driven by `MinesHubScreen`'s own internal-draw hold state, not the (Mines-inert) verdict.
+        (barVerdict === 'draw' || drawRingActive) && (drawRingColor ? 'ring-[3px]' : 'ring-[3px] ring-amber-400'),
         // Ticket 2026-09-16#4 item 4: same shape as `lossRingColor` above — an opt-in `winRingColor`
         // (Dice only, today) swaps `outlineClasses('win')`'s `ring-success`/glow-shadow classes for a
         // plain inline-colored ring (no glow, matching the loss side's own precedent), so Dice's win
@@ -1259,7 +1282,7 @@ function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdi
       style={{
         ...(barShiftY != null ? { transform: `translateY(${barShiftY}px)`, transition: 'transform 620ms cubic-bezier(0.3,0.9,0.32,1)' } : undefined),
         ...(barVerdict === 'lose' && lossRingColor ? { '--tw-ring-color': lossRingColor } as CSSProperties : undefined),
-        ...(barVerdict === 'draw' && drawRingColor ? { '--tw-ring-color': drawRingColor } as CSSProperties : undefined),
+        ...((barVerdict === 'draw' || drawRingActive) && drawRingColor ? { '--tw-ring-color': drawRingColor } as CSSProperties : undefined),
         ...(win && settled && winRingColor ? { '--tw-ring-color': winRingColor } as CSSProperties : undefined),
       }}
     >

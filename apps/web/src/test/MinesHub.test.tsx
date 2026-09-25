@@ -301,6 +301,113 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
   });
 
+  // Ticket 2026-09-25#5 (ADVISOR_TO_PM.md, D51): an ordinary mid-match draw is neither revealed
+  // nor reset today — root cause 1 (resultPhase's own reset only fires on a genuinely new
+  // currentMatchId, never an internal replay) AND root cause 2 (the server's redeal is synchronous,
+  // so by the time ANY client sees the round as resolved, the live board is already the NEXT
+  // round's reset data — not even the OWN player's board survives). Fixed via a server-side
+  // snapshot in the new_round event's payload (mines.ts's resolve()) + a client-side hold
+  // mirroring RPS's own tieReveal, driving the board/gem-counts off the frozen snapshot for
+  // DRAW_HOLD_MS before releasing back to the (already-fresh) live state.
+  describe('ticket 2026-09-25#5: an ordinary draw is revealed then reset (not silently stuck)', () => {
+    // The exact scenario that independently surfaced a SECOND bug beyond what the ticket
+    // describes: alice (the current player) locks FIRST here — bob's own lock is what actually
+    // resolves the draw, and by construction (redeal is synchronous, before any broadcast) LIVE
+    // `opp.locked` can NEVER be observed true for the round that just drew. Without also fixing
+    // the 'converge'→'reveal' gate to accept `drawReveal` as proof-of-opponent-locked, resultPhase
+    // would get stuck at 'converge' forever in exactly this ordering — even earlier than the
+    // "stuck at final" symptom Designer originally reported.
+    function drawEvent(draws: number, uncovered: number[], bustedOn: number, mines: number[]) {
+      return [{
+        type: 'new_round',
+        payload: {
+          round: 1,
+          draws,
+          boards: {
+            alice: { uncovered, locked: true, bustedOn, score: uncovered.length },
+            bob: { uncovered, locked: true, bustedOn, score: uncovered.length },
+          },
+          mines,
+        },
+      }];
+    }
+
+    it('shows the drawn round\'s REAL data (not blank) immediately, gates taps off entirely, and the ring lights on BOTH bars', async () => {
+      vi.useFakeTimers();
+      try {
+        // alice busts first (locks at 3 gems) — this is the "current player locks before the
+        // opponent" ordering the independent finding above is scoped to. Her own REASON_DELAY_MS
+        // (1500ms for a bust) starts ticking from HERE, well before the draw itself resolves.
+        const gameState = view({ uncovered: [0, 1, 2], locked: true, bustedOn: 10 }, { locked: false });
+        const { rerender } = render(
+          <MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: asLegal([]) })} />,
+        );
+
+        // Bob (the opponent) takes a while, THEN also locks at 3 gems (a real tie) — a real 1000ms
+        // gap, so alice's own converge-delay (1500ms total) and the draw-hold's own 1500ms (which
+        // only starts once the draw event actually arrives) are NOT coincidentally armed at the
+        // same instant — matching how they'd actually be offset in the real app (a player's own
+        // lock always precedes the match's own resolution by some real margin).
+        await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+
+        // Bob's lock resolves the draw and redeals SYNCHRONOUSLY, so this exact rerender already
+        // carries the FRESH, reset live gameState (round 1, both boards empty) — matching the
+        // server's real behavior precisely — alongside the new_round event carrying the drawn
+        // round's actual snapshot.
+        const freshState = view({ uncovered: [] }, { uncovered: [] }, { round: 1, draws: 1 });
+        rerender(
+          <MinesHubScreen
+            {...baseProps({ currentMatchId: 'm1', gameState: freshState, legalMoves: asLegal(allCovered), events: drawEvent(1, [0, 1, 2], 10, [10, 11, 12]) })}
+          />,
+        );
+        // The board shows the FROZEN drawn-round data — busted tile visible — not the fresh
+        // round's blank/covered board a naive live-only read would show.
+        expect(kind(10)).toBe('bustedOn');
+        expect(kind(0)).toBe('safe');
+        // Taps are disabled during the hold. NOTE: `me.locked` is always true in a draw snapshot
+        // by construction, so this doesn't independently isolate MinesBoard's own explicit
+        // `!drawHold` guard on `canMove` — see that guard's own comment for why it's kept anyway.
+        expect(screen.getByTestId('cell-3')).toBeDisabled();
+        // Gem counts show the frozen scores (3 each), not the fresh round's 0/0.
+        const ownBar = screen.getByTestId('hub-slot-own');
+        const oppBar = screen.getByTestId('hub-slot-opponent');
+        expect(within(ownBar).getByTestId('mines-gem-row').querySelectorAll('svg')).toHaveLength(3);
+        // The ring lights on BOTH bars — a genuinely new OpponentSlot capability.
+        expect(ownBar.className).toContain('ring-[3px]');
+        expect(ownBar.style.getPropertyValue('--tw-ring-color')).toBe('#FF8A1E');
+        expect(oppBar.className).toContain('ring-[3px]');
+        expect(oppBar.style.getPropertyValue('--tw-ring-color')).toBe('#FF8A1E');
+
+        // +500ms more (1500 total from alice's OWN lock): her converge lands. Independently-found
+        // fix: since live `opp.locked` can NEVER be observed true for this round (the redeal
+        // already happened by the time this broadcast exists), the 'converge'→'reveal' gate has to
+        // accept `drawReveal` itself as proof the opponent is locked — confirmed by the panel
+        // dimming (resultConverge) rather than getting stuck.
+        await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+        expect(screen.getByTestId('hub-mines-panel').style.opacity).toBe('0.28');
+
+        // +820ms more: reveal lands — the opponent's gem row becomes visible — WHILE the hold is
+        // still active (this is at +1320ms from the draw event, before the 1500ms hold elapses),
+        // proving the two systems compose correctly rather than the reveal only coincidentally
+        // landing after the hold already released.
+        await act(async () => { await vi.advanceTimersByTimeAsync(820); });
+        expect(within(oppBar).getByTestId('mines-gem-row').style.opacity).toBe('1');
+        expect(kind(10)).toBe('bustedOn'); // still frozen — the hold hasn't elapsed yet
+
+        // +180ms more (1500ms total from the draw event): the hold elapses — released back to the
+        // live, already-fresh round — board covered again, taps re-enabled, ring cleared.
+        await act(async () => { await vi.advanceTimersByTimeAsync(180); });
+        expect(kind(0)).toBe('covered');
+        expect(kind(10)).toBe('covered');
+        expect(screen.getByTestId('cell-3')).not.toBeDisabled();
+        expect(screen.getByTestId('hub-slot-own').className).not.toContain('ring-[3px]');
+        expect(screen.getByTestId('hub-slot-opponent').className).not.toContain('ring-[3px]');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   // Ticket 2026-09-12#2 item 3(b) (ADVISOR_TO_PM.md): `suppressResultOverlay` + `ownBarResult` are
   // now wired on Mines' `<GameHub>` call — the same reference pattern `CoinflipHub.tsx` uses. The
   // separate result pop-up (this test used to assert appeared) no longer renders at all; the win/

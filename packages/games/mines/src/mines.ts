@@ -151,9 +151,21 @@ function resolve(s: MinesState, now: number): GameEvent[] {
     s.forcedOutcome = { type: 'void' };
     return [{ type: 'match_voided', payload: { reason: 'draw_cap', draws: s.draws } }];
   }
+  // 2026-09-25#5 (ADVISOR_TO_PM.md): snapshot BOTH players' pre-redeal boards + the mine layout
+  // into the `new_round` payload before `redeal()` overwrites `s.boards` in place — mirroring
+  // RPS's own `revealedChoices` precedent (`packages/games/rps/src/rps.ts`'s `resolve()`) for
+  // the identical class of problem: `redeal()` runs synchronously in THIS SAME call, before any
+  // client ever sees the drawn round's own data, so without this snapshot the data is gone
+  // before it's ever transmitted — not even for one tick. Safe to reveal BOTH boards fully here:
+  // `decide()`'s own precondition for reaching this branch at all is both players locked, the
+  // exact same condition `viewFor`'s own terminal branch already uses to justify a full reveal.
+  const boards = Object.fromEntries(
+    s.players.map((p) => [p, { ...s.boards[p], score: score(s.boards[p]) }]),
+  );
+  const mines = [...minesFor(s.seed, s.round, BOARD_SIZE, MINE_COUNT)].sort((a, b) => a - b);
   s.round += 1;
   redeal(s, now);
-  return [{ type: 'new_round', payload: { round: s.round, draws: s.draws } }];
+  return [{ type: 'new_round', payload: { round: s.round, draws: s.draws, boards, mines } }];
 }
 
 const meta: GameMeta = {
