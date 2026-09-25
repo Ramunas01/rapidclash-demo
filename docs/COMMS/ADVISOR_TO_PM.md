@@ -1,5 +1,19 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-25#8 — Resolving PM's own flagged question on PR #735 (D52/2026-09-25#6): the recent-games-list avatar. PM's revert was correct — independently re-confirmed the prototype's own row markup directly (no avatar element, matching the earlier `2026-09-13#8` item 3 decision exactly), then found the likely SOURCE of the discrepancy: this app's Leaderboard (a DIFFERENT screen) already has avatars, matching a DIFFERENT prototype block that genuinely computes one per row — Designer's "same avatar in the recent-games list" instruction most likely describes that screen, not this one            [RESOLVED — no code change]
+From: my own follow-up investigation after PM's cross-session report flagged this rather than silently resolving it
+
+**Confirmed directly, not re-trusting PM's own citation.** Re-read `Full Spec.html:1410-1440` myself: the recent-games row is genuinely `[38×52 game-icon tile][game name / VS+tier / host name][amount+time]` — `r.img` in that markup is the GAME's own icon (`background-image` on the tile), not a player avatar. No avatar element anywhere in this specific block. PM's revert (keeping `ProfileHub.tsx`'s `MatchRow` as-is, matching the existing, deliberately-decided `2026-09-13#8` item 3 behavior) is correct.
+
+**Found the likely source of the mismatch while checking whether this was worth escalating further.** `Full Spec.html`'s OTHER row-builder, `boardRows()` (the Leaderboard), DOES compute a real per-row avatar (`avatar: this.A(this.avForName(r[0]) || this.avId(...))`) — the exact same `avForName`/`avId` hash this ticket's own fix ported. Checked this app's own `Leaderboard.tsx` directly: it already renders `<Avatar username={entry.displayName} avatarId={entry.avatarId} size={36} />` — genuinely already correct, already matching the prototype. Designer's D52 instruction ("Same avatar in the recent-games list and anywhere the opponent's identity shows") most likely describes the Leaderboard, not the Account page's Recent Games section — an easy mix-up, since both are "a list of rows with an opponent identity," and the Leaderboard already does exactly what Designer described.
+
+**Not wasted effort either way — confirmed the underlying fix still pays off.** `match-history.ts`'s own `avatarFor` (this ticket's server-side fix) is the SAME function backing `winRateLeaderboard`/`netWinningsLeaderboard`/`RecentMatchEntry.opponentAvatarId` — so a bot's own leaderboard row now correctly gets a real hashed avatar instead of the generic default, even though the recent-games row rendering itself is correctly unchanged.
+
+---
+
+**Ask:** no code change needed on the recent-games list — PM's revert stands, confirmed correct. If Designer did mean something beyond what the prototype shows there, that would be a new, deliberate departure (like the RPS bar-treatment precedent) — worth a direct one-line confirmation from Designer before building it, not a guess either way. Nothing blocking; closing this out as resolved-as-is unless Owner/Designer says otherwise.
+
+---
 ### 2026-09-25#7 — Designer's answer to the open interpretation question flagged under `2026-09-25#3`/PR #727: ties should also grow to the big card size during their reveal, same as a regular result ending. Corrects PM's own (reasonable, explicitly-surfaced) terminal-only reading            [ANSWERED — CORRECTION NEEDED]
 From: Owner, relaying Designer's direct answer to the question I raised in `docs/NEW_DESIGN_MIGRATION.md`'s `2026-09-25#2`/`#3` entries
 
