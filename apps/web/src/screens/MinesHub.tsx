@@ -337,7 +337,7 @@ function RoundClock({ roundStartedAt, serverClockOffset, light }: { roundStarted
 // renderSlotAside) — this was pure duplicate chrome, not a missing-elsewhere feature. `onForfeit`
 // itself is untouched (still fully generic, shared infra — RPS/Chess/Blackjack's own real Resign
 // buttons still use it); only Mines' own now-orphaned Resign button is gone.
-function MinesBoard({ playerId, gameState, legalMoves, onMove, serverClockOffset = 0, currentMatchId }: GameAreaArgs & { currentMatchId: string | null }) {
+function MinesBoard({ playerId, gameState, legalMoves, onMove, serverClockOffset = 0, currentMatchId, drawHold }: GameAreaArgs & { currentMatchId: string | null; drawHold: MinesDrawSnapshot | null }) {
   const { resolved: themeResolved } = useTheme();
   const light = themeResolved === 'light';
   const view = gameState as MinesView | null;
@@ -346,7 +346,13 @@ function MinesBoard({ playerId, gameState, legalMoves, onMove, serverClockOffset
   const legalIdx = legalMoves as unknown as number[];
   const moveIdx = onMove as unknown as (i: number) => void;
 
-  const me = playerId ? view?.boards?.[playerId] : undefined;
+  // Ticket 2026-09-25#5: while a draw-reveal hold is active, `me` reads the FROZEN pre-redeal
+  // snapshot instead of the live board — the server has already redealt by the time this exact
+  // gameState update arrives (see `MinesHubScreen`'s own `drawReveal` doc comment for why), so the
+  // live board is genuinely the NEXT round's data, not the round that just drew.
+  const me = drawHold
+    ? (playerId ? drawHold.boards[playerId] : undefined)
+    : (playerId ? view?.boards?.[playerId] : undefined);
 
   const myUncovered = useMemo(() => new Set(me?.uncovered ?? []), [me?.uncovered]);
   const myLocked = me?.locked ?? false;
@@ -381,13 +387,27 @@ function MinesBoard({ playerId, gameState, legalMoves, onMove, serverClockOffset
   }, [roundKey, me?.uncovered, me?.bustedOn]);
 
   // The mine layout is present in my view only once I've locked (busted/cleared); at terminal
-  // it also arrives at the top level. Either way it's safe — I have no move left.
+  // it also arrives at the top level. Either way it's safe — I have no move left. During a
+  // draw-reveal hold, the snapshot's own top-level `mines` (the drawn round's layout) takes over —
+  // the server payload puts it there, not nested per-board, mirroring the terminal shape's
+  // top-level `mines` field above.
   const myMines = useMemo(
-    () => new Set(me?.mines ?? view?.mines ?? []),
-    [me?.mines, view?.mines],
+    () => new Set(drawHold ? drawHold.mines : (me?.mines ?? view?.mines ?? [])),
+    [drawHold, me?.mines, view?.mines],
   );
   const legalSet = useMemo(() => new Set(legalIdx), [legalIdx]);
-  const canMove = !myLocked && legalIdx.length > 0;
+  // Ticket 2026-09-25#5: taps must be gated OFF entirely during a draw-reveal hold, regardless of
+  // what the server's own (already-opened, next-round) legalMoves says — the server has already
+  // dealt the fresh round with open legalMoves by the time this event arrives, so a tap during the
+  // hold could otherwise land on the LIVE new round underneath the frozen overlay. Checked
+  // honestly rather than assumed: `!drawHold` is currently PROVABLY redundant with `!myLocked`
+  // here — `me` is sourced from `drawHold.boards[playerId]` whenever `drawHold` is set (above),
+  // and a draw snapshot only ever exists when BOTH players were locked (`decide()`'s own
+  // precondition for reaching that branch at all), so `myLocked` is always already true whenever
+  // `drawHold` is. Kept explicit anyway — this gate's own correctness shouldn't depend on tracing
+  // that invariant through `me`'s source, and it stays correct even if a future change ever made
+  // the snapshot's own locked-ness less absolute.
+  const canMove = !drawHold && !myLocked && legalIdx.length > 0;
 
   function cellKind(i: number): CellKind {
     if (bustedOn === i) return 'bustedOn';
@@ -506,7 +526,7 @@ function MinesBoard({ playerId, gameState, legalMoves, onMove, serverClockOffset
 // tile-reveal sound effect's own "seen" baseline per MATCH, not just per round (see that effect's
 // own doc comment on `MinesBoard`). Mines-only extension; every other game's `renderGameArea`
 // callback is unaffected.
-function MinesPanel(args: GameAreaArgs & { currentMatchId: string | null }) {
+function MinesPanel(args: GameAreaArgs & { currentMatchId: string | null; drawHold: MinesDrawSnapshot | null }) {
   const live = args.phase === 'in-match' || args.phase === 'result';
   return (
     <div
@@ -577,6 +597,20 @@ const REASON_DELAY_MS: Record<LockReason, number> = { bust: 1500, cleared: 500, 
 const REVEAL_AFTER_CONVERGE_MS = 820;
 const FINAL_AFTER_REVEAL_MS = 700;
 
+// Ticket 2026-09-25#5 (ADVISOR_TO_PM.md): an ordinary mid-match Mines draw internally replays in
+// the SAME escrow (never a terminal `outcome`), so none of `resultPhase`'s own GameHub-level
+// dismiss/hold machinery above applies to it at all — this needs its own RPS-`tieReveal`-style
+// hold, mirrored exactly per Advisor's own explicit recommendation (same 1500ms as RPS's
+// TIE_REVEAL_HOLD_MS). The snapshot itself comes from `mines.ts`'s `resolve()` (packages/games/
+// mines/src/mines.ts) — `redeal()` overwrites the live board data synchronously in the SAME call
+// that determines the draw, before any client ever sees it, so the frozen data has to travel in
+// the `new_round` event's own payload; there is nothing left to snapshot client-side.
+const DRAW_HOLD_MS = 1500;
+interface MinesDrawSnapshot {
+  boards: Record<string, MinesBoardView>;
+  mines: number[];
+}
+
 /** The 17px gem, no halo/blur, no opacity variance — `minesOppGemList`/`minesGems`'s own SVG
  *  (`Full Spec.html:445-451`/`:670-676`), byte-identical to `GemIcon`'s own path data at opacity 1
  *  (this is a SEPARATE small component, not a reuse of `GemIcon`, since the count-row instance
@@ -638,6 +672,41 @@ export function MinesHubScreen(props: GameHubScreenProps) {
   const revealArmedRef = useRef(false);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
+  // Ticket 2026-09-25#5 (ADVISOR_TO_PM.md): an ordinary mid-match Mines draw (internal replay,
+  // never a terminal `outcome`) needs its own RPS-`tieReveal`-style hold — see this file's own
+  // `DRAW_HOLD_MS`/`MinesDrawSnapshot` doc comment for why the data has to come from the server's
+  // `new_round` payload rather than anything reachable client-side. `prevDrawsRef` is keyed on the
+  // payload's own `draws` counter (mirroring RPS's `tieRevealSeq`) so the SAME draw is never
+  // re-captured twice across re-renders.
+  const [drawReveal, setDrawReveal] = useState<MinesDrawSnapshot | null>(null);
+  const prevDrawsRef = useRef<number | null>(null);
+  const drawRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (drawRevealTimerRef.current) clearTimeout(drawRevealTimerRef.current); }, []);
+  useEffect(() => {
+    const newRound = props.events?.find((e) => e.type === 'new_round');
+    const payload = newRound?.payload as { draws?: number; boards?: Record<string, MinesBoardView>; mines?: number[] } | undefined;
+    if (payload?.draws == null || payload.boards == null || payload.mines == null) return;
+    if (prevDrawsRef.current === payload.draws) return; // already captured this exact draw
+    prevDrawsRef.current = payload.draws;
+    setDrawReveal({ boards: payload.boards, mines: payload.mines });
+    if (drawRevealTimerRef.current) clearTimeout(drawRevealTimerRef.current);
+    drawRevealTimerRef.current = setTimeout(() => {
+      // Hold elapsed — release back to the live (already-fresh) gameState and reset the WHOLE
+      // result-phase machine to idle, mirroring the currentMatchId-change reset below exactly, so
+      // this component re-arms cleanly for whatever the next round brings (a further draw, or a
+      // genuine terminal lock). The live board is already correct by now (it always was — only
+      // the DISPLAY was frozen, never the underlying data), so no other cleanup is needed.
+      setDrawReveal(null);
+      setLockReason(null);
+      setResultPhase('idle');
+      myLockedAtRef.current = null;
+      convergeArmedRef.current = false;
+      revealArmedRef.current = false;
+      timersRef.current.forEach(clearTimeout);
+      timersRef.current = [];
+    }, DRAW_HOLD_MS);
+  }, [props.events]);
+
   // Arm as soon as MY board locks, for ANY of the 3 real reasons — independent of the opponent;
   // 'converge' itself reveals no data, so it never needed to wait on them (see header comment).
   useEffect(() => {
@@ -659,13 +728,25 @@ export function MinesHubScreen(props: GameHubScreenProps) {
   // Once 'converge' lands, schedule 'reveal'/'final' either straight through (opponent already
   // locked) or held until an effect observes their `locked` flip true — re-checked on every
   // gameState update while held, firing exactly once via `revealArmedRef`.
+  //
+  // Ticket 2026-09-25#5: found independently while checking this was actually buildable — for an
+  // ORDINARY DRAW specifically, live `opp?.locked` can NEVER be observed true for the round that
+  // just drew. `redeal()` overwrites both boards synchronously in the SAME server call that
+  // determines the draw, before any broadcast goes out — so the one update that would have shown
+  // the opponent's lock already shows the FRESH round's reset (`locked: false`) instead. When the
+  // current player locks BEFORE the opponent (the opponent's lock is the one that resolves the
+  // draw), this effect's `!opp?.locked` check would never see it flip true, leaving `resultPhase`
+  // stuck at 'converge' forever — even earlier than the "stuck at final" symptom Designer
+  // originally reported. `drawReveal` becoming non-null is itself sufficient proof the opponent is
+  // (or, by the time this renders, was) locked — `decide()`'s own precondition for a draw is both
+  // players locked — so it satisfies this gate exactly like a live `opp.locked` would have.
   useEffect(() => {
     if (resultPhase !== 'converge' || revealArmedRef.current) return;
-    if (!opp?.locked) return; // still held — re-runs on the next gameState update
+    if (!opp?.locked && !drawReveal) return; // still held — re-runs on the next update
     revealArmedRef.current = true;
     timersRef.current.push(setTimeout(() => setResultPhase('reveal'), REVEAL_AFTER_CONVERGE_MS));
     timersRef.current.push(setTimeout(() => setResultPhase('final'), REVEAL_AFTER_CONVERGE_MS + FINAL_AFTER_REVEAL_MS));
-  }, [resultPhase, opp?.locked]);
+  }, [resultPhase, opp?.locked, drawReveal]);
 
   // A new match starts its own sequence — reset the baseline so a prior match can't leak state in.
   // `prevMatchIdRef` starts at the sentinel `undefined` (not `null`) specifically so this does NOT
@@ -684,6 +765,13 @@ export function MinesHubScreen(props: GameHubScreenProps) {
       revealArmedRef.current = false;
       timersRef.current.forEach(clearTimeout);
       timersRef.current = [];
+      // Ticket 2026-09-25#5: defensive — mirrors RPS's own terminal-always-wins clear of a
+      // still-pending tieReveal. A genuinely new match starting mid-hold shouldn't be reachable in
+      // practice (the same margin RPS's own doc comment reasons about), but this stays correct
+      // regardless rather than leaning on that timing margin alone.
+      setDrawReveal(null);
+      prevDrawsRef.current = null;
+      if (drawRevealTimerRef.current) { clearTimeout(drawRevealTimerRef.current); drawRevealTimerRef.current = null; }
     }
   }, [props.currentMatchId]);
   useEffect(() => () => timersRef.current.forEach(clearTimeout), []);
@@ -691,14 +779,21 @@ export function MinesHubScreen(props: GameHubScreenProps) {
   // Live at render time, never a captured snapshot — the count only ever reflects what the server
   // has ACTUALLY sent (may still be `undefined` for the opponent briefly after 'converge' fires, if
   // their own round somehow hadn't resolved yet; `GemCountRow` simply renders nothing until then).
-  const myGemCount = me?.uncovered?.length ?? 0;
-  const oppGemCount = opp?.score ?? 0;
+  // Ticket 2026-09-25#5: during a draw-reveal hold, both counts source from the frozen snapshot
+  // instead — the live values are already the next round's reset counts by the time this renders.
+  const myGemCount = drawReveal
+    ? (props.playerId ? drawReveal.boards[props.playerId]?.score ?? 0 : 0)
+    : (me?.uncovered?.length ?? 0);
+  const oppGemCount = drawReveal
+    ? (props.opponentId ? drawReveal.boards[props.opponentId]?.score ?? 0 : 0)
+    : (opp?.score ?? 0);
 
   // Ticket 2026-09-22#2 (D39): threads currentMatchId down to MinesPanel/MinesBoard — see
-  // MinesPanel's own doc comment for why.
+  // MinesPanel's own doc comment for why. Ticket 2026-09-25#5: `drawHold` threaded the same way —
+  // `MinesBoard` needs the frozen snapshot to render off during a draw-reveal hold.
   const renderGameArea = useCallback(
-    (args: GameAreaArgs) => <MinesPanel {...args} currentMatchId={props.currentMatchId} />,
-    [props.currentMatchId],
+    (args: GameAreaArgs) => <MinesPanel {...args} currentMatchId={props.currentMatchId} drawHold={drawReveal} />,
+    [props.currentMatchId, drawReveal],
   );
 
   return (
@@ -706,6 +801,10 @@ export function MinesHubScreen(props: GameHubScreenProps) {
       gameId="mines"
       gameName="Mines"
       renderGameArea={renderGameArea}
+      // Ticket 2026-09-25#5: lights the SAME orange ring on BOTH bars during a draw-reveal hold —
+      // see GameHubProps' own doc comment for the full chain (a genuinely new OpponentSlot
+      // capability, not a consequence of OwnSlot's already-dormant drawRingColor infrastructure).
+      drawRingActive={drawReveal !== null}
       // Ticket 2026-09-11#10 item 1: Mines measures the real bar-slide magnitude live, matching the
       // prototype's own `startMines()` (`Full Spec.html:3341-3348`) — never the flat ±123px RPS uses.
       matchBarSlide="measured"

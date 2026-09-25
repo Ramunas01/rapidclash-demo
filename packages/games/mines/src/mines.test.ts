@@ -403,6 +403,36 @@ describe('minesModule — a tie re-deals a fresh board (not a refund) — unchan
     expect(as(s).boards[B]).toEqual({ uncovered: [], locked: false });
   });
 
+  // Ticket 2026-09-25#5 (ADVISOR_TO_PM.md): `redeal()` overwrites `s.boards` in the SAME
+  // synchronous call, before any client ever sees the drawn round as resolved — the client-side
+  // fix (MinesHub.tsx's own hold/reveal) needs a snapshot of the round that just drew, since the
+  // live state it would otherwise read is already the NEXT round's fresh, empty boards by the
+  // time this event is ever transmitted. Mirrors RPS's own `revealedChoices` precedent exactly.
+  it("the new_round event snapshots BOTH players' pre-redeal boards + the drawn round's own mine layout — the data root cause 2 needs, not just the reset signal", () => {
+    const safe = safeSquares(0);
+    let s = mines.init([A, B], rngWith(SEED));
+    s = mines.applyMove(s, safe[0], ctx(A, 100)).state;
+    s = mines.applyMove(s, safe[1], ctx(A, 150)).state;
+    s = mines.applyMove(s, aMine(0), ctx(A, 200)).state; // A locked at 2 (bust)
+    s = mines.applyMove(s, safe[0], ctx(B, 300)).state;
+    s = mines.applyMove(s, safe[1], ctx(B, 350)).state;
+    const r = mines.applyMove(s, aMine(0), ctx(B, 400)); // B locked at 2 (bust) → tie → replay
+    const newRound = r.events.find((e) => e.type === 'new_round');
+    expect(newRound).toBeDefined();
+    const payload = (newRound as { payload: { boards: Record<string, { uncovered: number[]; locked: boolean; bustedOn: number; score: number }>; mines: number[] } }).payload;
+    // The drawn round's REAL data — not the fresh replay's empty boards the live state already
+    // shows by this point (`as(r.state).boards[A]` would be `{ uncovered: [], locked: false }`).
+    expect(payload.boards[A]).toEqual({ uncovered: [safe[0], safe[1]], locked: true, bustedOn: aMine(0), score: 2 });
+    expect(payload.boards[B]).toEqual({ uncovered: [safe[0], safe[1]], locked: true, bustedOn: aMine(0), score: 2 });
+    // The layout for the round that just drew (round 0), not the replay's fresh round 1 layout —
+    // computed BEFORE `s.round += 1` in resolve(), confirmed against the same deterministic seed.
+    expect([...payload.mines].sort((a, b) => a - b)).toEqual([...mineSet(0)].sort((a, b) => a - b));
+    // Sanity: the LIVE state (what a naive fix would have read instead) is already the fresh
+    // replay's own reset boards by the time this same event exists — proving the snapshot is
+    // genuinely necessary, not redundant with what's already reachable off `r.state`.
+    expect(as(r.state).boards[A]).toEqual({ uncovered: [], locked: false });
+  });
+
   it('the replay round restamps roundStartedAt from the moment resolution happened (fresh 30s cap)', () => {
     const safe = safeSquares(0);
     let s = mines.init([A, B], rngWith(SEED));
@@ -607,10 +637,17 @@ describe('minesModule via the real core matchmaking sweep (ADR-012 end-to-end, n
     expect(res[0].events).toEqual([{ type: 'player_locked', payload: { playerId: 'alice', reason: 'timeout' } }]);
     // bob locks SECOND — alice is already locked, so this is the lock that resolves the match;
     // viewFor would reveal bob's score to alice regardless, so the event may carry it too.
-    expect(res[1].events).toEqual([
-      { type: 'player_locked', payload: { playerId: 'bob', reason: 'timeout', score: 0 } },
-      { type: 'new_round', payload: { round: 1, draws: 1 } },
-    ]);
+    expect(res[1].events[0]).toEqual({ type: 'player_locked', payload: { playerId: 'bob', reason: 'timeout', score: 0 } });
+    // Ticket 2026-09-25#5 (ADVISOR_TO_PM.md): `new_round` now also snapshots both players'
+    // pre-redeal boards + the mine layout (mirroring RPS's `revealedChoices` precedent) — the
+    // real match uses matchmaking's own injected rng, so the seed isn't the fixed `SEED` constant
+    // other tests in this file use; asserting shape/values that don't depend on the exact seed.
+    const newRound = res[1].events[1];
+    expect(newRound).toMatchObject({ type: 'new_round', payload: { round: 1, draws: 1 } });
+    const payload = (newRound as { payload: { boards: Record<string, { uncovered: number[]; locked: boolean; score: number }>; mines: number[] } }).payload;
+    expect(payload.boards.alice).toEqual({ uncovered: [], locked: true, score: 0 });
+    expect(payload.boards.bob).toEqual({ uncovered: [], locked: true, score: 0 });
+    expect(payload.mines).toHaveLength(MINE_COUNT);
     // Both at 0 → an internal draw → replay, NOT a settled match (still active).
     expect(res[1].terminal).toBe(false);
     expect(mm.getActiveMatch(matchId)).toBeDefined();
