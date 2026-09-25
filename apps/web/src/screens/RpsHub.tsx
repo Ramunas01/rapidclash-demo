@@ -315,8 +315,11 @@ function RpsIdle() {
  * removed `RpsReveal` overlay component's identical formula — Full Spec.html:3808-3810's
  * `rpsLeftFrame`/`rpsRightFrame`): mine turns green/red/orange on win/lose/void, the opponent's only
  * ever turns orange on void or an ordinary tie, otherwise stays the neutral white frame both cards
- * use pre-reveal. Card SIZE growth (`cardW`/`cardH` big geometry) stays terminal-only, unchanged
- * from ticket 2026-09-12#1 item 2 — an ordinary tie's reveal plays at the small geometry.
+ * use pre-reveal. Card SIZE growth (`cardW`/`cardH` big geometry, ticket 2026-09-12#1 item 2)
+ * plays for BOTH kinds of reveal as of ticket 2026-09-25#7 — Designer's own direct answer that an
+ * ordinary tie's reveal should "complete the full movement as if would be a regular result
+ * ending," same as terminal. Keyed off `revealActive`, not `terminal` alone — see that variable's
+ * own doc comment for the reversal's full reasoning.
  *
  * Composing the two reveals (a terminal outcome can never actually race a pending tie-reveal — the
  * tie-reveal's own full window is `REVEAL_PAUSE_MS + REVEAL_FLIP_TO_DONE_MS + TIE_REVEAL_HOLD_MS` ≈
@@ -403,12 +406,11 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, outcome, on
   // seq) — a fresh key restarts the 700ms pause → 'flip' (the opponent card mounts, 820ms rotateY +
   // translateX nudge) → +900ms more → 'done' (frame colors land, ~80ms after the 820ms flip
   // finishes). `null` (no active reveal) holds at 'grow'.
-  // Card SIZE (`cardW`/`cardH` below) stays a SEPARATE, terminal-only concern, unchanged from
-  // ticket 2026-09-12#1 item 2's still-valid decision — D49's "identical beats" is read here as the
-  // STATE-MACHINE TIMING all three outcomes now share, not a reopening of that geometry decision
-  // (D49's own text frames itself as answering D48's specifically pause-timing-scoped open question,
-  // not the separate, explicitly-preserved card-growth one) — flagged explicitly to Advisor/Owner as
-  // an interpretation worth a sanity check rather than assumed silently.
+  // Card SIZE (`cardW`/`cardH` below): ticket 2026-09-25#7 — Designer's own direct answer settled
+  // the interpretation question this comment used to flag here (was `terminal`-only, matching D49's
+  // STATE-MACHINE TIMING read narrowly) — an ordinary tie's reveal now grows to the big geometry
+  // too, keyed off `revealActive` below, same as everything else this reveal machine already
+  // unifies. See `revealActive`'s own doc comment for the correction's full reasoning.
   const REVEAL_PAUSE_MS = 700;
   const REVEAL_FLIP_TO_DONE_MS = 900;
   const TIE_REVEAL_HOLD_MS = 1500;
@@ -425,6 +427,10 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, outcome, on
     const t = setTimeout(() => setRevealStage('done'), REVEAL_FLIP_TO_DONE_MS);
     return () => clearTimeout(t);
   }, [revealStage]);
+  // "A reveal — terminal OR an ordinary tie — is currently active." Ticket 2026-09-25#7 extends
+  // this signal's use to `cardW`/`cardH`/`cardGap`/`vsWidth`'s own big-geometry growth (previously
+  // `terminal`-only) — Designer's own direct answer confirmed a tie's reveal should grow exactly
+  // like a terminal result's, not stay small. See those declarations' own comment for the citation.
   const revealActive = terminal || tieReveal != null;
   const revealDone = revealActive && revealStage === 'done';
   // Ticket 2026-09-25#3 item 2 (ADVISOR_TO_PM.md): fires the shared bar-lighting signal the instant
@@ -441,19 +447,23 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, outcome, on
   }, [terminal, revealDone, onRevealComplete]);
   const myFrame = mineWon ? FRAME_WIN : oppWon ? FRAME_LOSE : neutralOutcome ? FRAME_DRAW : tieReveal ? FRAME_DRAW : FRAME_NEUTRAL;
   const oppFrame = neutralOutcome ? FRAME_DRAW : tieReveal ? FRAME_DRAW : FRAME_NEUTRAL;
-  // Ticket 2026-09-12#1 item 2 (ADVISOR_TO_PM.md): `rpsExpanded()`'s big geometry, keyed off
-  // `terminal` — deliberately match-end ONLY, not the tied-round reveal beat below. In the
-  // prototype's own single phase machine `rpsExpanded()` (reveal/flip/done) actually also covers a
-  // tie's 'flip' moment, so its cards grow there too — but this codebase's tie-reveal is a
-  // structurally separate, non-terminal "flash the real throw, hold, reset" beat (2026-09-11#9 item
-  // 2) built on its own local `tieReveal` state, not the prototype's shared phase field, so there is
-  // no faithful way to key growth off "the tie's flip sub-moment" here without inventing a second,
-  // unrelated timing window. Keeping growth strictly terminal-only is simpler, cannot desync from the
-  // match's real end, and never fights the tie-reveal's own 1.5s hold/reset timer for the frame size.
-  const cardW = terminal ? CARD_W_BIG : CARD_W;
-  const cardH = terminal ? CARD_H_BIG : CARD_H;
-  const cardGap = terminal ? CARD_GAP_BIG : CARD_GAP;
-  const vsWidth = terminal ? VS_WIDTH_BIG : VS_WIDTH;
+  // Ticket 2026-09-25#7 (ADVISOR_TO_PM.md): `rpsExpanded()`'s big geometry, keyed off
+  // `revealActive` (terminal OR an active tie-reveal) — Designer's own direct answer to the open
+  // question ticket 2026-09-25#3/PR #727 explicitly flagged: "Yes they should complete the full
+  // movement as if would be a regular result ending." REVERSES ticket 2026-09-12#1 item 2's
+  // original terminal-only decision for ties specifically, on new information (Designer's own
+  // confirmation), not a re-litigation of that decision's own original reasoning — which was sound
+  // at the time, before this build's tie-reveal was ever unified onto the terminal reveal's shared
+  // `revealStage` timing (2026-09-25#2/#3). Now that BOTH reveals already share one timing
+  // machine, keying growth off `terminal` alone (rather than `revealActive`, the same signal that
+  // machine already computes) would be the one remaining piece of the reveal NOT unified — this
+  // closes that gap. Scoped precisely, per Designer's own answer: only cardW/cardH/cardGap/vsWidth
+  // move — the clock-fade (`2026-09-25#2`'s own separate, narrower Beat 1 citation, "the pick
+  // window closing") stays terminal-only, not swept into this correction.
+  const cardW = revealActive ? CARD_W_BIG : CARD_W;
+  const cardH = revealActive ? CARD_H_BIG : CARD_H;
+  const cardGap = revealActive ? CARD_GAP_BIG : CARD_GAP;
+  const vsWidth = revealActive ? VS_WIDTH_BIG : VS_WIDTH;
   // The opponent's real throw — `viewFor` (rps.ts) stops redacting once the state is terminal, so
   // this is already the true value by the time `outcome` (and therefore `terminal`) arrives.
   const oppThrow = opponentId ? view?.choices?.[opponentId] : undefined;
@@ -550,9 +560,8 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, outcome, on
           // BOTH the terminal reveal (stays revealed — the match is over, no reset timer) and an
           // ordinary tie's reveal (the tie's own hold/reset timer above unmounts it later) — the
           // `revealKey`/`terminal ? oppThrow : tieReveal?.oppChoice` branches below are the only
-          // per-kind differences. `cardW`/`cardH` are the BIG geometry only when `terminal` — see
-          // `rpsExpanded()`'s comment above `cardW`'s declaration for why an ordinary tie keeps the
-          // small `CARD_W`/`CARD_H` instead (a deliberately preserved, unchanged decision).
+          // per-kind differences. `cardW`/`cardH` are the BIG geometry for BOTH kinds of reveal
+          // (ticket 2026-09-25#7) — see `cardW`'s own declaration for the citation.
           // Mount gated on `revealStage !== 'grow'` (Beat 2 — the 700ms pause), not `terminal`/
           // `tieReveal` directly — the redacted tile stays put through the pause even though the
           // cards have already grown (terminal case). `frame` stays neutral through 'flip', only
@@ -682,10 +691,11 @@ function RpsPanel({ currentMatchId, ...args }: GameAreaArgs & { currentMatchId: 
  *
  *  `RpsBoard` is the only caller (2026-09-11#10 item 2 relocated this from a separate `RpsReveal`
  *  overlay component, since removed, into the persistent board itself) — both its tied-round reveal
- *  (2026-09-11#9 item 2, always the small `CARD_W`/`CARD_H`) and its terminal reveal (2026-09-12#1
- *  item 2, the big `cardW`/`cardH` once `terminal`) pass the size explicitly so the card always
- *  matches the live board's own rectangular frame at that moment; no default size remains since
- *  there's no longer a separate, smaller overlay-card usage to default for. The flip itself plays
+ *  (2026-09-11#9 item 2) and its terminal reveal (2026-09-12#1 item 2) pass `cardW`/`cardH` — the
+ *  big geometry for BOTH since ticket 2026-09-25#7 (keyed off `revealActive`, not `terminal` alone)
+ *  — explicitly, so the card always matches the live board's own rectangular frame at that moment;
+ *  no default size remains since there's no longer a separate, smaller overlay-card usage to
+ *  default for. The flip itself plays
  *  once per MOUNT (fixed `initial`/`animate` values) — callers that need it to replay must remount
  *  via a changing `key`, which `RpsBoard` does per tie (the terminal reveal never needs to replay —
  *  it's keyed once and stays).

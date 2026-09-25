@@ -334,7 +334,9 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     expect(screen.getByTestId('hub-board')).toBeInTheDocument();
     // The pick grid locks at terminal — no round left to pick into.
     expect(screen.getByTestId('hub-move-rock')).toBeDisabled();
-    // Item 3: no bar-level "You Win" — `ownBarResult` is gone, RPS never lights the shared bar verdict.
+    // Item 3: no bar-level "You Win" YET — since ticket 2026-09-25#3, `ownBarResult` lights the
+    // bar once RpsBoard's own revealStage reaches 'done' (gateResultOnReveal), not the instant
+    // terminal/outcome lands — checked here before any time passes, so it's correctly still unlit.
     expect(screen.queryByTestId('hub-slot-own-verdict')).toBeNull();
     // Item 2: both cards grow to the expanded (`rpsExpanded()`) geometry — 124×176, not 92×130.
     // Beat 1 fires immediately at `terminal`, unstaged — this codebase's own doc comment on
@@ -462,31 +464,55 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     expect(screen.getByTestId('rps-countdown').parentElement!.style.transform).toContain('scale(0.55)');
   });
 
-  // 2026-09-12#1 item 2 (ADVISOR_TO_PM.md): the card-enlargement logic is keyed strictly off
-  // `terminal` (match end) — it must NOT fire during the separate, non-terminal tied-round reveal
-  // beat (2026-09-11#9 item 2), which stays at the small geometry throughout.
-  it("2026-09-12#1 item 2: the tied-round reveal beat stays at the SMALL card geometry — enlargement is terminal-only, not shared with the tie-reveal", () => {
+  // Ticket 2026-09-25#7 (ADVISOR_TO_PM.md) — Designer's own direct answer to the open question
+  // ticket 2026-09-25#3/PR #727 flagged: "Yes they should complete the full movement as if would
+  // be a regular result ending." REVERSES this test's own prior assertion (ticket 2026-09-12#1
+  // item 2's original terminal-only decision) for ties specifically — an ordinary tie's reveal now
+  // grows to the BIG 124×176 geometry too, same as terminal, since both reveals already share one
+  // `revealStage` timing machine (2026-09-25#2/#3).
+  it("2026-09-25#7: the tied-round reveal beat ALSO grows to the BIG card geometry, same as a terminal result — then shrinks cleanly back to small once the hold resets", () => {
     vi.useFakeTimers();
     try {
       const gameState: RpsView = { players: ['pid', 'bob'], choices: {}, round: 1 };
       const events = [
         { type: 'new_round', payload: { round: 1, replays: 1, revealedChoices: { pid: 'rock', bob: 'scissors' } } },
       ];
-      render(
+      const { rerender } = render(
         <RpsHubScreen
           {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock', 'paper', 'scissors'], events })}
         />,
       );
-      // The tie-reveal is armed (real opponent throw visible, past its shared 700ms pause), but the
-      // card stays at the SMALL 92×130 geometry — not the 124×176 `rpsExpanded()` size item 2
-      // introduces for terminal only.
+      // The tie-reveal is armed (real opponent throw visible, past its shared 700ms pause) — the
+      // card now grows to the BIG 124×176 geometry, not the small 92×130 it used to stay at.
       act(() => { vi.advanceTimersByTime(700); });
-      expect(screen.getByTestId('hub-opponent-pick-revealed').style.width).toBe('92px');
-      expect(screen.getByTestId('hub-opponent-pick-revealed').style.height).toBe('130px');
+      expect(screen.getByTestId('hub-opponent-pick-revealed').style.width).toBe('124px');
+      expect(screen.getByTestId('hub-opponent-pick-revealed').style.height).toBe('176px');
+      expect(screen.getByTestId('hub-my-pick-frame').style.width).toBe('124px');
+      expect(screen.getByTestId('hub-my-pick-frame').style.height).toBe('176px');
+      // The picker row is still live (not collapsed) — the match isn't over, just this round tied.
+      // Untouched by this ticket: the collapse logic stays keyed on `terminal` alone.
+      expect(screen.getByTestId('hub-move-rock')).not.toBeDisabled();
+
+      // Advisor's own flagged check, not a new open question: once the hold elapses and the tie
+      // resets to redacted for the next round, the geometry shrinks cleanly back down — growing
+      // bigger first doesn't leave it stuck, or break the existing shrink transition.
+      act(() => { vi.advanceTimersByTime(900 + 1500); });
+      expect(screen.getByTestId('hub-opponent-pick')).toBeInTheDocument(); // back to redacted
       expect(screen.getByTestId('hub-my-pick-frame').style.width).toBe('92px');
       expect(screen.getByTestId('hub-my-pick-frame').style.height).toBe('130px');
-      // The picker row is still live (not collapsed) — the match isn't over, just this round tied.
-      expect(screen.getByTestId('hub-move-rock')).not.toBeDisabled();
+
+      // A SECOND tie in the SAME match (round bumps again) reproduces the same grow correctly —
+      // confirming the reset genuinely re-armed the machine, not just a one-shot fluke.
+      const events2 = [
+        { type: 'new_round', payload: { round: 2, replays: 2, revealedChoices: { pid: 'paper', bob: 'paper' } } },
+      ];
+      rerender(
+        <RpsHubScreen
+          {...baseProps({ currentMatchId: 'm1', gameState: { ...gameState, round: 2 }, legalMoves: ['rock', 'paper', 'scissors'], events: events2 })}
+        />,
+      );
+      act(() => { vi.advanceTimersByTime(700); });
+      expect(screen.getByTestId('hub-opponent-pick-revealed').style.width).toBe('124px');
     } finally {
       vi.useRealTimers();
     }
