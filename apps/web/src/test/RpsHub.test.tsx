@@ -278,10 +278,15 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     expect(own.queryByTestId('avatar-glyph')).toBeNull();
   });
 
-  it('REDACTION: the in-match opponent bar stays the neutral silhouette regardless of MY avatar (opponent avatarId is never on the wire)', () => {
+  it('the in-match opponent bar falls back to the neutral silhouette when no opponentAvatarId is supplied (idle/pre-resolution default, not redaction)', () => {
     const gameState: RpsView = { players: ['pid', 'bob'], choices: {} };
-    // I picked a colourful preset; the opponent slot must NOT reflect any avatar — it has no avatarId
-    // source at all (the opponent's stored avatar is never sent in-match, Charter #2).
+    // I picked a colourful preset; the opponent slot must NOT reflect MY avatar — it has its own,
+    // separate opponentAvatarId source. Ticket 2026-09-25#6 REVERSES the earlier "opponent avatar
+    // is never sent in-match (Charter #2)" assumption — that mis-cited invariant #2 (server
+    // authority, not identity redaction), and the opponent's real avatar IS now sent server-side
+    // (MatchStartPayload.opponentAvatarId). This test only covers the omitted-prop case (falls
+    // back to 'default', the same safe default the own avatar itself uses) — see the next test for
+    // the real-avatar-supplied case.
     render(<RpsHubScreen {...baseProps({ avatarId: 'rc-02', currentMatchId: 'm1', gameState, legalMoves: ['rock'] })} />);
     const opp = within(screen.getByTestId('hub-slot-opponent'));
     const oppAvatar = opp.getByTestId('avatar');
@@ -290,6 +295,30 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     expect(opp.getByTestId('avatar-glyph')).toBeInTheDocument(); // the neutral silhouette
     // NEUTRAL disc (no username) — distinct from any per-user disc.
     expect(oppAvatar.getAttribute('data-disc')).toBe('hsl(230, 10%, 88%)');
+  });
+
+  // Ticket 2026-09-25#6, Part 2: the literal grey-circle bug — `OpponentSlot`'s avatar was
+  // unconditionally 'default' once in-match, regardless of who the opponent was or what they
+  // picked. Fixed by threading the server-resolved `opponentAvatarId` through.
+  it('the in-match opponent bar shows the REAL, server-resolved opponentAvatarId once supplied — the grey-circle bug is fixed', () => {
+    const gameState: RpsView = { players: ['pid', 'bob'], choices: {} };
+    render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock'], opponentAvatarId: 'rc-07' })} />);
+    const opp = within(screen.getByTestId('hub-slot-opponent'));
+    const oppAvatar = opp.getByTestId('avatar');
+    expect(oppAvatar.getAttribute('data-avatar-id')).toBe('rc-07');
+    expect(opp.getByTestId('avatar-img')).toBeInTheDocument();
+    expect(opp.queryByTestId('avatar-glyph')).toBeNull();
+  });
+
+  // Ticket 2026-09-25#6, Part 1: the settled (in-match) name display previously rendered
+  // `opponentName` completely raw — the 🤖 prefix and any @ both survived untouched.
+  it("the in-match opponent name strips the 🤖 disclosure prefix, matching Designer's own explicit ask", () => {
+    const gameState: RpsView = { players: ['pid', 'bob'], choices: {} };
+    render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock'], opponentName: '🤖@skyhook' })} />);
+    const opp = within(screen.getByTestId('hub-slot-opponent'));
+    expect(opp.getByText('skyhook')).toBeInTheDocument();
+    expect(opp.queryByText(/🤖/)).toBeNull();
+    expect(opp.queryByText(/@skyhook/)).toBeNull();
   });
 
   it('In-match: picks stay enabled and mutable for the whole window (timer-only-resolve #164)', () => {
@@ -879,8 +908,12 @@ describe('RpsHubScreen — opponent bar during matchmaking (ticket 2026-09-15#9)
     const botChallenge: OpenChallenge = { matchId: 'c2', ownerName: '🤖@sweeper', ownerTier: 'Unranked', stake: 50, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'none' };
     render(<RpsHubScreen {...baseProps({ initialStake: 10, waitingExpiresAt: Date.now() + 10_000, challengesByGame: { rps: [botChallenge] } })} />);
     const scan = within(screen.getByTestId('hub-slot-opponent')).getByTestId('hub-search-scan');
-    expect(scan.textContent).toBe('@sweeper');
+    // Ticket 2026-09-25#6, Part 1: `displayHostName` strips the 🤖 but always prepends its own
+    // `@` — OpponentSlot's own `stripBotDisclosure` now strips that too, so the scan reads the
+    // bare name, not `@sweeper`.
+    expect(scan.textContent).toBe('sweeper');
     expect(scan.textContent).not.toContain('🤖');
+    expect(scan.textContent).not.toContain('@');
   });
 });
 

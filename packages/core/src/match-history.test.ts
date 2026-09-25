@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import Database from 'better-sqlite3';
-import type { RankingType } from '@rapidclash/shared';
+import { avatarIdForName, stripBotDisclosure, type RankingType } from '@rapidclash/shared';
 import { createMatchHistory, type WinRateEntry } from './match-history.js';
 import { createLedger, PLATFORM_ACCOUNT } from './ledger.js';
 import { createRewards } from './rewards.js';
@@ -424,6 +424,69 @@ describe('createMatchHistory — getRecentMatches', () => {
     const [row] = mh.getRecentMatches('alice').matches;
     expect(row.opponentDisplayName).toBe('Bobby');
     expect(row.opponentAvatarId).toBe('rc-01');
+  });
+
+  // Ticket 2026-09-25#6 (ADVISOR_TO_PM.md): the identical "bot with no stored avatar" gap
+  // gateway.ts's own resolveAvatarId closes for the live-match opponent bar — fixed here too, per
+  // Designer's own "one source per opponent" instruction, rather than left half-done.
+  describe('ticket 2026-09-25#6: avatarFor\'s 3-way real/real-no-avatar/simulated split', () => {
+    it('a real stored (non-\'default\') avatar always wins outright, regardless of username', () => {
+      const db = freshDb();
+      const ledger = createLedger(db);
+      const lookupName = (id: string) => (id === 'bob' ? '🤖@ratbot' : undefined); // even a bot name
+      const lookupAvatar = (id: string) => (id === 'bob' ? ('rc-09' as const) : ('default' as const));
+      const mh = createMatchHistory(db, new Map([['rps', RPS_WIN_RATE]]), lookupName, lookupAvatar);
+      ledger.grant('alice');
+      ledger.grant('bob');
+      playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100);
+      const [row] = mh.getRecentMatches('alice').matches;
+      expect(row.opponentAvatarId).toBe('rc-09');
+    });
+
+    it('a bot-prefixed username with no stored avatar falls back to the SAME name-hash avatarIdForName computes — never plain \'default\'', () => {
+      const db = freshDb();
+      const ledger = createLedger(db);
+      const lookupName = (id: string) => (id === 'bob' ? '🤖@ratbot' : undefined);
+      const lookupAvatar = () => 'default' as const; // no account has ever set a real avatar
+      const mh = createMatchHistory(db, new Map([['rps', RPS_WIN_RATE]]), lookupName, lookupAvatar);
+      ledger.grant('alice');
+      ledger.grant('bob');
+      playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100);
+      const [row] = mh.getRecentMatches('alice').matches;
+      // Independently re-derived via the same shared function this module itself calls — not a
+      // hardcoded literal, so this stays correct if the hash formula ever changes, while still
+      // proving the fallback is genuinely computed, not just returning 'default'.
+      expect(row.opponentAvatarId).toBe(avatarIdForName(stripBotDisclosure('🤖@ratbot')));
+      expect(row.opponentAvatarId).not.toBe('default');
+    });
+
+    it('a genuine avatarless human (no bot prefix, no stored avatar) gets plain \'default\' — never guessed at', () => {
+      const db = freshDb();
+      const ledger = createLedger(db);
+      const lookupName = (id: string) => (id === 'bob' ? 'Bobby' : undefined); // no bot prefix
+      const lookupAvatar = () => 'default' as const;
+      const mh = createMatchHistory(db, new Map([['rps', RPS_WIN_RATE]]), lookupName, lookupAvatar);
+      ledger.grant('alice');
+      ledger.grant('bob');
+      playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100);
+      const [row] = mh.getRecentMatches('alice').matches;
+      expect(row.opponentAvatarId).toBe('default');
+    });
+
+    it('omitted lookupAvatar entirely (undefined) still resolves the bot-prefixed fallback — displayNameFor\'s own id-echo default is not treated as a real stored value', () => {
+      const db = freshDb();
+      const ledger = createLedger(db);
+      const lookupName = (id: string) => (id === 'bob' ? '🤖@ratbot' : undefined);
+      // No lookupAvatar arg at all — every prior test in this file that omits it expects 'default'
+      // for every entry; confirms this ticket's fix doesn't regress THAT baseline while still
+      // computing the bot fallback correctly when a name IS resolvable.
+      const mh = createMatchHistory(db, new Map([['rps', RPS_WIN_RATE]]), lookupName);
+      ledger.grant('alice');
+      ledger.grant('bob');
+      playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100);
+      const [row] = mh.getRecentMatches('alice').matches;
+      expect(row.opponentAvatarId).toBe(avatarIdForName(stripBotDisclosure('🤖@ratbot')));
+    });
   });
 
   it('reframes outcome from the viewer\'s own perspective: win, loss, and draw', () => {

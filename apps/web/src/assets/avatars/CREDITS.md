@@ -1,17 +1,26 @@
 # Avatar preset assets — licence record
 
-## Current set: `rc-01`–`rc-10` (ticket 2026-09-13#7, added 2026-09-13)
+## Current set: `rc-01`–`rc-24` (ticket 2026-09-13#7, added 2026-09-13; widened to 24 by ticket
+## 2026-09-25#6, added 2026-09-25)
 
-Ten presets wired into `components/hub-shared/Avatar.tsx`'s `PRESETS` map, selectable via the
-Account page's inline avatar strip (`ProfileHub.tsx`). Sourced from the Designer's own prototype
-asset export (`design/prototype/assets/avatars/rc-01.png` through `rc-10.png`, part of the
-original prototype asset drop, PR #458) — the design tool's own exported assets, same category as
-every other UI icon already in use in this repo. **No licensing question for this set** — this
-retires the licensing-provenance risk two of the six presets below carried (see "Retired" below).
+Twenty-four presets wired into `components/hub-shared/Avatar.tsx`'s `PRESETS` map, selectable via
+the Account page's inline avatar strip (`ProfileHub.tsx` — still only the original ten, see its
+own separate `AVATAR_PRESETS` literal) and hashed into for the opponent-bar's avatar (`avatarIdForName`).
+Sourced from the Designer's own prototype asset export (`design/prototype/assets/avatars/rc-01.png`
+through `rc-24.png`, part of the original prototype asset drop, PR #458) — the design tool's own
+exported assets, same category as every other UI icon already in use in this repo. **No licensing
+question for this set** — this retires the licensing-provenance risk two of the six presets below
+carried (see "Retired" below).
+
+`rc-11`–`rc-24` were delivered again as a standalone zip alongside ticket 2026-09-25#6
+(`profile picture Avatars.zip`) — verified byte-for-byte identical to what was already sitting,
+unpulled, in `design/prototype/assets/avatars/` since the original PR #458 drop; sourced from that
+existing in-repo copy rather than the zip, so provenance stays identical to `rc-01`–`rc-10` above,
+not a new external delivery.
 
 | File | Source | Licence / use |
 |------|--------|---------------|
-| `rc-01.png`–`rc-10.png` | Designer's own prototype asset export (`design/prototype/assets/avatars/`) | Design tool's own export — no third-party rights asserted |
+| `rc-01.png`–`rc-24.png` | Designer's own prototype asset export (`design/prototype/assets/avatars/`) | Design tool's own export — no third-party rights asserted |
 
 ## Retired (ticket 2026-09-13#7): the six named presets
 

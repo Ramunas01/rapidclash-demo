@@ -146,13 +146,17 @@ describe('identity avatar persistence (Advisor #12 ii)', () => {
   });
 
   it('isAvatarId validates the enum (rejects anything else)', () => {
-    for (const ok of ['default', 'rc-01', 'rc-02', 'rc-03', 'rc-04', 'rc-05', 'rc-06', 'rc-07', 'rc-08', 'rc-09', 'rc-10']) {
+    // Ticket 2026-09-25#6: the pool widened rc-10 -> rc-24 — every one of the 14 new ids must
+    // validate too, not just the original ten.
+    for (const ok of ['default', 'rc-01', 'rc-02', 'rc-03', 'rc-04', 'rc-05', 'rc-06', 'rc-07', 'rc-08', 'rc-09', 'rc-10', 'rc-11', 'rc-12', 'rc-13', 'rc-14', 'rc-15', 'rc-16', 'rc-17', 'rc-18', 'rc-19', 'rc-20', 'rc-21', 'rc-22', 'rc-23', 'rc-24']) {
       expect(isAvatarId(ok)).toBe(true);
     }
     // Ticket 2026-09-13#7 items 1+2: the six previously-named presets (boy-light/girl-light/
     // boy-brown/boy-dark/hooded-mono/hooded-degen) are retired entirely, not kept alongside the
-    // ten new rc-01..rc-10 ids — a legacy stored id from any of them must now be rejected.
-    for (const bad of ['', 'boy', 'evil', 'pepe', 'doge', 'boy-light', 'girl-light', 'boy-brown', 'boy-dark', 'hooded-mono', 'hooded-degen', 'rc-11', 42, null, undefined, {}]) {
+    // rc-* ids — a legacy stored id from any of them must now be rejected. Ticket 2026-09-25#6:
+    // 'rc-11' moved from this rejected list to the accepted one above (the pool widened past it);
+    // 'rc-25' takes its place as the genuinely-still-out-of-range boundary case.
+    for (const bad of ['', 'boy', 'evil', 'pepe', 'doge', 'boy-light', 'girl-light', 'boy-brown', 'boy-dark', 'hooded-mono', 'hooded-degen', 'rc-25', 42, null, undefined, {}]) {
       expect(isAvatarId(bad)).toBe(false);
     }
   });
