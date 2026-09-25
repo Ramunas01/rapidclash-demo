@@ -170,7 +170,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
   // round's new_round event carries revealedChoices, and RpsBoard flips the opponent card to the
   // real throw, holds it, then resets to redacted — a real, intentional behavior change from "always
   // hidden pre-terminal", not a regression.
-  it("2026-09-11#9: a tied round's new_round event flips the opponent card to the real throw, holds ~1.5s, then resets to redacted", () => {
+  it("2026-09-11#9/2026-09-25#3: a tied round's new_round event flips the opponent card to the real throw (after the shared 700ms pause), holds, then resets to redacted", () => {
     vi.useFakeTimers();
     try {
       const gameState: RpsView = { players: ['pid', 'bob'], choices: {}, round: 1 };
@@ -182,6 +182,10 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
           {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock', 'paper', 'scissors'], events })}
         />,
       );
+      // Ticket 2026-09-25#3: the tie-reveal now shares the terminal reveal's own 700ms pre-flip
+      // pause — the redacted tile stays put immediately after the tie, not an instant flip.
+      expect(screen.getByTestId('hub-opponent-pick').querySelector('[data-rc-rps-icon="redacted"]')).toBeInTheDocument();
+      act(() => { vi.advanceTimersByTime(700); });
       // Flipped: the redacted blue-bolt tile is gone; the opponent's real (scissors) throw is now in
       // the DOM (both flip faces are always present — backface-visibility is a visual-only 3D property
       // jsdom doesn't lay out — so this asserts the revealed face was added, not that the hidden face
@@ -189,8 +193,9 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
       expect(screen.queryByTestId('hub-opponent-pick')).toBeNull();
       expect(screen.getByTestId('hub-opponent-pick-revealed').querySelector('[data-rc-rps-icon="scissors"]')).toBeInTheDocument();
 
-      // After the flip (820ms) + hold (~1.5s), it falls back to the redacted tile.
-      act(() => { vi.advanceTimersByTime(820 + 1500); });
+      // After the flip-to-done beat (900ms) + hold (~1.5s), it falls back to the redacted tile.
+      act(() => { vi.advanceTimersByTime(900); });
+      act(() => { vi.advanceTimersByTime(1500); });
       expect(screen.getByTestId('hub-opponent-pick').querySelector('[data-rc-rps-icon="redacted"]')).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
@@ -214,11 +219,15 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
           {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock', 'paper', 'scissors'], events })}
         />,
       );
-      // The tie-reveal is armed, showing the opponent's just-tied scissors throw.
+      // The tie-reveal is armed and past its own 700ms pause, showing the opponent's just-tied
+      // scissors throw.
+      act(() => { vi.advanceTimersByTime(700); });
       expect(screen.getByTestId('hub-opponent-pick-revealed').querySelector('[data-rc-rps-icon="scissors"]')).toBeInTheDocument();
 
-      // Before its ~2.3s hold elapses, the match actually ends decisively — the terminal outcome
-      // must win immediately, not queue behind the tie-reveal's own timer.
+      // Before its ~3.1s hold elapses, the match actually ends decisively — the terminal outcome
+      // must win the RENDER immediately (no stale tie card, no duplicate/competing flip nodes) —
+      // ticket 2026-09-25#3: it still gets its OWN fresh 700ms pause (`revealKey` changing to
+      // 'terminal' resets `revealStage` back to 'grow'), so it shows redacted, not an instant rock.
       const terminalState: RpsView = { players: ['pid', 'bob'], choices: { pid: 'paper', bob: 'rock' } };
       act(() => {
         rerender(
@@ -232,15 +241,18 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
           />,
         );
       });
+      expect(screen.queryByTestId('hub-opponent-pick-revealed')).toBeNull();
+      expect(screen.getByTestId('hub-opponent-pick').querySelector('[data-rc-rps-icon="redacted"]')).toBeInTheDocument();
 
-      // Exactly one revealed opponent card, showing the TERMINAL throw (rock) — not the stale tie's
-      // (scissors), and no duplicate/competing flip nodes.
+      // Past the terminal reveal's own pause: exactly one revealed opponent card, showing the
+      // TERMINAL throw (rock) — not the stale tie's (scissors).
+      act(() => { vi.advanceTimersByTime(700); });
       expect(screen.getAllByTestId('hub-opponent-pick-revealed')).toHaveLength(1);
       expect(screen.getByTestId('hub-opponent-pick-revealed').querySelector('[data-rc-rps-icon="rock"]')).toBeInTheDocument();
 
       // Advancing past the tie-reveal's own (now-cleared) timer must not glitch anything back to
       // redacted — the terminal reveal persists (it never resets, unlike the tie beat).
-      act(() => { vi.advanceTimersByTime(820 + 1500); });
+      act(() => { vi.advanceTimersByTime(900 + 1500); });
       expect(screen.getByTestId('hub-opponent-pick-revealed').querySelector('[data-rc-rps-icon="rock"]')).toBeInTheDocument();
       expect(screen.queryByTestId('hub-opponent-pick')).toBeNull();
     } finally {
@@ -308,7 +320,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
   // bar-level "You Win" fill). This test now asserts the ABSENCE of that bar-level verdict and, per
   // item 2 above, the real win indication instead: the own card's frame turning green
   // (`rpsLeftFrame`, `:3810`) combined with both cards growing to the `rpsExpanded()` big geometry.
-  it('Result: ending a match reveals the outcome in place on the board — no overlay, opponent throw flips, own card frame turns green + both cards enlarge, no bar-level verdict', async () => {
+  it('Result: ending a match reveals the outcome in place on the board — no overlay, opponent throw flips, own card frame turns green + both cards enlarge, no bar-level verdict', () => {
     const gameState: RpsView = { players: ['pid', 'bob'], choices: { pid: 'rock', bob: 'scissors' } };
     const { rerender } = render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
@@ -317,31 +329,137 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
         {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 9, newBalance: 1009 } })}
       />,
     );
-    await waitFor(() => {
-      // No separate popup ever appears — the board itself carries the result.
-      expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
-      expect(screen.getByTestId('hub-board')).toBeInTheDocument();
-      // The opponent's real throw (scissors) is revealed in place — the redacted tile is gone,
-      // replaced by the SAME flip-card component the tied-round reveal uses (2026-09-11#9 item 2).
-      expect(screen.queryByTestId('hub-opponent-pick')).toBeNull();
-      expect(screen.getByTestId('hub-opponent-pick-revealed').querySelector('[data-rc-rps-icon="scissors"]')).toBeInTheDocument();
-      // The pick grid locks at terminal — no round left to pick into.
-      expect(screen.getByTestId('hub-move-rock')).toBeDisabled();
-      // Item 3: no bar-level "You Win" — `ownBarResult` is gone, RPS never lights the shared bar verdict.
-      expect(screen.queryByTestId('hub-slot-own-verdict')).toBeNull();
-      // Item 2: the own card's frame turns win-green (`#34D399`, `rpsLeftFrame`) instead.
-      expect(screen.getByTestId('hub-my-pick-frame').style.background).toMatch(/#34d399|52, 211, 153/i);
-      // Item 2: both cards grow to the expanded (`rpsExpanded()`) geometry — 124×176, not 92×130.
-      expect(screen.getByTestId('hub-my-pick-frame').style.width).toBe('124px');
-      expect(screen.getByTestId('hub-my-pick-frame').style.height).toBe('176px');
-      expect(screen.getByTestId('hub-opponent-pick-revealed').style.width).toBe('124px');
-      expect(screen.getByTestId('hub-opponent-pick-revealed').style.height).toBe('176px');
-      // Item 2: the picker row has genuinely collapsed (height + opacity → 0), not just dimmed.
-      const pickerWrapper = screen.getByTestId('hub-move-rock').closest('[role="group"]')?.parentElement as HTMLElement;
-      expect(pickerWrapper.style.opacity).toBe('0');
-      // jsdom's CSSOM normalizes a zero length to unitless '0' regardless of the '0px' React set.
-      expect(pickerWrapper.style.maxHeight).toMatch(/^0(px)?$/);
+    // No separate popup ever appears — the board itself carries the result.
+    expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
+    expect(screen.getByTestId('hub-board')).toBeInTheDocument();
+    // The pick grid locks at terminal — no round left to pick into.
+    expect(screen.getByTestId('hub-move-rock')).toBeDisabled();
+    // Item 3: no bar-level "You Win" — `ownBarResult` is gone, RPS never lights the shared bar verdict.
+    expect(screen.queryByTestId('hub-slot-own-verdict')).toBeNull();
+    // Item 2: both cards grow to the expanded (`rpsExpanded()`) geometry — 124×176, not 92×130.
+    // Beat 1 fires immediately at `terminal`, unstaged — this codebase's own doc comment on
+    // `cardW` confirms this part was already correct before ticket 2026-09-25#2.
+    expect(screen.getByTestId('hub-my-pick-frame').style.width).toBe('124px');
+    expect(screen.getByTestId('hub-my-pick-frame').style.height).toBe('176px');
+    // Item 2: the picker row has genuinely collapsed (height + opacity → 0), not just dimmed.
+    const pickerWrapper = screen.getByTestId('hub-move-rock').closest('[role="group"]')?.parentElement as HTMLElement;
+    expect(pickerWrapper.style.opacity).toBe('0');
+    // jsdom's CSSOM normalizes a zero length to unitless '0' regardless of the '0px' React set.
+    expect(pickerWrapper.style.maxHeight).toMatch(/^0(px)?$/);
+  });
+
+  // Ticket 2026-09-25#2 item 1 (ADVISOR_TO_PM.md): the terminal reveal's own three staggered beats,
+  // confirmed against the prototype's exact `rpsTimer` chain — a 700ms pause before the opponent
+  // card starts flipping (Beat 2), then +900ms more before the frame colors land (Beat 3). Prior to
+  // this ticket, all of this fired in one step the instant `terminal` became true.
+  describe('ticket 2026-09-25#2 item 1: the terminal reveal is staged (grow → flip → done), not one step', () => {
+    function renderTerminal() {
+      const gameState: RpsView = { players: ['pid', 'bob'], choices: { pid: 'rock', bob: 'scissors' } };
+      const { rerender } = render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
+      rerender(
+        <RpsHubScreen
+          {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 9, newBalance: 1009 } })}
+        />,
+      );
+    }
+
+    it('Beat 1 (immediate): cards already grown, but the opponent stays redacted and the own frame stays neutral — the flip/color hasn\'t started yet', () => {
+      vi.useFakeTimers();
+      try {
+        renderTerminal();
+        // Cards grown (Beat 1, unstaged) — but nothing about the reveal itself has started.
+        expect(screen.getByTestId('hub-my-pick-frame').style.width).toBe('124px');
+        expect(screen.queryByTestId('hub-opponent-pick-revealed')).toBeNull();
+        expect(screen.getByTestId('hub-opponent-pick')).toBeInTheDocument();
+        expect(screen.getByTestId('hub-my-pick-frame').style.background).toBe('rgb(255, 255, 255)');
+      } finally {
+        vi.useRealTimers();
+      }
     });
+
+    it('Beat 2 (+700ms): the opponent card mounts and starts flipping — the own frame is STILL neutral (color is Beat 3, not Beat 2)', () => {
+      vi.useFakeTimers();
+      try {
+        renderTerminal();
+        act(() => { vi.advanceTimersByTime(700); });
+        expect(screen.getByTestId('hub-opponent-pick-revealed').querySelector('[data-rc-rps-icon="scissors"]')).toBeInTheDocument();
+        expect(screen.queryByTestId('hub-opponent-pick')).toBeNull();
+        expect(screen.getByTestId('hub-my-pick-frame').style.background).toBe('rgb(255, 255, 255)');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('Beat 3 (+700ms +900ms = +1600ms): the own card frame finally turns win-green (#16A34A)', () => {
+      vi.useFakeTimers();
+      try {
+        renderTerminal();
+        act(() => { vi.advanceTimersByTime(700); });
+        act(() => { vi.advanceTimersByTime(900); });
+        expect(screen.getByTestId('hub-my-pick-frame').style.background).toMatch(/#16a34a|22, 163, 74/i);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  it('ticket 2026-09-25#2 item 2: a LOSS colors the own frame with the shared --rc-loss token, not the old #F04438 literal', () => {
+    vi.useFakeTimers();
+    try {
+      const gameState: RpsView = { players: ['pid', 'bob'], choices: { pid: 'rock', bob: 'paper' } };
+      const { rerender } = render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
+      rerender(
+        <RpsHubScreen
+          {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'bob' }, lastSettlement: { delta: -5, newBalance: 995 } })}
+        />,
+      );
+      act(() => { vi.advanceTimersByTime(700); });
+      act(() => { vi.advanceTimersByTime(900); });
+      expect(screen.getByTestId('hub-my-pick-frame').style.background).toBe('var(--rc-loss)');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('ticket 2026-09-25#2 item 1: the flip card\'s translateX nudge starts at 16px on mount and returns to 0px after 410ms — shared by both the terminal reveal and the tie-reveal', () => {
+    vi.useFakeTimers();
+    try {
+      // Tie-reveal path — ticket 2026-09-25#3 unified the tie-reveal onto the SAME staged timing
+      // as the terminal reveal, so the flip card mounts only after the same 700ms pause now.
+      const gameState: RpsView = { players: ['pid', 'bob'], choices: {}, round: 1 };
+      const events = [
+        { type: 'new_round', payload: { round: 1, replays: 1, revealedChoices: { pid: 'rock', bob: 'scissors' } } },
+      ];
+      render(
+        <RpsHubScreen
+          {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock', 'paper', 'scissors'], events })}
+        />,
+      );
+      act(() => { vi.advanceTimersByTime(700); });
+      const card = screen.getByTestId('hub-opponent-pick-revealed');
+      expect(card.style.transform).toBe('translateX(16px)');
+      act(() => { vi.advanceTimersByTime(410); });
+      expect(card.style.transform).toBe('translateX(0px)');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ticket 2026-09-25#2 item 1: the pick-window countdown fades out (opacity 1→0, scale 1→0.55) the instant a match ends — Beat 1, unstaged", () => {
+    const gameState: RpsView = { players: ['pid', 'bob'], choices: {}, windowEndsAt: Date.now() + 5000 };
+    const { rerender } = render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock', 'paper', 'scissors'] })} />);
+    expect(screen.getByTestId('rps-countdown').parentElement!.style.opacity).toBe('1');
+    expect(screen.getByTestId('rps-countdown').parentElement!.style.transform).toContain('scale(1)');
+    rerender(
+      <RpsHubScreen
+        {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 9, newBalance: 1009 } })}
+      />,
+    );
+    // `RpsBoard` remounts per match (keyed on `currentMatchId`, ticket 2026-09-25#1 item 3) — the
+    // countdown box above is a stale reference to the UNMOUNTED prior instance after this rerender;
+    // re-query rather than reuse it, or this assertion would silently check dead DOM.
+    expect(screen.getByTestId('rps-countdown').parentElement!.style.opacity).toBe('0');
+    expect(screen.getByTestId('rps-countdown').parentElement!.style.transform).toContain('scale(0.55)');
   });
 
   // 2026-09-12#1 item 2 (ADVISOR_TO_PM.md): the card-enlargement logic is keyed strictly off
@@ -359,8 +477,10 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
           {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock', 'paper', 'scissors'], events })}
         />,
       );
-      // The tie-reveal is armed (real opponent throw visible), but the card stays at the SMALL
-      // 92×130 geometry — not the 124×176 `rpsExpanded()` size item 2 introduces for terminal only.
+      // The tie-reveal is armed (real opponent throw visible, past its shared 700ms pause), but the
+      // card stays at the SMALL 92×130 geometry — not the 124×176 `rpsExpanded()` size item 2
+      // introduces for terminal only.
+      act(() => { vi.advanceTimersByTime(700); });
       expect(screen.getByTestId('hub-opponent-pick-revealed').style.width).toBe('92px');
       expect(screen.getByTestId('hub-opponent-pick-revealed').style.height).toBe('130px');
       expect(screen.getByTestId('hub-my-pick-frame').style.width).toBe('92px');
@@ -371,6 +491,155 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
       vi.useRealTimers();
     }
   });
+
+  // Ticket 2026-09-25#3 item 2 (ADVISOR_TO_PM.md): RPS now wires the exact Dice-style bar
+  // ring+fill+"you won" text — a deliberate departure from the prototype, confirmed via Designer's
+  // own report. Real timers + waitFor (matches DiceHub.test.tsx's own equivalent tests) rather than
+  // fake-timer chaining, since `RpsBoard`'s reveal → `onRevealComplete` → GameHub's own
+  // `revealDone` state crosses a component boundary the fake-timer/act split-testing pitfall would
+  // otherwise need extra care to route around correctly.
+  describe('ticket 2026-09-25#3 item 2: the own-bar win/lose treatment (deliberately new, not a prototype behavior)', () => {
+    it('a WIN lights the own bar (ring #16A34A, fill #16A34A, "you won" text) once RpsBoard\'s own reveal reaches done — never before', async () => {
+      const gameState: RpsView = { players: ['pid', 'bob'], choices: { pid: 'rock', bob: 'scissors' } };
+      const { rerender } = render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
+      rerender(
+        <RpsHubScreen
+          {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 9, newBalance: 1009 } })}
+        />,
+      );
+      // Not lit yet — `RpsBoard`'s own revealStage hasn't reached 'done' (needs the full 700+900ms).
+      expect(screen.queryByTestId('hub-slot-own-verdict')).toBeNull();
+      await waitFor(() => expect(screen.getByTestId('hub-slot-own-verdict')).toBeInTheDocument(), { timeout: 3000 });
+      expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you won/i);
+      const ownBar = screen.getByTestId('hub-slot-own');
+      const ownFill = ownBar.querySelector('.pointer-events-none.absolute.inset-0') as HTMLElement;
+      expect(ownFill.style.background).toBe('rgb(22, 163, 74)'); // #16A34A, jsdom-normalized
+      await waitFor(() => expect(ownBar.className).toContain('ring-[3px]'), { timeout: 4000 });
+      expect(ownBar.style.getPropertyValue('--tw-ring-color')).toBe('#16A34A');
+    }, 10000);
+
+    it('a LOSS rings the own bar var(--rc-loss), not the shared ring-destructive class', async () => {
+      const gameState: RpsView = { players: ['pid', 'bob'], choices: { pid: 'rock', bob: 'paper' } };
+      const { rerender } = render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
+      rerender(
+        <RpsHubScreen
+          {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'bob' }, lastSettlement: { delta: -5, newBalance: 995 } })}
+        />,
+      );
+      const ownBar = screen.getByTestId('hub-slot-own');
+      await waitFor(() => expect(ownBar.className).toContain('ring-[3px]'), { timeout: 3000 });
+      expect(ownBar.className).not.toContain('ring-destructive');
+      expect(ownBar.style.getPropertyValue('--tw-ring-color')).toBe('var(--rc-loss)');
+    }, 8000);
+
+    it("an ordinary tie followed by a decisive match-end still waits for the TERMINAL reveal's own 700+900ms — no stale premature light-up", async () => {
+      // Drive an ordinary tie all the way through its own 'done', THEN end the match decisively, to
+      // confirm the composition holds end-to-end (matches the existing "a terminal outcome always
+      // wins over a still-pending tie-reveal" coverage, extended through the bar). NOTE: this does
+      // NOT, on its own, isolate whether `RpsBoard`'s `onRevealComplete` call is actually gated to
+      // `terminal` — GameHub's own `currentMatchId`-keyed `revealDone` reset (fired the same render
+      // the match ends, since match-end always changes `currentMatchId`) independently protects
+      // this exact scenario either way, confirmed empirically. The `terminal &&` guard in
+      // `RpsBoard` is kept as defensive, correctness-by-construction code regardless (RpsBoard's
+      // own contract shouldn't depend on a caller-side reset it doesn't control) — matching this
+      // file's own established philosophy elsewhere (e.g. the tie-vs-terminal render-priority
+      // effect's "renders defensively rather than leaning on timing margin alone").
+      const gameState: RpsView = { players: ['pid', 'bob'], choices: {}, round: 1 };
+      const events = [
+        { type: 'new_round', payload: { round: 1, replays: 1, revealedChoices: { pid: 'rock', bob: 'scissors' } } },
+      ];
+      const { rerender } = render(
+        <RpsHubScreen
+          {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock', 'paper', 'scissors'], events })}
+        />,
+      );
+      await new Promise((r) => setTimeout(r, 1700));
+      const terminalState: RpsView = { players: ['pid', 'bob'], choices: { pid: 'paper', bob: 'rock' } };
+      rerender(
+        <RpsHubScreen
+          {...baseProps({
+            currentMatchId: null,
+            gameState: terminalState,
+            lastOutcome: { type: 'win', winner: 'pid' },
+            lastSettlement: { delta: 9, newBalance: 1009 },
+          })}
+        />,
+      );
+      expect(screen.queryByTestId('hub-slot-own-verdict')).toBeNull();
+      await waitFor(() => expect(screen.getByTestId('hub-slot-own-verdict')).toBeInTheDocument(), { timeout: 3000 });
+    }, 8000);
+  });
+
+  // Ticket 2026-09-25#3 (D49): root-caused "the yellow rings on both bars" to the shared,
+  // game-agnostic `drawBeat` mechanism (#161) — unrelated to `ownBarResult`/the card frames above,
+  // and firing on every tie regardless. `suppressDrawBar` silences the BAR's own copy of it, the
+  // same flag `BlackjackHub.tsx` already uses, now that RPS shows every tie via its card frames.
+  it("ticket 2026-09-25#3: suppressDrawBar keeps the generic orange draw-pulse off both bars during an ordinary tie", async () => {
+    // `replays` isn't part of RpsView's own TS shape (RpsHub.tsx never reads it directly), but the
+    // real server state (`rps.ts`'s `RpsState.replays`) genuinely carries it — GameHub's shared,
+    // game-agnostic `replaysOf()` reads it via a loose `unknown` cast, which is what this test needs
+    // to actually arm the `drawBeat` mechanism `suppressDrawBar` is meant to silence.
+    const gameState = { players: ['pid', 'bob'], choices: {}, round: 0, replays: 0 } as RpsView & { replays: number };
+    const { rerender } = render(
+      <RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock', 'paper', 'scissors'] })} />,
+    );
+    const tiedState = { ...gameState, round: 1, replays: 1 };
+    const events = [
+      { type: 'new_round', payload: { round: 1, replays: 1, revealedChoices: { pid: 'rock', bob: 'rock' } } },
+    ];
+    rerender(
+      <RpsHubScreen
+        {...baseProps({ currentMatchId: 'm1', gameState: tiedState, legalMoves: ['rock', 'paper', 'scissors'], events })}
+      />,
+    );
+    expect(screen.getByTestId('hub-slot-own').className).not.toContain('ring-amber-400');
+    expect(screen.getByTestId('hub-slot-opponent').className).not.toContain('ring-amber-400');
+  });
+
+  // Ticket 2026-09-25#3: your OWN hand could previously vanish mid-tie-reveal — `optimisticPick`/
+  // `serverChoice` both go blank the instant the round bumps, well before the reveal even starts.
+  it("ticket 2026-09-25#3: the OWN card's hand stays visible (snapshotted) through a tie-reveal, not blank, while the picker tiles stay LIVE for the new round", async () => {
+    const gameState: RpsView = { players: ['pid', 'bob'], choices: {}, round: 1 };
+    const events = [
+      { type: 'new_round', payload: { round: 1, replays: 1, revealedChoices: { pid: 'rock', bob: 'scissors' } } },
+    ];
+    render(
+      <RpsHubScreen
+        {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock', 'paper', 'scissors'], events })}
+      />,
+    );
+    // The own card shows the snapshotted 'rock' (the round that just tied), not blank.
+    expect(screen.getByTestId('hub-my-pick-icon').querySelector('[data-rc-rps-icon="rock"]')).toBeInTheDocument();
+    // The picker tiles stay live: tapping a DIFFERENT choice for the new round registers immediately
+    // (the tile lights up), independent of the frozen own-card snapshot above.
+    fireEvent.click(screen.getByTestId('hub-move-paper'));
+    expect(screen.getByTestId('hub-move-paper').getAttribute('aria-pressed')).toBe('true');
+    // The own card is still showing the OLD snapshot (rock), not the new live tap (paper) — the two
+    // are deliberately decoupled during an active tie-reveal.
+    expect(screen.getByTestId('hub-my-pick-icon').querySelector('[data-rc-rps-icon="rock"]')).toBeInTheDocument();
+  });
+
+  // Ticket 2026-09-25#3: the rare terminal void at the replay cap gets the same orange `done`
+  // coloring as an ordinary tie, but — unlike an ordinary tie — never auto-continues, since there's
+  // no live match left to continue into. Confirmed this falls out of the existing `terminal`/
+  // `outcome` path for free (the replay-cap void is a genuine terminal outcome, never routed through
+  // the ordinary `tieReveal` mechanism) — no special-casing needed.
+  it('ticket 2026-09-25#3: a terminal void (replay-cap) colors both frames orange and stays expanded — no auto-continue, unlike an ordinary tie', async () => {
+    const gameState: RpsView = { players: ['pid', 'bob'], choices: { pid: 'rock', bob: 'rock' } };
+    const { rerender } = render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
+    rerender(
+      <RpsHubScreen
+        {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'void' }, lastSettlement: { delta: 0, newBalance: 1000 } })}
+      />,
+    );
+    await new Promise((r) => setTimeout(r, 1700));
+    expect(screen.getByTestId('hub-my-pick-frame').style.background).toBe('rgb(247, 144, 9)'); // #F79009, jsdom-normalized
+    // Well past an ordinary tie's own auto-continue point (700+900+1500 ≈ 3.1s) — still expanded,
+    // no reset to redacted, since this is a genuinely terminal outcome with no next round.
+    await new Promise((r) => setTimeout(r, 1700));
+    expect(screen.getByTestId('hub-opponent-pick-revealed')).toBeInTheDocument();
+    expect(screen.queryByTestId('hub-opponent-pick')).toBeNull();
+  }, 8000);
 
   it('JOIN balance-check + chrome (shared GameHub behaviour holds for RPS)', () => {
     const onTakeChallenge = vi.fn();
@@ -609,13 +878,15 @@ describe('RpsHubScreen — pick-tile labels and selection green (ticket 2026-09-
     expect(screen.queryByText(/^scissors$/i)).toBeNull();
   });
 
-  it('item 2: the unselected ring is color-matched zero-alpha green, not CSS transparent black; selected uses --rc-green; easing is plain "ease"', () => {
+  it('item 2: the unselected ring is color-matched zero-alpha green, not CSS transparent black; selected uses the literal win-green; easing is plain "ease"', () => {
     const gameState: RpsView = { players: ['pid', 'bob'], choices: { pid: 'rock' } };
     render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
     const rock = screen.getByTestId('hub-move-rock');
     const paper = screen.getByTestId('hub-move-paper');
-    expect(rock.style.boxShadow).toBe('inset 0 0 0 3px var(--rc-green)');
-    expect(paper.style.boxShadow).toBe('inset 0 0 0 3px rgba(52,211,153,0)');
+    // Ticket 2026-09-25#2 item 2: the ring moved off `var(--rc-green)` to the literal `#16A34A`
+    // win-green (the RPS/Mines/Dice color-unification rule) — its zero-alpha pair moved with it.
+    expect(rock.style.boxShadow).toBe('inset 0 0 0 3px #16A34A');
+    expect(paper.style.boxShadow).toBe('inset 0 0 0 3px rgba(22,163,74,0)');
     expect(paper.className).toMatch(/(?:^|\s)ease(?:\s|$)/);
     expect(paper.className).not.toMatch(/ease-out/);
   });

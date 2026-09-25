@@ -889,7 +889,10 @@ export function GameHub(props: GameHubProps) {
               // Ticket 2026-09-16#7 item 4: Mines gets the SAME token — its own playerBarRing
               // literal (Full Spec.html:3787) is ALSO #FF3E5E for loss, confirmed independently —
               // not a coincidence worth re-literalling, reuse the token exactly like Dice does.
-              lossRingColor={gameId === 'dice' || gameId === 'mines' ? 'var(--rc-loss)' : undefined}
+              // Ticket 2026-09-25#3 item 2: RPS joins the same gate — a deliberate NEW bar treatment
+              // for RPS (see RpsHub.tsx's own doc comment for the full citation chain), not a
+              // consequence of the token already existing — Blackjack/Chess/Coinflip remain untouched.
+              lossRingColor={gameId === 'dice' || gameId === 'mines' || gameId === 'rps' ? 'var(--rc-loss)' : undefined}
               // Ticket 2026-09-16#4 item 4: Dice's own win ring/fill is #16A34A (DiceHub.tsx's own
               // DICE_WIN_GREEN — the same green already used for the winning cube number and the
               // winning history pill), NOT the shared --rc-green — scoped by gameId, same shape as
@@ -899,11 +902,13 @@ export function GameHub(props: GameHubProps) {
               // reversal of 2026-09-16#7's #22C55E (which correctly matched the prototype's own
               // literal for this specific mechanism at the time). D28 explicitly asks for #16A34A
               // instead, citing the prototype's own #22C55E before overriding it — an informed
-              // decision, applied as directed, not a re-litigation of the earlier verification. Mines
-              // and Dice now share one literal; RPS/Blackjack/Chess/Coinflip are untouched, still on
-              // the shared generic --rc-green token (this does not become a platform-wide unification).
-              winRingColor={gameId === 'dice' || gameId === 'mines' ? '#16A34A' : undefined}
-              winFillColor={gameId === 'dice' || gameId === 'mines' ? '#16A34A' : undefined}
+              // decision, applied as directed, not a re-litigation of the earlier verification.
+              // Ticket 2026-09-25#3 item 2: RPS joins Mines/Dice on this same literal too, matching
+              // its own card-frame win color (RpsHub.tsx's `FRAME_WIN`, ticket 2026-09-25#2 item 2) —
+              // Blackjack/Chess/Coinflip are untouched, still on the shared generic --rc-green token
+              // (this does not become a platform-wide unification).
+              winRingColor={gameId === 'dice' || gameId === 'mines' || gameId === 'rps' ? '#16A34A' : undefined}
+              winFillColor={gameId === 'dice' || gameId === 'mines' || gameId === 'rps' ? '#16A34A' : undefined}
               // Ticket 2026-09-16#7 item 4: Mines-only — the shared outlineClasses() had no
               // per-verdict draw override until now (win/lose already did). Mines' own draw literal
               // (Full Spec.html:3787) is #FF8A1E — no other game currently needs this overridden.
