@@ -72,16 +72,11 @@ const FRAME_DRAW = '#F79009';
  *  paths again behind `rpsFlipRot`), and the picker row buttons (:646-654, `width:54px`) — one set of
  *  paths, several render sizes, exactly like here (`size` is the only thing that varies per caller).
  *  Replaces the ✊/✋/✌️ emoji stand-ins (2026-09-11#8/C, ADVISOR_TO_PM.md). */
-// Ticket 2026-09-22#4 (D41), the optional `color` param: the prototype's own `rpsChoice(k, light)`
-// (Full Spec.html:3244-3256) computes `color: on ? '#FFFFFF' : 'var(--rc-muted)'` alongside this
-// icon's state, but never actually references it anywhere in its own markup (:641-656) — every
-// `fill` there is a hardcoded literal, in both the picker tiles and the reveal-card usage. Dead
-// code in the prototype's own source, not a rendering behavior that exists on screen there — but
-// specific and deliberately grouped with the genuinely-rendered selection-ring values, so applied
-// here as a deliberate ask: when passed, every path's fill (and rock's stroke) is overridden to a
-// flat single tone, turning the icon into a silhouette. Scoped ONLY to the live picker's own call
-// site (`:544`ish, selected/unselected) — every other call site omits it, keeping its full
-// multi-tone look unchanged, matching the prototype's own scoping of `.color` to the picker alone.
+// The optional `color` param silhouettes every path/stroke to a flat single tone when passed.
+// Ticket 2026-09-25#1 (Designer's own correction of 2026-09-22#4/D41): the icons are ALWAYS
+// purple/multi-tone, confirmed directly against the prototype's own hardcoded SVG fills — no call
+// site passes `color` anymore. Left as inert optional plumbing rather than removed, since the
+// correction was scoped to the one call site, not this component's signature.
 function RpsHandIcon({ choice, size, color }: { choice: string | undefined; size: number; color?: string }) {
   // D41's own cited transition for the color swap (`220ms ease`) — shared across every path so the
   // fill/stroke change animates rather than snapping, matching the citation exactly.
@@ -339,7 +334,7 @@ function RpsIdle() {
  * both at window expiry. No same-side/"taken-throw" restriction (it would leak the opponent's pick).
  * Once terminal, the grid locks (see `terminal` below) — there is no round left to pick into.
  */
-function RpsBoard({ playerId, opponentId, gameState, events, onMove, onForfeit, username, outcome, serverClockOffset = 0 }: GameAreaArgs) {
+function RpsBoard({ playerId, opponentId, gameState, events, onMove, outcome, serverClockOffset = 0 }: GameAreaArgs) {
   const view = gameState as RpsView | null;
   const tileBg = useRpsTileBg();
   // Terminal outcome (win/draw/void) — set by GameHub only once the match has actually ended
@@ -514,10 +509,6 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, onForfeit, 
         )}
       </div>
 
-      <p className="text-[11px] font-medium text-muted-foreground" data-testid="hub-my-pick">
-        {username ? <>You (<strong className="text-foreground">{username}</strong>)</> : 'You'}
-      </p>
-
       {/* Choice buttons — client-local, freely changeable for the whole window (never gated by
           legalMoves/your_turn). The selected throw rings the win-green ring (the selection
           language) — Full Spec.html:645-654 (grid gap:9px) + :3245's `ring` formula (`var(--rc-green)`
@@ -543,9 +534,7 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, onForfeit, 
             added `px-1.5` to match the citation's own `padding:16px 6px` in full. The unselected
             ring is now color-matched zero-alpha (`rgba(52,211,153,0)`, not CSS `transparent`'s
             transparent BLACK) so the box-shadow color transition fades cleanly rather than
-            hue-shifting; `ease` (not `ease-out`) matches the citation's own easing curve exactly.
-            `color` on the icon: see `RpsHandIcon`'s own doc comment for why this is implemented
-            despite being unreferenced dead code in the prototype's own markup. */}
+            hue-shifting; `ease` (not `ease-out`) matches the citation's own easing curve exactly. */}
         <div className="grid grid-cols-3" style={{ gap: 9 }} role="group" aria-label="RPS choices">
           {RPS_CHOICES.map(({ id, label }) => (
             <button
@@ -563,29 +552,12 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, onForfeit, 
                 boxShadow: myChoice === id ? 'inset 0 0 0 3px var(--rc-green)' : 'inset 0 0 0 3px rgba(52,211,153,0)',
               }}
             >
-              <RpsHandIcon choice={id} size={54} color={myChoice === id ? '#FFFFFF' : 'var(--rc-muted)'} />
+              <RpsHandIcon choice={id} size={54} />
             </button>
           ))}
         </div>
       </div>
 
-      {myChoice && !terminal && (
-        <p className="text-center text-sm text-muted-foreground" data-testid="hub-locked">Picked {myChoice} — tap another to change, or wait for the timer</p>
-      )}
-      {/* Forfeit only makes sense mid-match — the match is already decided once terminal, and
-          `onForfeit` has no live match left to act on.
-          Ticket 2026-09-12#1 item 4/3 (ADVISOR_TO_PM.md): the prototype's own `renderVals()` DOES
-          compute a `rpsForfeit` handler (Full Spec.html:3821) but never binds it to any visible
-          element — dead code in the mock, no visual equivalent to copy. Owner's call: keep the
-          FUNCTION (a stuck player must still be able to leave a bad match) but restyle it away from
-          a first-class action — smaller, lower-contrast text than the "Picked …" hint above it, no
-          extra top padding pulling it into its own visually-weighted row, so it reads as a quiet
-          escape hatch rather than a primary control this design source never gave it. */}
-      {!terminal && (
-        <button type="button" onClick={onForfeit} className="text-[11px] font-normal text-muted-foreground/60 transition-colors hover:text-muted-foreground">
-          Forfeit
-        </button>
-      )}
     </div>
   );
 }
@@ -607,7 +579,16 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, onForfeit, 
  *  380ms ease transition as the outer `isRps` div itself uses (`:606`). This is what makes the
  *  opponent/own bars sliding toward the VS label (the bar-slide mechanism, `matchBarSlide`) actually
  *  read against a receded table instead of blending into a same-toned board. */
-function RpsPanel(args: GameAreaArgs) {
+// Ticket 2026-09-25#1 item 3 (ADVISOR_TO_PM.md): `currentMatchId` isn't part of `GameAreaArgs`
+// (it lives on the sibling `GameHubScreenProps`), so `RpsHubScreen` below threads it in as an
+// extra prop rather than widening the shared interface — the same pattern DiceHub.tsx uses for
+// its own extra per-game signal. Keys `RpsBoard`'s mount so two consecutive matches (RPS runs
+// `searchFloorMs={0}`, so an instant bot rematch is real) always get a fresh instance instead of
+// reusing the same one — `rps.ts`'s `round` field restarts at 0 for every new match (only bumping
+// on a tie-replay), so `optimisticPick`'s own `[round]`-keyed reset effect never re-fires across a
+// match boundary without this: the previous match's selection ring would otherwise stay lit into
+// the new one until the player tapped again.
+function RpsPanel({ currentMatchId, ...args }: GameAreaArgs & { currentMatchId: string | null }) {
   const showBoard = args.phase === 'in-match' || args.phase === 'result';
   return (
     <div
@@ -615,7 +596,7 @@ function RpsPanel(args: GameAreaArgs) {
       className="rounded-[22px] bg-[var(--rc-surface)] p-4"
       style={{ opacity: args.barSlideActive ? 0.28 : 1, transition: 'opacity 380ms ease' }}
     >
-      {showBoard ? <RpsBoard {...args} /> : <RpsIdle />}
+      {showBoard ? <RpsBoard key={currentMatchId ?? 'idle'} {...args} /> : <RpsIdle />}
     </div>
   );
 }
@@ -711,9 +692,9 @@ function RpsRevealFlipCard({ frame, tileBg, choice, size, height, testid }: { fr
 export function RpsHubScreen(props: GameHubScreenProps) {
   return (
     <GameHub
+      renderGameArea={(args) => <RpsPanel {...args} currentMatchId={props.currentMatchId} />}
       gameId="rps"
       gameName="Rock Paper Scissors"
-      renderGameArea={RpsPanel}
       suppressResultOverlay
       // Ticket 2026-09-12#1 item 3 (ADVISOR_TO_PM.md): `ownBarResult` REMOVED here — a real
       // correction to 2026-09-11#10 item 2, which wired it mirroring `CoinflipHub.tsx`'s pattern.

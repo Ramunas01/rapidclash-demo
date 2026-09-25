@@ -620,17 +620,47 @@ describe('RpsHubScreen — pick-tile labels and selection green (ticket 2026-09-
     expect(paper.className).not.toMatch(/ease-out/);
   });
 
-  it('item 3 (Gap 3): the picker icon goes white when selected, --rc-muted when not — the reveal-card/idle-preview usages of the same icon stay full multi-tone (no color override)', () => {
+  it('ticket 2026-09-25#1 item 2: the picker icon stays full multi-tone purple whether selected or not — the D41 white/--rc-muted override is reverted (Designer\'s own correction)', () => {
     const gameState: RpsView = { players: ['pid', 'bob'], choices: { pid: 'rock' } };
     render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
     const rockIcon = within(screen.getByTestId('hub-move-rock')).getByRole('img', { name: 'Rock' });
     const paperIcon = within(screen.getByTestId('hub-move-paper')).getByRole('img', { name: 'Paper' });
-    expect(rockIcon.querySelector('path')?.getAttribute('fill')).toBe('#FFFFFF'); // selected
-    expect(paperIcon.querySelector('path')?.getAttribute('fill')).toBe('var(--rc-muted)'); // unselected
-    // The idle preview's own icon (pre-match, no picker context) never gets a color override.
+    // Both selected (rock) and unselected (paper) picker icons render their original literal fills —
+    // no color override at either state, matching every other RpsHandIcon call site in the file.
+    expect(rockIcon.querySelector('path')?.getAttribute('fill')).toBe('#B285F7');
+    expect(paperIcon.querySelector('path')?.getAttribute('fill')).toBe('#B285F7');
+    // The idle preview's own icon (pre-match, no picker context) is unaffected either way.
     const { container, unmount } = render(<RpsHubScreen {...baseProps()} />);
     const idleRock = container.querySelector('[data-rc-rps-icon="rock"]');
-    expect(idleRock?.querySelector('path')?.getAttribute('fill')).toBe('#B285F7'); // its original multi-tone literal
+    expect(idleRock?.querySelector('path')?.getAttribute('fill')).toBe('#B285F7');
     unmount();
+  });
+
+  it('ticket 2026-09-25#1 item 1: no "You (username)" / "Picked X — tap another…" captions, and no Forfeit button, anywhere on the live board', () => {
+    const gameState: RpsView = { players: ['pid', 'bob'], choices: { pid: 'rock' } };
+    render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock', 'paper', 'scissors'] })} />);
+    expect(screen.queryByTestId('hub-my-pick')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('hub-locked')).not.toBeInTheDocument();
+    expect(screen.queryByText(/You \(/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Picked .* — tap another/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Forfeit' })).not.toBeInTheDocument();
+  });
+
+  it('ticket 2026-09-25#1 item 3: RpsBoard remounts per match (keyed on currentMatchId) — a stale LOCAL optimisticPick from a finished match never carries into the next one even when round stays 0', () => {
+    // The bug this guards is client-local state (optimisticPick), not server-echoed choices — a tap
+    // sets it immediately, ahead of the server round-trip, and it's normally cleared by the
+    // [round]-keyed reset effect. Drive it via a real tap, not an injected gameState.choices, or the
+    // test never touches the actual stale state the per-match key exists to clear.
+    const gameStateM1: RpsView = { players: ['pid', 'bob'], choices: {}, round: 0 };
+    const { rerender } = render(
+      <RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState: gameStateM1, legalMoves: ['rock', 'paper', 'scissors'] })} />,
+    );
+    fireEvent.click(screen.getByTestId('hub-move-rock'));
+    expect(screen.getByTestId('hub-move-rock').getAttribute('aria-pressed')).toBe('true');
+    // Next match forms with a bot near-instantly (RPS's own searchFloorMs={0}) — round is 0 again
+    // (rps.ts only bumps round on a tie-replay), the exact case the [round]-only reset effect misses.
+    const gameStateM2: RpsView = { players: ['pid', 'carol'], choices: {}, round: 0 };
+    rerender(<RpsHubScreen {...baseProps({ currentMatchId: 'm2', opponentId: 'carol', gameState: gameStateM2, legalMoves: ['rock', 'paper', 'scissors'] })} />);
+    expect(screen.getByTestId('hub-move-rock').getAttribute('aria-pressed')).toBe('false');
   });
 });
