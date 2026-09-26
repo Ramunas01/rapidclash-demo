@@ -1,5 +1,32 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-09-26#1 — D60, Coinflip's opponent search never converges the bars — confirmed the shared bar-slide/VS/dim/scramble mechanism RPS+Mines+Dice already use is generic at the `GameHub` level (VS pop-in, name-scramble-and-blur, the 620ms bar-slide transform are ALL already game-agnostic), and Coinflip is the one hub that simply never opted in. Fix is two one-line additions, not new plumbing — confirmed the exact "measured, not flat" mode the ticket asks for is the identical mechanism Dice/Mines already use for their own taller/shorter boards            [READY TO TICKET]
+From: Designer's own report (relayed by Owner, screenshot at `D60/IMG_1321.PNG` showing the two bars sitting static and apart during "Searching…", no VS, no dim — exactly as described), verified via direct reads of `GameHub.tsx` (`barSlideActive`/`barSlideEnabled`/the `matchBarSlide="measured"` live-DOM-measurement effect, the already-generic VS-label block, `OpponentSlot`'s already-generic search-blur/scramble), `CoinflipHub.tsx` (`CoinflipPanel`'s current wrapper style, the already-correct `searchFloorMs={3800}` from ticket `2026-09-11#9`), `DiceHub.tsx`/`MinesHub.tsx`/`RpsHub.tsx` (their own `matchBarSlide` call-site values, confirming the measured-vs-flat split), `git log -S` (confirming Coinflip never had `matchBarSlide` at any point — a genuine gap, not a reverted prior decision), and `Full Spec.html:3290-3316`/`3419`/`3753-3756`/`3796-3797`
+
+## The bars, VS, and search-blur are already fully generic — confirmed, not assumed
+
+**Checked precisely rather than assuming this needs new shared infrastructure.** The VS pop-in (`GameHub.tsx:867-888`) is unconditional, rendered for every hub, keyed on `matchForming` — its own doc comment states this explicitly: "Every hub built on GameHub shares this render path... this one insertion covers all of them, not just Mines/RPS/Dice." `OpponentSlot`'s own search-state blur (`blur-[4.5px]`) and 70ms name-scramble (`useNameScan`) are likewise unconditional on every hub. None of this needs touching for Coinflip — it already receives all of it for free, simply because `CoinflipHubScreen` renders through the same `<GameHub>` component every other hub does.
+
+**The ONE piece that's actually per-hub opt-in, and the one Coinflip never opted into: `matchBarSlide`.** Confirmed directly: `git log -S "matchBarSlide" -- CoinflipHub.tsx` returns nothing — this was never wired, at any point, not a prior decision being reversed. `barSlideEnabled = matchBarSlide != null` (`GameHub.tsx:740`) gates the whole mechanism (the bar-shift computation, the `data-rc-oppbar`/`data-rc-playerbar` transform+z-index on `OpponentSlot`/`OwnSlot`) — omitted, every one of those stays an inert no-op, which is exactly the reported symptom: static bars, correct VS/blur (those parts already fire), no shift.
+
+## The exact "measured, not flat" mode the ticket asks for already exists, built for this exact reason
+
+**Confirmed `matchBarSlide="measured"` computes exactly the formula the ticket cites, not something close to it.** `GameHub.tsx:753-769`'s `useLayoutEffect`: live-measures `[data-rc-oppbar]`/`[data-rc-playerbar]` via `getBoundingClientRect`, computes `mid = (oTop + pTop + pr.height) / 2`, then `{ o: mid - 71 - oTop, p: mid + 23 - pTop }` — the exact `mid − 71` / `mid + 23` formula the ticket cites from `Full Spec.html:3419`, already implemented byte-for-byte, already proven live on Mines/Dice. `RpsHub.tsx` uses the OTHER mode instead (`matchBarSlide={123}`, a flat number) — confirmed why: RPS's own prototype `startRps()` never measures the DOM at all, a documented, deliberate asymmetry, not an oversight. The ticket's own explicit instruction ("Don't copy the 123px fallback from dice — measure") is asking for the SAME mode Dice/Mines already use, not a new one — Coinflip's own taller coin-card board is exactly the case `measured` mode exists to handle correctly, since it re-derives the shift from whatever height the card between the bars actually has, instead of assuming Dice's own fixed layout.
+
+## The fix, confirmed as two precise, minimal, already-proven additions
+
+1. **`CoinflipHub.tsx`'s `<GameHub>` call:** add `matchBarSlide="measured"` (matching Dice/Mines' own call sites exactly, not RPS's flat one).
+2. **`CoinflipPanel`'s outer wrapper** (currently `className="rounded-2xl bg-surface p-4"`, no style prop at all): add `style={{ opacity: args.barSlideActive ? 0.28 : 1, transition: 'opacity 380ms ease' }}` — the identical one-line pattern `RpsHub.tsx:677`/`DiceHub.tsx:540`/`MinesHub.tsx:535` each already use verbatim on their own board wrapper.
+
+**Confirmed the timing already matches the ticket's own table, with zero changes needed there.** `CoinflipHub.tsx`'s own `searchFloorMs={3800}` (ticket `2026-09-11#9`, explicitly citing this exact same prototype sequence — `Full Spec.html:3291-3313`) already reproduces the requested 0→2380→3140→3800 total. The `620ms cubic-bezier(0.3,0.9,0.32,1)` bar-slide transition, the VS's `320ms`/`420ms` fade-and-pop, and the coin's `380ms ease` dim are ALL already the exact shared constants the ticket cites — nothing to re-time, only to actually apply.
+
+**Confirmed the coin/flip/result mechanics are genuinely untouched by this fix, not just assumed safe.** `CoinflipPanel`'s only change is the wrapper's `style` prop; `Coin`, `coinFace`, `revealing`, the pick pills (`OwnPills`/`OpponentPill`, both already correctly inert outside `phase === 'in-match'`) are untouched. `matchBarSlide` only affects the bars' own transform — it doesn't touch `phase`/`gameState`/any move-handling path.
+
+---
+
+**Ask:** a precise, minimal, two-line fix reusing infrastructure already proven on three other hubs — safe to ship immediately, no open questions.
+
+---
 ### 2026-09-25#8 — Resolving PM's own flagged question on PR #735 (D52/2026-09-25#6): the recent-games-list avatar. PM's revert was correct — independently re-confirmed the prototype's own row markup directly (no avatar element, matching the earlier `2026-09-13#8` item 3 decision exactly), then found the likely SOURCE of the discrepancy: this app's Leaderboard (a DIFFERENT screen) already has avatars, matching a DIFFERENT prototype block that genuinely computes one per row — Designer's "same avatar in the recent-games list" instruction most likely describes that screen, not this one            [RESOLVED — no code change]
 From: my own follow-up investigation after PM's cross-session report flagged this rather than silently resolving it
 
