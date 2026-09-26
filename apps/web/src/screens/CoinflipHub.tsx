@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import type { CoinflipView } from '../App.js';
 import { Coin, COIN_FACE_TOKENS } from '../components/coin/Coin.js';
+import { DigitCountdown } from '../components/hub-shared/DigitCountdown.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
 
 // Cosmetic pick countdown (seconds). Mirrors the coinflip module's `moveTimeoutMs` (10s) — the
@@ -29,7 +30,9 @@ const HOLD_RESULT_MS = 2600;
  *  RING-CLEARANCE FIX (ADVISOR_TO_PM.md 2026-07-10#4): 240 → 216 (~10% down). The centred coin's
  *  left edge grazed the pick-window CountdownRing (pinned `absolute left-3` on the board) on narrow
  *  phone-width boards. 216 renders a visible coin ≈195px — still large and present — while clearing
- *  the ring. Nothing else (min-h, fov-17 framing, shrink-0, colours/glow) changed. */
+ *  the ring. Nothing else (min-h, fov-17 framing, shrink-0, colours/glow) changed. (The ring itself
+ *  was later replaced by a digit-flip clock, ticket 2026-09-26#2 below — this sizing history and the
+ *  `absolute left-3` clearance it protects both still apply unchanged to the new clock's position.) */
 const COIN_SIZE_PX = 216;
 
 // The H/T pick pills mirror the flat coin's face colours one-to-one (orange heads / card-back-blue
@@ -42,55 +45,6 @@ const SIDES = [
 /** The server's terminal frame carries the flip `result` (stripped pre-terminal by viewFor). */
 function isTerminal(view: CoinflipView | null): boolean {
   return Boolean(view?.result);
-}
-
-/** Circular pick-deadline countdown (cosmetic — the server runs the authoritative `moveTimeoutMs`
- *  clock + seeded auto-pick). Sits to the left of the coin during the pick window. */
-function CountdownRing({ seconds }: { seconds: number }) {
-  const r = 18;
-  const circ = 2 * Math.PI * r;
-  const frac = Math.max(0, Math.min(1, seconds / PICK_SECONDS));
-  return (
-    <svg
-      width={52}
-      height={52}
-      viewBox="0 0 48 48"
-      data-testid="coin-countdown"
-      role="timer"
-      aria-label={`${seconds} seconds to pick`}
-    >
-      <circle
-        cx={24}
-        cy={24}
-        r={r}
-        fill="none"
-        className="text-border"
-        stroke="currentColor"
-        strokeWidth={3}
-      />
-      <circle
-        cx={24}
-        cy={24}
-        r={r}
-        fill="none"
-        className="text-brand"
-        stroke="currentColor"
-        strokeWidth={3}
-        strokeLinecap="round"
-        strokeDasharray={circ}
-        strokeDashoffset={circ * (1 - frac)}
-        transform="rotate(-90 24 24)"
-      />
-      <text
-        x={24}
-        y={29}
-        textAnchor="middle"
-        className="fill-foreground text-[15px] font-black tabular-nums"
-      >
-        {seconds}
-      </text>
-    </svg>
-  );
 }
 
 /**
@@ -175,17 +129,45 @@ function CoinflipPanel(args: GameAreaArgs) {
       style={{ opacity: barSlideActive ? 0.28 : 1, transition: 'opacity 380ms ease' }}
     >
       {/* Single fixed-min-height, centred box for every phase — the coin's centre never moves. The
-       *  ring is `absolute … -translate-y-1/2` (non-displacing) and only shown during the live pick
-       *  window; the pick pills live in the slot-aside mechanism (renderSlotAside), entirely outside
-       *  this box — neither ever shifts the coin. */}
+       *  clock is `absolute … -translate-y-1/2` (non-displacing) and opacity/scale-gated to the live
+       *  pick window (see below); the pick pills live in the slot-aside mechanism (renderSlotAside),
+       *  entirely outside this box — neither ever shifts the coin. */}
       <div
         ref={ref}
         className="relative flex min-h-[260px] items-center justify-center py-3"
         data-testid="hub-board"
       >
-        {live && !revealing && (
-          <div className="absolute left-3 top-1/2 -translate-y-1/2">
-            <CountdownRing seconds={seconds} />
+        {/* Ticket 2026-09-26#2 (D61, ADVISOR_TO_PM.md): replaces the old SVG ring with the shared
+         *  `DigitCountdown` (lifted from RpsHub.tsx's own private `RpsCountdown` — see that
+         *  component's doc comment). Mounted for the whole `live` span (in-match + result) rather
+         *  than the ring's old `live && !revealing` hard conditional mount, which unmounted with no
+         *  transition the INSTANT a reveal started — matches RPS's own clock, which is likewise only
+         *  ever in the DOM while `RpsBoard` itself is mounted (`RpsHub.tsx:635-645`'s `showBoard`
+         *  gate — RPS's clock never exists during pure idle/waiting either, so this stays scoped to
+         *  `live`, not the whole hub's lifetime, matching real RPS parity exactly, not an
+         *  over-generalized "always mounted"). Within that `live` span, opacity/scale now fade
+         *  smoothly on `revealing` instead of popping — matches RPS's own wrapper pattern
+         *  (`RpsHub.tsx:544-553`) and this file's own stated design philosophy just above (one
+         *  persistent JSX subtree over conditional mounts, for the SAME reveal-boundary case RPS's
+         *  clock and this one both cross). Unlike RPS's wrapper, this one does NOT copy RPS's
+         *  absolute-centering `transform: translate(-50%, calc(-50% - 42px))` — that positions RPS's
+         *  clock above its own VS label, which doesn't apply here. Coinflip's positioning (`absolute
+         *  left-3 top-1/2 -translate-y-1/2`, left of the coin) already existed and is unchanged; only
+         *  opacity/scale are new. Same magnitudes/transition as RPS's own wrapper (1→0 opacity,
+         *  1→0.55 scale, same easing) since the ticket's own check describes the identical "pops
+         *  in... fades out" behavior. `coin-countdown` test id kept on the wrapper unchanged
+         *  (CoinflipHub.test.tsx's existing assertion). */}
+        {live && (
+          <div
+            className="absolute left-3 top-1/2 -translate-y-1/2"
+            data-testid="coin-countdown"
+            style={{
+              opacity: revealing ? 0 : 1,
+              transform: `scale(${revealing ? 0.55 : 1})`,
+              transition: 'opacity 450ms ease, transform 450ms cubic-bezier(0.34,1.5,0.5,1)',
+            }}
+          >
+            <DigitCountdown seconds={seconds} testid="coin-countdown-digits" />
           </div>
         )}
         {/* The one persistent coin — mounted once for the whole hub visit. `intro` plays its one-time
