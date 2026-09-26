@@ -614,10 +614,11 @@ describe('DiceHubScreen', () => {
     });
 
     // Ticket 2026-09-15#13 item 2: Dice's own player-bar loss ring is var(--rc-loss) (#FF3E5E,
-    // Full Spec.html:3787's playerBarRing), scoped to Dice only via OwnSlot's new lossRingColor
-    // prop — every other OwnSlot-using game keeps the shared ring-destructive class untouched
-    // (confirmed separately by CoinflipHub.test.tsx's own "Result loss/draw" test). Real timers
-    // (see the equivalent comment on "Resolved: reveals both rolls" above).
+    // Full Spec.html:3787's playerBarRing), scoped via OwnSlot's lossRingColor prop — Mines/RPS
+    // joined the same gate later (2026-09-16#7/2026-09-25#3), and Coinflip joined too (2026-09-26#3,
+    // D62 — confirmed by CoinflipHub.test.tsx's own equivalent test); Blackjack/Chess remain on the
+    // shared ring-destructive class. Real timers (see the equivalent comment on "Resolved: reveals
+    // both rolls" above).
     it('own-bar loss ring is var(--rc-loss), not the shared ring-destructive class', async () => {
       const gameState: DiceView = {
         players: ['me', 'opp'], seeds: { me: 1, opp: 2 }, round: 0, replays: 0, revealed: { me: true, opp: true },

@@ -909,8 +909,11 @@ export function GameHub(props: GameHubProps) {
               // not a coincidence worth re-literalling, reuse the token exactly like Dice does.
               // Ticket 2026-09-25#3 item 2: RPS joins the same gate — a deliberate NEW bar treatment
               // for RPS (see RpsHub.tsx's own doc comment for the full citation chain), not a
-              // consequence of the token already existing — Blackjack/Chess/Coinflip remain untouched.
-              lossRingColor={gameId === 'dice' || gameId === 'mines' || gameId === 'rps' ? 'var(--rc-loss)' : undefined}
+              // consequence of the token already existing — Blackjack/Chess remain untouched.
+              // Ticket 2026-09-26#3 (D62): Coinflip joins too — Designer's own report confirmed it
+              // was still on the shared default (--rc-loss already resolves to the exact #FF3E5E the
+              // ticket cites, index.css:318 — no new token needed, just extending this allow-list).
+              lossRingColor={gameId === 'dice' || gameId === 'mines' || gameId === 'rps' || gameId === 'coinflip' ? 'var(--rc-loss)' : undefined}
               // Ticket 2026-09-16#4 item 4: Dice's own win ring/fill is #16A34A (DiceHub.tsx's own
               // DICE_WIN_GREEN — the same green already used for the winning cube number and the
               // winning history pill), NOT the shared --rc-green — scoped by gameId, same shape as
@@ -923,10 +926,12 @@ export function GameHub(props: GameHubProps) {
               // decision, applied as directed, not a re-litigation of the earlier verification.
               // Ticket 2026-09-25#3 item 2: RPS joins Mines/Dice on this same literal too, matching
               // its own card-frame win color (RpsHub.tsx's `FRAME_WIN`, ticket 2026-09-25#2 item 2) —
-              // Blackjack/Chess/Coinflip are untouched, still on the shared generic --rc-green token
-              // (this does not become a platform-wide unification).
-              winRingColor={gameId === 'dice' || gameId === 'mines' || gameId === 'rps' ? '#16A34A' : undefined}
-              winFillColor={gameId === 'dice' || gameId === 'mines' || gameId === 'rps' ? '#16A34A' : undefined}
+              // Blackjack/Chess are untouched, still on the shared generic --rc-green token (this
+              // does not become a platform-wide unification).
+              // Ticket 2026-09-26#3 (D62): Coinflip joins too, same #16A34A literal — Designer's own
+              // report confirmed it was still on the shared default mint green.
+              winRingColor={gameId === 'dice' || gameId === 'mines' || gameId === 'rps' || gameId === 'coinflip' ? '#16A34A' : undefined}
+              winFillColor={gameId === 'dice' || gameId === 'mines' || gameId === 'rps' || gameId === 'coinflip' ? '#16A34A' : undefined}
               // Ticket 2026-09-16#7 item 4: Mines-only — the shared outlineClasses() had no
               // per-verdict draw override until now (win/lose already did). Mines' own draw literal
               // (Full Spec.html:3787) is #FF8A1E — no other game currently needs this overridden.
@@ -1363,7 +1368,17 @@ function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdi
           win-fill layer is z-1, so z-10 put the gem strip ABOVE it instead of below (Designer's own
           diagnosis, confirmed by direct read). `min-w-0 flex-1` is unrelated to stacking and stays. */}
       {gemRow && <span className="min-w-0 flex-1">{gemRow}</span>}
-      {aside && <span className="relative z-10 flex shrink-0 items-center gap-2">{aside}</span>}
+      {/* Ticket 2026-09-26#3 (D62, ADVISOR_TO_PM.md): the exact same `relative z-10` bug D28 (above)
+          already found and fixed for `gemRow` — left in this sibling because no game's own `aside`
+          rendered during the fill/caption reveal window at the time. Coinflip's `OwnPills` is the
+          first one that does (it shows the locked pick pill exactly when `terminal`), so this was
+          the first real collision: `aside`'s old z-10 painted the H/T pill ABOVE the win-fill/"you
+          won" caption (both z-[1]) instead of below. Checked every current `aside` consumer
+          (Chess's clock chip, Crash's pill, Blackjack's Hit/Stand controls, Coinflip's own pills)
+          for a `position:absolute` descendant relying on this wrapper's own `position:relative` as
+          its containing block — none found; dropping both `relative` and `z-10` together is safe,
+          matching `gemRow`'s already-proven fix exactly. */}
+      {aside && <span className="flex shrink-0 items-center gap-2">{aside}</span>}
       {/* Ticket 2026-09-17#3 item 2: see `OpponentSlot`'s matching comment above — same mechanism,
           mirrored to the OTHER side of the bar (`top:calc(100% + 6px)`, not `bottom`). */}
       {gemText && (
