@@ -109,6 +109,15 @@ function CountdownRing({ seconds }: { seconds: number }) {
  * No caption renders in any state (idle/waiting/in-match/result) — matchmaking feedback already lives
  * elsewhere (opponent bar "PLAYING…"/"Opponent", PLAY button "WAITING FOR AN OPPONENT…").
  *
+ * Ticket 2026-09-26#1 (ADVISOR_TO_PM.md, D60): fades this whole wrapper to 28% opacity while
+ * `barSlideActive` is set — the search/found→converge dim every other hub (RpsPanel/MinesPanel/
+ * DiceHub's board) already applies via the shared `matchBarSlide` mechanism, which this hub had
+ * simply never opted into. Same 380ms ease transition, mirrors `MinesPanel`'s wrapper exactly
+ * (`MinesHub.tsx`). `CoinflipHubScreen` below now passes `matchBarSlide="measured"` (the Mines/Dice
+ * live-DOM-measurement mode) rather than the RPS flat-number mode, since this codebase's own
+ * `matchBarSlide="measured"` implementation is the game-agnostic mechanism the ticket describes —
+ * it isn't gated on any particular game id, just on which hubs opt in.
+ *
  * Pick window: the coin + the circular countdown (H/T selection lives in the player's own slot pill —
  * see renderSlotAside). At terminal the coin flips to the revealed face. The opponent's pick and the
  * flip never exist on the client before match.end (redaction is server-side); the client only
@@ -116,7 +125,7 @@ function CountdownRing({ seconds }: { seconds: number }) {
  * view (replacing the old self-dismissing overlay's reach). Borderless navy.
  */
 function CoinflipPanel(args: GameAreaArgs) {
-  const { phase, gameState, serverClockOffset = 0, drawBeat } = args;
+  const { phase, gameState, serverClockOffset = 0, drawBeat, barSlideActive } = args;
   const live = phase === 'in-match' || phase === 'result';
   const view = gameState as CoinflipView | null;
   const terminal = isTerminal(view);
@@ -161,7 +170,10 @@ function CoinflipPanel(args: GameAreaArgs) {
   }, [live, revealing]);
 
   return (
-    <div className="rounded-2xl bg-surface p-4">
+    <div
+      className="rounded-2xl bg-surface p-4"
+      style={{ opacity: barSlideActive ? 0.28 : 1, transition: 'opacity 380ms ease' }}
+    >
       {/* Single fixed-min-height, centred box for every phase — the coin's centre never moves. The
        *  ring is `absolute … -translate-y-1/2` (non-displacing) and only shown during the live pick
        *  window; the pick pills live in the slot-aside mechanism (renderSlotAside), entirely outside
@@ -359,6 +371,7 @@ export function CoinflipHubScreen(props: GameHubScreenProps) {
       // within it. Do not "fix" this back to 0 without Owner sign-off; see the mailbox entry for the
       // full rationale.
       searchFloorMs={3800}
+      matchBarSlide="measured"
       {...props}
     />
   );

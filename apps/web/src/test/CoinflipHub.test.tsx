@@ -693,14 +693,12 @@ describe('CoinflipHubScreen — search dwell floor restored (2026-09-11#9)', () 
       // T5: `matchForming` (phase 'waiting' with a currentMatchId already assigned) is exactly the
       // window the restored floor now holds open — the shared VS label arms for Coinflip again.
       expect(screen.getByTestId('hub-match-vs').style.opacity).toBe('1');
-      // Ticket 2026-09-11#10 item 1 regression check: the new bar-slide mechanism is opt-in
-      // (`matchBarSlide`, RpsHub/MinesHub/DiceHub only) — Coinflip never passes it, so even during
-      // this exact matchForming window the bars carry no transform/data-rc-* attribute at all, a
-      // byte-identical no-op to before this ticket.
-      expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('');
-      expect(screen.getByTestId('hub-slot-own').style.transform).toBe('');
-      expect(screen.getByTestId('hub-slot-opponent').hasAttribute('data-rc-oppbar')).toBe(false);
-      expect(screen.getByTestId('hub-slot-own').hasAttribute('data-rc-playerbar')).toBe(false);
+      // Ticket 2026-09-26#1 (D60, corrects the 2026-09-11#10 item 1 assumption below): Coinflip now
+      // opts into the same `matchBarSlide="measured"` mechanism Mines/Dice already use, so during
+      // this exact matchForming window the bars DO carry the data-rc-* markers and a real transform —
+      // see the dedicated measured-shift test below for the exact live-measured values.
+      expect(screen.getByTestId('hub-slot-opponent').hasAttribute('data-rc-oppbar')).toBe(true);
+      expect(screen.getByTestId('hub-slot-own').hasAttribute('data-rc-playerbar')).toBe(true);
 
       // Advance past the restored ~3.8s floor — the hold clears and the pick buttons render.
       act(() => { vi.advanceTimersByTime(3800); });
@@ -709,6 +707,50 @@ describe('CoinflipHubScreen — search dwell floor restored (2026-09-11#9)', () 
       expect(screen.getByTestId('hub-move-tails')).toBeInTheDocument();
       expect(screen.getByTestId('hub-match-vs').style.opacity).toBe('0');
     } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Ticket 2026-09-26#1 (D60, ADVISOR_TO_PM.md): the Designer-reported gap — Coinflip's opponent
+  // search never converged the bars/dimmed the board, unlike RPS/Mines/Dice. Fixed by opting into
+  // the already-generic `matchBarSlide="measured"` mechanism (same live-DOM-measurement mode Mines
+  // uses — see MinesHub.test.tsx's own measured-shift test for the identical formula) plus the same
+  // `barSlideActive`-driven opacity fade on the board wrapper RpsPanel/MinesPanel already have.
+  it('ticket 2026-09-26#1: measures the real bar positions live and slides the bars toward center + dims the coin board while matchForming holds, then back to normal once in-match', () => {
+    vi.useFakeTimers();
+    const rect = (top: number, height: number): DOMRect =>
+      ({ top, height, bottom: top + height, left: 0, right: 0, width: 0, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.hasAttribute('data-rc-gamewrap')) return rect(0, 0);
+      if (this.hasAttribute('data-rc-oppbar')) return rect(100, 48);
+      if (this.hasAttribute('data-rc-playerbar')) return rect(300, 48);
+      return rect(0, 0);
+    });
+    try {
+      const { rerender } = render(<CoinflipHubScreen {...baseProps({ initialStake: 10 })} />);
+      // Idle: the slide hasn't armed yet — no shift, board at full opacity.
+      expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(0px)');
+      expect(screen.getByTestId('hub-slot-own').style.transform).toBe('translateY(0px)');
+      expect(screen.getByTestId('hub-board').parentElement?.style.opacity).toBe('1');
+
+      fireEvent.click(screen.getByTestId('hub-play'));
+      const gameState: CoinflipView = { players: ['pid', 'bob'], choices: {} };
+      rerender(<CoinflipHubScreen {...baseProps({ initialStake: 10, currentMatchId: 'm1', gameState })} />);
+
+      act(() => { vi.advanceTimersByTime(1000); });
+      // oTop=100, pTop=300, pr.height=48 → mid=(100+300+48)/2=224 → o=224-71-100=53, p=224+23-300=-53
+      // (same formula MinesHub.test.tsx's own measured-shift test verifies).
+      expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(53px)');
+      expect(screen.getByTestId('hub-slot-own').style.transform).toBe('translateY(-53px)');
+      expect(screen.getByTestId('hub-board').parentElement?.style.opacity).toBe('0.28');
+
+      // Past the ~3.8s dwell floor: phase flips to in-match — bars slide back, board un-dims.
+      act(() => { vi.advanceTimersByTime(2800); });
+      expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(0px)');
+      expect(screen.getByTestId('hub-slot-own').style.transform).toBe('translateY(0px)');
+      expect(screen.getByTestId('hub-board').parentElement?.style.opacity).toBe('1');
+    } finally {
+      rectSpy.mockRestore();
       vi.useRealTimers();
     }
   });
