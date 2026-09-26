@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import type { RpsView } from '../App.js';
 import { useTheme } from '../lib/theme.js';
+import { DigitCountdown } from '../components/hub-shared/DigitCountdown.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
 
 const RPS_CHOICES = [
@@ -178,43 +179,6 @@ function RpsFrame({
       <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-[9px]" style={{ background: tileBg }}>
         {children}
       </div>
-    </div>
-  );
-}
-
-/** Digit-flip countdown — mirrors the prototype's `rcClockOut`/`rcClockIn` keyframe pair
- *  (Full Spec.html:90-93). The outgoing digit slides down 26px, flashing through violet (#B285F7 at
- *  the 45% mark, Full Spec.html:90) before fading out at #8B45F0, 240ms cubic-bezier(0.33,0,0.67,0.35)
- *  (:90-91). The incoming digit slides up from -18px while fading in, 260ms
- *  cubic-bezier(0.3,0.9,0.32,1) (:92-93). The prototype re-triggers this every tick by alternating
- *  between two identical keyframe names (a CSS restart trick); Framer's keyed `AnimatePresence`
- *  gets the same per-tick replay for free. Font: Full Spec.html:620-621 (`'Space Grotesk'`, 26px,
- *  700, `var(--rc-text)`). */
-function RpsCountdown({ seconds }: { seconds: number }) {
-  return (
-    <div
-      className="relative h-[26px] w-[52px] overflow-hidden"
-      role="timer"
-      aria-label={`${seconds} seconds to pick`}
-      data-testid="rps-countdown"
-    >
-      <AnimatePresence initial={false}>
-        <motion.span
-          key={seconds}
-          className="absolute inset-0 flex items-center justify-center font-bold leading-none tabular-nums"
-          style={{ fontFamily: "'Space Grotesk', " + ARIAL, fontSize: 26, color: 'var(--rc-text)' }}
-          initial={{ y: -18, opacity: 0 }}
-          animate={{ y: 0, opacity: 1, transition: { duration: 0.26, ease: [0.3, 0.9, 0.32, 1] } }}
-          exit={{
-            y: 26,
-            opacity: 0,
-            color: ['var(--rc-text)', '#B285F7', '#8B45F0'],
-            transition: { duration: 0.24, ease: [0.33, 0, 0.67, 0.35], times: [0, 0.45, 1] },
-          }}
-        >
-          {seconds}
-        </motion.span>
-      </AnimatePresence>
     </div>
   );
 }
@@ -549,7 +513,7 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, outcome, on
               transition: 'opacity 450ms ease, transform 450ms cubic-bezier(0.34,1.5,0.5,1)',
             }}
           >
-            <RpsCountdown seconds={seconds} />
+            <DigitCountdown seconds={seconds} testid="rps-countdown" />
           </div>
         </div>
 

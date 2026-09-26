@@ -754,6 +754,32 @@ describe('CoinflipHubScreen — search dwell floor restored (2026-09-11#9)', () 
       vi.useRealTimers();
     }
   });
+
+  // Ticket 2026-09-26#2 (D61, ADVISOR_TO_PM.md): the old `CountdownRing` was a hard conditional
+  // mount (`{live && !revealing && <CountdownRing/>}`) that vanished from the DOM with NO transition
+  // the instant a reveal started. The new `DigitCountdown` wrapper stays mounted for the whole `live`
+  // span (in-match + result) and only fades opacity/scale on the reveal boundary — this test is the
+  // actual regression check for that: same DOM node across the pick→reveal transition, not a
+  // remount, with a genuine opacity change rather than an unmount.
+  it("ticket 2026-09-26#2: the pick-window clock stays mounted (same node) across the reveal boundary and only fades — no more instant pop-out", () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const gameState: CoinflipView = { players: ['pid', 'bob'], choices: {} };
+    const { rerender } = render(
+      <CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['heads', 'tails'] })} />
+    );
+    const clockLive = screen.getByTestId('coin-countdown');
+    expect(clockLive.style.opacity).toBe('1');
+    expect(clockLive.style.transform).toBe('scale(1)');
+
+    const terminalState: CoinflipView = { ...gameState, choices: { pid: 'heads', bob: 'tails' }, result: 'heads' };
+    rerender(
+      <CoinflipHubScreen {...baseProps({ currentMatchId: 'm1', gameState: terminalState, legalMoves: [] })} />
+    );
+    // Same node — still in the DOM, not remounted/removed — just faded.
+    expect(screen.getByTestId('coin-countdown')).toBe(clockLive);
+    expect(clockLive.style.opacity).toBe('0');
+    expect(clockLive.style.transform).toBe('scale(0.55)');
+  });
 });
 
 describe('CoinflipHubScreen — waiting transforms in place (#154)', () => {
