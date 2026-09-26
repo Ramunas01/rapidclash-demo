@@ -410,13 +410,16 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     });
     expect(scrollSpy).toHaveBeenCalled(); // brought into view on resolve
     // After the reveal the own bar plays the green win fill: the username stays put, "You Win" shows
-    // ALONGSIDE it, and the green sits behind as a background layer (#156 — the name is not swapped out).
+    // ALONGSIDE it, and the green sits behind as a background layer (#156 — the name is not swapped
+    // out). Ticket 2026-09-26#3 (D62): the fill is now the inline #16A34A, not the shared
+    // `bg-success` class (Coinflip joined Dice/Mines/RPS's own gate).
     await waitFor(
       () => {
         const ownBar = screen.getByTestId('hub-slot-own');
         expect(ownBar.textContent).toMatch(/you won/i);
         expect(ownBar.textContent).toContain('me'); // username is NOT replaced by "You Win"
-        expect(ownBar.querySelector('.bg-success')).not.toBeNull(); // green fill = a background layer
+        const ownFill = ownBar.querySelector('.pointer-events-none.absolute.inset-0') as HTMLElement | null;
+        expect(ownFill?.style.background).toBe('rgb(22, 163, 74)'); // #16A34A, jsdom-normalized
       },
       { timeout: 3000 }
     );
@@ -467,7 +470,11 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
       const ownBar = screen.getByTestId('hub-slot-own');
       expect(ownBar.textContent).toContain('neo'); // username stays put (not swapped out)
       expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you won/i); // alongside
-      expect(ownBar.querySelector('.bg-success')).not.toBeNull(); // green as a background layer
+      // Ticket 2026-09-26#3 (D62): Coinflip's own win fill/ring is now the inline #16A34A
+      // (matching Dice/Mines/RPS), not the shared `bg-success`/`ring-success` classes — same
+      // inline-color shape as DiceHub.test.tsx's own equivalent assertion.
+      const ownFill = ownBar.querySelector('.pointer-events-none.absolute.inset-0') as HTMLElement;
+      expect(ownFill.style.background).toBe('rgb(22, 163, 74)'); // #16A34A, jsdom-normalized
       expect(ownBar.className).not.toContain('ring-success'); // not yet settled to the outline
 
       // 0.5s fill-in + 2s hold + 0.5s fade-out = 3s → settles to the persistent green outline and the
@@ -475,7 +482,9 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(3000 + 50);
       });
-      expect(ownBar.className).toContain('ring-success'); // shared outlineClasses('win')
+      expect(ownBar.className).toContain('ring-[3px]');
+      expect(ownBar.className).not.toContain('ring-success'); // no longer the shared class
+      expect(ownBar.style.getPropertyValue('--tw-ring-color')).toBe('#16A34A');
       expect(ownBar.textContent).toContain('neo'); // username persists into the end state
       expect(screen.queryByTestId('hub-slot-own-verdict')).toBeNull(); // "You Win" left with the fill
     } finally {
@@ -483,31 +492,59 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     }
   });
 
-  it('Result loss/draw (#156): outline only — no green fill, no "You Win" (regression guard)', async () => {
-    for (const [outcome, ring] of [
-      [{ type: 'win', winner: 'bob' } as const, 'ring-destructive'], // a loss (opponent won)
-      [{ type: 'draw' } as const, 'ring-amber-400'],
-    ] as const) {
-      vi.useFakeTimers();
-      try {
-        renderToTerminal(outcome);
-        await act(async () => {
-          await vi.advanceTimersByTimeAsync(2600 + 50);
-        }); // → result phase
-        await act(async () => {
-          await vi.advanceTimersByTimeAsync(250 + 50);
-        }); // → verdict lights
-        const ownBar = screen.getByTestId('hub-slot-own');
-        expect(ownBar.className).toContain(ring);
-        expect(ownBar.querySelector('.bg-success')).toBeNull(); // no fill layer
-        expect(screen.queryByTestId('hub-slot-own-verdict')).toBeNull(); // no "You Win"
-        expect(ownBar.textContent).toContain('neo'); // username present as always
-      } finally {
-        vi.useRealTimers();
-        cleanup(); // unmount before the next verdict iteration (afterEach only runs between tests)
-      }
+  // Ticket 2026-09-26#3 (D62, ADVISOR_TO_PM.md) item 1: `GameHub.tsx`'s `OwnSlot` used to wrap
+  // `aside` in `relative z-10` — above the win-fill/"you won" caption (both z-[1]) — so Coinflip's
+  // own locked pick pill (rendered via `OwnPills` exactly when `terminal`, i.e. precisely during
+  // this reveal window) painted OVER the green fill/caption instead of behind them. Fixed by
+  // dropping `relative z-10` from that wrapper (matching `gemRow`'s own already-proven D28 fix).
+  // This test is the actual regression check: the wrapper around the locked pick pill no longer
+  // carries the classes that caused the stacking bug.
+  it('ticket 2026-09-26#3 item 1: the locked pick pill\'s wrapper no longer outranks the win-fill/caption in stacking order (relative z-10 dropped)', async () => {
+    vi.useFakeTimers();
+    try {
+      renderToTerminal({ type: 'win', winner: 'pid' });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2600 + 50);
+      }); // → result phase
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(250 + 50);
+      }); // → win animation (fill-in) — the locked pick pill is also mounted by now (terminal)
+      const pickPill = screen.getByTestId('coin-own-pick');
+      const asideWrapper = pickPill.parentElement as HTMLElement;
+      expect(asideWrapper.className).not.toContain('z-10');
+      expect(asideWrapper.className).not.toContain('relative');
+    } finally {
+      vi.useRealTimers();
     }
   });
+
+  it('Result loss (#156): outline only — no green fill, no "You Win" (regression guard); ticket 2026-09-26#3: the loss ring is now var(--rc-loss), not the shared ring-destructive class', async () => {
+    vi.useFakeTimers();
+    try {
+      renderToTerminal({ type: 'win', winner: 'bob' }); // a loss (opponent won)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2600 + 50);
+      }); // → result phase
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(250 + 50);
+      }); // → verdict lights
+      const ownBar = screen.getByTestId('hub-slot-own');
+      expect(ownBar.className).toContain('ring-[3px]');
+      expect(ownBar.className).not.toContain('ring-destructive');
+      expect(ownBar.style.getPropertyValue('--tw-ring-color')).toBe('var(--rc-loss)');
+      expect(ownBar.querySelector('.pointer-events-none.absolute.inset-0')).toBeNull(); // no fill layer
+      expect(screen.queryByTestId('hub-slot-own-verdict')).toBeNull(); // no "You Win"
+      expect(ownBar.textContent).toContain('neo'); // username present as always
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Coinflip has no draw outcome (confirmed: `drawRingColor`/`lossRingColor`/`winRingColor` only
+  // ever branch on 'win'/'lose' — a 'draw' outcome, if it ever reached this component, would still
+  // fall through to the shared `outlineClasses('draw')` class untouched by this ticket's changes,
+  // since neither `winRingColor` nor `lossRingColor` gates that branch. No live path produces one
+  // for this game today, so this is a structural note, not a tested behavior.
 
   it('JOIN balance-check: refuses clearly when the owner stake is uncovered, without taking', () => {
     const onTakeChallenge = vi.fn();
