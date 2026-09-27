@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import type { BlackjackView, BlackjackCard } from '../App.js';
@@ -77,14 +77,33 @@ const isRed = (suit: string) => suit === '♥' || suit === '♦';
 type CardFrame = 'win' | 'lose' | 'bust' | 'draw' | null;
 
 /** The result outline ring for a card — green (win), red (loss/bust), orange (push tie). Shared by
- *  PlayingCard and the (revealed) hole card so a push frames every card the same way. */
+ *  PlayingCard and the (revealed) hole card so a push frames every card the same way.
+ *
+ *  Ticket 2026-09-27#5 (D67, ADVISOR_TO_PM.md) item 2: literal colors, not the shared classes —
+ *  this function is entirely local to this file already (not `hub-shared/slotReveal.tsx`'s
+ *  `outlineClasses()`), so this has zero cross-game blast radius. Win/lose glow is 18px (not the
+ *  shared 12px, matching D64's own ChessResultPopup precedent — a hand-sized ring, not a single
+ *  slot pill). Draw (push) gets no glow at all, matching Mines' own no-glow draw ring exactly
+ *  (`GameHub.tsx`'s `drawRingColor` has never carried a shadow) — confirmed this is the actual
+ *  target of the ticket's push instruction, since Blackjack's bar-level draw ring is structurally
+ *  unreachable (see `GameHub.tsx`'s own `<GameHub>` call site below: `drawRingColor` deliberately
+ *  does NOT get `'blackjack'` added, unlike Chess/D64). */
 function cardFrameClass(frame: CardFrame): string {
   return cn(
-    frame === 'win' && 'ring-[3px] ring-success shadow-[0_0_14px_rgba(34,197,94,0.55)]',
+    frame === 'win' && 'ring-[3px] shadow-[0_0_18px_rgba(22,163,74,0.55)]',
     // A loss and a bust both read red; a push tie reads orange (the shared draw colour).
-    (frame === 'lose' || frame === 'bust') && 'ring-[3px] ring-destructive shadow-[0_0_14px_rgba(239,68,68,0.5)]',
-    frame === 'draw' && 'ring-[3px] ring-amber-400 shadow-[0_0_14px_rgba(251,191,36,0.5)]',
+    (frame === 'lose' || frame === 'bust') && 'ring-[3px] shadow-[0_0_18px_rgba(255,62,94,0.55)]',
+    frame === 'draw' && 'ring-[3px]',
   );
+}
+
+/** Literal `--tw-ring-color` for `cardFrameClass`'s inline ring — see that function's own doc
+ *  comment for why these are literal, not `--rc-*` tokens or the shared classes. */
+function cardFrameStyle(frame: CardFrame): CSSProperties | undefined {
+  if (frame === 'win') return { '--tw-ring-color': '#16A34A' } as CSSProperties;
+  if (frame === 'lose' || frame === 'bust') return { '--tw-ring-color': '#FF3E5E' } as CSSProperties;
+  if (frame === 'draw') return { '--tw-ring-color': '#FF8A1E' } as CSSProperties;
+  return undefined;
 }
 
 function PlayingCard({ card, index, delay = 0, frame = null }: { card: BlackjackCard; index: number; delay?: number; frame?: CardFrame }) {
@@ -94,7 +113,7 @@ function PlayingCard({ card, index, delay = 0, frame = null }: { card: Blackjack
       initial={{ x: CARD_TRAVEL_PX, y: -12, opacity: 0, rotateY: 90 }}
       animate={{ x: 0, y: 0, opacity: 1, rotateY: 0 }}
       transition={{ duration: CARD_ANIM_S, ease: [0.22, 1, 0.36, 1], delay }}
-      style={{ marginLeft: index === 0 ? 0 : -22, zIndex: CARD_Z_BASE + index }}
+      style={{ marginLeft: index === 0 ? 0 : -22, zIndex: CARD_Z_BASE + index, ...cardFrameStyle(frame) }}
       className={cn(
         'relative flex h-20 w-14 flex-col items-center justify-center rounded-lg border border-black/10 bg-white font-bold shadow-lg transition-shadow duration-300',
         isRed(card.suit) ? 'text-red-600' : 'text-gray-900',
@@ -126,7 +145,7 @@ function OppHoleCard({ card, revealed, index, delay = 0, active = false, frame =
         : { duration: 0.5, ease: [0.22, 1, 0.36, 1], delay }}
       // Under the first card WHILE face-down (CARD_Z_BASE - 1, below index 0 — set from the start of
       // the deal, no snap); once revealed it rejoins the ascending OVER fan (CARD_Z_BASE + index).
-      style={{ marginLeft: index === 0 ? 0 : -22, zIndex: revealed ? CARD_Z_BASE + index : CARD_Z_BASE - 1, perspective: 600 }}
+      style={{ marginLeft: index === 0 ? 0 : -22, zIndex: revealed ? CARD_Z_BASE + index : CARD_Z_BASE - 1, perspective: 600, ...cardFrameStyle(frame) }}
       // The push result outline rings the whole card (on the testid element, like PlayingCard).
       className={cn('relative h-20 w-14 rounded-lg', cardFrameClass(frame))}
     >
