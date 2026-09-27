@@ -632,6 +632,84 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
       expect(own.className).toContain('text-destructive');
     });
   });
+
+  // Ticket 2026-09-27#1 (D63, ADVISOR_TO_PM.md) item 1: same gap class D60 already fixed for
+  // Coinflip — Chess never opted into the already-generic `matchBarSlide` mechanism. Mirrors
+  // MinesHub.test.tsx's own measured-shift test (identical mocked rects/formula) — Chess uses the
+  // same 'measured' mode (not a new one), so a taller board naturally produces correct offsets
+  // with zero Chess-specific math.
+  describe('ticket 2026-09-27#1 (D63): opponent-search bar convergence', () => {
+    it('measures the real bar positions live and slides the bars toward center + dims the board while matchForming holds, then back to normal once in-match', async () => {
+      const rect = (top: number, height: number): DOMRect =>
+        ({ top, height, bottom: top + height, left: 0, right: 0, width: 0, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+      const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        if (this.hasAttribute('data-rc-gamewrap')) return rect(0, 0);
+        if (this.hasAttribute('data-rc-oppbar')) return rect(100, 48);
+        if (this.hasAttribute('data-rc-playerbar')) return rect(300, 48);
+        return rect(0, 0);
+      });
+      try {
+        const { rerender } = render(<ChessHubScreen {...baseProps()} />);
+        await screen.findByTestId('hub-tc-rapid10'); // wait for /games before PLAY is meaningful
+        vi.useFakeTimers();
+        const board = screen.getByTestId('chess-board').parentElement as HTMLElement;
+        // Idle: the slide hasn't armed yet — no shift, board at full opacity.
+        expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(0px)');
+        expect(screen.getByTestId('hub-slot-own').style.transform).toBe('translateY(0px)');
+        expect(board.style.opacity).toBe('1');
+
+        fireEvent.click(screen.getByTestId('hub-bet-10')); // #143: PLAY with no stake armed only guides to the bet panel
+        fireEvent.click(screen.getByTestId('hub-play'));
+        rerender(<ChessHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({}), legalMoves: asLegal([]) })} />);
+
+        act(() => { vi.advanceTimersByTime(1000); });
+        // oTop=100, pTop=300, pr.height=48 → mid=(100+300+48)/2=224 → o=224-71-100=53, p=224+23-300=-53
+        // (same formula MinesHub.test.tsx's own measured-shift test verifies).
+        expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(53px)');
+        expect(screen.getByTestId('hub-slot-own').style.transform).toBe('translateY(-53px)');
+        expect(board.style.opacity).toBe('0.28');
+
+        // Just past the dwell floor: phase flips to in-match — bars slide back, board un-dims.
+        act(() => { vi.advanceTimersByTime(1450); });
+        expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(0px)');
+        expect(screen.getByTestId('hub-slot-own').style.transform).toBe('translateY(0px)');
+        expect(board.style.opacity).toBe('1');
+      } finally {
+        rectSpy.mockRestore();
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  // Ticket 2026-09-27#1 (D63) item 2: Chess's clock chip has no phase gating of its own, so it used
+  // to render fully visible right through the search phase, colliding with GameHub.tsx's own
+  // "Searching…" label (both used to independently claim the same absolute spot). Fixed by merging
+  // them into one flex row (GameHub.tsx) plus opacity-gating the clock's own content on `searching`
+  // (ChessHub.tsx's ChessSlotAside) — this test is the actual regression check: both coexist,
+  // neither is unmounted, and the clock is genuinely invisible (not just visually behind) while
+  // searching.
+  describe('ticket 2026-09-27#1 (D63): "Searching…" no longer collides with the clock pill', () => {
+    it('the opponent clock chip stays mounted but fades to opacity 0 while searching, and both "Searching…" and the clock coexist in the DOM', async () => {
+      render(<ChessHubScreen {...baseProps({ waitingExpiresAt: Date.now() + 10_000 })} />);
+      await screen.findByTestId('hub-tc-rapid10'); // wait for /games — the clock's pre-match
+      // fallback needs timeControlBaseMs, populated once the meta resolves.
+      const oppBar = within(screen.getByTestId('hub-slot-opponent'));
+      expect(oppBar.getByText('Searching…')).toBeInTheDocument();
+      const clock = oppBar.getByTestId('chess-clock-opponent');
+      expect(clock).toBeInTheDocument(); // mounted, not unmounted — coexists with "Searching…"
+      expect(clock.parentElement?.style.opacity).toBe('0'); // but genuinely invisible
+    });
+
+    it('the clock fades back in (opacity 1) once the match is actually live', () => {
+      const clock: PlayerClocks = {
+        remainingMs: { alice: 300_000, bob: 300_000 }, active: 'alice', activeSince: Date.now(), timeControlId: 'blitz5',
+      };
+      render(<ChessHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ clock }), legalMoves: asLegal([]) })} />);
+      const oppBar = within(screen.getByTestId('hub-slot-opponent'));
+      const oppClock = oppBar.getByTestId('chess-clock-opponent');
+      expect(oppClock.parentElement?.style.opacity).toBe('1');
+    });
+  });
 });
 
 // Issue #279: the guest chrome gates (hidden wallet/Open Games/related/footer/nav, locked bet

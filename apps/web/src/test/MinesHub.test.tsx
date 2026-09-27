@@ -765,12 +765,19 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
   // natural width even at opacity:0, squeezing the gem strip's own `flex-1` sibling down to ~1/3
   // width (wrapping 3 rows instead of ~2). Fix: take it out of flow, mirroring "Searching…"'s own
   // already-correct `absolute right-3.5 top-1/2 -translate-y-1/2` positioning one element above.
-  it("D40: the opponent bar's \"Playing…\" label is taken OUT OF FLOW (absolute), not an in-flow shrink-0 sibling that would squeeze the gem strip's width", () => {
+  //
+  // Ticket 2026-09-27#1 (D63): "Searching…"/"Playing…"/`aside` were merged into ONE shared
+  // `absolute`-positioned flex row (GameHub.tsx's own D63 doc comment) — the label itself is no
+  // longer individually `absolute` (that would be redundant inside an already-absolute parent);
+  // what D40 actually cares about — that this label never reserves in-flow width next to the gem
+  // strip — now holds because its PARENT row is taken out of flow instead. Updated to check that
+  // ancestor rather than the label's own class.
+  it("D40: the opponent bar's \"Playing…\" label sits inside an out-of-flow (absolute) row, not an in-flow shrink-0 sibling that would squeeze the gem strip's width", () => {
     const gameState = view({ uncovered: [0, 1, 2] }, { locked: false });
     render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: asLegal([3, 4, 5]) })} />);
     const oppBar = within(screen.getByTestId('hub-slot-opponent'));
     const label = oppBar.getByText('Playing…');
-    expect(label.className).toMatch(/(?:^|\s)absolute(?:\s|$)/);
+    expect(label.parentElement?.className).toMatch(/(?:^|\s)absolute(?:\s|$)/);
     expect(label.className).not.toMatch(/shrink-0/);
   });
 

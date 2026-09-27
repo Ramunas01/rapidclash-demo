@@ -125,19 +125,33 @@ function DrawOfferedChip({ side, onAccept }: { side: 'opponent' | 'own'; onAccep
  *  pills by the GameHub template. `ended` reuses the same idle/result-vs-in-match idiom as
  *  renderPrimaryAction/renderSecondaryAction (args.phase === 'in-match' gates the live button;
  *  here its negation gates the frozen clock) so both clocks go fully static — no turn ring/dot, no
- *  pulse — once the round is over (Advisor #9). */
+ *  pulse — once the round is over (Advisor #9).
+ *
+ *  Ticket 2026-09-27#1 (D63, ADVISOR_TO_PM.md) item 2: `searching` opacity-gates the clock (0 while
+ *  `phase === 'waiting'`, 260ms ease) — mounted throughout, never popped in/out, same idiom as
+ *  `GameHub.tsx`'s own always-mounted "Playing…" label (ticket 2026-09-21#10/D37). This clock chip
+ *  has no phase gating of its own otherwise (unlike every other current `renderSlotAside` opponent-
+ *  side consumer, which returns `null` during `waiting`), so it used to render fully visible right
+ *  through the search phase — colliding with `GameHub.tsx`'s own "Searching…" label, which used to
+ *  occupy the identical absolute spot (see that file's own D63 doc comment for the layout half of
+ *  this fix). Applies identically to both sides — this function is called once per side with the
+ *  same logic. */
 function ChessSlotAside(args: GameAreaArgs, side: 'opponent' | 'own'): ReactNode {
   const view = args.gameState as ChessView | null;
   const pid = side === 'own' ? args.playerId : args.opponentId;
   const testid = side === 'own' ? 'chess-clock-self' : 'chess-clock-opponent';
   const ended = args.phase !== 'in-match';
+  const searching = args.phase === 'waiting';
   const offered = Boolean(args.phase === 'in-match' && pid && view?.drawOffers?.[pid]);
-  const clock =
+  const clockNode =
     view?.clock && pid ? (
       <ChessClockChip clock={view.clock} pid={pid} testid={testid} ended={ended} />
     ) : args.timeControlBaseMs != null ? (
       <ClockPill ms={args.timeControlBaseMs} active={false} low={false} testid={testid} />
     ) : null;
+  const clock = clockNode && (
+    <span style={{ opacity: searching ? 0 : 1, transition: 'opacity 260ms ease' }}>{clockNode}</span>
+  );
   if (!offered) return clock;
   return (
     <>
@@ -447,10 +461,18 @@ function ChessPrimaryAction({ args }: { args: GameAreaArgs }) {
  *  board itself gates interactivity on legalMoves, so the preview and frozen states are static.
  *  On match end the lightweight result popup fades in OVER the frozen final position (the board
  *  stays sharp — no modal); the lasting green/red/orange indicator is the own bar (ownBarResult).
- *  The arena owns its surface (no grey table card). */
+ *  The arena owns its surface (no grey table card).
+ *
+ *  Ticket 2026-09-27#1 (D63, ADVISOR_TO_PM.md) item 1: fades the whole board (pieces + coordinates,
+ *  all inside this one wrapper) to 28% opacity while `barSlideActive` is set — the same
+ *  `opacity: barSlideActive ? 0.28 : 1` pattern Mines/Dice/Coinflip's own wrappers already use
+ *  verbatim (`MinesHub.tsx:535`/`DiceHub.tsx:540`/`CoinflipHub.tsx:129`). Populated because
+ *  `ChessHubScreen` below now opts into `matchBarSlide="measured"` — same gap class D60 already
+ *  fixed for Coinflip (the shared bar-shift/VS/dim/scramble mechanism was already fully generic;
+ *  Chess just never had `matchBarSlide` wired). */
 function ChessPanel(args: GameAreaArgs) {
   return (
-    <div className="relative">
+    <div className="relative" style={{ opacity: args.barSlideActive ? 0.28 : 1, transition: 'opacity 380ms ease' }}>
       <ChessBoard {...args} />
       {args.phase === 'result' && args.outcome && (
         <ChessResultPopup outcome={args.outcome} playerId={args.playerId} opponentName={args.opponentName} />
@@ -499,6 +521,11 @@ export function ChessHubScreen(props: GameHubScreenProps) {
       ownBarResult
       pinDark
       highStakeCycle={CHESS_HIGH_STAKES}
+      // Ticket 2026-09-27#1 (D63): 'measured' — the live-DOM mode Mines/Dice/Coinflip already use
+      // (GameHub.tsx's own `matchBarSlide==='measured'` branch), not a new hard-coded number. Reads
+      // the real rendered bar positions at Play time, so Chess's taller board naturally produces
+      // correct offsets with zero Chess-specific math.
+      matchBarSlide="measured"
       {...props}
     />
   );
