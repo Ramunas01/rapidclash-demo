@@ -913,7 +913,8 @@ export function GameHub(props: GameHubProps) {
               // Ticket 2026-09-26#3 (D62): Coinflip joins too — Designer's own report confirmed it
               // was still on the shared default (--rc-loss already resolves to the exact #FF3E5E the
               // ticket cites, index.css:318 — no new token needed, just extending this allow-list).
-              lossRingColor={gameId === 'dice' || gameId === 'mines' || gameId === 'rps' || gameId === 'coinflip' ? 'var(--rc-loss)' : undefined}
+              // Ticket 2026-09-27#2 (D64): Chess joins too — same allow-list extension.
+              lossRingColor={gameId === 'dice' || gameId === 'mines' || gameId === 'rps' || gameId === 'coinflip' || gameId === 'chess' ? 'var(--rc-loss)' : undefined}
               // Ticket 2026-09-16#4 item 4: Dice's own win ring/fill is #16A34A (DiceHub.tsx's own
               // DICE_WIN_GREEN — the same green already used for the winning cube number and the
               // winning history pill), NOT the shared --rc-green — scoped by gameId, same shape as
@@ -926,16 +927,22 @@ export function GameHub(props: GameHubProps) {
               // decision, applied as directed, not a re-litigation of the earlier verification.
               // Ticket 2026-09-25#3 item 2: RPS joins Mines/Dice on this same literal too, matching
               // its own card-frame win color (RpsHub.tsx's `FRAME_WIN`, ticket 2026-09-25#2 item 2) —
-              // Blackjack/Chess are untouched, still on the shared generic --rc-green token (this
+              // Blackjack remains untouched, still on the shared generic --rc-green token (this
               // does not become a platform-wide unification).
               // Ticket 2026-09-26#3 (D62): Coinflip joins too, same #16A34A literal — Designer's own
               // report confirmed it was still on the shared default mint green.
-              winRingColor={gameId === 'dice' || gameId === 'mines' || gameId === 'rps' || gameId === 'coinflip' ? '#16A34A' : undefined}
-              winFillColor={gameId === 'dice' || gameId === 'mines' || gameId === 'rps' || gameId === 'coinflip' ? '#16A34A' : undefined}
+              // Ticket 2026-09-27#2 (D64): Chess joins too, same #16A34A literal.
+              winRingColor={gameId === 'dice' || gameId === 'mines' || gameId === 'rps' || gameId === 'coinflip' || gameId === 'chess' ? '#16A34A' : undefined}
+              winFillColor={gameId === 'dice' || gameId === 'mines' || gameId === 'rps' || gameId === 'coinflip' || gameId === 'chess' ? '#16A34A' : undefined}
               // Ticket 2026-09-16#7 item 4: Mines-only — the shared outlineClasses() had no
               // per-verdict draw override until now (win/lose already did). Mines' own draw literal
               // (Full Spec.html:3787) is #FF8A1E — no other game currently needs this overridden.
-              drawRingColor={gameId === 'mines' ? '#FF8A1E' : undefined}
+              // Ticket 2026-09-27#2 (D64): Chess joins too — unlike Mines' mid-round-only
+              // `drawRingActive` mechanism, Chess genuinely reaches a terminal `draw` outcome through
+              // this SAME `barVerdict==='draw'` path (stalemate/threefold/agreed-draw), so this was a
+              // live gap, not a hypothetical extension. Same #FF8A1E literal, same no-glow ring-only
+              // treatment (Mines' own draw ring has no glow either — exact parity, not a new style).
+              drawRingColor={gameId === 'mines' || gameId === 'chess' ? '#FF8A1E' : undefined}
               // Ticket 2026-09-25#5: the own-bar half of the same new internal-draw ring — see
               // OpponentSlot's own call site + this file's GameHubProps doc comment for the chain.
               drawRingActive={drawRingActive}
