@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import { Chessboard } from 'react-chessboard';
 import type { Square } from 'react-chessboard/dist/chessboard/types';
@@ -9,7 +9,7 @@ import { play } from '../lib/sound.js';
 import { formatClock } from '../format.js';
 import type { ChessView, ChessMove } from '../App.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
-import { outlineForOutcome, outlineClasses, useDelayedFlag } from './hub-shared/slotReveal.js';
+import { outlineForOutcome, useDelayedFlag } from './hub-shared/slotReveal.js';
 
 /** Board palette tuned to the lavender/purple design system (frame: white + light-purple). */
 const LIGHT_SQUARE = '#ffffff';
@@ -263,7 +263,9 @@ function ChessBoard({ playerId, gameState, legalMoves, onMove }: GameAreaArgs) {
 
   const customSquareStyles = useMemo(() => {
     const styles: Record<string, Record<string, string>> = {};
-    if (checkedKingSquare) styles[checkedKingSquare] = { background: 'radial-gradient(circle, rgba(239,68,68,0.7) 35%, transparent 75%)' };
+    // Ticket 2026-09-27#2 (D64) item 3: was rgba(239,68,68,0.7) — Tailwind's generic destructive
+    // red, never the app's own #FF3E5E loss red. Same gradient stops/opacity, color only.
+    if (checkedKingSquare) styles[checkedKingSquare] = { background: 'radial-gradient(circle, rgba(255,62,94,0.7) 35%, transparent 75%)' };
     if (selected) styles[selected] = { ...styles[selected], background: 'rgba(139,61,255,0.45)' };
     for (const sq of targetsForSelected) {
       styles[sq] = { ...styles[sq], background: 'radial-gradient(circle, rgba(139,61,255,0.85) 22%, transparent 24%)', cursor: 'pointer' };
@@ -329,6 +331,23 @@ const POPUP_FADE_OUT_AT_MS = 5500; // start the 0.5 s fade-out → gone at 6000
 const WIN_FILL_FADE_AT_MS = 3000; // in (500) + green hold (2500) → green fill fades to navy
 const WIN_FILL_GONE_AT_MS = 3500; // green fade (500) complete → unmount the fill layer
 
+/** Ticket 2026-09-27#2 (D64, ADVISOR_TO_PM.md) item 2: `ChessResultPopup`'s own outline+glow,
+ *  literal-color and Chess-local — deliberately NOT touching the shared `outlineClasses()`
+ *  (`hub-shared/slotReveal.tsx`), which also drives `OwnSlot`'s own win-ring fallback (now covered
+ *  by item 1's `GameHub.tsx` allow-list) and `OpponentSlot`'s unrelated generic draw-push beat.
+ *  Win/lose get a 24px glow (the ticket's own explicit values) — deliberately LARGER than the
+ *  shared 12px glow, since this is a banner-sized panel, not a slot pill. Draw gets no glow,
+ *  matching Mines' own no-glow draw ring precedent (`GameHub.tsx`'s `drawRingColor`, item 1). */
+function chessPopupOutlineStyle(verdict: 'win' | 'lose' | 'draw'): CSSProperties {
+  if (verdict === 'win') {
+    return { '--tw-ring-color': '#16A34A', boxShadow: '0 0 24px rgba(22,163,74,0.55)' } as CSSProperties;
+  }
+  if (verdict === 'lose') {
+    return { '--tw-ring-color': '#FF3E5E', boxShadow: '0 0 24px rgba(255,62,94,0.55)' } as CSSProperties;
+  }
+  return { '--tw-ring-color': '#FF8A1E' } as CSSProperties;
+}
+
 /** The one-line result text: Win → "You Won"; Loss → "[opponent] Won"; Draw → "Draw". Driven
  *  strictly by the server outcome + this player's id (never a client-side winner recompute). */
 function chessResultLine(verdict: 'win' | 'lose' | 'draw', opponentName?: string | null): string {
@@ -354,10 +373,16 @@ function ChessResultPopup({ outcome, playerId, opponentName }: { outcome: Outcom
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: fadingOut ? 0 : 1, scale: 1 }}
         transition={{ duration: fadingOut ? POPUP_OUT_S : POPUP_IN_S, ease: 'easeOut' }}
-        className={cn('relative overflow-hidden rounded-[18px] bg-surface px-8 py-4 shadow-xl', outlineClasses(verdict))}
+        // Ticket 2026-09-27#2 (D64): the ring/glow are now the Chess-local literal colors
+        // (`chessPopupOutlineStyle`), not the shared `outlineClasses()` — see that helper's own
+        // doc comment for why.
+        className="relative overflow-hidden rounded-[18px] bg-surface px-8 py-4 shadow-xl ring-[3px]"
+        style={chessPopupOutlineStyle(verdict)}
       >
         {/* Win: a GREEN fill layer over the navy panel (same as the own-bar win fill), held then faded
-            back to navy — leaving the "You Won" text + the green outline. Loss/draw: navy the whole way. */}
+            back to navy — leaving the "You Won" text + the green outline. Loss/draw: navy the whole way.
+            Ticket 2026-09-27#2 (D64): the literal #16A34A, not the shared bg-success class (same
+            reasoning as the ring above — this banner is Chess-only chrome, no shared token to swap). */}
         {isWin && !winFillGone && (
           <motion.span
             aria-hidden="true"
@@ -365,7 +390,8 @@ function ChessResultPopup({ outcome, playerId, opponentName }: { outcome: Outcom
             initial={{ opacity: 1 }}
             animate={{ opacity: winFillFading ? 0 : 1 }}
             transition={{ duration: POPUP_OUT_S, ease: 'easeOut' }}
-            className="pointer-events-none absolute inset-0 bg-success"
+            className="pointer-events-none absolute inset-0"
+            style={{ background: '#16A34A' }}
           />
         )}
         <span data-testid="chess-result-text" className={cn('relative z-10 text-lg font-black uppercase tracking-wide', isWin ? 'text-white' : 'text-foreground')}>

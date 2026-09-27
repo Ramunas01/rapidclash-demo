@@ -342,15 +342,21 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
     expect(screen.getByTestId('chess-result-popup')).toBeInTheDocument();
   });
 
+  // Ticket 2026-09-27#2 (D64): the popup's own ring is now the Chess-local literal color
+  // (`chessPopupOutlineStyle`, `--tw-ring-color` inline), not the shared `ring-success`/
+  // `ring-destructive`/`ring-amber-400` classes — same inline-color shape as `OwnSlot`'s own
+  // `lossRingColor`/`winRingColor`/`drawRingColor` allow-list pattern (see DiceHub.test.tsx's
+  // equivalent assertions).
   it.each([
-    [{ type: 'win', winner: 'alice' } as Outcome, /you won/i, 'ring-success'],
-    [{ type: 'win', winner: 'bob' } as Outcome, /rival won/i, 'ring-destructive'], // a loss → opponent's name
-    [{ type: 'draw' } as Outcome, /^draw$/i, 'ring-amber-400'],
-  ])('Result popup: a small native navy panel with the one-line text + the outcome outline (%o)', (outcome, textRe, ringClass) => {
+    [{ type: 'win', winner: 'alice' } as Outcome, /you won/i, '#16A34A'],
+    [{ type: 'win', winner: 'bob' } as Outcome, /rival won/i, '#FF3E5E'], // a loss → opponent's name
+    [{ type: 'draw' } as Outcome, /^draw$/i, '#FF8A1E'],
+  ])('Result popup: a small native navy panel with the one-line text + the outcome outline (%o)', (outcome, textRe, ringColor) => {
     renderToChessResult(outcome, { opponentName: 'rival' });
     const popup = screen.getByTestId('chess-result-popup');
     expect(popup.className).toContain('bg-surface'); // same navy surface as the play panel — not a modal
-    expect(popup.className).toContain(ringClass); // green / red / orange outcome outline
+    expect(popup.className).toContain('ring-[3px]');
+    expect(popup.style.getPropertyValue('--tw-ring-color')).toBe(ringColor); // green / red / orange outcome outline
     expect(screen.getByTestId('chess-result-text').textContent).toMatch(textRe);
     expect(popup.getAttribute('data-outcome')).toBe(outcome.type === 'win' ? (outcome.winner === 'alice' ? 'win' : 'lose') : 'draw');
   });
@@ -380,7 +386,9 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
       // Phase 2 (after ~3.5 s): the green fill is gone, the navy panel + green outline + text remain.
       await act(async () => { await vi.advanceTimersByTimeAsync(3400); });
       expect(screen.queryByTestId('chess-result-fill')).toBeNull();
-      expect(screen.getByTestId('chess-result-popup').className).toContain('ring-success');
+      const popup = screen.getByTestId('chess-result-popup');
+      expect(popup.className).toContain('ring-[3px]');
+      expect(popup.style.getPropertyValue('--tw-ring-color')).toBe('#16A34A'); // ticket 2026-09-27#2
       expect(screen.getByTestId('chess-result-text').textContent).toMatch(/you won/i);
     } finally {
       vi.useRealTimers();
@@ -395,17 +403,21 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
       // re-render schedules the next (chained fake timers don't cascade in one big advance).
       await act(async () => { await vi.advanceTimersByTimeAsync(300); });
       await act(async () => { await vi.advanceTimersByTimeAsync(3200); });
-      expect(screen.getByTestId('hub-slot-own').className).toContain('ring-success'); // bar settled to its outline
+      // Ticket 2026-09-27#2 (D64): the own-bar ring is now the inline #16A34A (Chess joined the
+      // GameHub.tsx allow-list), not the shared ring-success class.
+      const ownBar = screen.getByTestId('hub-slot-own');
+      expect(ownBar.className).toContain('ring-[3px]'); // bar settled to its outline
+      expect(ownBar.style.getPropertyValue('--tw-ring-color')).toBe('#16A34A');
       // Run past the popup's 6 s dismissal.
       await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
       expect(screen.queryByTestId('chess-result-popup')).toBeNull(); // popup gone…
-      expect(screen.getByTestId('hub-slot-own').className).toContain('ring-success'); // …but the own-bar outline persists
+      expect(ownBar.style.getPropertyValue('--tw-ring-color')).toBe('#16A34A'); // …but the own-bar outline persists
 
       // PLAY (a new game) clears it: arm a bet, then press PLAY.
       fireEvent.click(screen.getByTestId('hub-bet-10'));
       fireEvent.click(screen.getByTestId('hub-play'));
       await act(async () => { await vi.advanceTimersByTimeAsync(50); });
-      expect(screen.getByTestId('hub-slot-own').className).not.toContain('ring-success'); // outline cleared on PLAY
+      expect(ownBar.className).not.toContain('ring-[3px]'); // outline cleared on PLAY
     } finally {
       vi.useRealTimers();
     }
@@ -418,7 +430,11 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
     // rakes 0 and refunds; covered in packages/games/chess + core settlement). Here: the presentation.
     renderToChessResult({ type: 'draw' }, { opponentName: 'rival' });
     expect(screen.getByTestId('chess-result-text').textContent).toMatch(/^draw$/i);
-    expect(screen.getByTestId('chess-result-popup').className).toContain('ring-amber-400'); // orange
+    // Ticket 2026-09-27#2 (D64): inline #FF8A1E (Chess joined GameHub.tsx's drawRingColor
+    // allow-list), not the shared ring-amber-400 class.
+    const popup = screen.getByTestId('chess-result-popup');
+    expect(popup.className).toContain('ring-[3px]');
+    expect(popup.style.getPropertyValue('--tw-ring-color')).toBe('#FF8A1E'); // orange
     expect(screen.getByTestId('chess-board')).toBeInTheDocument(); // stays on the frozen final position
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull(); // no heavy overlay, no auto-rematch UI
   });
@@ -708,6 +724,37 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
       const oppBar = within(screen.getByTestId('hub-slot-opponent'));
       const oppClock = oppBar.getByTestId('chess-clock-opponent');
       expect(oppClock.parentElement?.style.opacity).toBe('1');
+    });
+  });
+
+  // Ticket 2026-09-27#2 (D64) item 2: the win-fill layer's literal background color, not the
+  // shared bg-success class.
+  it('ticket 2026-09-27#2: the win popup\'s fill layer is the literal #16A34A, not the shared bg-success class', async () => {
+    vi.useFakeTimers();
+    try {
+      renderToChessResult({ type: 'win', winner: 'alice' });
+      await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+      const fill = screen.getByTestId('chess-result-fill');
+      expect(fill.className).not.toContain('bg-success');
+      expect(fill.style.background).toBe('rgb(22, 163, 74)'); // #16A34A, jsdom-normalized
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Ticket 2026-09-27#2 (D64) item 3: the king's check halo, confirmed wrong today (generic
+  // Tailwind destructive red, rgba(239,68,68,0.7)) — now the app's own #FF3E5E loss red.
+  it("ticket 2026-09-27#2: the checked king's halo is the app's own #FF3E5E loss red, not the generic Tailwind destructive red", async () => {
+    // Black rook on e2 checks the white king on e1 along the open e-file.
+    const CHECK_FEN = '4k3/8/8/8/8/8/4r3/4K3 w - - 0 1';
+    const { container } = render(
+      <ChessHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ fen: CHECK_FEN }), legalMoves: asLegal([]) })} />
+    );
+    await waitFor(() => {
+      // react-chessboard applies customSquareStyles to the square's own inner content div, not
+      // the outer [data-square] element itself (confirmed via direct DOM inspection).
+      const halo = sq(container, 'e1').firstElementChild as HTMLElement | null;
+      expect(halo?.getAttribute('style') ?? '').toContain('rgba(255,62,94,0.7)');
     });
   });
 });
