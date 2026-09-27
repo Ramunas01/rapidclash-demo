@@ -166,14 +166,17 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
     const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
     rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
     // The win frame lands a beat after the reveal (FRAME_DELAY_MS) and stays.
+    // Ticket 2026-09-27#5 (D67): the ring is now the inline literal #16A34A, not the shared
+    // ring-success class (cardFrameClass is Blackjack-local, not the shared outlineClasses()).
     await waitFor(() => {
       for (const c of within(screen.getByTestId('own-hand')).getAllByTestId('card')) {
-        expect(c.className).toMatch(/ring-success/);
+        expect(c.className).toMatch(/ring-\[3px\]/);
+        expect((c as HTMLElement).style.getPropertyValue('--tw-ring-color')).toBe('#16A34A');
       }
     }, { timeout: 2000 });
     // The opponent's cards are never framed; the frame is the player's own win/lose only.
     for (const c of within(screen.getByTestId('opp-hand')).getAllByTestId('card')) {
-      expect(c.className).not.toMatch(/ring-success|ring-destructive/);
+      expect(c.className).not.toMatch(/ring-\[3px\]/);
     }
   });
 
@@ -188,8 +191,11 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
     const { rerender, unmount } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
     // A loss is the server outcome `type:'win'` with the OPPONENT as winner (there is no 'lose').
     rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'bob' }, lastSettlement: { delta: -10, newBalance: 990 } })} />);
+    // Ticket 2026-09-27#5 (D67): inline literal #FF3E5E, not the shared ring-destructive class.
     await waitFor(() => {
-      expect(within(screen.getByTestId('own-hand')).getAllByTestId('card')[0].className).toMatch(/ring-destructive/);
+      const card = within(screen.getByTestId('own-hand')).getAllByTestId('card')[0] as HTMLElement;
+      expect(card.className).toMatch(/ring-\[3px\]/);
+      expect(card.style.getPropertyValue('--tw-ring-color')).toBe('#FF3E5E');
     }, { timeout: 2000 });
     unmount();
 
@@ -205,7 +211,7 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
     rr2(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: drawView, lastOutcome: { type: 'draw' }, lastSettlement: { delta: 0, newBalance: 1000 } })} />);
     await new Promise((r) => setTimeout(r, 1200));
     for (const c of within(screen.getByTestId('own-hand')).getAllByTestId('card')) {
-      expect(c.className).not.toMatch(/ring-success|ring-destructive/);
+      expect(c.className).not.toMatch(/ring-\[3px\]/);
     }
   });
 
@@ -390,17 +396,25 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       expect(screen.queryByTestId('card-back')).toBeNull();
       // Both-bust → red (destructive) card outlines on every card, both hands. The outline waits for
       // the reveal to finish (revealComplete, Advisor #10) — assert it once the last card has landed.
+      // Ticket 2026-09-27#5 (D67): the ring is now the inline literal #FF3E5E on this Blackjack-local
+      // cardFrameClass, not the shared ring-destructive class.
       await waitFor(() => {
-        for (const c2 of within(screen.getByTestId('own-hand')).getAllByTestId('card')) expect(c2.className).toMatch(/ring-destructive/);
-        for (const c2 of within(screen.getByTestId('opp-hand')).getAllByTestId('card')) expect(c2.className).toMatch(/ring-destructive/);
+        for (const c2 of within(screen.getByTestId('own-hand')).getAllByTestId('card') as HTMLElement[]) {
+          expect(c2.className).toMatch(/ring-\[3px\]/);
+          expect(c2.style.getPropertyValue('--tw-ring-color')).toBe('#FF3E5E');
+        }
+        for (const c2 of within(screen.getByTestId('opp-hand')).getAllByTestId('card') as HTMLElement[]) {
+          expect(c2.className).toMatch(/ring-\[3px\]/);
+          expect(c2.style.getPropertyValue('--tw-ring-color')).toBe('#FF3E5E');
+        }
       }, { timeout: 2000 });
       // The reversal: Blackjack's draw surface is CARDS + an orange "Push" label — NOT an orange bar.
       const push = screen.getByTestId('push-label');
       expect(push.textContent).toMatch(/push/i);
       expect(push.className).toMatch(/text-amber-400/); // orange
       // Neither player bar shows anything on a push (bars speak only on decided rounds).
-      expect(screen.getByTestId('hub-slot-own').className).not.toMatch(/ring-amber-400|ring-destructive|ring-success/);
-      expect(screen.getByTestId('hub-slot-opponent').className).not.toMatch(/ring-amber-400|ring-destructive|ring-success/);
+      expect(screen.getByTestId('hub-slot-own').className).not.toMatch(/ring-\[3px\]/);
+      expect(screen.getByTestId('hub-slot-opponent').className).not.toMatch(/ring-\[3px\]/);
       // A push is NOT a match end — never the result overlay.
       expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
     });
@@ -424,19 +438,22 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       });
       // Equal non-bust totals → orange (amber) card outlines, NOT red — both hands. The outline waits
       // for the reveal to finish (revealComplete, Advisor #10) — assert once the last card has landed.
+      // Ticket 2026-09-27#5 (D67): inline literal #FF8A1E, no glow (matching Mines' own no-glow draw
+      // ring exactly) — not the shared ring-amber-400 class.
       await waitFor(() => {
-        for (const c2 of within(screen.getByTestId('own-hand')).getAllByTestId('card')) {
-          expect(c2.className).toMatch(/ring-amber-400/);
-          expect(c2.className).not.toMatch(/ring-destructive/);
+        for (const c2 of within(screen.getByTestId('own-hand')).getAllByTestId('card') as HTMLElement[]) {
+          expect(c2.className).toMatch(/ring-\[3px\]/);
+          expect(c2.style.getPropertyValue('--tw-ring-color')).toBe('#FF8A1E');
         }
-        for (const c2 of within(screen.getByTestId('opp-hand')).getAllByTestId('card')) {
-          expect(c2.className).toMatch(/ring-amber-400/);
+        for (const c2 of within(screen.getByTestId('opp-hand')).getAllByTestId('card') as HTMLElement[]) {
+          expect(c2.className).toMatch(/ring-\[3px\]/);
+          expect(c2.style.getPropertyValue('--tw-ring-color')).toBe('#FF8A1E');
         }
       }, { timeout: 2000 });
       // Orange "Push" overlay; bars show nothing (the reversal).
       expect(screen.getByTestId('push-label').textContent).toMatch(/push/i);
-      expect(screen.getByTestId('hub-slot-own').className).not.toMatch(/ring-amber-400|ring-destructive|ring-success/);
-      expect(screen.getByTestId('hub-slot-opponent').className).not.toMatch(/ring-amber-400|ring-destructive|ring-success/);
+      expect(screen.getByTestId('hub-slot-own').className).not.toMatch(/ring-\[3px\]/);
+      expect(screen.getByTestId('hub-slot-opponent').className).not.toMatch(/ring-\[3px\]/);
       expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
     });
 
@@ -473,16 +490,22 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       rerender(<BlackjackHubScreen {...baseProps({ username: 'me', currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
 
       // The bar runs the SAME shared component as Coinflip: green fill + "You Win" alongside the
-      // username (never swapped out), settling to the green outline.
+      // username (never swapped out), settling to the green outline. Ticket 2026-09-27#5 (D67):
+      // Blackjack joined GameHub.tsx's winFillColor allow-list — inline literal #16A34A, not the
+      // shared bg-success class.
       await waitFor(() => {
         expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you won/i);
       }, { timeout: 2000 });
       const ownBar = screen.getByTestId('hub-slot-own');
-      expect(ownBar.querySelector('.bg-success')).not.toBeNull(); // green fill layer
+      const ownFill = ownBar.querySelector('.pointer-events-none.absolute.inset-0') as HTMLElement | null;
+      expect(ownFill?.style.background).toBe('rgb(22, 163, 74)'); // #16A34A, jsdom-normalized
       expect(ownBar.textContent).toContain('me'); // username stays visible
-      // Cards also get the green frame (own hand).
+      // Cards also get the green frame (own hand) — the Blackjack-local cardFrameClass fix.
       await waitFor(() => {
-        for (const c2 of within(screen.getByTestId('own-hand')).getAllByTestId('card')) expect(c2.className).toMatch(/ring-success/);
+        for (const c2 of within(screen.getByTestId('own-hand')).getAllByTestId('card') as HTMLElement[]) {
+          expect(c2.className).toMatch(/ring-\[3px\]/);
+          expect(c2.style.getPropertyValue('--tw-ring-color')).toBe('#16A34A');
+        }
       }, { timeout: 2000 });
     });
 
@@ -497,11 +520,14 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       const { rerender } = render(<BlackjackHubScreen {...baseProps({ username: 'me', currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
       rerender(<BlackjackHubScreen {...baseProps({ username: 'me', currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'bob' }, lastSettlement: { delta: -10, newBalance: 990 } })} />);
 
+      // Ticket 2026-09-27#5 (D67): inline literal #FF3E5E, not the shared ring-destructive class.
       await waitFor(() => {
-        expect(screen.getByTestId('hub-slot-own').className).toMatch(/ring-destructive/);
+        const ownBar = screen.getByTestId('hub-slot-own');
+        expect(ownBar.className).toMatch(/ring-\[3px\]/);
+        expect(ownBar.style.getPropertyValue('--tw-ring-color')).toBe('var(--rc-loss)');
       }, { timeout: 2000 });
       const ownBar = screen.getByTestId('hub-slot-own');
-      expect(ownBar.querySelector('.bg-success')).toBeNull(); // no green fill
+      expect(ownBar.querySelector('.pointer-events-none.absolute.inset-0')).toBeNull(); // no fill layer
       expect(within(ownBar).queryByTestId('hub-slot-own-verdict')).toBeNull(); // no "You Win"
     });
   });
@@ -686,13 +712,17 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
 
         // Before the last hit lands (< revealMs), the own bar shows NO verdict outline — in-play look.
         await act(async () => { await vi.advanceTimersByTimeAsync(1400); });
-        expect(screen.getByTestId('hub-slot-own').className).not.toMatch(/ring-destructive|ring-success|ring-amber-400/);
+        expect(screen.getByTestId('hub-slot-own').className).not.toMatch(/ring-\[3px\]/);
 
         // Just past revealMs (1440) the loss outline fires — bar and cards settle together.
+        // Ticket 2026-09-27#5 (D67): inline literal #FF3E5E, not the shared ring-destructive class.
         await act(async () => { await vi.advanceTimersByTimeAsync(120); });
-        expect(screen.getByTestId('hub-slot-own').className).toMatch(/ring-destructive/);
-        for (const card of within(screen.getByTestId('own-hand')).getAllByTestId('card')) {
-          expect(card.className).toMatch(/ring-destructive/);
+        const ownBar = screen.getByTestId('hub-slot-own');
+        expect(ownBar.className).toMatch(/ring-\[3px\]/);
+        expect(ownBar.style.getPropertyValue('--tw-ring-color')).toBe('var(--rc-loss)');
+        for (const card of within(screen.getByTestId('own-hand')).getAllByTestId('card') as HTMLElement[]) {
+          expect(card.className).toMatch(/ring-\[3px\]/);
+          expect(card.style.getPropertyValue('--tw-ring-color')).toBe('#FF3E5E');
         }
       } finally {
         vi.useRealTimers();
