@@ -193,13 +193,20 @@ function TableSurface({ children }: { children: ReactNode }) {
 }
 
 /** Idle/Waiting table (item 1): the greyish surface with the two right-edge decks and the centred
- *  prompt. Rules + redaction untouched — empty-table presentation only. */
+ *  prompt. Rules + redaction untouched — empty-table presentation only.
+ *
+ *  Ticket 2026-09-27#3 (D65, ADVISOR_TO_PM.md) item 3: the 'waiting' branch is now `null` — the
+ *  shared VS label (GameHub.tsx, now wired in via `matchBarSlide` below) already communicates the
+ *  search beat, and `phase === 'waiting'` is the ONLY phase this component ever reaches with that
+ *  text (`BlackjackPanel`'s own branch below only routes here for 'idle'/'waiting'; 'in-match'
+ *  goes to `BlackjackBoard` instead, never back) — so there's no separate post-run state this text
+ *  needs preserving for. */
 function BlackjackIdle({ phase }: { phase: GameAreaArgs['phase'] }) {
   return (
     <TableSurface>
       <div className="flex flex-1 items-center justify-center">
         <span className="relative z-[1] text-sm font-semibold text-muted-foreground">
-          {phase === 'waiting' ? 'Waiting for an opponent…' : 'Place your bet and play'}
+          {phase === 'waiting' ? null : 'Place your bet and play'}
         </span>
       </div>
     </TableSurface>
@@ -461,9 +468,21 @@ function BlackjackSlotControls({ legalMoves, onMove }: GameAreaArgs) {
 
 /** The Blackjack game-area slot: the greyish table. Empty in idle/waiting; the live hands in-match;
  *  and — because Blackjack opts out of the result pop-up — the SAME board persists in the result
- *  phase so the final cards (with their win/lose frames) stay on the table. */
+ *  phase so the final cards (with their win/lose frames) stay on the table.
+ *
+ *  Ticket 2026-09-27#3 (D65, ADVISOR_TO_PM.md) item 1: fades the whole table (board, deck stacks,
+ *  everything inside this one wrapper) to 28% opacity while `barSlideActive` is set — the same
+ *  `opacity: barSlideActive ? 0.28 : 1` pattern Mines/Dice/Coinflip/Chess(D63) already use verbatim.
+ *  Populated because `BlackjackHubScreen` below now opts into `matchBarSlide="measured"` — the
+ *  third hub in a row (after D60/Coinflip, D63/Chess) that simply never had it wired. Safe for the
+ *  in-match/result path too: `barSlideActive` is only ever `matchForming || searching ||
+ *  resultConverge`, and Blackjack never sets `resultConverge`, so the wrapper is a no-op there. */
 function BlackjackPanel(args: GameAreaArgs) {
-  return args.phase === 'in-match' || args.phase === 'result' ? <BlackjackBoard {...args} /> : <BlackjackIdle phase={args.phase} />;
+  return (
+    <div style={{ opacity: args.barSlideActive ? 0.28 : 1, transition: 'opacity 380ms ease' }}>
+      {args.phase === 'in-match' || args.phase === 'result' ? <BlackjackBoard {...args} /> : <BlackjackIdle phase={args.phase} />}
+    </div>
+  );
 }
 
 /**
@@ -502,6 +521,10 @@ export function BlackjackHubScreen(props: GameHubScreenProps) {
       // of the shared orange draw-bar (the board still gets drawBeat via areaArgs).
       suppressDrawBar
       pinDark
+      // Ticket 2026-09-27#3 (D65): 'measured' — the live-DOM mode Mines/Dice/Coinflip/Chess already
+      // use (GameHub.tsx's own matchBarSlide==='measured' branch), not a new hard-coded number.
+      // Table-height-agnostic by construction: reads the real rendered bar positions at Play time.
+      matchBarSlide="measured"
       {...props}
     />
   );

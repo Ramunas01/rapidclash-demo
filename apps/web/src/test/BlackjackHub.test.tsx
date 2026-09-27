@@ -810,6 +810,66 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       vi.useRealTimers();
     }
   });
+
+  // Ticket 2026-09-27#3 (D65, ADVISOR_TO_PM.md) item 1: the same bar-slide gap D60/D63 already
+  // fixed for Coinflip/Chess — Blackjack never opted into `matchBarSlide`. Mirrors
+  // MinesHub.test.tsx's/ChessHub.test.tsx's own measured-shift test (identical mocked rects/
+  // formula) — Blackjack uses the same 'measured' mode, so its own table height is irrelevant.
+  it('ticket 2026-09-27#3: measures the real bar positions live and slides the bars toward center + dims the table while matchForming holds, then back to normal once in-match', () => {
+    vi.useFakeTimers();
+    const rect = (top: number, height: number): DOMRect =>
+      ({ top, height, bottom: top + height, left: 0, right: 0, width: 0, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.hasAttribute('data-rc-gamewrap')) return rect(0, 0);
+      if (this.hasAttribute('data-rc-oppbar')) return rect(100, 48);
+      if (this.hasAttribute('data-rc-playerbar')) return rect(300, 48);
+      return rect(0, 0);
+    });
+    try {
+      const gameState = inPlayView();
+      const { rerender } = render(<BlackjackHubScreen {...baseProps({ initialStake: 10 })} />);
+      const table = screen.getByTestId('hub-board').parentElement as HTMLElement;
+      // Idle: the slide hasn't armed yet — no shift, table at full opacity.
+      expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(0px)');
+      expect(screen.getByTestId('hub-slot-own').style.transform).toBe('translateY(0px)');
+      expect(table.style.opacity).toBe('1');
+
+      fireEvent.click(screen.getByTestId('hub-play'));
+      rerender(<BlackjackHubScreen {...baseProps({ initialStake: 10, currentMatchId: 'm1', gameState, legalMoves: [] })} />);
+
+      act(() => { vi.advanceTimersByTime(1000); });
+      // oTop=100, pTop=300, pr.height=48 → mid=(100+300+48)/2=224 → o=224-71-100=53, p=224+23-300=-53
+      // (same formula MinesHub.test.tsx's own measured-shift test verifies).
+      expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(53px)');
+      expect(screen.getByTestId('hub-slot-own').style.transform).toBe('translateY(-53px)');
+      expect(table.style.opacity).toBe('0.28');
+
+      // Just past the 2400ms dwell floor: phase flips to in-match — bars slide back, table un-dims.
+      act(() => { vi.advanceTimersByTime(1450); });
+      expect(screen.getByTestId('hub-slot-opponent').style.transform).toBe('translateY(0px)');
+      expect(screen.getByTestId('hub-slot-own').style.transform).toBe('translateY(0px)');
+      expect(table.style.opacity).toBe('1');
+    } finally {
+      rectSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  // Ticket 2026-09-27#3 (D65) item 3: "Waiting for an opponent…" collided with the now-converged
+  // bars/VS label — the only place this text could ever render (`phase === 'waiting'`), so hiding
+  // it reduces to a one-branch change, not new logic. 'idle''s own text is untouched.
+  it('ticket 2026-09-27#3: "Waiting for an opponent…" no longer renders while searching; "Place your bet and play" still shows at idle', () => {
+    const gameState = inPlayView();
+    const { rerender } = render(<BlackjackHubScreen {...baseProps({ initialStake: 10 })} />);
+    expect(screen.getByTestId('hub-board').textContent).toContain('Place your bet and play');
+
+    fireEvent.click(screen.getByTestId('hub-play')); // arms the search dwell start
+    rerender(<BlackjackHubScreen {...baseProps({ initialStake: 10, currentMatchId: 'm1', gameState, legalMoves: [] })} />);
+    // Still within the dwell floor: matchForming holds `phase` at 'waiting'.
+    expect(screen.queryByTestId('own-hand')).toBeNull();
+    expect(screen.getByTestId('hub-board').textContent).not.toContain('Waiting for an opponent');
+    expect(screen.getByTestId('hub-board').textContent).not.toContain('Place your bet and play');
+  });
 });
 
 // Issue #297: the guest chrome gates (hidden wallet/Open Games/related/footer/nav, locked bet
