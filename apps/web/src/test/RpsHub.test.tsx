@@ -5,6 +5,7 @@ import { RpsHubScreen } from '../screens/RpsHub.js';
 import type { RpsView } from '../App.js';
 import type { OpenChallenge } from '@rapidclash/shared';
 import { setCurSel } from '../lib/currency.js';
+import { BOLT_PATH } from '../components/cards/CardBack.js';
 
 // canvas-confetti needs a real <canvas> (absent in jsdom) — mock it (matches the other hub tests).
 vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
@@ -998,5 +999,27 @@ describe('RpsHubScreen — pick-tile labels and selection green (ticket 2026-09-
     const gameStateM2: RpsView = { players: ['pid', 'carol'], choices: {}, round: 0 };
     rerender(<RpsHubScreen {...baseProps({ currentMatchId: 'm2', opponentId: 'carol', gameState: gameStateM2, legalMoves: ['rock', 'paper', 'scissors'] })} />);
     expect(screen.getByTestId('hub-move-rock').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  // Ticket 2026-09-27#4 (D66, ADVISOR_TO_PM.md): the redacted-opponent bolt icon now imports
+  // `BOLT_PATH` from `CardBack.tsx` instead of keeping its own separate literal copy — the ticket's
+  // own check line explicitly asks for "exactly one bolt path in the codebase". This test proves
+  // genuine sharing (importing the SAME live export), not just two strings that happen to match.
+  it("ticket 2026-09-27#4: the redacted-opponent bolt path is imported from CardBack.tsx's BOLT_PATH, not a separate duplicate literal", () => {
+    const gameState: RpsView = { players: ['pid', 'bob'], choices: {} };
+    render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock', 'paper', 'scissors'] })} />);
+    const redacted = screen.getByTestId('hub-opponent-pick').querySelector('[data-rc-rps-icon="redacted"]');
+    expect(redacted?.querySelector('path')?.getAttribute('d')).toBe(BOLT_PATH);
+  });
+
+  // Ticket 2026-09-27#4 (D66) item 2: the shared PLAY→PLAYING… button's busy opacity was 0.7, not
+  // the spec'd/precedented 0.5 (confirmed against RewardsHub.tsx's own working Claim button). This
+  // shared button is used by every hub — verified once here since RPS uses it with no override.
+  it('ticket 2026-09-27#4: the PLAY button dims to opacity-50 (not the old opacity-70) once busy/in-match', () => {
+    const gameState: RpsView = { players: ['pid', 'bob'], choices: {} };
+    render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock', 'paper', 'scissors'] })} />);
+    const play = screen.getByTestId('hub-play');
+    expect(play.className).toContain('opacity-50');
+    expect(play.className).not.toContain('opacity-70');
   });
 });

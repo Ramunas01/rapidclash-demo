@@ -20,7 +20,13 @@ describe('CardBack (shared SVG/CSS card back)', () => {
     expect(bolt.tagName.toLowerCase()).toBe('svg');
     expect((bolt as unknown as SVGElement).style.fill).toBe('var(--card-back-mark)');
     expect(bolt.querySelector('path')?.getAttribute('d')).toBe(BOLT_PATH);
-    expect(bolt.getAttribute('class') ?? '').toContain('h-[70%]'); // fills most of the panel height
+    // Ticket 2026-09-27#4 (D66): width-driven (74% of the panel width), not height-driven — the
+    // old height-driven sizing against a square 24x24 viewBox genuinely overflowed a non-square
+    // panel (e.g. Blackjack's own portrait hole card). See the panel's own overflow-hidden check
+    // below for the safety-net half of the same fix.
+    expect(bolt.getAttribute('class') ?? '').toContain('w-[74%]');
+    expect(bolt.getAttribute('viewBox')).toBe('0 0 351 374');
+    expect(panel.className).toContain('overflow-hidden');
     expect(art.getAttribute('style') ?? '').not.toMatch(/rotate/); // centred + upright by default
   });
 

@@ -13,12 +13,12 @@ Use these everywhere a card back or deck is shown.
 ## Colours — tokens (one source of truth)
 | Token | Value | Role |
 |---|---|---|
-| `--card-back` | **`#5956F6`** | flat blue-violet inset panel (deliberately **distinct** from the theme purple `#8140e2`, for colour variance) |
-| `--card-back-mark` | **`#5351E2`** | the bolt watermark — tone-on-tone, a few shades darker than the panel, subtle |
+| `--card-back` | **`#4F4CEA`** | flat blue-violet inset panel — the exact brand-bolt colour, matching RPS/the coin (ticket 2026-09-27#4/D66; was `#5956F6`, documented at the time as deliberately distinct from the theme purple `#8140e2` for colour variance — that rationale is superseded by this ticket) |
+| `--card-back-mark` | **`#4340D8`** | the bolt watermark — tone-on-tone, a few shades darker than the panel, subtle |
 | (frame) | **`#FFFFFF`** | thick, even white border — the white *is* the card; the blue panel insets on it with a slightly smaller radius |
 
 ## Back
-White card (outer radius matching the card faces, soft drop shadow) + a **flat** `#5956F6` panel + the RapidClash **bolt** (`BOLT_PATH`) in `#5351E2`, **centred and upright** (no rotation), scaled to fill most of the panel height.
+White card (outer radius matching the card faces, soft drop shadow) + a **flat** `#4F4CEA` panel + the RapidClash **bolt** (`BOLT_PATH`, the real 351×374 brand mark as of ticket 2026-09-27#4/D66 — same path `Coin.tsx`'s coin caps and `RpsHub.tsx`'s redacted-throw icon both draw) in `#4340D8`, **centred and upright** (no rotation), scaled WIDTH-driven to 74% of the panel (not height-driven — the old height-driven sizing against a square viewBox genuinely overflowed a non-square panel like Blackjack's own portrait hole card; the inner panel now also carries `overflow:hidden` as a safety net).
 
 ## Deck
 Top card is the back; **4–5 thin white card edges** peek out below, slightly offset downward (the ridged "pile" look); consistent rounded corners; one soft drop shadow under the whole stack. Deals originate from the pile; the sliding card uses the same back.

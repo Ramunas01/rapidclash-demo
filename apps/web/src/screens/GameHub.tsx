@@ -1574,7 +1574,10 @@ function PlayPanel({
           data-testid="hub-play"
           className={cn(
             'w-full rounded-xl bg-brand py-4 text-base font-black uppercase tracking-wider text-white active:translate-y-[3px]',
-            playing ? 'opacity-70' : 'hover:brightness-110',
+            // Ticket 2026-09-27#4 (D66): was opacity-70 — a real numeric mismatch against the
+            // spec'd/precedented 0.5 (confirmed against RewardsHub.tsx's own working Claim button,
+            // the same "one element, 3D ledge" pattern, already correctly at opacity:0.5).
+            playing ? 'opacity-50' : 'hover:brightness-110',
           )}
           // Ticket 2026-09-11#8/A item 3: the chunky "pressable ledge" (`Full Spec.html:695`'s
           // `box-shadow:{{ playBtnShadow }}`, `PLAY_BTN_SHADOW` above) released via

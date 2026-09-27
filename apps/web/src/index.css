@@ -151,15 +151,20 @@
      * *background*; this one is for the ledge shadow specifically, a distinct darker value. */
     --rc-claim-lock-shadow: 0 5px 0 #12121F;
 
-    /* Shared card back (SVG/CSS component) — one source of truth (raw hex, used directly). */
-    --card-back: #5956f6; /* flat blue-violet inset panel */
-    --card-back-mark: #5351e2; /* the bolt watermark — tone-on-tone, a few shades darker */
+    /* Shared card back (SVG/CSS component) — one source of truth (raw hex, used directly).
+     * Ticket 2026-09-27#4 (D66): was #5956F6/#5351E2 (docs/CARD_BACK.md's own prior rationale —
+     * "deliberately distinct" from the theme purple, for colour variance). Now the exact real
+     * brand-bolt pair, matching RPS/the coin (Coin.tsx's COIN_HEADS/TAILS aren't these — that pair
+     * stays intentionally decoupled, see this file's own coin-token comment below). */
+    --card-back: #4f4cea; /* flat blue-violet inset panel */
+    --card-back-mark: #4340d8; /* the bolt watermark — tone-on-tone, a few shades darker */
     /* Coin (Three.js 3D cylinder, COINFLIP_COIN.md) — orange/blue faces + tone-on-tone bolt caps, one
      * shared edge colour for the cylinder's single continuous side surface (Designer-restored orange/blue
      * palette, reverting the brief gold/silver shift from #204; the H/T pick pills in CoinflipHub read
      * `.face` off these same tokens, so they follow automatically). Coin polish v2 (ADVISOR_TO_PM.md
      * 2026-07-10#2): --coin-tails-face is the Designer's EXACT spec hex, #556ef6 — deliberately a
-     * different literal from --card-back (#5956f6), not the same blue reused; don't re-couple them. */
+     * different literal from --card-back (#4f4cea as of ticket 2026-09-27#4/D66, was #5956f6), not
+     * the same blue reused; don't re-couple them. */
     --coin-heads-face: #f2a63b; /* orange */
     --coin-heads-mark: #c8761f; /* darker-orange bolt, tone-on-tone */
     --coin-tails-face: #556ef6; /* blue — Designer's exact spec, decoupled from --card-back */
@@ -218,8 +223,8 @@
     --rc-theme-toggle-inactive-bg: #2F2F49;
     --rc-theme-toggle-inactive-shadow: 0 5px 0 #1E1E33;
     --rc-claim-lock-shadow: 0 5px 0 #12121F;
-    --card-back: #5956f6;
-    --card-back-mark: #5351e2;
+    --card-back: #4f4cea;
+    --card-back-mark: #4340d8;
     --coin-heads-face: #f2a63b;
     --coin-heads-mark: #c8761f;
     --coin-tails-face: #556ef6;
