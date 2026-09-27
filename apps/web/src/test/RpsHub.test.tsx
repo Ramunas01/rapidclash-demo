@@ -876,11 +876,17 @@ describe('RpsHubScreen — opponent bar during matchmaking (ticket 2026-09-15#9)
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it('item 1: "Searching…" is its own absolutely-positioned element, split apart from the scanned name (not one inline row)', () => {
+  // Ticket 2026-09-27#1 (D63): "Searching…" now sits inside a shared, absolutely-positioned flex
+  // row (alongside "Playing…"/`aside`, merged so a per-game aside like Chess's clock chip can no
+  // longer collide with this exact label — see GameHub.tsx's own D63 doc comment) rather than
+  // being individually `absolute` itself; the label's own class no longer carries it. What this
+  // test actually cares about — the label is taken out of flow, split apart from the scanned
+  // name — now holds via that shared ancestor instead.
+  it('item 1: "Searching…" sits in an absolutely-positioned row, split apart from the scanned name (not one inline row)', () => {
     render(<RpsHubScreen {...baseProps({ initialStake: 10, waitingExpiresAt: Date.now() + 10_000, challengesByGame: { rps: [CHALLENGE] } })} />);
     const opp = within(screen.getByTestId('hub-slot-opponent'));
     const label = opp.getByText('Searching…');
-    expect(label.className).toContain('absolute');
+    expect(label.parentElement?.className).toContain('absolute');
     const scan = opp.getByTestId('hub-search-scan');
     // Not a descendant of "Searching…"'s own element, and not the other way around — two
     // structurally separate pieces, matching the prototype's own two-piece split.

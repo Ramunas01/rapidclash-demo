@@ -1184,11 +1184,6 @@ function OpponentSlot({ phase, opponentName, opponentAvatarId, scanNames, aside,
           </span>
         )}
       </span>
-      {searching && (
-        <span className="absolute right-3.5 top-1/2 -translate-y-1/2 animate-pulse text-sm font-bold text-muted-foreground">
-          Searching…
-        </span>
-      )}
       {/* Ticket 2026-09-16#7 item 5 / 2026-09-17#2 item 2: Mines-only gem-count row — a new sibling
           between the name and the aside/"Playing…" slot below. Now `flex-1 min-w-0` (not
           `shrink-0`) — paired with the name span above dropping ITS `flex-1` when a gem row is
@@ -1197,46 +1192,61 @@ function OpponentSlot({ phase, opponentName, opponentAvatarId, scanNames, aside,
           flex-start`, so it still left-aligns within that space rather than centering/stretching.
           Undefined for every other hub → nothing rendered here at all, byte-identical no-op. */}
       {gemRow && <span className="min-w-0 flex-1">{gemRow}</span>}
-      {/* A per-game aside (e.g. chess clock) takes the right slot; otherwise the live "Playing…"
-          tag — only while actually in-match (a persisted post-match board is not "playing").
-          Ticket 2026-09-16#5 item 7: weight/case/tracking corrected against the prototype's own
-          citation (`Full Spec.html:463`: font-weight:bold, no text-transform on the literal mixed-
-          case "Playing...", letter-spacing:0.3px, font-size:13px) — was font-black/uppercase/
-          tracking-wide/text-xs(12px), wrong in both themes. `text-foreground/70` (the color half) is
-          left untouched — a separate, already-tracked GameHub.tsx light-theme token backlog
-          (2026-09-15#9), not reopened here. Shared fallback: affects every game using it (RPS/Mines/
-          Dice/Coinflip/Blackjack/Chess alike), not Mines-specific. */}
-      {aside ? (
-        <span className="flex shrink-0 items-center gap-2">{aside}</span>
-      ) : (
-        // Ticket 2026-09-21#10 (D37): was a plain conditional MOUNT (`phase === 'in-match' && ...`)
-        // — popped in/out instantly, not the prototype's own cited `transition:opacity 260ms ease`
-        // (Full Spec.html:462), which had never actually been implemented despite the citation.
-        // Now always-mounted, opacity-toggled — genuinely fades for every game using this shared
-        // label, not just Mines. `oppLocked` (new, opt-in — undefined for every hub but Mines, the
-        // same "byte-identical no-op elsewhere" shape as oppGemRow/resultConverge) additionally
-        // hides it the moment the opponent's OWN round ends, closing the real gap: `phase` alone
-        // stays 'in-match' through the whole post-lock holdResultMs window, which spans Mines' own
-        // resultPhase converge→reveal→final sequence — so "Playing…" (knowing nothing about
-        // resultPhase) used to keep showing well after the opponent's gem strip had already faded
-        // in, colliding with it in the same bar. For every other game, `oppLocked` is undefined →
-        // `!undefined` → `true` → this reduces to exactly `phase === 'in-match'`, byte-identical to
-        // before.
-        // Ticket 2026-09-22#3 (D40): a direct regression from the always-mounted switch above —
-        // `shrink-0` is in-flow, so even at opacity:0 it still reserved its own natural width,
-        // squeezing the gem strip's own `flex-1` sibling down to ~1/3 width (wrapping 3 rows
-        // instead of ~2). Reuses the same fix already proven correct one element above for
-        // "Searching…" (`absolute right-3.5 top-1/2 -translate-y-1/2`) — the prototype's own source
-        // stacks both labels in the literal SAME absolutely-positioned slot (`Full Spec.html:461`),
-        // mutually exclusive by opacity, one shared spot by design. Parent is already `relative` —
-        // no new positioning context needed.
-        <span
-          className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[13px] font-bold tracking-[0.3px] text-foreground/70"
-          style={{ opacity: phase === 'in-match' && !oppLocked ? 1 : 0, transition: 'opacity 260ms ease' }}
-        >
-          Playing…
-        </span>
-      )}
+      {/* Ticket 2026-09-27#1 (D63, ADVISOR_TO_PM.md) item 2: "Searching…", "Playing…", and a
+          per-game `aside` (e.g. chess clock) used to be THREE independently `absolute right-3.5
+          top-1/2 -translate-y-1/2`-positioned elements, mutually exclusive only by each one's own
+          opacity/mount condition — safe as long as no hub's `aside` ever rendered non-null during
+          the exact phase "Searching…" shows (`phase === 'waiting'`). Every `aside` consumer before
+          Chess was confirmed null then (Blackjack/Crash always null on the opponent side; Coinflip's
+          `OpponentPill` explicitly `null` outside `in-match`) — Chess's own clock chip has no phase
+          gating at all, so it now collides with "Searching…" in the literal same spot. Fixed by
+          merging all three into ONE right-anchored flex row (`gap-[10px]` does the "10px before the
+          pill" spacing for free, no manual offset needed) — each child KEEPS its own exact prior
+          mount/opacity condition unchanged (this is a layout merge, not a behavior change for any
+          existing consumer): "Searching…" stays a hard conditional mount on `searching`; "Playing…"
+          stays the always-mounted, opacity-toggled span from ticket 2026-09-21#10 (D37, see that
+          ticket's own reasoning below) whenever `aside` is absent; `aside` stays a hard conditional
+          mount on itself, appended last. For every hub but Chess, `searching` and a non-null `aside`
+          are still never simultaneously true, so this reduces to exactly today's rendering,
+          byte-identical. Chess's own fix (hiding its clock pill's CONTENT during search, not
+          unmounting it) lives in `ChessHub.tsx`'s `ChessSlotAside`, not here — this file has no
+          notion of "a clock with nothing to count yet", only where things sit. */}
+      <span className="absolute right-3.5 top-1/2 flex -translate-y-1/2 items-center gap-[10px]">
+        {searching && (
+          <span className="animate-pulse text-sm font-bold text-muted-foreground">
+            Searching…
+          </span>
+        )}
+        {/* Ticket 2026-09-16#5 item 7: weight/case/tracking corrected against the prototype's own
+            citation (`Full Spec.html:463`: font-weight:bold, no text-transform on the literal mixed-
+            case "Playing...", letter-spacing:0.3px, font-size:13px) — was font-black/uppercase/
+            tracking-wide/text-xs(12px), wrong in both themes. `text-foreground/70` (the color half)
+            is left untouched — a separate, already-tracked GameHub.tsx light-theme token backlog
+            (2026-09-15#9), not reopened here. Shared fallback: affects every game using it (RPS/
+            Mines/Dice/Coinflip/Blackjack/Chess alike), not Mines-specific.
+            Ticket 2026-09-21#10 (D37): was a plain conditional MOUNT (`phase === 'in-match' && ...`)
+            — popped in/out instantly, not the prototype's own cited `transition:opacity 260ms ease`
+            (Full Spec.html:462), which had never actually been implemented despite the citation.
+            Now always-mounted, opacity-toggled — genuinely fades for every game using this shared
+            label, not just Mines. `oppLocked` (opt-in — undefined for every hub but Mines, the same
+            "byte-identical no-op elsewhere" shape as oppGemRow/resultConverge) additionally hides it
+            the moment the opponent's OWN round ends, closing the real gap: `phase` alone stays
+            'in-match' through the whole post-lock holdResultMs window, which spans Mines' own
+            resultPhase converge→reveal→final sequence — so "Playing…" (knowing nothing about
+            resultPhase) used to keep showing well after the opponent's gem strip had already faded
+            in, colliding with it in the same bar. For every other game, `oppLocked` is undefined →
+            `!undefined` → `true` → this reduces to exactly `phase === 'in-match'`, byte-identical to
+            before. */}
+        {!aside && (
+          <span
+            className="text-[13px] font-bold tracking-[0.3px] text-foreground/70"
+            style={{ opacity: phase === 'in-match' && !oppLocked ? 1 : 0, transition: 'opacity 260ms ease' }}
+          >
+            Playing…
+          </span>
+        )}
+        {aside && <span className="flex shrink-0 items-center gap-2">{aside}</span>}
+      </span>
       {/* Ticket 2026-09-17#3 item 2: the gem-count CAPTION — see `GameHubProps.oppGemText`'s own doc
           comment for the citation. Sits outside the pill (bottom:calc(100% + 6px)), so it moves with
           the bar during the converge slide for free, being an ordinary DOM descendant of it. */}
