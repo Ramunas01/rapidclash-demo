@@ -450,25 +450,77 @@ function HandTotalPill({ label, testid }: { label: string; testid?: string }) {
   );
 }
 
+/** Ticket 2026-09-27#6 (D68, ADVISOR_TO_PM.md) item 3: Hit/Stand's own 3D-ledge construction —
+ *  copied verbatim from `GameHub.tsx`'s own PLAY button (`PLAY_BTN_SHADOW`, `active:translate-y-
+ *  [3px]`), except the transition only lists the two properties the ticket's own citation lists
+ *  (`box-shadow 200ms ease, transform 120ms ease`), not Play's own four-property list. */
+const HIT_LEDGE = '0 5px 0 #5F27B8'; // Hit's own ledge — bg-brand's (#8B45F0) darker shade, matching PLAY_BTN_SHADOW's pairing
+const STAND_FACE = '#4F4CEA'; // literal, not var(--card-back) — a coincidental color match, not a reason to couple via a shared token (see doc comment below)
+const STAND_LEDGE = '#4340D8'; // literal, not var(--card-back-mark) — same reasoning
+const BTN_3D_TRANSITION = 'box-shadow 200ms ease, transform 120ms ease';
+/** Shared min-width (item 1) — the ticket's own explicit fallback value; no browser tooling in this
+ *  environment to measure Stand's exact rendered width, and the ticket itself says this is fine
+ *  ("wide enough for Stand", not pixel-exact). */
+const HIT_STAND_MIN_WIDTH = 92;
+/** Press-pulse duration (ms) — matches the ticket's own citation exactly (`Full Spec.html:3963-
+ *  3969`), NOT `rcNavPop`'s own 420ms (a different keyframe/consumer, see below). */
+const NAV_BAR_POP_MS = 460;
+
 /** Item 6 — Hit / Stand, rendered into the player's OWN slot pill by the template. Gated by the
  *  server-issued legalMoves; fades in on your turn (the post-reveal linger). No Resign control —
- *  the server's disconnect → auto-stand path (BLACKJACK.md) is untouched. */
+ *  the server's disconnect → auto-stand path (BLACKJACK.md) is untouched.
+ *
+ *  Ticket 2026-09-27#6 (D68) items 1-4: the full 3D-button treatment — equal width, brand colors,
+ *  a box-shadow ledge + press-release translateY (copied verbatim from `GameHub.tsx`'s own PLAY
+ *  button construction), and a per-key "pop" press animation.
+ *
+ *  Item 4's press animation composes THREE separate existing precedents, not one copy-paste:
+ *  the KEYFRAME is `rcNavBarPop` (`styles.css`) — already defined byte-for-byte matching the
+ *  ticket's own citation, but orphaned: its only current consumer (`HubToolbar.tsx`'s bottom nav)
+ *  pulses a shared bar container via a remount counter, since all 5 nav items share one literal
+ *  key in the prototype — that mechanism doesn't fit here, since Hit/Stand have genuinely distinct
+ *  keys and need to pulse independently. The STATE SHAPE (a single "last-pressed key" variable,
+ *  each button's own conditional `animation`) is `rcNavPop`'s own shape instead (`GameHub.tsx`'s
+ *  `popId`, `HomeHub.tsx`'s own copy) — a different keyframe/consumer than the one sharing this
+ *  ticket's own keyframe name. The EVENT/TIMER wiring (`onPointerDown` + a fixed-duration
+ *  `setTimeout` clear, restartable via a ref) is `GameHub.tsx`'s own `playShake` pattern — NOT
+ *  `rcNavPop`'s own `onPointerUp`+`onAnimationEnd` release-triggered clear, since the ticket
+ *  explicitly wants a press-triggered pulse with a plain timer, matching its own 460ms citation. */
 function BlackjackSlotControls({ legalMoves, onMove }: GameAreaArgs) {
   const isMyTurn = legalMoves.length > 0;
+  const [navPulse, setNavPulse] = useState<'hit' | 'stand' | null>(null);
+  const navPulseTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(navPulseTimeoutRef.current), []);
+  function pulse(key: 'hit' | 'stand') {
+    clearTimeout(navPulseTimeoutRef.current);
+    setNavPulse(key);
+    navPulseTimeoutRef.current = setTimeout(() => setNavPulse(null), NAV_BAR_POP_MS);
+  }
   return (
     <motion.span
       key={isMyTurn ? 'turn' : 'wait'}
       initial={{ opacity: 0 }}
       animate={{ opacity: isMyTurn ? 1 : 0.45 }}
       transition={{ duration: isMyTurn ? 0.9 : 0.2 }}
+      // Item 3's own layout note: the 5px ledge needs room, but adjusting OwnSlot's shared `aside`
+      // padding (GameHub.tsx) would affect Chess's clock pill and Coinflip's own pills too —
+      // shifted up locally instead, keeping this fix entirely scoped to Blackjack.
+      style={{ transform: 'translateY(-2px)' }}
       className="flex items-center gap-2"
     >
       <button
         type="button"
         data-testid="hit-btn"
         disabled={!isMyTurn}
+        onPointerDown={() => pulse('hit')}
         onClick={() => onMove('hit')}
-        className="rounded-full bg-brand px-4 py-1.5 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+        style={{
+          minWidth: HIT_STAND_MIN_WIDTH,
+          boxShadow: HIT_LEDGE,
+          transition: BTN_3D_TRANSITION,
+          animation: navPulse === 'hit' ? 'rcNavBarPop 420ms cubic-bezier(0.22,0.61,0.36,1)' : undefined,
+        }}
+        className="rounded-full bg-brand px-4 py-1.5 text-center text-sm font-bold text-white transition-opacity hover:opacity-90 active:translate-y-[3px] disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
       >
         Hit
       </button>
@@ -476,8 +528,16 @@ function BlackjackSlotControls({ legalMoves, onMove }: GameAreaArgs) {
         type="button"
         data-testid="stand-btn"
         disabled={!isMyTurn}
+        onPointerDown={() => pulse('stand')}
         onClick={() => onMove('stand')}
-        className="rounded-full bg-background px-4 py-1.5 text-sm font-bold text-foreground transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+        style={{
+          minWidth: HIT_STAND_MIN_WIDTH,
+          background: STAND_FACE,
+          boxShadow: `0 5px 0 ${STAND_LEDGE}`,
+          transition: `${BTN_3D_TRANSITION}, background-color 260ms ease`,
+          animation: navPulse === 'stand' ? 'rcNavBarPop 420ms cubic-bezier(0.22,0.61,0.36,1)' : undefined,
+        }}
+        className="rounded-full px-4 py-1.5 text-center text-sm font-bold text-white transition-opacity hover:brightness-110 active:translate-y-[3px] disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
       >
         Stand
       </button>

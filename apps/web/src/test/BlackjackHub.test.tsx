@@ -111,6 +111,73 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
     expect(screen.getByTestId('stand-btn')).toBeDisabled();
   });
 
+  // Ticket 2026-09-27#6 (D68, ADVISOR_TO_PM.md): the full 3D-button treatment — equal width,
+  // brand colors, a box-shadow ledge, and disabled opacity-50 (was 0.4, the same category of bug
+  // D66 already found on the shared PLAY button).
+  describe('ticket 2026-09-27#6 (D68): Hit/Stand get the full 3D-button treatment', () => {
+    it('item 1: both pills share the same min-width (92px), regardless of their own text length', () => {
+      render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: ['hit', 'stand'] })} />);
+      const hit = screen.getByTestId('hit-btn');
+      const stand = screen.getByTestId('stand-btn');
+      expect(hit.style.minWidth).toBe('92px');
+      expect(stand.style.minWidth).toBe('92px');
+    });
+
+    it('item 2: Hit keeps the brand face color; Stand gets the literal #4F4CEA face — both distinct from the plain flat pill this used to be', () => {
+      render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: ['hit', 'stand'] })} />);
+      const hit = screen.getByTestId('hit-btn');
+      const stand = screen.getByTestId('stand-btn');
+      expect(hit.className).toContain('bg-brand');
+      expect(stand.style.background).toBe('rgb(79, 76, 234)'); // #4F4CEA, jsdom-normalized
+    });
+
+    it('item 3: both pills carry a box-shadow ledge (Hit #5F27B8, Stand #4340D8) and release via active:translate-y-[3px], copied from the shared PLAY button construction', () => {
+      render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: ['hit', 'stand'] })} />);
+      const hit = screen.getByTestId('hit-btn');
+      const stand = screen.getByTestId('stand-btn');
+      expect(hit.style.boxShadow).toBe('0 5px 0 #5F27B8');
+      expect(stand.style.boxShadow).toBe('0 5px 0 #4340D8');
+      expect(hit.className).toContain('active:translate-y-[3px]');
+      expect(stand.className).toContain('active:translate-y-[3px]');
+    });
+
+    it('item 3: disabled opacity is 0.5 (not the old 0.4)', () => {
+      render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: [] })} />);
+      const hit = screen.getByTestId('hit-btn');
+      const stand = screen.getByTestId('stand-btn');
+      expect(hit.className).toContain('disabled:opacity-50');
+      expect(hit.className).not.toContain('disabled:opacity-40');
+      expect(stand.className).toContain('disabled:opacity-50');
+      expect(stand.className).not.toContain('disabled:opacity-40');
+    });
+
+    it('item 4: pressing Hit fires the rcNavBarPop pulse on Hit only, and it self-clears after 460ms so a repeat press restarts cleanly', () => {
+      vi.useFakeTimers();
+      try {
+        render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: ['hit', 'stand'] })} />);
+        const hit = screen.getByTestId('hit-btn');
+        const stand = screen.getByTestId('stand-btn');
+        expect(hit.style.animation).toBe('');
+        fireEvent.pointerDown(hit);
+        expect(hit.style.animation).toContain('rcNavBarPop');
+        expect(stand.style.animation).toBe(''); // Stand's own key is untouched — per-key, not shared
+        act(() => { vi.advanceTimersByTime(460); });
+        expect(hit.style.animation).toBe(''); // self-clears, doesn't just accumulate
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('item 4: pressing Stand fires the pulse on Stand only (independent per-key state, not a shared bar-wide pulse)', () => {
+      render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: ['hit', 'stand'] })} />);
+      const hit = screen.getByTestId('hit-btn');
+      const stand = screen.getByTestId('stand-btn');
+      fireEvent.pointerDown(stand);
+      expect(stand.style.animation).toContain('rcNavBarPop');
+      expect(hit.style.animation).toBe('');
+    });
+  });
+
   it('Internal replay: a re-dealt round keeps the board (NOT the result overlay); no reflowing status line', () => {
     const replay = inPlayView({
       round: 1,
