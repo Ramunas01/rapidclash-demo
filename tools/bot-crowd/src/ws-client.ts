@@ -9,6 +9,7 @@ import type {
   ChallengeExpiredPayload,
   ChallengesListPayload,
   ChallengesUpdatePayload,
+  Currency,
   Envelope,
   ErrorPayload,
   MatchEndPayload,
@@ -117,8 +118,11 @@ export class BotWsClient {
     return true;
   }
 
-  joinQueue(gameId: string, stake: number, timeControlId?: string): boolean {
-    return this.send('queue.join', { gameId, stake, ...(timeControlId ? { timeControlId } : {}) } as QueueJoinPayload);
+  // Ticket 2026-09-27#7 (D69): the wire format now requires a currency; the bot crowd stays
+  // USD-only by design (ADR-010's own "ordinary clients" framing doesn't extend to exercising
+  // the currency picker), so this defaults rather than threading a real selection through.
+  joinQueue(gameId: string, stake: number, timeControlId?: string, currency: Currency = 'USD'): boolean {
+    return this.send('queue.join', { gameId, stake, ...(timeControlId ? { timeControlId } : {}), currency } as QueueJoinPayload);
   }
 
   leaveQueue(gameId: string): boolean {
@@ -129,8 +133,8 @@ export class BotWsClient {
     return this.send('challenges.subscribe', { gameId } as ChallengeSubscribePayload);
   }
 
-  takeChallenge(matchId: string): boolean {
-    return this.send('challenge.take', { matchId } as ChallengeTakePayload);
+  takeChallenge(matchId: string, currency: Currency = 'USD'): boolean {
+    return this.send('challenge.take', { matchId, currency } as ChallengeTakePayload);
   }
 
   makeMove(move: Move, matchId: string): boolean {

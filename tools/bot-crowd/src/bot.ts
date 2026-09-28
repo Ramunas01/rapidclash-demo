@@ -217,14 +217,14 @@ export class Bot {
       const res = await this.api.register(creds);
       this.token = res.token;
       this.playerId = res.playerId;
-      this.balance = res.balance;
+      this.balance = res.balances.USD;
       this.log(`registered (${this.cfg.gameId} @ ${this.cfg.stake}, ${this.cfg.policy}) — balance ${this.balance}`);
     } catch (err) {
       if (err instanceof HttpError && err.status === 409) {
         const res = await this.api.login(creds);
         this.token = res.token;
         this.playerId = res.playerId;
-        this.balance = res.balance;
+        this.balance = res.balances.USD;
         this.log(`logged in (${this.cfg.gameId} @ ${this.cfg.stake}, ${this.cfg.policy}) — balance ${this.balance}`);
       } else {
         throw err;
