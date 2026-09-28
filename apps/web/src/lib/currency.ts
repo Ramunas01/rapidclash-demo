@@ -11,21 +11,22 @@ import { useEffect, useState } from 'react';
  * picker changes it — a per-component-instance `useState` structurally can't do that, since only
  * one screen position (`HubRibbon.tsx`'s wallet chip) ever mounted `CurrencyPicker` before.
  *
- * Deliberately NOT persisted to localStorage (unlike `theme.ts`'s choice): every non-USD value
- * this drives is `currencyData.ts`'s own hardcoded MOCK balance, never the real ledger (see that
- * file's own doc comment), so there's no real state here worth surviving a reload.
+ * Deliberately NOT persisted to localStorage (unlike `theme.ts`'s choice) — a per-session default,
+ * matching the prototype's own behavior.
  *
- * `DEFAULT_CURRENCY = 'USD'` is NOT a prototype-fidelity citation — the prototype's own `curSel`
- * actually defaults to `'SOL'` (`Full Spec.html:3579`, `this.state.curSel || 'SOL'`). USD-by-
- * default here is a deliberate PM decision overriding that (`CurrencyPicker.tsx`'s own doc
- * comment, `2026-09-11#5`): this app's wallet trigger must show the user's REAL balance by
- * default, not the prototype's mock SOL figure. Corrected 2026-09-16 — an earlier version of this
- * comment claimed the prototype also defaults to USD, which doesn't match its actual source
- * (flagged in `docs/COMMS/ADVISOR_TO_PM.md` 2026-09-16#2, confirmed as a pre-existing decision
- * this file's own comment had simply mis-cited, not an open product question).
+ * `DEFAULT_CURRENCY = 'SOL'` matches the prototype's own `curSel` default (`Full Spec.html:3579`,
+ * `this.state.curSel || 'SOL'`). Ticket `2026-09-27#7` (D69) is a deliberate reversal of the
+ * PREVIOUS USD-default decision recorded here (`2026-09-11#5`, re-affirmed `2026-09-16#3`): that
+ * decision's own reasoning was "the trigger must show the user's REAL balance by default, not the
+ * prototype's mock SOL figure" — reasoning that applied only while non-USD balances were mock
+ * data. Now that every currency (including SOL) shows its own real ledger balance (D69 PR 4), that
+ * reasoning no longer holds, and the ticket's own title ("real per-currency balances + SOL
+ * default") and Owner's explicit sign-off (`2026-09-28#1`, "nothing left open in this ticket's own
+ * scope") both call for SOL, not USD. Corrected 2026-09-28 after Advisor's PR 4 review caught this
+ * half of the ticket had been missed during implementation — see `docs/COMMS/ADVISOR_TO_PM.md`.
  */
 
-const DEFAULT_CURRENCY = 'USD';
+const DEFAULT_CURRENCY = 'SOL';
 
 let curSel: string = DEFAULT_CURRENCY;
 

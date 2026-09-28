@@ -22,9 +22,13 @@ interface Props {
  * (purple WALLET sub-pill) is a sibling `HubRibbon` renders itself and is untouched by anything
  * here.
  *
- * **PM decision (2026-09-11#5), overriding the prototype's own literal default:** the prototype
- * defaults `curSel` to `'SOL'` (`:3579`). This app defaults to `'USD'` instead (a deliberate PM
- * call, unrelated to the mock-vs-real question below — kept even now that every currency is real).
+ * **Default currency is SOL** (`lib/currency.ts`'s `DEFAULT_CURRENCY`), matching the prototype's
+ * own literal default (`:3579`). An earlier PM decision (`2026-09-11#5`) had overridden this to
+ * `'USD'` — reasoning that held only while every non-USD balance was mock data, since showing a
+ * mock SOL figure by default would have been misleading. Ticket `2026-09-27#7` (D69) explicitly
+ * reverses that decision, Owner-confirmed (`2026-09-28#1`): now that every currency shows its own
+ * real balance (below), there's no longer a real-vs-mock reason to prefer USD, so the app reverts
+ * to the prototype's own SOL default.
  *
  * **Every currency is now real** (D69 PR 4, reversing the PR-3-era "USD only" carve-out): the
  * trigger and every panel row read straight from the `balances` prop via `fiatDisplay`/

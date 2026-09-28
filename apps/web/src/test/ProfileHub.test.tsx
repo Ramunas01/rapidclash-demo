@@ -5,6 +5,7 @@ import { ProfileHubScreen } from '../screens/ProfileHub.js';
 import { PRESETS } from '../components/hub-shared/Avatar.js';
 import type { GameMeta, RecentMatchEntry, RewardsSnapshot } from '@rapidclash/shared';
 import { balancesOf } from './testBalances.js';
+import { setCurSel } from '../lib/currency.js';
 
 type Props = Parameters<typeof ProfileHubScreen>[0];
 
@@ -82,6 +83,10 @@ function baseProps(over: Partial<Props> = {}): Props {
 
 describe('ProfileHubScreen', () => {
   beforeEach(() => {
+    // Ticket 2026-09-27#7's SOL-default reversal changed the app-wide curSel singleton's own
+    // default — these tests are about the USD `$` ribbon balance specifically, not currency
+    // switching, so force USD explicitly.
+    setCurSel('USD');
     stubDefaultFetch();
   });
   afterEach(() => vi.unstubAllGlobals());

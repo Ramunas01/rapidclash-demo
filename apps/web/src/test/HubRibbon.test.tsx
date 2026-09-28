@@ -1,8 +1,13 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { balancesOf } from './testBalances.js';
+import { setCurSel } from '../lib/currency.js';
+
+// These tests are specifically about the USD `$` trigger rendering — force USD explicitly
+// (ticket 2026-09-27#7's SOL-default reversal changed the app-wide singleton's own default).
+beforeEach(() => setCurSel('USD'));
 
 describe('HubRibbon — tight-cropped wordmark, shrunk logo box (Advisor #2)', () => {
   it('renders the wordmark at h-8 (32px), not the old oversized h-24 (96px) or h-10 (40px)', () => {
