@@ -117,9 +117,9 @@ describe('socket-close forfeit vs opt-in per-player timers', () => {
     const a = await openSocket(port, await register(names[0]));
     const b = await openSocket(port, await register(names[1]));
     sockets.push(a, b);
-    a.send('queue.join', { gameId, stake: 10 });
+    a.send('queue.join', { gameId, stake: 10 , currency: 'USD' });
     await a.waitFor('queue.waiting');
-    b.send('queue.join', { gameId, stake: 10 });
+    b.send('queue.join', { gameId, stake: 10 , currency: 'USD' });
     await a.waitFor('match.start');
     await b.waitFor('match.start');
     return [a, b];

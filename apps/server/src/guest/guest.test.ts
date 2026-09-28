@@ -14,7 +14,7 @@ describe('guest services', () => {
   it('the Demo-Opponent is already resting at startup — the first guest pairs instantly', () => {
     const { ledger, matchmaking } = createGuestServices();
     ledger.grant('guest:a');
-    const r = matchmaking.joinQueue('guest:a', 'coinflip', STAKE);
+    const r = matchmaking.joinQueue('guest:a', 'coinflip', STAKE, undefined, 'USD');
     expect(r.status).toBe('matched');
     if (r.status === 'matched') expect(r.opponentId).toBe(DEMO_BOT_COINFLIP_IDS[STAKE]);
   });
@@ -23,7 +23,7 @@ describe('guest services', () => {
     const { ledger, matchmaking } = createGuestServices();
     for (const stake of GUEST_BOT_STAKE_LANES.coinflip) {
       ledger.grant(`guest:${stake}`);
-      const r = matchmaking.joinQueue(`guest:${stake}`, 'coinflip', stake);
+      const r = matchmaking.joinQueue(`guest:${stake}`, 'coinflip', stake, undefined, 'USD');
       expect(r.status).toBe('matched');
       if (r.status === 'matched') expect(r.opponentId).toBe(DEMO_BOT_COINFLIP_IDS[stake]);
     }
@@ -34,11 +34,11 @@ describe('guest services', () => {
     ledger.grant('guest:a');
     ledger.grant('guest:b');
 
-    const r1 = matchmaking.joinQueue('guest:a', 'coinflip', STAKE);
+    const r1 = matchmaking.joinQueue('guest:a', 'coinflip', STAKE, undefined, 'USD');
     if (r1.status !== 'matched') throw new Error('expected matched');
     onDemoBotMatched(r1.matchId, 1_000_000);
 
-    const r2 = matchmaking.joinQueue('guest:b', 'coinflip', STAKE);
+    const r2 = matchmaking.joinQueue('guest:b', 'coinflip', STAKE, undefined, 'USD');
     expect(r2.status).toBe('matched');
     if (r2.status === 'matched') {
       expect(r2.opponentId).toBe(DEMO_BOT_COINFLIP_IDS[STAKE]);
@@ -49,7 +49,7 @@ describe('guest services', () => {
   it("onDemoBotMatched submits the bot's own pick through the normal applyMove path (redacted from the guest pre-terminal)", () => {
     const { ledger, matchmaking, onDemoBotMatched } = createGuestServices();
     ledger.grant('guest:a');
-    const r = matchmaking.joinQueue('guest:a', 'coinflip', STAKE);
+    const r = matchmaking.joinQueue('guest:a', 'coinflip', STAKE, undefined, 'USD');
     if (r.status !== 'matched') throw new Error('expected matched');
     onDemoBotMatched(r.matchId, 1_000_000);
 
@@ -70,11 +70,11 @@ describe('guest services', () => {
     ledger.escrow('guest:a', 'preexisting-a', 10, 'USD');
     expect(ledger.getBalance('guest:a', 'USD')).not.toBe(ledger.getBalance('guest:b', 'USD'));
 
-    const r1 = matchmaking.joinQueue('guest:a', 'coinflip', STAKE);
+    const r1 = matchmaking.joinQueue('guest:a', 'coinflip', STAKE, undefined, 'USD');
     if (r1.status !== 'matched') throw new Error('expected matched');
     onDemoBotMatched(r1.matchId, 1_000_000); // re-posts the bot so guest:b also pairs instantly
 
-    const r2 = matchmaking.joinQueue('guest:b', 'coinflip', STAKE);
+    const r2 = matchmaking.joinQueue('guest:b', 'coinflip', STAKE, undefined, 'USD');
     if (r2.status !== 'matched') throw new Error('expected matched');
     expect(r1.matchId).not.toBe(r2.matchId);
 
@@ -90,8 +90,8 @@ describe('guest services', () => {
     ledger.grant('guest:cheap');
     ledger.grant('guest:pricier');
 
-    const r1 = matchmaking.joinQueue('guest:cheap', 'coinflip', STAKE);
-    const r2 = matchmaking.joinQueue('guest:pricier', 'coinflip', OTHER_STAKE);
+    const r1 = matchmaking.joinQueue('guest:cheap', 'coinflip', STAKE, undefined, 'USD');
+    const r2 = matchmaking.joinQueue('guest:pricier', 'coinflip', OTHER_STAKE, undefined, 'USD');
     if (r1.status !== 'matched' || r2.status !== 'matched') throw new Error('expected both matched instantly');
 
     expect(r1.opponentId).toBe(DEMO_BOT_COINFLIP_IDS[STAKE]);
@@ -104,7 +104,7 @@ describe('guest services', () => {
 
     // Each lane's bot re-rests independently, at its OWN stake only.
     ledger.grant('guest:cheap-2');
-    const r3 = matchmaking.joinQueue('guest:cheap-2', 'coinflip', STAKE);
+    const r3 = matchmaking.joinQueue('guest:cheap-2', 'coinflip', STAKE, undefined, 'USD');
     expect(r3.status).toBe('matched');
     if (r3.status === 'matched') expect(r3.opponentId).toBe(DEMO_BOT_COINFLIP_IDS[STAKE]);
   });
@@ -165,7 +165,7 @@ describe('guest services', () => {
       // onDemoBotMatched re-posts, and it can never fire with no bot left to pair against), a
       // guest now rests instead of matching — the permanent-lockout symptom seen in production.
       ledger.grant('guest:locked-out');
-      const stuck = matchmaking.joinQueue('guest:locked-out', 'coinflip', STAKE);
+      const stuck = matchmaking.joinQueue('guest:locked-out', 'coinflip', STAKE, undefined, 'USD');
       expect(stuck.status).toBe('waiting');
     });
 
@@ -187,7 +187,7 @@ describe('guest services', () => {
       // merely that a fresh createGuestServices() call starts with it resting, which the "first
       // guest pairs instantly" test above already covers separately).
       ledger.grant('guest:healed');
-      const healed = matchmaking.joinQueue('guest:healed', 'coinflip', STAKE);
+      const healed = matchmaking.joinQueue('guest:healed', 'coinflip', STAKE, undefined, 'USD');
       expect(healed.status).toBe('matched');
       if (healed.status === 'matched') expect(healed.opponentId).toBe(DEMO_BOT_COINFLIP_IDS[STAKE]);
     });
@@ -202,7 +202,7 @@ describe('guest services', () => {
       // A guest happened to hit PLAY DURING the outage window — finds nobody resting, so it
       // rests itself (the "stuck" symptom).
       ledger.grant('guest:was-stuck');
-      const stuck = matchmaking.joinQueue('guest:was-stuck', 'coinflip', STAKE);
+      const stuck = matchmaking.joinQueue('guest:was-stuck', 'coinflip', STAKE, undefined, 'USD');
       expect(stuck.status).toBe('waiting');
       if (stuck.status !== 'waiting') throw new Error('expected waiting');
 

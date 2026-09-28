@@ -421,7 +421,7 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     const { rerender } = render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: asLegal([]) })} />);
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
 
-    rerender(<MinesHubScreen {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'alice' }, lastSettlement: { delta: 18, newBalance: 1018 } })} />);
+    rerender(<MinesHubScreen {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'alice' }, lastSettlement: { delta: 18, newBalance: 1018, currency: 'USD' } })} />);
     // `suppressResultOverlay`: GameHub never renders the separate `ResultOverlay`, terminal or not.
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
     // Ticket 2026-09-17#1 item 2: a "timeout" lock now goes through the same real sequence a bust
@@ -441,7 +441,7 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     const { rerender } = render(<MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: asLegal([]) })} />);
     expect(screen.getByTestId('hub-board')).toBeInTheDocument();
 
-    rerender(<MinesHubScreen {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'alice' }, lastSettlement: { delta: 18, newBalance: 1018 } })} />);
+    rerender(<MinesHubScreen {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'alice' }, lastSettlement: { delta: 18, newBalance: 1018, currency: 'USD' } })} />);
     // No holdResultMs for Mines — phase jumps straight to 'result'. The real board must still be
     // the thing rendered, not MinesIdle's blank preview grid.
     expect(screen.getByTestId('hub-board')).toBeInTheDocument();
@@ -489,7 +489,7 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     expect(clockWrapper.style.maxHeight).toMatch(/^0(px)?$/);
 
     // Stays collapsed through the terminal state too (not just until lock).
-    rerender(<MinesHubScreen {...baseProps({ currentMatchId: null, gameState: lockedState, lastOutcome: { type: 'win', winner: 'alice' }, lastSettlement: { delta: 18, newBalance: 1018 } })} />);
+    rerender(<MinesHubScreen {...baseProps({ currentMatchId: null, gameState: lockedState, lastOutcome: { type: 'win', winner: 'alice' }, lastSettlement: { delta: 18, newBalance: 1018, currency: 'USD' } })} />);
     await waitFor(() => expect(clockWrapper.style.opacity).toBe('0'), { timeout: 4000 });
     expect(clockWrapper.style.maxHeight).toMatch(/^0(px)?$/); // React renders a 0 style value unitless
   });
@@ -523,7 +523,7 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
             currentMatchId: null,
             gameState,
             lastOutcome: { type: 'win', winner: 'alice' },
-            lastSettlement: { delta: 18, newBalance: 1018 },
+            lastSettlement: { delta: 18, newBalance: 1018, currency: 'USD' },
           })}
         />,
       );
@@ -689,7 +689,7 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
             currentMatchId: null,
             gameState,
             lastOutcome: { type: 'win', winner: 'bob' },
-            lastSettlement: { delta: -10, newBalance: 990 },
+            lastSettlement: { delta: -10, newBalance: 990, currency: 'USD' },
           })}
         />,
       );
@@ -841,7 +841,7 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
             currentMatchId: null,
             gameState,
             lastOutcome: { type: 'win', winner: 'bob' },
-            lastSettlement: { delta: -10, newBalance: 990 },
+            lastSettlement: { delta: -10, newBalance: 990, currency: 'USD' },
           })}
         />,
       );
@@ -889,7 +889,7 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
             currentMatchId: null,
             gameState,
             lastOutcome: { type: 'win', winner: 'bob' },
-            lastSettlement: { delta: -10, newBalance: 990 },
+            lastSettlement: { delta: -10, newBalance: 990, currency: 'USD' },
           })}
         />,
       );
@@ -934,7 +934,7 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
             currentMatchId: null,
             gameState,
             lastOutcome: { type: 'win', winner: 'bob' },
-            lastSettlement: { delta: -10, newBalance: 990 },
+            lastSettlement: { delta: -10, newBalance: 990, currency: 'USD' },
           })}
         />,
       );

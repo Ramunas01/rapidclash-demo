@@ -529,7 +529,7 @@ describe('DiceHubScreen', () => {
             currentMatchId: null,
             gameState,
             lastOutcome: { type: 'win', winner: 'me' },
-            lastSettlement: { delta: 10, newBalance: 1010 },
+            lastSettlement: { delta: 10, newBalance: 1010, currency: 'USD' },
           })}
         />,
       );
@@ -558,7 +558,7 @@ describe('DiceHubScreen', () => {
             currentMatchId: null,
             gameState,
             lastOutcome: { type: 'win', winner: 'me' },
-            lastSettlement: { delta: 10, newBalance: 1010 },
+            lastSettlement: { delta: 10, newBalance: 1010, currency: 'USD' },
           })}
         />,
       );
@@ -580,7 +580,7 @@ describe('DiceHubScreen', () => {
             currentMatchId: null,
             gameState,
             lastOutcome: { type: 'win', winner: 'me' },
-            lastSettlement: { delta: 10, newBalance: 1010 },
+            lastSettlement: { delta: 10, newBalance: 1010, currency: 'USD' },
           })}
         />,
       );
@@ -633,7 +633,7 @@ describe('DiceHubScreen', () => {
             currentMatchId: null,
             gameState,
             lastOutcome: { type: 'win', winner: 'opp' },
-            lastSettlement: { delta: -10, newBalance: 990 },
+            lastSettlement: { delta: -10, newBalance: 990, currency: 'USD' },
           })}
         />,
       );

@@ -270,7 +270,8 @@ export function createGuestServices(
     // a "busy" state to track, exactly as issue #267/#274 established for the single pre-#351
     // identity — just repeated once per lane instead of once for the whole game.
     for (const [stake, botId] of Object.entries(DEMO_BOT_COINFLIP_IDS)) {
-      matchmaking.joinQueue(botId, 'coinflip', Number(stake));
+      // Ticket 2026-09-27#7 (D69): guest/bot world stays USD-only by design.
+      matchmaking.joinQueue(botId, 'coinflip', Number(stake), undefined, 'USD');
     }
 
     // Free any chess pool slot whose tracked match has actually ended (across every lane at once
@@ -294,7 +295,8 @@ export function createGuestServices(
     for (const [stake, ids] of Object.entries(DEMO_BOT_CHESS_IDS)) {
       const nextToRest = ids.find((id) => !chessBotMatch.has(id));
       if (nextToRest !== undefined) {
-        matchmaking.joinQueue(nextToRest, 'chess', Number(stake), GUEST_CHESS_TIME_CONTROL);
+        // Ticket 2026-09-27#7 (D69): guest/bot world stays USD-only by design.
+        matchmaking.joinQueue(nextToRest, 'chess', Number(stake), GUEST_CHESS_TIME_CONTROL, 'USD');
       }
     }
 
@@ -308,8 +310,8 @@ export function createGuestServices(
       const nextToRest = ids.find((id) => !blackjackBotMatch.has(id));
       if (nextToRest !== undefined) {
         // No time-control equivalent for Blackjack — same queue-key shape as Coinflip, just at
-        // this lane's own fixed stake.
-        matchmaking.joinQueue(nextToRest, 'blackjack', Number(stake));
+        // this lane's own fixed stake. Ticket 2026-09-27#7 (D69): USD-only by design.
+        matchmaking.joinQueue(nextToRest, 'blackjack', Number(stake), undefined, 'USD');
       }
     }
   }
@@ -391,7 +393,8 @@ export function createGuestServices(
     const takerId = `demo-bot:${gameId}:taker:${randomUUID()}`;
     ledger.adminCredit(takerId, DEMO_BOT_NOTIONAL_BALANCE, `demo-bot:init:${takerId}`, 'USD');
     try {
-      return matchmaking.takeChallenge(takerId, matchId);
+      // Ticket 2026-09-27#7 (D69): guest/bot world stays USD-only by design.
+      return matchmaking.takeChallenge(takerId, matchId, 'USD');
     } catch (err) {
       // Gone by the time we got here — a real human already took/cancelled it, or it TTL-expired.
       // Self-heals like every other sweep in this file: no match to claim, nothing to do.

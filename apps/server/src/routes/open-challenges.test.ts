@@ -47,8 +47,8 @@ describe('GET /open-challenges (public cross-game snapshot)', () => {
     const alice = await reg('alice');
     const bob = await reg('bob');
     // Resting bets in two different games.
-    services.matchmaking.joinQueue(alice.playerId, 'rps', 10);
-    services.matchmaking.joinQueue(bob.playerId, 'chess', 25); // clocked → control resolves to a default
+    services.matchmaking.joinQueue(alice.playerId, 'rps', 10, undefined, 'USD');
+    services.matchmaking.joinQueue(bob.playerId, 'chess', 25, undefined, 'USD'); // clocked → control resolves to a default
 
     const res = await app.inject({ method: 'GET', url: '/open-challenges' }); // no token
     expect(res.statusCode).toBe(200);
@@ -73,7 +73,7 @@ describe('GET /open-challenges (public cross-game snapshot)', () => {
     // The authed per-game feed hides the viewer's own bet; the public read has no viewer,
     // so a single resting challenge is visible to anyone (the logged-out ticker).
     const carol = await reg('carol');
-    services.matchmaking.joinQueue(carol.playerId, 'rps', 5);
+    services.matchmaking.joinQueue(carol.playerId, 'rps', 5, undefined, 'USD');
 
     const rows = (await app.inject({ method: 'GET', url: '/open-challenges' })).json<PublicOpenChallenge[]>();
     expect(rows).toHaveLength(1);

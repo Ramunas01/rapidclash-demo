@@ -17,8 +17,8 @@ describe('chess draw offers — end-to-end (real chess module + core + ledger se
     const mm = createMatchmaking(ledger, [chessModule], undefined, { now: () => clock });
     ledger.grant('alice');
     ledger.grant('bob');
-    mm.joinQueue('alice', 'chess', stake);
-    const r = mm.joinQueue('bob', 'chess', stake);
+    mm.joinQueue('alice', 'chess', stake, undefined, 'USD');
+    const r = mm.joinQueue('bob', 'chess', stake, undefined, 'USD');
     if (r.status !== 'matched') throw new Error('expected matched');
     return { ledger, mm, matchId: r.matchId };
   }
@@ -92,8 +92,8 @@ describe('chess draw offers — end-to-end (real chess module + core + ledger se
     const mm = createMatchmaking(ledger, [stub], undefined, { now: () => 1000 });
     ledger.grant('alice');
     ledger.grant('bob');
-    mm.joinQueue('alice', 'nodraw', 100);
-    const r = mm.joinQueue('bob', 'nodraw', 100);
+    mm.joinQueue('alice', 'nodraw', 100, undefined, 'USD');
+    const r = mm.joinQueue('bob', 'nodraw', 100, undefined, 'USD');
     if (r.status !== 'matched') throw new Error('expected matched');
     expect(() => mm.offerDraw(r.matchId, 'alice')).toThrow(/does not support draw offers/);
     expect(() => mm.acceptDraw(r.matchId, 'alice')).toThrow(/does not support draw offers/);

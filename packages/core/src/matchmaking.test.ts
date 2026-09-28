@@ -132,7 +132,7 @@ function grantAndJoin(
   gameId = 'mock',
 ) {
   ledger.grant(playerId);
-  return matchmaking.joinQueue(playerId, gameId, stake);
+  return matchmaking.joinQueue(playerId, gameId, stake, undefined, 'USD');
 }
 
 /** Set up a matched RPS-like game. */
@@ -140,8 +140,8 @@ function setupRpsMatch(stake = 50) {
   const { db, ledger, matchmaking } = setup([rpsLikeModule]);
   ledger.grant('alice');
   ledger.grant('bob');
-  matchmaking.joinQueue('alice', 'rpslike', stake);
-  const r2 = matchmaking.joinQueue('bob', 'rpslike', stake);
+  matchmaking.joinQueue('alice', 'rpslike', stake, undefined, 'USD');
+  const r2 = matchmaking.joinQueue('bob', 'rpslike', stake, undefined, 'USD');
   if (r2.status !== 'matched') throw new Error('expected matched');
   return { db, ledger, matchmaking, matchId: r2.matchId };
 }
@@ -158,7 +158,7 @@ describe('matchmaking', () => {
 
   it('first player to join receives "waiting" status', () => {
     ledger.grant('alice');
-    const result = matchmaking.joinQueue('alice', 'mock', 100);
+    const result = matchmaking.joinQueue('alice', 'mock', 100, undefined, 'USD');
     expect(result.status).toBe('waiting');
     expect(result.matchId).toBeTruthy();
   });
@@ -178,29 +178,29 @@ describe('matchmaking', () => {
 
   it('joining with a stake below minStake throws', () => {
     ledger.grant('alice');
-    expect(() => matchmaking.joinQueue('alice', 'mock', 5)).toThrow(/range/i);
+    expect(() => matchmaking.joinQueue('alice', 'mock', 5, undefined, 'USD')).toThrow(/range/i);
   });
 
   it('joining with a stake above maxStake throws', () => {
     ledger.grant('alice');
-    expect(() => matchmaking.joinQueue('alice', 'mock', 600)).toThrow(/range/i);
+    expect(() => matchmaking.joinQueue('alice', 'mock', 600, undefined, 'USD')).toThrow(/range/i);
   });
 
   it('joining with insufficient balance throws', () => {
-    expect(() => matchmaking.joinQueue('alice', 'mock', 100)).toThrow(/balance/i);
+    expect(() => matchmaking.joinQueue('alice', 'mock', 100, undefined, 'USD')).toThrow(/balance/i);
   });
 
   it('joining with a stake exactly equal to balance throws (after escrow is insufficient)', () => {
     ledger.grant('alice');
     const overStake = GRANT_AMOUNT + 1;
-    expect(() => matchmaking.joinQueue('alice', 'mock', overStake)).toThrow();
+    expect(() => matchmaking.joinQueue('alice', 'mock', overStake, undefined, 'USD')).toThrow();
   });
 
   it('leaveQueue before matching refunds the escrow; balance returns to pre-join level', () => {
     ledger.grant('alice');
     const before = ledger.getBalance('alice', 'USD');
 
-    const result = matchmaking.joinQueue('alice', 'mock', 100);
+    const result = matchmaking.joinQueue('alice', 'mock', 100, undefined, 'USD');
     expect(result.status).toBe('waiting');
     expect(ledger.getBalance('alice', 'USD')).toBe(before - 100);
 
@@ -212,8 +212,8 @@ describe('matchmaking', () => {
     ledger.grant('alice');
     ledger.grant('bob');
 
-    const r1 = matchmaking.joinQueue('alice', 'mock', 100);
-    const r2 = matchmaking.joinQueue('bob', 'mock', 100);
+    const r1 = matchmaking.joinQueue('alice', 'mock', 100, undefined, 'USD');
+    const r2 = matchmaking.joinQueue('bob', 'mock', 100, undefined, 'USD');
     expect(r2.status).toBe('matched');
 
     const matchId = r1.matchId;
@@ -226,8 +226,8 @@ describe('matchmaking', () => {
   it('never matches an account against itself — a second session of the same player rests (#1)', () => {
     ledger.grant('alice');
     const granted = ledger.getBalance('alice', 'USD');
-    const r1 = matchmaking.joinQueue('alice', 'mock', 100);
-    const r2 = matchmaking.joinQueue('alice', 'mock', 100); // alice's 2nd open session, same key
+    const r1 = matchmaking.joinQueue('alice', 'mock', 100, undefined, 'USD');
+    const r2 = matchmaking.joinQueue('alice', 'mock', 100, undefined, 'USD'); // alice's 2nd open session, same key
     expect(r1.status).toBe('waiting');
     expect(r2.status).toBe('waiting'); // self can never be its own opponent (invariant #1)
     // The 2nd session REUSES the resting entry (same matchId) — no duplicate queue entry, and the
@@ -238,10 +238,10 @@ describe('matchmaking', () => {
 
   it('a different player then matches the self-rested challenge normally', () => {
     ledger.grant('alice');
-    const r1 = matchmaking.joinQueue('alice', 'mock', 100);
-    matchmaking.joinQueue('alice', 'mock', 100); // 2nd session — still just waiting (reused)
+    const r1 = matchmaking.joinQueue('alice', 'mock', 100, undefined, 'USD');
+    matchmaking.joinQueue('alice', 'mock', 100, undefined, 'USD'); // 2nd session — still just waiting (reused)
     ledger.grant('bob');
-    const rb = matchmaking.joinQueue('bob', 'mock', 100);
+    const rb = matchmaking.joinQueue('bob', 'mock', 100, undefined, 'USD');
     expect(rb.status).toBe('matched');
     if (rb.status === 'matched' && r1.status === 'waiting') {
       expect(rb.opponentId).toBe('alice');
@@ -253,10 +253,10 @@ describe('matchmaking', () => {
     // bob rests first; alice rests behind him (different player → she matches bob, so to get a
     // self-entry-then-different-join we seed alice first, then alice again, then bob).
     ledger.grant('alice');
-    matchmaking.joinQueue('alice', 'mock', 100); // alice rests
-    matchmaking.joinQueue('alice', 'mock', 100); // alice again → reused, still one entry
+    matchmaking.joinQueue('alice', 'mock', 100, undefined, 'USD'); // alice rests
+    matchmaking.joinQueue('alice', 'mock', 100, undefined, 'USD'); // alice again → reused, still one entry
     ledger.grant('bob');
-    const rb = matchmaking.joinQueue('bob', 'mock', 100);
+    const rb = matchmaking.joinQueue('bob', 'mock', 100, undefined, 'USD');
     expect(rb.status).toBe('matched');
     if (rb.status === 'matched') expect(rb.opponentId).toBe('alice'); // the different player pairs fine
   });
@@ -404,6 +404,91 @@ describe('S6 — settleMatch idempotency', () => {
   });
 });
 
+// ─── Multi-currency matches (ticket 2026-09-27#7, D69) ───────────────────────
+// Two players in one match may hold different currencies — no reconciliation is needed
+// between them, since each settles independently against their own bucket.
+
+describe('multi-currency matches (ticket 2026-09-27#7, D69)', () => {
+  it('joinQueue escrows each player in their OWN currency; a win credits only the winner\'s own bucket', () => {
+    const { ledger, matchmaking } = setup([rpsLikeModule]);
+    ledger.grant('alice');
+    ledger.grant('bob');
+    const stake = 100;
+    matchmaking.joinQueue('alice', 'rpslike', stake, undefined, 'SOL');
+    const r2 = matchmaking.joinQueue('bob', 'rpslike', stake, undefined, 'USDT');
+    if (r2.status !== 'matched') throw new Error('expected matched');
+    const matchId = r2.matchId;
+
+    // Escrowed from each player's OWN currency bucket, the other currencies untouched.
+    expect(ledger.getBalance('alice', 'SOL')).toBe(1642 - stake);
+    expect(ledger.getBalance('alice', 'USD')).toBe(1000);
+    expect(ledger.getBalance('bob', 'USDT')).toBe(837 - stake);
+    expect(ledger.getBalance('bob', 'USD')).toBe(1000);
+
+    // alice plays rock, bob plays scissors → alice wins.
+    matchmaking.applyMove(matchId, 'alice', 'rock', Date.now());
+    matchmaking.applyMove(matchId, 'bob', 'scissors', Date.now());
+    const settled = matchmaking.settleMatch(matchId);
+
+    const feeRate = rpsLikeModule.meta.rakeRate;
+    const rake = Math.round(stake * 2 * feeRate);
+    expect(settled.settlement['alice'].currency).toBe('SOL');
+    expect(settled.settlement['bob'].currency).toBe('USDT');
+    // alice's win credits SOL only; bob's loss debits USDT only — neither touches the other's
+    // currency or the other player's bucket at all.
+    expect(ledger.getBalance('alice', 'SOL')).toBe(1642 - stake + (stake * 2 - rake));
+    expect(ledger.getBalance('bob', 'USDT')).toBe(837 - stake);
+    expect(ledger.getBalance(PLATFORM_ACCOUNT, 'SOL')).toBe(rake);
+    expect(ledger.getBalance(PLATFORM_ACCOUNT, 'USDT')).toBe(0);
+  });
+
+  it('a draw refunds each player into whatever currency THEIR OWN escrow used, read off the row — not passed in', () => {
+    const { ledger, matchmaking } = setup([rpsLikeModule]);
+    ledger.grant('alice');
+    ledger.grant('bob');
+    const stake = 50;
+    matchmaking.joinQueue('alice', 'rpslike', stake, undefined, 'SOL');
+    const r2 = matchmaking.joinQueue('bob', 'rpslike', stake, undefined, 'USD');
+    if (r2.status !== 'matched') throw new Error('expected matched');
+    const matchId = r2.matchId;
+
+    // Both choose rock → draw.
+    matchmaking.applyMove(matchId, 'alice', 'rock', Date.now());
+    matchmaking.applyMove(matchId, 'bob', 'rock', Date.now());
+    const settled = matchmaking.settleMatch(matchId);
+
+    expect(settled.outcome).toEqual({ type: 'draw' });
+    expect(settled.settlement['alice'].currency).toBe('SOL');
+    expect(settled.settlement['bob'].currency).toBe('USD');
+    // Each refunded in full, back to their OWN starting balance — no cross-currency mixing.
+    expect(ledger.getBalance('alice', 'SOL')).toBe(1642);
+    expect(ledger.getBalance('bob', 'USD')).toBe(1000);
+    expect(ledger.getBalance(PLATFORM_ACCOUNT, 'SOL')).toBe(0);
+    expect(ledger.getBalance(PLATFORM_ACCOUNT, 'USD')).toBe(0);
+  });
+
+  it('takeChallenge lets the taker pick a currency independent of the resting owner\'s own pick', () => {
+    const { ledger, matchmaking } = setup([rpsLikeModule]);
+    ledger.grant('alice');
+    ledger.grant('bob');
+    const w = matchmaking.joinQueue('alice', 'rpslike', 50, undefined, 'USDT');
+    if (w.status !== 'waiting') throw new Error('expected waiting');
+    const r = matchmaking.takeChallenge('bob', w.matchId, 'SOL');
+    expect(r.status).toBe('matched');
+    expect(ledger.getBalance('alice', 'USDT')).toBe(837 - 50);
+    expect(ledger.getBalance('bob', 'SOL')).toBe(1642 - 50);
+  });
+
+  it('the open-challenge feed carries the resting bet\'s own currency', () => {
+    const { ledger, matchmaking } = setup([rpsLikeModule]);
+    ledger.grant('alice');
+    matchmaking.joinQueue('alice', 'rpslike', 50, undefined, 'SOL');
+    const { entries } = matchmaking.listOpenChallenges('rpslike', 'bob', Date.now() + 6_000);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].currency).toBe('SOL');
+  });
+});
+
 // ─── S8: getCompletedMatch / match.resume idempotency ────────────────────────
 
 describe('S8 — getCompletedMatch', () => {
@@ -499,8 +584,8 @@ describe('sweepStaleMatches', () => {
     });
     ledger.grant('alice');
     ledger.grant('bob');
-    matchmaking.joinQueue('alice', 'rpslike', stake);
-    const r = matchmaking.joinQueue('bob', 'rpslike', stake);
+    matchmaking.joinQueue('alice', 'rpslike', stake, undefined, 'USD');
+    const r = matchmaking.joinQueue('bob', 'rpslike', stake, undefined, 'USD');
     if (r.status !== 'matched') throw new Error('expected matched');
     return {
       ledger,
@@ -684,8 +769,8 @@ describe('per-player move timers', () => {
     const mm = createMatchmaking(ledger, [mod], undefined, { now: () => clock });
     ledger.grant('alice');
     ledger.grant('bob');
-    mm.joinQueue('alice', mod.meta.id, stake);
-    const r = mm.joinQueue('bob', mod.meta.id, stake);
+    mm.joinQueue('alice', mod.meta.id, stake, undefined, 'USD');
+    const r = mm.joinQueue('bob', mod.meta.id, stake, undefined, 'USD');
     if (r.status !== 'matched') throw new Error('expected matched');
     return { ledger, mm, matchId: r.matchId, advance: (ms: number) => { clock += ms; }, now: () => clock };
   }
@@ -827,8 +912,8 @@ describe('scheduled deadlines (absolute per-player auto-fire, Crash-shape)', () 
     const mm = createMatchmaking(ledger, [rocketModule], undefined, { now: () => clock });
     ledger.grant('alice');
     ledger.grant('bob');
-    mm.joinQueue('alice', 'rocket', stake);
-    const r = mm.joinQueue('bob', 'rocket', stake);
+    mm.joinQueue('alice', 'rocket', stake, undefined, 'USD');
+    const r = mm.joinQueue('bob', 'rocket', stake, undefined, 'USD');
     if (r.status !== 'matched') throw new Error('expected matched');
     return { ledger, mm, matchId: r.matchId, start: clock, advance: (ms: number) => { clock += ms; }, now: () => clock };
   }
@@ -956,8 +1041,8 @@ describe('lock-on-timeout (ADR-012 — scheduledDeadlines + lockOnTimeout, no ti
     const mm = createMatchmaking(ledger, [roundModule], undefined, { now: () => clock });
     ledger.grant('alice');
     ledger.grant('bob');
-    mm.joinQueue('alice', 'roundgame', stake);
-    const r = mm.joinQueue('bob', 'roundgame', stake);
+    mm.joinQueue('alice', 'roundgame', stake, undefined, 'USD');
+    const r = mm.joinQueue('bob', 'roundgame', stake, undefined, 'USD');
     if (r.status !== 'matched') throw new Error('expected matched');
     return { ledger, mm, matchId: r.matchId, start: clock, advance: (ms: number) => { clock += ms; }, now: () => clock };
   }
@@ -1070,8 +1155,8 @@ describe('time control (cumulative per-player clock)', () => {
     const mm = createMatchmaking(ledger, [clockModule], undefined, { now: () => clock });
     ledger.grant('alice');
     ledger.grant('bob');
-    mm.joinQueue('alice', 'clockgame', stake);
-    const r = mm.joinQueue('bob', 'clockgame', stake);
+    mm.joinQueue('alice', 'clockgame', stake, undefined, 'USD');
+    const r = mm.joinQueue('bob', 'clockgame', stake, undefined, 'USD');
     if (r.status !== 'matched') throw new Error('expected matched');
     return { ledger, mm, matchId: r.matchId, advance: (ms: number) => { clock += ms; }, now: () => clock };
   }
@@ -1193,8 +1278,8 @@ describe('time control — pairing on (game, stake, control)', () => {
 
   it('pairs two players on the same stake AND control, seeding that control', () => {
     const { m } = mm();
-    expect(m.joinQueue('alice', 'tcgame', 50, 'slow').status).toBe('waiting');
-    const r = m.joinQueue('bob', 'tcgame', 50, 'slow');
+    expect(m.joinQueue('alice', 'tcgame', 50, 'slow', 'USD').status).toBe('waiting');
+    const r = m.joinQueue('bob', 'tcgame', 50, 'slow', 'USD');
     expect(r.status).toBe('matched');
     if (r.status === 'matched') {
       const c = clockOfMatch(m, r.matchId);
@@ -1205,40 +1290,40 @@ describe('time control — pairing on (game, stake, control)', () => {
 
   it('does NOT pair the same stake when the control differs (separate pools)', () => {
     const { m } = mm();
-    expect(m.joinQueue('alice', 'tcgame', 50, 'fast').status).toBe('waiting');
-    expect(m.joinQueue('bob', 'tcgame', 50, 'slow').status).toBe('waiting'); // different control → no match
+    expect(m.joinQueue('alice', 'tcgame', 50, 'fast', 'USD').status).toBe('waiting');
+    expect(m.joinQueue('bob', 'tcgame', 50, 'slow', 'USD').status).toBe('waiting'); // different control → no match
     // A matching-control join pairs with the right waiter.
-    const r = m.joinQueue('carol', 'tcgame', 50, 'fast');
+    const r = m.joinQueue('carol', 'tcgame', 50, 'fast', 'USD');
     expect(r.status).toBe('matched');
     if (r.status === 'matched') expect(r.opponentId).toBe('alice');
   });
 
   it("defaults an omitted control to the game's default and returns the resolved id", () => {
     const { m } = mm();
-    const w = m.joinQueue('alice', 'tcgame', 50); // no control given
+    const w = m.joinQueue('alice', 'tcgame', 50, undefined, 'USD'); // no control given
     expect(w.status).toBe('waiting');
     if (w.status === 'waiting') expect(w.timeControlId).toBe('fast'); // defaultId
-    const r = m.joinQueue('bob', 'tcgame', 50, 'fast'); // explicit default pairs with the omitted one
+    const r = m.joinQueue('bob', 'tcgame', 50, 'fast', 'USD'); // explicit default pairs with the omitted one
     expect(r.status).toBe('matched');
   });
 
   it('rejects an unknown control', () => {
     const { m } = mm();
-    expect(() => m.joinQueue('alice', 'tcgame', 50, 'bogus')).toThrow(RangeError);
+    expect(() => m.joinQueue('alice', 'tcgame', 50, 'bogus', 'USD')).toThrow(RangeError);
   });
 
   it("forces 'none' for an untimed game regardless of a passed control", () => {
     const { m } = mm();
-    const w = m.joinQueue('alice', 'rpslike', 50, 'fast'); // control ignored for an untimed game
+    const w = m.joinQueue('alice', 'rpslike', 50, 'fast', 'USD'); // control ignored for an untimed game
     expect(w.status).toBe('waiting');
     if (w.status === 'waiting') expect(w.timeControlId).toBe('none');
     // Another untimed join (no control) shares the 'none' pool → matched.
-    expect(m.joinQueue('bob', 'rpslike', 50).status).toBe('matched');
+    expect(m.joinQueue('bob', 'rpslike', 50, undefined, 'USD').status).toBe('matched');
   });
 
   it('the open-challenge feed carries the resting bet control', () => {
     const { m } = mm();
-    const w = m.joinQueue('alice', 'tcgame', 50, 'slow');
+    const w = m.joinQueue('alice', 'tcgame', 50, 'slow', 'USD');
     if (w.status !== 'waiting') throw new Error('expected waiting');
     // List from another viewer, past the min-rest window so the bet is eligible.
     const { entries } = m.listOpenChallenges('tcgame', 'bob', Date.now() + 6_000);
@@ -1248,9 +1333,9 @@ describe('time control — pairing on (game, stake, control)', () => {
 
   it('taking a resting challenge inherits the owner control (intrinsic to the match)', () => {
     const { m } = mm();
-    const w = m.joinQueue('alice', 'tcgame', 50, 'slow');
+    const w = m.joinQueue('alice', 'tcgame', 50, 'slow', 'USD');
     if (w.status !== 'waiting') throw new Error('expected waiting');
-    const r = m.takeChallenge('bob', w.matchId);
+    const r = m.takeChallenge('bob', w.matchId, 'USD');
     expect(clockOfMatch(m, r.matchId).timeControlId).toBe('slow');
     expect(clockOfMatch(m, r.matchId).remainingMs['bob']).toBe(20_000);
   });
@@ -1286,7 +1371,7 @@ describe('ticket 2026-09-24#2: escrow-orphan hardening + self-healing reconcilia
       expect(ledger.getOpenEscrowMatchIds('alice')).toContain('orphan-1');
 
       const before = ledger.getBalance('alice', 'USD');
-      matchmaking.joinQueue('alice', 'mock', 100);
+      matchmaking.joinQueue('alice', 'mock', 100, undefined, 'USD');
 
       expect(ledger.getOpenEscrowMatchIds('alice')).not.toContain('orphan-1');
       // orphan-1 (300) refunded, then 100 escrowed for the new bet: net +300 -100.
@@ -1296,14 +1381,14 @@ describe('ticket 2026-09-24#2: escrow-orphan hardening + self-healing reconcilia
     it('does NOT touch a genuinely still-resting escrow', () => {
       const { ledger, matchmaking } = setup();
       ledger.grant('alice');
-      const r1 = matchmaking.joinQueue('alice', 'mock', 100);
+      const r1 = matchmaking.joinQueue('alice', 'mock', 100, undefined, 'USD');
       if (r1.status !== 'waiting') throw new Error('expected waiting');
 
       ledger.escrow('alice', 'orphan-2', 50, 'USD'); // a separate stuck orphan alongside the real one
 
       // Re-joining the same game/stake returns the existing resting entry without re-escrowing —
       // but reconciliation still runs on the way in.
-      matchmaking.joinQueue('alice', 'mock', 100);
+      matchmaking.joinQueue('alice', 'mock', 100, undefined, 'USD');
 
       expect(ledger.getOpenEscrowMatchIds('alice')).toContain(r1.matchId); // untouched
       expect(ledger.getOpenEscrowMatchIds('alice')).not.toContain('orphan-2'); // reconciled
@@ -1313,14 +1398,14 @@ describe('ticket 2026-09-24#2: escrow-orphan hardening + self-healing reconcilia
       const { ledger, matchmaking } = setup([mockModule, mockModule2]);
       ledger.grant('alice');
       ledger.grant('bob');
-      matchmaking.joinQueue('alice', 'mock', 100);
-      const r2 = matchmaking.joinQueue('bob', 'mock', 100);
+      matchmaking.joinQueue('alice', 'mock', 100, undefined, 'USD');
+      const r2 = matchmaking.joinQueue('bob', 'mock', 100, undefined, 'USD');
       if (r2.status !== 'matched') throw new Error('expected matched');
 
       ledger.escrow('alice', 'orphan-3', 20, 'USD');
 
       // A different game triggers reconciliation without touching alice's live 'mock' match.
-      matchmaking.joinQueue('alice', 'mock2', 50);
+      matchmaking.joinQueue('alice', 'mock2', 50, undefined, 'USD');
 
       expect(ledger.getOpenEscrowMatchIds('alice')).toContain(r2.matchId); // untouched — live match
       expect(ledger.getOpenEscrowMatchIds('alice')).not.toContain('orphan-3'); // reconciled
@@ -1332,7 +1417,7 @@ describe('ticket 2026-09-24#2: escrow-orphan hardening + self-healing reconcilia
       ledger.escrow('alice', 'orphan-old', 40, 'USD');
       ledger.escrow('alice', 'orphan-newer', 25, 'USD');
 
-      matchmaking.joinQueue('alice', 'mock', 10);
+      matchmaking.joinQueue('alice', 'mock', 10, undefined, 'USD');
 
       expect(ledger.getOpenEscrowMatchIds('alice')).not.toContain('orphan-old');
       expect(ledger.getOpenEscrowMatchIds('alice')).not.toContain('orphan-newer');
@@ -1342,11 +1427,11 @@ describe('ticket 2026-09-24#2: escrow-orphan hardening + self-healing reconcilia
       const { ledger, matchmaking } = setup();
       ledger.grant('alice');
       ledger.grant('bob');
-      const w = matchmaking.joinQueue('alice', 'mock', 100);
+      const w = matchmaking.joinQueue('alice', 'mock', 100, undefined, 'USD');
       if (w.status !== 'waiting') throw new Error('expected waiting');
 
       ledger.escrow('bob', 'orphan-4', 15, 'USD');
-      matchmaking.takeChallenge('bob', w.matchId);
+      matchmaking.takeChallenge('bob', w.matchId, 'USD');
 
       expect(ledger.getOpenEscrowMatchIds('bob')).not.toContain('orphan-4');
     });
@@ -1356,7 +1441,7 @@ describe('ticket 2026-09-24#2: escrow-orphan hardening + self-healing reconcilia
     it('a throwing refundEscrow leaves the entry in the index for a later retry, instead of orphaning it', () => {
       const { ledger, matchmaking } = setup();
       ledger.grant('alice');
-      const r1 = matchmaking.joinQueue('alice', 'mock', 100);
+      const r1 = matchmaking.joinQueue('alice', 'mock', 100, undefined, 'USD');
       if (r1.status !== 'waiting') throw new Error('expected waiting');
 
       const spy = vi.spyOn(ledger, 'refundEscrow').mockImplementationOnce(() => {
@@ -1373,7 +1458,7 @@ describe('ticket 2026-09-24#2: escrow-orphan hardening + self-healing reconcilia
       // takeChallenge (unlike listOpenChallenges) has no min-rest gate, so it's a direct proof
       // of index presence, not entangled with listing eligibility.
       ledger.grant('bob');
-      expect(() => matchmaking.takeChallenge('bob', r1.matchId)).not.toThrow();
+      expect(() => matchmaking.takeChallenge('bob', r1.matchId, 'USD')).not.toThrow();
       // The escrow is still "open" — now backing a live match instead of a resting challenge,
       // never lost (no double-spend, no orphan).
       expect(ledger.getOpenEscrowMatchIds('alice')).toContain(r1.matchId);
@@ -1382,7 +1467,7 @@ describe('ticket 2026-09-24#2: escrow-orphan hardening + self-healing reconcilia
     it('succeeds normally when expectedMatchId matches the currently-resting entry', () => {
       const { ledger, matchmaking } = setup();
       ledger.grant('alice');
-      const r1 = matchmaking.joinQueue('alice', 'mock', 100);
+      const r1 = matchmaking.joinQueue('alice', 'mock', 100, undefined, 'USD');
       if (r1.status !== 'waiting') throw new Error('expected waiting');
 
       const refund = matchmaking.leaveQueue('alice', 'mock', 100, r1.matchId);
@@ -1393,7 +1478,7 @@ describe('ticket 2026-09-24#2: escrow-orphan hardening + self-healing reconcilia
     it('refuses to act on a DIFFERENT entry sharing the same (playerId, gameId, stake) when expectedMatchId is given', () => {
       const { ledger, matchmaking } = setup();
       ledger.grant('alice');
-      const r1 = matchmaking.joinQueue('alice', 'mock', 100);
+      const r1 = matchmaking.joinQueue('alice', 'mock', 100, undefined, 'USD');
       if (r1.status !== 'waiting') throw new Error('expected waiting');
 
       expect(() => matchmaking.leaveQueue('alice', 'mock', 100, 'some-stale-matchid')).toThrow(/already changed/);
@@ -1401,7 +1486,7 @@ describe('ticket 2026-09-24#2: escrow-orphan hardening + self-healing reconcilia
       // The real, currently-resting entry must be untouched — provably, by confirming it's
       // still takeable (no min-rest gate, unlike listOpenChallenges).
       ledger.grant('bob');
-      expect(() => matchmaking.takeChallenge('bob', r1.matchId)).not.toThrow();
+      expect(() => matchmaking.takeChallenge('bob', r1.matchId, 'USD')).not.toThrow();
       expect(ledger.getOpenEscrowMatchIds('alice')).toContain(r1.matchId); // still open, unaffected
     });
   });
@@ -1410,7 +1495,7 @@ describe('ticket 2026-09-24#2: escrow-orphan hardening + self-healing reconcilia
     it('a throwing refundEscrow leaves the entry in the index for the next sweep to retry', () => {
       const { ledger, matchmaking } = setup();
       ledger.grant('alice');
-      const r1 = matchmaking.joinQueue('alice', 'mock', 100);
+      const r1 = matchmaking.joinQueue('alice', 'mock', 100, undefined, 'USD');
       if (r1.status !== 'waiting') throw new Error('expected waiting');
 
       const spy = vi.spyOn(ledger, 'refundEscrow').mockImplementationOnce(() => {

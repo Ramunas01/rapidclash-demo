@@ -15,8 +15,8 @@ function setup(stake = 50) {
   const mm = createMatchmaking(ledger, [coinflipModule], undefined, { now: () => clock });
   ledger.grant('alice');
   ledger.grant('bob');
-  mm.joinQueue('alice', 'coinflip', stake);
-  const r = mm.joinQueue('bob', 'coinflip', stake);
+  mm.joinQueue('alice', 'coinflip', stake, undefined, 'USD');
+  const r = mm.joinQueue('bob', 'coinflip', stake, undefined, 'USD');
   if (r.status !== 'matched') throw new Error('expected matched');
   return { ledger, mm, matchId: r.matchId, advance: (ms: number) => { clock += ms; }, now: () => clock };
 }

@@ -303,7 +303,7 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
 
   it('Feed: a chess open-challenge shows in the shared GamesCarousel (game + stake)', async () => {
     const challenge: OpenChallenge = {
-      matchId: 'c1', ownerName: 'rival', ownerTier: 'Unranked', stake: 10, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'blitz5',
+      matchId: 'c1', ownerName: 'rival', ownerTier: 'Unranked', stake: 10, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'blitz5', currency: 'USD',
     };
     render(<ChessHubScreen {...baseProps({ challengesByGame: { chess: [challenge] } })} />);
     // The hub uses the same GamesCarousel the Home page renders (no per-row time-control chip).
@@ -324,7 +324,7 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
     const gameState = view({ fen: START_FEN });
     const { rerender } = render(<ChessHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: asLegal([]), ...over })} />);
     rerender(
-      <ChessHubScreen {...baseProps({ currentMatchId: null, gameState, lastOutcome: outcome, lastSettlement: { delta: 0, newBalance: 1000 }, ...over })} />,
+      <ChessHubScreen {...baseProps({ currentMatchId: null, gameState, lastOutcome: outcome, lastSettlement: { delta: 0, newBalance: 1000, currency: 'USD' }, ...over })} />,
     );
     return { rerender, gameState };
   }
@@ -440,7 +440,7 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
   });
 
   // ── Bug 1: JOIN gating — Open Games allows JOIN in the settled result view (match already deleted) ──
-  const CHALLENGE: OpenChallenge = { matchId: 'j1', ownerName: 'rival', ownerTier: 'Unranked', stake: 10, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'blitz5' };
+  const CHALLENGE: OpenChallenge = { matchId: 'j1', ownerName: 'rival', ownerTier: 'Unranked', stake: 10, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'blitz5', currency: 'USD' };
 
   it('Bug 1: the settled post-game result view still allows JOIN on Open Games', async () => {
     // The match is settled/deleted server-side once ended, so idling on the result board must NOT

@@ -93,6 +93,7 @@ const CHALLENGE: OpenChallenge = {
   openedAt: 0,
   expiresAt: Date.now() + 30_000,
   timeControlId: 'none',
+  currency: 'USD',
 };
 
 describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
@@ -357,7 +358,7 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
           currentMatchId: null,
           gameState: terminalState,
           lastOutcome: { type: 'win', winner: 'pid' },
-          lastSettlement: { delta: 90, newBalance: 1090 },
+          lastSettlement: { delta: 90, newBalance: 1090, currency: 'USD' },
         })}
       />
     );
@@ -397,7 +398,7 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
           currentMatchId: null,
           gameState,
           lastOutcome: { type: 'win', winner: 'pid' },
-          lastSettlement: { delta: 90, newBalance: 1090 },
+          lastSettlement: { delta: 90, newBalance: 1090, currency: 'USD' },
         })}
       />
     );
@@ -449,7 +450,7 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
           currentMatchId: null,
           gameState,
           lastOutcome: outcome,
-          lastSettlement: { delta: 90, newBalance: 1090 },
+          lastSettlement: { delta: 90, newBalance: 1090, currency: 'USD' },
         })}
       />
     );

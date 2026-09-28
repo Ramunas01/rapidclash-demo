@@ -183,7 +183,7 @@ describe('LimboHubScreen (GameHub + LimboPanel)', () => {
 
       // At the cap the server settles once and sends match.end(void): currentMatchId clears +
       // a void outcome. The hub shows the terminal result overlay — it does NOT keep beating.
-      rerender(<LimboHubScreen {...baseProps({ currentMatchId: null, gameState: tieRound(10), lastOutcome: { type: 'void' }, lastSettlement: { delta: 0, newBalance: 1000 } })} />);
+      rerender(<LimboHubScreen {...baseProps({ currentMatchId: null, gameState: tieRound(10), lastOutcome: { type: 'void' }, lastSettlement: { delta: 0, newBalance: 1000, currency: 'USD' } })} />);
       await act(async () => { await vi.advanceTimersByTimeAsync(2000 + 50); });
       expect(screen.getByTestId('hub-result-overlay')).toBeInTheDocument();
       expect(screen.getByTestId('hub-result-text').textContent).toMatch(/void/i);

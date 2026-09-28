@@ -57,9 +57,9 @@ describe('OC1 — typed-amount path is unchanged', () => {
     bet(ledger, 'alice');
     bet(ledger, 'bob');
 
-    const r1 = matchmaking.joinQueue('alice', 'mock', 100);
+    const r1 = matchmaking.joinQueue('alice', 'mock', 100, undefined, 'USD');
     expect(r1.status).toBe('waiting');
-    const r2 = matchmaking.joinQueue('bob', 'mock', 100);
+    const r2 = matchmaking.joinQueue('bob', 'mock', 100, undefined, 'USD');
     expect(r2.status).toBe('matched');
     if (r2.status === 'matched') {
       expect(r2.opponentId).toBe('alice'); // oldest waiter
@@ -69,7 +69,7 @@ describe('OC1 — typed-amount path is unchanged', () => {
     // A separate waiter can leave and be made whole.
     bet(ledger, 'carol');
     const before = ledger.getBalance('carol', 'USD');
-    matchmaking.joinQueue('carol', 'mock', 50);
+    matchmaking.joinQueue('carol', 'mock', 50, undefined, 'USD');
     expect(ledger.getBalance('carol', 'USD')).toBe(before - 50);
     matchmaking.leaveQueue('carol', 'mock', 50);
     expect(ledger.getBalance('carol', 'USD')).toBe(before);
@@ -79,7 +79,7 @@ describe('OC1 — typed-amount path is unchanged', () => {
     const t = 1_000;
     const { ledger, matchmaking } = setup({ now: () => t });
     bet(ledger, 'alice');
-    const r = matchmaking.joinQueue('alice', 'mock', 100);
+    const r = matchmaking.joinQueue('alice', 'mock', 100, undefined, 'USD');
     expect(r.status).toBe('waiting');
     if (r.status === 'waiting') {
       expect(r.since).toBe(1_000);
@@ -97,14 +97,14 @@ describe('OC3 — atomic claim (headline)', () => {
     bet(ledger, 'bob');
     bet(ledger, 'carol');
 
-    const open = matchmaking.joinQueue('owner', 'mock', 100);
+    const open = matchmaking.joinQueue('owner', 'mock', 100, undefined, 'USD');
     const matchId = open.matchId;
 
     // Fire both claims "concurrently". JS runs each synchronous call to completion,
     // so the first claim removes the entry before the second's lookup runs.
     const settled = await Promise.allSettled([
-      Promise.resolve().then(() => matchmaking.takeChallenge('bob', matchId)),
-      Promise.resolve().then(() => matchmaking.takeChallenge('carol', matchId)),
+      Promise.resolve().then(() => matchmaking.takeChallenge('bob', matchId, 'USD')),
+      Promise.resolve().then(() => matchmaking.takeChallenge('carol', matchId, 'USD')),
     ]);
 
     const winners = settled.filter((s) => s.status === 'fulfilled');
@@ -133,9 +133,9 @@ describe('OC4 — no self-take', () => {
   it('the owner cannot claim their own challenge; no escrow is written', () => {
     const { ledger, matchmaking } = setup();
     bet(ledger, 'owner');
-    const open = matchmaking.joinQueue('owner', 'mock', 100);
+    const open = matchmaking.joinQueue('owner', 'mock', 100, undefined, 'USD');
 
-    expect(() => matchmaking.takeChallenge('owner', open.matchId)).toThrow(
+    expect(() => matchmaking.takeChallenge('owner', open.matchId, 'USD')).toThrow(
       expect.objectContaining({ code: 'SELF_TAKE' }),
     );
     // Only the original resting escrow exists — no second one from the self-take.
@@ -149,16 +149,16 @@ describe('OC5 — insufficient balance refused before escrow', () => {
   it('a taker who cannot cover the stake is refused with no escrow row', () => {
     const { ledger, matchmaking } = setup();
     bet(ledger, 'owner');
-    const open = matchmaking.joinQueue('owner', 'mock', 100);
+    const open = matchmaking.joinQueue('owner', 'mock', 100, undefined, 'USD');
 
     // 'pauper' was never granted → balance 0 < 100.
-    expect(() => matchmaking.takeChallenge('pauper', open.matchId)).toThrow(
+    expect(() => matchmaking.takeChallenge('pauper', open.matchId, 'USD')).toThrow(
       expect.objectContaining({ code: 'INSUFFICIENT_BALANCE' }),
     );
     expect(escrowRows(ledger, 'pauper')).toHaveLength(0);
     // The challenge is still claimable by someone solvent (it was not consumed).
     bet(ledger, 'bob');
-    expect(matchmaking.takeChallenge('bob', open.matchId).status).toBe('matched');
+    expect(matchmaking.takeChallenge('bob', open.matchId, 'USD').status).toBe('matched');
   });
 });
 
@@ -170,7 +170,7 @@ describe('OC6 — expiry sweep refunds once (idempotent)', () => {
     const { ledger, matchmaking } = setup({ now: () => t });
     bet(ledger, 'owner');
     const before = ledger.getBalance('owner', 'USD');
-    const open = matchmaking.joinQueue('owner', 'mock', 100);
+    const open = matchmaking.joinQueue('owner', 'mock', 100, undefined, 'USD');
     expect(ledger.getBalance('owner', 'USD')).toBe(before - 100); // escrowed
 
     // Not yet expired.
@@ -200,9 +200,9 @@ describe('OC2 — feed eligibility & shaping', () => {
     bet(ledger, 'owner');
     bet(ledger, 'viewer');
     t = 1_000;
-    const open = matchmaking.joinQueue('owner', 'mock', 100);
+    const open = matchmaking.joinQueue('owner', 'mock', 100, undefined, 'USD');
     t = 2_000;
-    const ownBet = matchmaking.joinQueue('viewer', 'mock', 70); // viewer's own — must be excluded
+    const ownBet = matchmaking.joinQueue('viewer', 'mock', 70, undefined, 'USD'); // viewer's own — must be excluded
 
     // At t=3_000 the owner bet has rested only 2s (<5s) → not yet listable.
     expect(matchmaking.listOpenChallenges('mock', 'viewer', 3_000).entries).toEqual([]);
@@ -222,7 +222,7 @@ describe('OC2 — feed eligibility & shaping', () => {
       bet(ledger, `p${i}`);
       t = 100 + i; // distinct, monotonically increasing `since`
       // Distinct stakes so each rests as its own open challenge (same stake would FIFO-pair).
-      matchmaking.joinQueue(`p${i}`, 'mock', 100 + i);
+      matchmaking.joinQueue(`p${i}`, 'mock', 100 + i, undefined, 'USD');
     }
     const list = matchmaking.listOpenChallenges('mock', 'viewer', 10_000);
     expect(list.entries).toHaveLength(5); // capped
@@ -239,11 +239,11 @@ describe('OC9 — priority equivalence (uniform TTL)', () => {
     bet(ledger, 'c');
     // Distinct stakes so all three rest (same stake would FIFO-pair, not rest).
     t = 1_000;
-    const a = matchmaking.joinQueue('a', 'mock', 100); // expiresAt 91_000
+    const a = matchmaking.joinQueue('a', 'mock', 100, undefined, 'USD'); // expiresAt 91_000
     t = 2_000;
-    matchmaking.joinQueue('b', 'mock', 110); // expiresAt 92_000
+    matchmaking.joinQueue('b', 'mock', 110, undefined, 'USD'); // expiresAt 92_000
     t = 3_000;
-    matchmaking.joinQueue('c', 'mock', 120); // expiresAt 93_000
+    matchmaking.joinQueue('c', 'mock', 120, undefined, 'USD'); // expiresAt 93_000
 
     const list = matchmaking.listOpenChallenges('mock', 'viewer', 10_000);
     // Longest-waiting first.

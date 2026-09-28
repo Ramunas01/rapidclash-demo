@@ -60,7 +60,7 @@ describe('GET /guest/open-challenges (guest-scoped bot-waiter snapshot, issue #3
     const { playerId } = reg.json<{ playerId: string }>();
     // Post at a stake+game that ALSO happens to be a guest bot lane, so a leak would be visible.
     const [gameId, stake] = ['coinflip', GUEST_BOT_STAKE_LANES.coinflip[0]];
-    services.matchmaking.joinQueue(playerId, gameId, stake);
+    services.matchmaking.joinQueue(playerId, gameId, stake, undefined, 'USD');
 
     const rows = (await app.inject({ method: 'GET', url: '/guest/open-challenges' })).json<PublicOpenChallenge[]>();
     // Still exactly the bot pool count — the real player's resting bet never leaked in, and the
@@ -81,7 +81,7 @@ describe('GET /guest/open-challenges (guest-scoped bot-waiter snapshot, issue #3
     const offLaneStake = 100; // outside GUEST_BOT_STAKE_LANES.coinflip ([5, 10, 25, 50])
     expect(GUEST_BOT_STAKE_LANES.coinflip).not.toContain(offLaneStake);
     services.guest.ledger.grant('guest:human-1');
-    services.guest.matchmaking.joinQueue('guest:human-1', 'coinflip', offLaneStake);
+    services.guest.matchmaking.joinQueue('guest:human-1', 'coinflip', offLaneStake, undefined, 'USD');
 
     const rows = (await app.inject({ method: 'GET', url: '/guest/open-challenges' })).json<PublicOpenChallenge[]>();
     expect(rows.every((r) => r.stake !== offLaneStake)).toBe(true);

@@ -44,9 +44,9 @@ describe('GET /matches/:id', () => {
     outsider = await register('carol');
 
     // Pair p1 and p2 into an active RPS match.
-    const waiting = services.matchmaking.joinQueue(p1.id, 'rps', STAKE);
+    const waiting = services.matchmaking.joinQueue(p1.id, 'rps', STAKE, undefined, 'USD');
     matchId = waiting.matchId;
-    services.matchmaking.joinQueue(p2.id, 'rps', STAKE);
+    services.matchmaking.joinQueue(p2.id, 'rps', STAKE, undefined, 'USD');
   });
 
   afterEach(async () => {
@@ -169,8 +169,8 @@ describe('GET /matches/recent', () => {
     winner: { token: string; id: string },
     loser: { token: string; id: string },
   ): Promise<string> {
-    const waiting = services.matchmaking.joinQueue(winner.id, 'rps', STAKE);
-    services.matchmaking.joinQueue(loser.id, 'rps', STAKE);
+    const waiting = services.matchmaking.joinQueue(winner.id, 'rps', STAKE, undefined, 'USD');
+    services.matchmaking.joinQueue(loser.id, 'rps', STAKE, undefined, 'USD');
     services.matchmaking.applyMove(waiting.matchId, winner.id, 'rock', Date.now());
     services.matchmaking.applyMove(waiting.matchId, loser.id, 'scissors', Date.now());
     services.matchmaking.sweepTimedOutMoves(Date.now() + PICK_WINDOW_MS + 1);
@@ -329,8 +329,8 @@ describe('GET /matches/recent', () => {
     // ever created) is not a match_results row at all — instead, exercise void the same way
     // match-history.test.ts does: record it directly via the core service, alongside one real
     // played match, and confirm only the real one surfaces.
-    const waiting = services.matchmaking.joinQueue(p1.id, 'rps', STAKE);
-    services.matchmaking.joinQueue(p2.id, 'rps', STAKE);
+    const waiting = services.matchmaking.joinQueue(p1.id, 'rps', STAKE, undefined, 'USD');
+    services.matchmaking.joinQueue(p2.id, 'rps', STAKE, undefined, 'USD');
     services.ledger.settle(waiting.matchId, 'void', undefined, STAKE * 2, 0);
     services.matchHistory.recordResult(
       waiting.matchId,

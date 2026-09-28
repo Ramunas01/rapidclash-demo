@@ -1,4 +1,4 @@
-import type { Envelope, Move, QueueJoinPayload, QueueLeavePayload, MoveMakePayload, MatchResumePayload, MatchStartPayload, MatchStatePayload, MatchYourTurnPayload, MatchEndPayload, QueueWaitingPayload, ErrorPayload, ChallengeSubscribePayload, ChallengeTakePayload, ChallengesListPayload, ChallengesUpdatePayload, ChallengeExpiredPayload, ChatSendPayload, ChatMessagePayload, ChatHistoryPayload } from '@rapidclash/shared';
+import type { Envelope, Move, QueueJoinPayload, QueueLeavePayload, MoveMakePayload, MatchResumePayload, MatchStartPayload, MatchStatePayload, MatchYourTurnPayload, MatchEndPayload, QueueWaitingPayload, ErrorPayload, ChallengeSubscribePayload, ChallengeTakePayload, ChallengesListPayload, ChallengesUpdatePayload, ChallengeExpiredPayload, ChatSendPayload, ChatMessagePayload, ChatHistoryPayload, Currency } from '@rapidclash/shared';
 import { UNTIMED_TIME_CONTROL } from '@rapidclash/shared';
 
 const WS_BASE = import.meta.env.VITE_WS_URL ?? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
@@ -234,9 +234,11 @@ export class WsClient {
   }
 
   /** `timeControlId` selects the chess pairing control; the server maps 'none' (the default for
-   *  callers without a picker yet) to the game's default control, or keeps 'none' for untimed games. */
-  joinQueue(gameId: string, stake: number, timeControlId: string = UNTIMED_TIME_CONTROL): boolean {
-    return this.send('queue.join', { gameId, stake, timeControlId } as QueueJoinPayload);
+   *  callers without a picker yet) to the game's default control, or keeps 'none' for untimed games.
+   *  `currency` (ticket 2026-09-27#7, D69): which of the caller's own currency buckets to escrow
+   *  the stake from — the server resolves + validates it independent of the opponent's own pick. */
+  joinQueue(gameId: string, stake: number, timeControlId: string = UNTIMED_TIME_CONTROL, currency: Currency = 'USD'): boolean {
+    return this.send('queue.join', { gameId, stake, timeControlId, currency } as QueueJoinPayload);
   }
 
   leaveQueue(gameId: string): boolean {
@@ -252,9 +254,11 @@ export class WsClient {
     return this.send('challenges.unsubscribe', { gameId } as ChallengeSubscribePayload);
   }
 
-  /** Claim a specific resting bet. Escrow happens server-side only on a successful claim. */
-  takeChallenge(matchId: string): boolean {
-    return this.send('challenge.take', { matchId } as ChallengeTakePayload);
+  /** Claim a specific resting bet. Escrow happens server-side only on a successful claim.
+   *  `currency` (ticket 2026-09-27#7, D69): the taker's own selection, independent of whatever
+   *  the owner escrowed their own side in. */
+  takeChallenge(matchId: string, currency: Currency = 'USD'): boolean {
+    return this.send('challenge.take', { matchId, currency } as ChallengeTakePayload);
   }
 
   /** `move` is the contract's opaque Move — a string for RPS/Coinflip, a {from,to,promotion?}

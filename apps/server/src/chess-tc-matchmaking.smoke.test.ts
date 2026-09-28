@@ -19,8 +19,8 @@ describe('chess time control — matchmaking pairing (real chess module)', () =>
 
   it('two players at the same stake + default control are matched and clocked (10 min)', () => {
     const { mm } = setup();
-    expect(mm.joinQueue('alice', 'chess', 10).status).toBe('waiting'); // no control → default rapid10
-    const r = mm.joinQueue('bob', 'chess', 10, 'rapid10');
+    expect(mm.joinQueue('alice', 'chess', 10, undefined, 'USD').status).toBe('waiting'); // no control → default rapid10
+    const r = mm.joinQueue('bob', 'chess', 10, 'rapid10', 'USD');
     expect(r.status).toBe('matched');
     if (r.status === 'matched') {
       const c = clockOf(mm, r.matchId);
@@ -32,9 +32,9 @@ describe('chess time control — matchmaking pairing (real chess module)', () =>
 
   it('the same stake but different controls do NOT pair (three-way pool split)', () => {
     const { mm } = setup();
-    expect(mm.joinQueue('alice', 'chess', 10, 'rapid10').status).toBe('waiting');
-    expect(mm.joinQueue('bob', 'chess', 10, 'blitz5').status).toBe('waiting'); // separate pool
-    const r = mm.joinQueue('carol', 'chess', 10, 'blitz5');
+    expect(mm.joinQueue('alice', 'chess', 10, 'rapid10', 'USD').status).toBe('waiting');
+    expect(mm.joinQueue('bob', 'chess', 10, 'blitz5', 'USD').status).toBe('waiting'); // separate pool
+    const r = mm.joinQueue('carol', 'chess', 10, 'blitz5', 'USD');
     expect(r.status).toBe('matched'); // pairs with bob's blitz5, not alice's rapid10
     if (r.status === 'matched') {
       expect(r.opponentId).toBe('bob');
@@ -44,7 +44,7 @@ describe('chess time control — matchmaking pairing (real chess module)', () =>
 
   it("a bot-style resting chess challenge (rapid10) is joinable, and the feed shows its control", () => {
     const { mm } = setup();
-    const w = mm.joinQueue('alice', 'chess', 5, 'rapid10'); // the bot crowd's chess rester
+    const w = mm.joinQueue('alice', 'chess', 5, 'rapid10', 'USD'); // the bot crowd's chess rester
     expect(w.status).toBe('waiting');
     if (w.status !== 'waiting') return;
     expect(w.timeControlId).toBe('rapid10');
@@ -55,13 +55,13 @@ describe('chess time control — matchmaking pairing (real chess module)', () =>
     expect(entries[0]).toMatchObject({ matchId: w.matchId, timeControlId: 'rapid10' });
 
     // A human takes it → matched + clocked at the owner's control.
-    const r = mm.takeChallenge('bob', w.matchId);
+    const r = mm.takeChallenge('bob', w.matchId, 'USD');
     expect(clockOf(mm, r.matchId).timeControlId).toBe('rapid10');
     expect(clockOf(mm, r.matchId).remainingMs['bob']).toBe(600_000);
   });
 
   it('an explicit unknown control is rejected', () => {
     const { mm } = setup();
-    expect(() => mm.joinQueue('alice', 'chess', 10, 'hyperbullet')).toThrow(RangeError);
+    expect(() => mm.joinQueue('alice', 'chess', 10, 'hyperbullet', 'USD')).toThrow(RangeError);
   });
 });

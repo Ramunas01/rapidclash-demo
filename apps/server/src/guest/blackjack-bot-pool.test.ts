@@ -16,7 +16,7 @@ const STAKE = GUEST_BOT_STAKE_LANES.blackjack[0];
 const OTHER_STAKE = GUEST_BOT_STAKE_LANES.blackjack[1];
 
 function joinBlackjack(matchmaking: ReturnType<typeof createGuestServices>['matchmaking'], playerId: string, stake: number = STAKE) {
-  return matchmaking.joinQueue(playerId, 'blackjack', stake);
+  return matchmaking.joinQueue(playerId, 'blackjack', stake, undefined, 'USD');
 }
 
 describe('blackjack Demo-Opponent pool (issue #297, multi-lane per issue #351)', () => {

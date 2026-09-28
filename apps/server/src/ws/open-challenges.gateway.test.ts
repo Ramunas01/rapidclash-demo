@@ -129,7 +129,7 @@ describe('OC8 — open-challenges feed over the WS gateway', () => {
   it('OC7: queue.waiting carries expiresAt', async () => {
     const alice = await openSocket(port, aliceToken);
     sockets.push(alice);
-    alice.send('queue.join', { gameId: 'rps', stake: 10 });
+    alice.send('queue.join', { gameId: 'rps', stake: 10 , currency: 'USD' });
     const waiting = (await alice.waitFor('queue.waiting')).payload as QueueWaitingPayload;
     expect(waiting.expiresAt).toBeGreaterThan(waiting.since);
   });
@@ -145,7 +145,7 @@ describe('OC8 — open-challenges feed over the WS gateway', () => {
     // Alice posts a resting bet → bob's feed gets an `added`.
     const alice = await openSocket(port, aliceToken);
     sockets.push(alice);
-    alice.send('queue.join', { gameId: 'rps', stake: 10 });
+    alice.send('queue.join', { gameId: 'rps', stake: 10 , currency: 'USD' });
     const upd = (await bob.waitFor('challenges.update')).payload as ChallengesUpdatePayload;
     expect(upd.added).toBeTruthy();
     expect(upd.added!.ownerName).toBe('alice'); // username-joined
@@ -166,7 +166,7 @@ describe('OC8 — open-challenges feed over the WS gateway', () => {
     // exercises matchmaking.ts's own `listOpenChallenges`/`lookupTier` path.
     const alice = await openSocket(port, aliceToken);
     sockets.push(alice);
-    alice.send('queue.join', { gameId: 'rps', stake: 10 });
+    alice.send('queue.join', { gameId: 'rps', stake: 10 , currency: 'USD' });
     // Let the bet actually rest (CHALLENGE_MIN_REST_MS is 0 in this suite, but give the server a
     // moment to process the join before bob subscribes).
     await new Promise((r) => setTimeout(r, 20));
@@ -180,7 +180,7 @@ describe('OC8 — open-challenges feed over the WS gateway', () => {
 
     // A second challenge posted AFTER bob is already subscribed exercises gateway.ts's own
     // `openChallengeOf` (the `added` push path) for the same seeded account.
-    alice.send('queue.join', { gameId: 'rps', stake: 20 });
+    alice.send('queue.join', { gameId: 'rps', stake: 20 , currency: 'USD' });
     const upd = (await bob.waitFor('challenges.update')).payload as ChallengesUpdatePayload;
     expect(upd.added!.ownerTier).toBe('Bronze');
   });
@@ -195,12 +195,12 @@ describe('OC8 — open-challenges feed over the WS gateway', () => {
     const bob = await openSocket(port, bobToken);
     sockets.push(alice, bob);
 
-    alice.send('queue.join', { gameId: 'rps', stake: 10 });
+    alice.send('queue.join', { gameId: 'rps', stake: 10 , currency: 'USD' });
     const waiting = (await alice.waitFor('queue.waiting')).payload as QueueWaitingPayload;
     const matchId = waiting.matchId;
     await carol.waitFor('challenges.update'); // the `added`
 
-    bob.send('challenge.take', { matchId });
+    bob.send('challenge.take', { matchId , currency: 'USD' });
     const bobStart = (await bob.waitFor('match.start')).payload as MatchStartPayload;
     const aliceStart = (await alice.waitFor('match.start')).payload as MatchStartPayload;
     // Exactly one match, the owner's canonical matchId, each sees the other as opponent.
@@ -222,9 +222,9 @@ describe('OC8 — open-challenges feed over the WS gateway', () => {
     const bob = await openSocket(port, bobToken);
     sockets.push(alice, bob);
 
-    alice.send('queue.join', { gameId: 'chess', stake: 10 });
+    alice.send('queue.join', { gameId: 'chess', stake: 10 , currency: 'USD' });
     await alice.waitFor('queue.waiting');
-    bob.send('queue.join', { gameId: 'chess', stake: 10 });
+    bob.send('queue.join', { gameId: 'chess', stake: 10 , currency: 'USD' });
     const fifoAlice = (await alice.waitFor('match.start')).payload as MatchStartPayload;
     const fifoBob = (await bob.waitFor('match.start')).payload as MatchStartPayload;
     expect(fifoAlice.gameId).toBe('chess');
@@ -236,9 +236,9 @@ describe('OC8 — open-challenges feed over the WS gateway', () => {
     const dave = await openSocket(port, (await registerExtra(app, 'dave')).token);
     sockets.push(carol, dave);
 
-    carol.send('queue.join', { gameId: 'chess', stake: 10 });
+    carol.send('queue.join', { gameId: 'chess', stake: 10 , currency: 'USD' });
     const restingId = ((await carol.waitFor('queue.waiting')).payload as QueueWaitingPayload).matchId;
-    dave.send('challenge.take', { matchId: restingId });
+    dave.send('challenge.take', { matchId: restingId , currency: 'USD' });
     const takeDave = (await dave.waitFor('match.start')).payload as MatchStartPayload;
     const takeCarol = (await carol.waitFor('match.start')).payload as MatchStartPayload;
     expect(takeDave.gameId).toBe('chess');
@@ -251,9 +251,9 @@ describe('OC8 — open-challenges feed over the WS gateway', () => {
     const bob = await openSocket(port, bobToken);
     sockets.push(alice, bob);
 
-    alice.send('queue.join', { gameId: 'rps', stake: 10 });
+    alice.send('queue.join', { gameId: 'rps', stake: 10 , currency: 'USD' });
     await alice.waitFor('queue.waiting');
-    bob.send('queue.join', { gameId: 'rps', stake: 10 });
+    bob.send('queue.join', { gameId: 'rps', stake: 10 , currency: 'USD' });
     const fifoAlice = (await alice.waitFor('match.start')).payload as MatchStartPayload;
     const fifoBob = (await bob.waitFor('match.start')).payload as MatchStartPayload;
     expect(fifoAlice.opponentName).toBe('bob');
@@ -264,9 +264,9 @@ describe('OC8 — open-challenges feed over the WS gateway', () => {
     const dave = await openSocket(port, (await registerExtra(app, 'dave')).token);
     sockets.push(carol, dave);
 
-    carol.send('queue.join', { gameId: 'rps', stake: 10 });
+    carol.send('queue.join', { gameId: 'rps', stake: 10 , currency: 'USD' });
     const restingId = ((await carol.waitFor('queue.waiting')).payload as QueueWaitingPayload).matchId;
-    dave.send('challenge.take', { matchId: restingId });
+    dave.send('challenge.take', { matchId: restingId , currency: 'USD' });
     const takeDave = (await dave.waitFor('match.start')).payload as MatchStartPayload;
     const takeCarol = (await carol.waitFor('match.start')).payload as MatchStartPayload;
     expect(takeDave.opponentName).toBe('carol');
@@ -278,9 +278,9 @@ describe('OC8 — open-challenges feed over the WS gateway', () => {
     const bob = await openSocket(port, bobToken);
     sockets.push(alice, bob);
 
-    alice.send('queue.join', { gameId: 'rps', stake: 10 });
+    alice.send('queue.join', { gameId: 'rps', stake: 10 , currency: 'USD' });
     const matchId = ((await alice.waitFor('queue.waiting')).payload as QueueWaitingPayload).matchId;
-    bob.send('queue.join', { gameId: 'rps', stake: 10 });
+    bob.send('queue.join', { gameId: 'rps', stake: 10 , currency: 'USD' });
     await alice.waitFor('match.start');
     await bob.waitFor('match.start');
 
@@ -293,9 +293,9 @@ describe('OC8 — open-challenges feed over the WS gateway', () => {
   it('SELF_TAKE: an owner taking their own challenge is rejected', async () => {
     const alice = await openSocket(port, aliceToken);
     sockets.push(alice);
-    alice.send('queue.join', { gameId: 'rps', stake: 10 });
+    alice.send('queue.join', { gameId: 'rps', stake: 10 , currency: 'USD' });
     const matchId = ((await alice.waitFor('queue.waiting')).payload as QueueWaitingPayload).matchId;
-    alice.send('challenge.take', { matchId });
+    alice.send('challenge.take', { matchId , currency: 'USD' });
     const err = (await alice.waitFor('error')).payload as { code: string };
     expect(err.code).toBe('SELF_TAKE');
   });
@@ -308,7 +308,7 @@ describe('OC8 — open-challenges feed over the WS gateway', () => {
 
     const alice = await openSocket(port, aliceToken);
     sockets.push(alice);
-    alice.send('queue.join', { gameId: 'rps', stake: 10 });
+    alice.send('queue.join', { gameId: 'rps', stake: 10 , currency: 'USD' });
     const matchId = ((await alice.waitFor('queue.waiting')).payload as QueueWaitingPayload).matchId;
     await bob.waitFor('challenges.update'); // added
 
@@ -325,7 +325,7 @@ describe('OC8 — open-challenges feed over the WS gateway', () => {
 
     const alice = await openSocket(port, aliceToken);
     sockets.push(alice);
-    alice.send('queue.join', { gameId: 'rps', stake: 10 });
+    alice.send('queue.join', { gameId: 'rps', stake: 10 , currency: 'USD' });
     const matchId = ((await alice.waitFor('queue.waiting')).payload as QueueWaitingPayload).matchId;
     await bob.waitFor('challenges.update'); // added
 
@@ -348,7 +348,7 @@ describe('OC8 — open-challenges feed over the WS gateway', () => {
     // Alice posts a chess bet WITHOUT a control → the server resolves the chess default (rapid10).
     const alice = await openSocket(port, aliceToken);
     sockets.push(alice);
-    alice.send('queue.join', { gameId: 'chess', stake: 10 });
+    alice.send('queue.join', { gameId: 'chess', stake: 10 , currency: 'USD' });
     const upd = (await bob.waitFor('challenges.update')).payload as ChallengesUpdatePayload;
     expect(upd.added!.timeControlId).toBe('rapid10');
   });
@@ -358,9 +358,9 @@ describe('OC8 — open-challenges feed over the WS gateway', () => {
     const carol = await openSocket(port, (await registerExtra(app, 'carol')).token);
     sockets.push(alice, carol);
 
-    alice.send('queue.join', { gameId: 'chess', stake: 10, timeControlId: 'rapid10' });
+    alice.send('queue.join', { gameId: 'chess', stake: 10, timeControlId: 'rapid10' , currency: 'USD' });
     await alice.waitFor('queue.waiting');
-    carol.send('queue.join', { gameId: 'chess', stake: 10, timeControlId: 'rapid10' });
+    carol.send('queue.join', { gameId: 'chess', stake: 10, timeControlId: 'rapid10' , currency: 'USD' });
 
     const aStart = (await alice.waitFor('match.start')).payload as MatchStartPayload;
     await carol.waitFor('match.start');
@@ -375,9 +375,9 @@ describe('OC8 — open-challenges feed over the WS gateway', () => {
     const carol = await openSocket(port, (await registerExtra(app, 'carol')).token);
     sockets.push(alice, carol);
 
-    alice.send('queue.join', { gameId: 'chess', stake: 10, timeControlId: 'rapid10' });
+    alice.send('queue.join', { gameId: 'chess', stake: 10, timeControlId: 'rapid10' , currency: 'USD' });
     await alice.waitFor('queue.waiting');
-    carol.send('queue.join', { gameId: 'chess', stake: 10, timeControlId: 'blitz5' });
+    carol.send('queue.join', { gameId: 'chess', stake: 10, timeControlId: 'blitz5' , currency: 'USD' });
     // Different control → separate pool → carol also rests (no match.start).
     const carolWaiting = (await carol.waitFor('queue.waiting')).payload as QueueWaitingPayload;
     expect(carolWaiting.matchId).toBeTruthy();

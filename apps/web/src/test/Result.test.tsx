@@ -14,7 +14,7 @@ describe('ResultScreen', () => {
     render(
       <ResultScreen
         outcome={{ type: 'win', winner: 'alice' }}
-        settlement={{ delta: 90, newBalance: 1090 }}
+        settlement={{ delta: 90, newBalance: 1090, currency: 'USD' }}
         playerId="alice"
         onPlayAgain={vi.fn()}
         onLeaderboard={vi.fn()}
@@ -28,7 +28,7 @@ describe('ResultScreen', () => {
     render(
       <ResultScreen
         outcome={{ type: 'win', winner: 'bob' }}
-        settlement={{ delta: -100, newBalance: 900 }}
+        settlement={{ delta: -100, newBalance: 900, currency: 'USD' }}
         playerId="alice"
         onPlayAgain={vi.fn()}
         onLeaderboard={vi.fn()}
@@ -42,7 +42,7 @@ describe('ResultScreen', () => {
     render(
       <ResultScreen
         outcome={{ type: 'draw' }}
-        settlement={{ delta: 0, newBalance: 1000 }}
+        settlement={{ delta: 0, newBalance: 1000, currency: 'USD' }}
         onPlayAgain={vi.fn()}
         onLeaderboard={vi.fn()}
       />,
@@ -55,7 +55,7 @@ describe('ResultScreen', () => {
     render(
       <ResultScreen
         outcome={{ type: 'win', winner: 'alice' }}
-        settlement={{ delta: 90, newBalance: 1090 }}
+        settlement={{ delta: 90, newBalance: 1090, currency: 'USD' }}
         playerId="alice"
         onPlayAgain={vi.fn()}
         onLeaderboard={vi.fn()}
@@ -68,7 +68,7 @@ describe('ResultScreen', () => {
     render(
       <ResultScreen
         outcome={{ type: 'win', winner: 'bob' }}
-        settlement={{ delta: -100, newBalance: 900 }}
+        settlement={{ delta: -100, newBalance: 900, currency: 'USD' }}
         playerId="alice"
         onPlayAgain={vi.fn()}
         onLeaderboard={vi.fn()}

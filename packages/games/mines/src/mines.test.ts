@@ -608,8 +608,8 @@ describe('minesModule via the real core matchmaking sweep (ADR-012 end-to-end, n
     const mm = createMatchmaking(ledger, [mines], undefined, { now: () => clock });
     ledger.grant('alice');
     ledger.grant('bob');
-    mm.joinQueue('alice', 'mines', stake);
-    const r = mm.joinQueue('bob', 'mines', stake);
+    mm.joinQueue('alice', 'mines', stake, undefined, 'USD');
+    const r = mm.joinQueue('bob', 'mines', stake, undefined, 'USD');
     if (r.status !== 'matched') throw new Error('expected matched');
     return {
       ledger, mm, matchId: r.matchId, start: clock,

@@ -17,8 +17,8 @@ function playToTerminal(mod: GameModule) {
   for (const p of ['alice', 'bob']) ledger.grant(p);
   const start = ledger.getBalance('alice', 'USD');
 
-  expect(mm.joinQueue('alice', mod.meta.id, 10).status).toBe('waiting'); // registered ⇒ joinable
-  const m = mm.joinQueue('bob', mod.meta.id, 10);
+  expect(mm.joinQueue('alice', mod.meta.id, 10, undefined, 'USD').status).toBe('waiting'); // registered ⇒ joinable
+  const m = mm.joinQueue('bob', mod.meta.id, 10, undefined, 'USD');
   expect(m.status).toBe('matched');
   if (m.status !== 'matched') throw new Error('unreachable');
   const { matchId } = m;

@@ -28,7 +28,7 @@ function challenge(
   openedAt: number,
   ownerTier: VipTier = 'Unranked',
 ): OpenChallenge {
-  return { matchId, ownerName, ownerTier, stake, openedAt, expiresAt: Date.now() + 30_000, timeControlId: 'none' };
+  return { matchId, ownerName, ownerTier, stake, openedAt, expiresAt: Date.now() + 30_000, timeControlId: 'none', currency: 'USD' };
 }
 
 /** N sequential coinflip challenges (g1 oldest .. gN newest). */

@@ -35,6 +35,7 @@ import type {
   ChatSendPayload,
   ChatMessagePayload,
   ChatHistoryPayload,
+  Currency,
 } from '@rapidclash/shared';
 import type { GameModule } from '@rapidclash/shared';
 
@@ -323,6 +324,7 @@ export function registerWsGateway(
     openedAt: number,
     expiresAt: number,
     timeControlId: string,
+    currency: Currency,
   ): OpenChallenge {
     return {
       matchId,
@@ -332,6 +334,7 @@ export function registerWsGateway(
       openedAt,
       expiresAt,
       timeControlId,
+      currency,
     };
   }
 
@@ -353,7 +356,13 @@ export function registerWsGateway(
    * has it in scope (a literal from the request payload, a `MatchRecord` lookup, or a function
    * parameter).
    */
-  function deliverMatchStart(curId: string, result: JoinMatched, gameId: string, stake: number): void {
+  function deliverMatchStart(
+    curId: string,
+    result: JoinMatched,
+    gameId: string,
+    stake: number,
+    currency: Record<string, Currency>,
+  ): void {
     const mod = moduleByGame.get(gameId);
     playerMatch.set(curId, result.matchId);
     playerMatch.set(result.opponentId, result.matchId);
@@ -372,6 +381,7 @@ export function registerWsGateway(
         state: curState,
         serverNow: Date.now(), // lets the client align its clock to server-authoritative timers
         stake,
+        currency: currency[curId],
       });
     }
 
@@ -387,6 +397,7 @@ export function registerWsGateway(
         state: oppState,
         serverNow: Date.now(),
         stake,
+        currency: currency[result.opponentId],
       });
     }
 
@@ -552,7 +563,7 @@ export function registerWsGateway(
       // assuming a request-scoped one (see its doc comment). The bot has no socket, so its own
       // send is a harmless no-op; the guest's live socket gets the honest reveal right here, not
       // a moment before.
-      deliverMatchStart(botId, result, gameId, stake);
+      deliverMatchStart(botId, result, gameId, stake, formed?.currency ?? {});
       // Blackjack's first decision is self-triggered off match formation (see
       // `maybeScheduleGuestBotMove`'s own doc comment); Chess is a harmless no-op here since the
       // guest — not the bot — is players[0] and so owes the first move, not the taker.
@@ -982,8 +993,11 @@ export function registerWsGateway(
         try {
           switch (msg.type) {
             case 'queue.join': {
-              const { gameId, stake, timeControlId } = msg.payload as QueueJoinPayload;
-              const result = mm.joinQueue(playerId, gameId, stake, timeControlId);
+              const { gameId, stake, timeControlId, currency: reqCurrency } = msg.payload as QueueJoinPayload;
+              // Ticket 2026-09-27#7 (D69): the guest world stays USD-only by design (CHARTER #4's
+              // own carve-out) — never trust a guest-sent currency, even a tampered one.
+              const currency: Currency = isGuest ? 'USD' : reqCurrency;
+              const result = mm.joinQueue(playerId, gameId, stake, timeControlId, currency);
 
               if (result.status === 'waiting') {
                 queuedGameId = gameId;
@@ -1004,7 +1018,7 @@ export function registerWsGateway(
                 if (!isGuest) {
                   pushChallengesUpdate(gameId, {
                     gameId,
-                    added: openChallengeOf(result.matchId, playerId, stake, result.since, result.expiresAt, result.timeControlId),
+                    added: openChallengeOf(result.matchId, playerId, stake, result.since, result.expiresAt, result.timeControlId, currency),
                   });
                 } else if (guest) {
                   // Issue #352: nobody was resting at this stake, so the GUEST is now the resting
@@ -1026,7 +1040,7 @@ export function registerWsGateway(
                 if (guest && isDemoBotId(result.opponentId)) {
                   guest.onDemoBotMatched(result.matchId, Date.now());
                 }
-                deliverMatchStart(playerId, result, gameId, stake);
+                deliverMatchStart(playerId, result, gameId, stake, mm.getActiveMatch(result.matchId)?.currency ?? {});
                 // Chess: the just-matched bot may owe the first move (it always plays the side
                 // that was already resting, i.e. players[0] — see matchmaking.ts's joinQueue).
                 // Coinflip: already picked above, so this is a harmless no-op (no legal moves left).
@@ -1142,10 +1156,13 @@ export function registerWsGateway(
             }
 
             case 'challenge.take': {
-              const { matchId } = msg.payload as ChallengeTakePayload;
+              const { matchId, currency: reqCurrency } = msg.payload as ChallengeTakePayload;
+              // Ticket 2026-09-27#7 (D69): guest world stays USD-only by design — never trust a
+              // guest-sent currency (see the same guard in queue.join above).
+              const currency: Currency = isGuest ? 'USD' : reqCurrency;
               let result: JoinMatched;
               try {
-                result = mm.takeChallenge(playerId, matchId);
+                result = mm.takeChallenge(playerId, matchId, currency);
               } catch (err) {
                 if (err instanceof ChallengeError) {
                   sendError(socket, err.code, err.message);
@@ -1167,7 +1184,7 @@ export function registerWsGateway(
               // Ticket 2026-09-18#2 item 4: `match?.stake` rather than a client-supplied value —
               // a JOIN can only ever succeed at the exact stake already publicly listed, so this
               // is the server's own authoritative record, not an echo of anything the taker sent.
-              deliverMatchStart(playerId, result, gameId, match?.stake ?? 0);
+              deliverMatchStart(playerId, result, gameId, match?.stake ?? 0, match?.currency ?? {});
               if (guest) maybeScheduleGuestBotMove(result.matchId);
               // The claimed bet leaves the feed (OC8). Never for a guest (see above).
               if (!isGuest) {
