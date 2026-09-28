@@ -27,7 +27,25 @@ arbitrate. For this migration the Advisor/PM split collapses into **scoping+sani
 - PRs #456 / #457 / #458 were merged directly by the Advisor under Owner direction on 2026-09-09 —
   a one-time exception; the PM holds merge from here.
 
-## Currency presentation (Owner-approved 2026-09-09) — `CHARTER.md` #4
+## Currency presentation (Owner-approved 2026-09-09, **reversed** 2026-09-28) — `CHARTER.md` #4
+
+**Superseded — see ticket `2026-09-27#7` (D69).** The section below is the *original* 2026-09-09
+decision, kept for history. As of 2026-09-28 the registered/investor demo's multi-currency wallet
+is **no longer a cosmetic skin**: each of the 8 currencies (USD/BTC/ETH/USDT/USDC/SOL/LTC/XRP) is
+a genuinely independent integer demo-credit bucket — its own ledger rows (`ledger_entry.currency`),
+its own escrow/settlement, its own balance, fetched from the real per-currency `GET /wallet`
+response — not a mock display string layered over one shared number. Switching to a currency in
+the picker and betting genuinely only moves that currency's own balance; the other 7 are
+untouched. Still **play money throughout**: no payment rails, no real crypto, no cash-out, no real
+value behind any of the 8 buckets — that half of `CHARTER.md` #4 is unchanged, only the "cosmetic
+skin, all derived from one number" framing is gone. Landed as a 4-PR staged rollout (`packages/
+shared/src/currency.ts`'s `CURRENCIES`/`STARTING_BALANCE`/`RATE_TABLE`/`NATIVE_PRECISION` is the
+shared source of truth for both the server's starting grants and the client's display math).
+Guest mode is **explicitly carved out** of this reversal — stays `¢` / play-money-framed and
+USD-only by design (`ephemeral-ledger.ts`'s `grant()` never expanded to the multi-currency table).
+
+<details>
+<summary>Original 2026-09-09 decision (superseded above)</summary>
 
 The registered/investor demo drops the `¢` credit glyph and presents a **`$` symbol plus a
 cosmetic multi-currency wallet skin** (the prototype's `curOpen` picker — USD + SOL/BTC/USDT/
@@ -51,6 +69,8 @@ ETH/LTC/USDC/XRP, with a fiat/crypto display toggle). **This is presentation onl
   screens — no separate pass.
 - Owners are aware of the framing implications of showing a crypto-styled skin externally
   (Owner confirmed 2026-09-09).
+
+</details>
 
 ## Before anything else — three things to resolve, not work around
 

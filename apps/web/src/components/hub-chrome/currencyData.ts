@@ -1,42 +1,29 @@
+import type { Currency } from '@rapidclash/shared';
+import { RATE_TABLE, NATIVE_PRECISION } from '@rapidclash/shared';
+
 /**
- * Currency-picker mock data (issue #530, `docs/COMMS/ADVISOR_TO_PM.md` 2026-09-11#5) — literal
- * copies of the prototype's own constants (`design/prototype/RapidClash Full Spec.html:3580-3585`,
- * `:2855` for `OPEN_CURS`). These are display-only mock strings for the picker's SOL/BTC/etc.
- * rows, NEVER derived from the real integer `balance` prop / credits ledger, and never will be —
- * this is the Owner-approved cosmetic currency skin (CHARTER.md #4), and the invariant that this
- * file is the picker's ONLY source of non-USD numbers is load-bearing: nothing in
- * `CurrencyPicker.tsx` may compute any of these values from live balance data.
- *
- * USD is the one exception worth calling out: `CUR_BAL.USD`/`CUR_CRYPTO.USD` below are still the
- * prototype's own literal mock strings (`'$119.20'`/`'119.20'`), copied verbatim like every other
- * entry — they are NOT the real balance either. The picker's *trigger* (in `HubRibbon.tsx`) reads
- * the real `balance` prop directly for its default USD display; only once a user opens this panel
- * and it renders the USD row inside the list does `CUR_BAL.USD` ever appear on screen.
+ * Currency-picker display helpers (issue #530, ticket 2026-09-27#7 D69 PR 4). Through PR 3, every
+ * currency here except USD was a hardcoded mock string (CHARTER.md #4's "cosmetic-only currency
+ * skin") — Owner-confirmed reversal (2026-09-28): every currency now shows its own REAL balance,
+ * the same way USD always has. `fiatDisplay`/`nativeDisplay` are pure display-math built on
+ * `packages/shared`'s `RATE_TABLE`/`NATIVE_PRECISION` — the single shared source of truth also used
+ * server-side for starting grants, so the two can never drift. Stored ledger amounts are always
+ * plain integer USD-equivalent credits; these functions only ever format them for display, never
+ * feed into any escrow/settlement math.
  */
 
-/** Fiat-display mock balances, one string per currency — prototype `:3580`. */
-export const CUR_BAL: Record<string, string> = {
-  USD: '$119.20',
-  BTC: '$0.00',
-  ETH: '$0.00',
-  USDT: '$837',
-  USDC: '$0.00',
-  SOL: '$1,642',
-  LTC: '$0.00',
-  XRP: '$0.00',
-};
+/** Fiat display: the stored integer credits, formatted as a dollar figure. Identical for every
+ *  currency — the "Display in Fiat" toggle's ON state, and USD's own row regardless of the toggle
+ *  (a dollar has no separate native unit). */
+export function fiatDisplay(credits: number): string {
+  return `$${credits.toLocaleString('en-US')}`;
+}
 
-/** Native-unit mock balances (the "Display in Fiat" toggle's off state) — prototype `:3581`. */
-export const CUR_CRYPTO: Record<string, string> = {
-  USD: '119.20',
-  BTC: '0.00000000',
-  ETH: '0.00000000',
-  USDT: '837.0',
-  USDC: '0.00000000',
-  SOL: '10.6483',
-  LTC: '0.00000000',
-  XRP: '0.00000000',
-};
+/** Native-unit display: the stored integer credits converted via `RATE_TABLE`, formatted to that
+ *  currency's own `NATIVE_PRECISION` decimal places — the "Display in Fiat" toggle's OFF state. */
+export function nativeDisplay(currency: Currency, credits: number): string {
+  return (credits / RATE_TABLE[currency]).toFixed(NATIVE_PRECISION[currency]);
+}
 
 /** Full display names, used by the search filter (symbol OR name substring) — prototype `:3585`. */
 export const CUR_NAME: Record<string, string> = {

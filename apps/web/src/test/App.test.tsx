@@ -4,6 +4,7 @@ import { render, screen, fireEvent, waitFor, act, within } from '@testing-librar
 import { GUEST_COINFLIP_STAKE } from '@rapidclash/shared';
 import { App } from '../App.js';
 import { balancesOf } from './testBalances.js';
+import { setCurSel } from '../lib/currency.js';
 
 // The Coinflip hub's coin is a real Three.js cylinder now (COINFLIP_COIN.md); jsdom has no WebGL
 // context, so the real THREE.WebGLRenderer throws when this file routes into the Coinflip screen.
@@ -908,6 +909,107 @@ describe('App — round-scoped state wiped as one unit on the destroy events (PL
     expect(screen.getByTestId('hub-no-opponent').textContent ?? '').not.toContain(
       'No opponent found'
     );
+  });
+});
+
+// Ticket 2026-09-27#7 (D69), PR 4: end-to-end confirmation that PR 2/3's own wiring is correct —
+// picking a non-USD currency threads it all the way through the real join → settle round-trip,
+// and only that currency's own bucket ever moves. Each earlier PR unit-tested its own piece
+// (matchmaking.ts's cross-currency settlement, App.tsx's currency-keyed balance merge); this is
+// the one integration-level check that the whole chain holds together through the real UI.
+describe('App — cross-currency settlement only moves the settled currency\'s own balance (ticket 2026-09-27#7, D69, PR 4)', () => {
+  type MockSock = {
+    url: string;
+    readyState: number;
+    onopen: (() => void) | null;
+    onmessage: ((ev: { data: string }) => void) | null;
+    onclose: (() => void) | null;
+    send: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
+  };
+  let sockets: MockSock[];
+  const ROSTER = [
+    {
+      id: 'coinflip', displayName: 'Coinflip', minPlayers: 2, maxPlayers: 2,
+      ranking: { kind: 'net_winnings' }, bet: { minStake: 1, maxStake: 100, symmetricStake: true },
+      averageDurationSec: 5, rakeRate: 0.025,
+    },
+  ];
+  const COINFLIP_DONE = { players: ['pid', 'bob-id'], choices: { pid: 'heads', 'bob-id': 'tails' }, result: 'heads' };
+
+  beforeEach(() => {
+    sockets = [];
+    const ctor = vi.fn((url: string) => {
+      const s: MockSock = {
+        url, readyState: 0, onopen: null, onmessage: null, onclose: null,
+        send: vi.fn(), close: vi.fn(),
+      };
+      sockets.push(s);
+      return s;
+    });
+    vi.stubGlobal('WebSocket', Object.assign(ctor, { OPEN: 1, CONNECTING: 0, CLOSING: 2, CLOSED: 3 }));
+    localStorage.setItem('rc_token', 'tok');
+    localStorage.setItem('rc_playerId', 'pid');
+    localStorage.setItem('rc_username', 'alice');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        if (u.includes('/games')) return { ok: true, json: async () => ROSTER } as Response;
+        // A real starting SOL balance (not just USD) so this match's own SOL credit is meaningful,
+        // not indistinguishable from an untouched zero.
+        return { ok: true, json: async () => ({ balances: { ...balancesOf(1000), SOL: 1642 }, entries: [] }) } as Response;
+      })
+    );
+    Element.prototype.scrollIntoView = vi.fn();
+  });
+  afterEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    vi.unstubAllGlobals();
+    setCurSel('USD'); // restore the module-level singleton for every later test in this file
+  });
+
+  function deliver(sock: MockSock, type: string, payload: unknown) {
+    act(() => {
+      sock.onmessage?.({ data: JSON.stringify({ type, payload }) });
+    });
+  }
+
+  it('picking SOL before PLAY threads it through queue.join, and a SOL win credits only the SOL bucket — USD stays untouched', async () => {
+    setCurSel('SOL');
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
+    const sock = sockets[0];
+    act(() => {
+      sock.readyState = 1;
+      sock.onopen?.();
+    });
+    fireEvent.click(await screen.findByTestId('home-tile-coinflip'));
+    fireEvent.click(await screen.findByTestId('hub-bet-10'));
+    fireEvent.click(screen.getByTestId('hub-play'));
+
+    // The join message itself carries the picked currency end-to-end (PR 2's own wiring) — not
+    // just a client-side display choice.
+    const joinMsg = sock.send.mock.calls.map((c) => JSON.parse(String(c[0]))).find((m) => m.type === 'queue.join');
+    expect(joinMsg.payload.currency).toBe('SOL');
+
+    deliver(sock, 'match.start', { matchId: 'm1', opponent: 'bob-id', gameId: 'coinflip', state: COINFLIP_DONE, currency: 'SOL' });
+    deliver(sock, 'match.end', {
+      outcome: { type: 'win', winner: 'pid' },
+      settlement: { delta: 100, newBalance: 1742, currency: 'SOL' },
+    });
+    // Coinflip's reveal-gated balance settle (COINFLIP_COIN.md flag #2) — same wait budget as
+    // enterAndFinish above.
+    await waitFor(() => expect(screen.getByTestId('hub-play')).not.toBeDisabled(), { timeout: 3500 });
+
+    // curSel is still SOL → the ribbon trigger reflects the new SOL balance directly.
+    expect(screen.getByTestId('hub-balance').textContent).toBe('$1,742');
+
+    // Switching the picker to USD proves USD's own bucket was never touched by the SOL match.
+    fireEvent.click(screen.getByTestId('hub-currency-chip'));
+    fireEvent.click(screen.getByTestId('currency-picker-row-USD'));
+    expect(screen.getByTestId('hub-balance').textContent).toBe('$1,000');
   });
 });
 
