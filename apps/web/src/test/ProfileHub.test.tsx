@@ -4,6 +4,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { ProfileHubScreen } from '../screens/ProfileHub.js';
 import { PRESETS } from '../components/hub-shared/Avatar.js';
 import type { GameMeta, RecentMatchEntry, RewardsSnapshot } from '@rapidclash/shared';
+import { balancesOf } from './testBalances.js';
 
 type Props = Parameters<typeof ProfileHubScreen>[0];
 
@@ -60,7 +61,7 @@ function stubDefaultFetch(walletBalance = 1009) {
     const u = String(url);
     if (u.includes('/rewards')) return { ok: true, json: async () => REWARDS } as Response;
     if (u.includes('/matches/recent')) return { ok: true, json: async () => matchesFetchResponse(u) } as Response;
-    if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: walletBalance, entries: [] }) } as Response;
+    if (u.includes('/wallet')) return { ok: true, json: async () => ({ balances: balancesOf(walletBalance), entries: [] }) } as Response;
     if (u.includes('/games')) return { ok: true, json: async () => GAMES } as Response;
     return { ok: true, json: async () => ({}) } as Response;
   }));
@@ -70,7 +71,7 @@ function baseProps(over: Partial<Props> = {}): Props {
   return {
     token: 'tok',
     username: 'alice',
-    balance: 1009,
+    balances: balancesOf(1009),
     onLogout: vi.fn(),
     onHome: vi.fn(),
     onOpenProfile: vi.fn(),
@@ -109,7 +110,7 @@ describe('ProfileHubScreen', () => {
   // whatever (possibly stale) value the `balance` prop happened to carry in.
   it('always shows the FRESH balance from /wallet, even when the balance prop is stale/zero (#404 regression)', async () => {
     stubDefaultFetch(940); // /wallet reports the real, current balance
-    render(<ProfileHubScreen {...baseProps({ balance: 0 })} />); // prop simulates a stale resumed session
+    render(<ProfileHubScreen {...baseProps({ balances: balancesOf(0) })} />); // prop simulates a stale resumed session
     await waitFor(() => expect(screen.getByTestId('hub-balance').textContent).toContain('940'));
   });
 
@@ -178,7 +179,7 @@ describe('ProfileHubScreen', () => {
         }
         if (u.includes('/rewards')) return { ok: true, json: async () => REWARDS } as Response;
         if (u.includes('/matches/recent')) return { ok: true, json: async () => matchesFetchResponse(u) } as Response;
-        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: 1009, entries: [] }) } as Response;
+        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balances: balancesOf(1009), entries: [] }) } as Response;
         return { ok: true, json: async () => ({}) } as Response;
       }));
       return setAvatarCalls;
@@ -398,7 +399,7 @@ describe('ProfileHubScreen', () => {
         const u = String(url);
         if (u.includes('/rewards')) return { ok: true, json: async () => REWARDS } as Response;
         if (u.includes('/matches/recent')) return { ok: true, json: async () => matchesFetchResponse(u) } as Response;
-        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: 1009, entries: [] }) } as Response;
+        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balances: balancesOf(1009), entries: [] }) } as Response;
         return { ok: true, json: async () => ({}) } as Response;
       });
       vi.stubGlobal('fetch', fetchMock);
@@ -433,7 +434,7 @@ describe('ProfileHubScreen', () => {
         const u = String(url);
         if (u.includes('/rewards')) return { ok: true, json: async () => REWARDS } as Response;
         if (u.includes('/matches/recent')) return { ok: true, json: async () => ({ matches: [], limit: 5, offset: 0, total: 0 }) } as Response;
-        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: 1009, entries: [] }) } as Response;
+        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balances: balancesOf(1009), entries: [] }) } as Response;
         if (u.includes('/games')) return { ok: true, json: async () => GAMES } as Response;
         return { ok: true, json: async () => ({}) } as Response;
       }));
@@ -467,7 +468,7 @@ describe('ProfileHubScreen', () => {
         const u = String(url);
         if (u.includes('/rewards')) return { ok: true, json: async () => REWARDS } as Response;
         if (u.includes('/matches/recent')) return { ok: true, json: async () => ({ matches: ZEBRA_MATCHES, limit: 5, offset: 0, total: ZEBRA_MATCHES.length }) } as Response;
-        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: 1009, entries: [] }) } as Response;
+        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balances: balancesOf(1009), entries: [] }) } as Response;
         return { ok: true, json: async () => ({}) } as Response;
       }));
     }
@@ -550,7 +551,7 @@ describe('ProfileHubScreen', () => {
         const u = String(url);
         if (u.includes('/rewards')) return { ok: true, json: async () => REWARDS } as Response;
         if (u.includes('/matches/recent')) return { ok: true, json: async () => ({ matches: [rankedMatch], limit: 5, offset: 0, total: 1 }) } as Response;
-        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: 1009, entries: [] }) } as Response;
+        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balances: balancesOf(1009), entries: [] }) } as Response;
         return { ok: true, json: async () => ({}) } as Response;
       }));
       render(<ProfileHubScreen {...baseProps()} />);
@@ -602,7 +603,7 @@ describe('ProfileHubScreen', () => {
         const u = String(url);
         if (u.includes('/rewards')) return { ok: true, json: async () => REWARDS } as Response;
         if (u.includes('/matches/recent')) return { ok: true, json: async () => ({ matches: [RPS_MATCH], limit: 5, offset: 0, total: 1 }) } as Response;
-        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: 1009, entries: [] }) } as Response;
+        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balances: balancesOf(1009), entries: [] }) } as Response;
         if (u.includes('/games')) return { ok: true, json: async () => GAMES } as Response; // GAMES includes rps → 'Rock Paper Scissors'
         return { ok: true, json: async () => ({}) } as Response;
       }));
@@ -617,7 +618,7 @@ describe('ProfileHubScreen', () => {
         const u = String(url);
         if (u.includes('/rewards')) return { ok: true, json: async () => REWARDS } as Response;
         if (u.includes('/matches/recent')) return { ok: true, json: async () => ({ matches: [RPS_MATCH], limit: 5, offset: 0, total: 1 }) } as Response;
-        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: 1009, entries: [] }) } as Response;
+        if (u.includes('/wallet')) return { ok: true, json: async () => ({ balances: balancesOf(1009), entries: [] }) } as Response;
         if (u.includes('/games')) return { ok: false, status: 500, statusText: 'boom', json: async () => ({ error: 'boom' }) } as Response;
         return { ok: true, json: async () => ({}) } as Response;
       }));

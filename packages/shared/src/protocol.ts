@@ -277,7 +277,10 @@ export const AVATAR_IDS: readonly AvatarId[] = ['default', 'rc-01', 'rc-02', 'rc
 export interface AuthResponse {
   token: string;
   playerId: PlayerId;
-  balance: number;
+  /** Ticket 2026-09-27#7 (D69): PR 3 — every currency's own derived balance, not just USD's.
+   *  Always carries all 8 `CURRENCIES` keys (0 for a currency with no activity), so the client
+   *  never needs to special-case a missing key. */
+  balances: Record<Currency, number>;
   /** The player's own alias, so the client can show "who you are" (#34). */
   username: string;
   /** The player's own stored avatar (preset id or `'default'`). Own-session only — the opponent's
@@ -331,7 +334,9 @@ export interface LedgerEntry {
 }
 
 export interface WalletResponse {
-  balance: number;
+  /** Ticket 2026-09-27#7 (D69): PR 3 — every currency's own derived balance. Always carries all
+   *  8 `CURRENCIES` keys (0 for a currency with no activity). */
+  balances: Record<Currency, number>;
   entries: LedgerEntry[];
 }
 

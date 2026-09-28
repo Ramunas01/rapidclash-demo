@@ -17,7 +17,7 @@ describe('identity.register', () => {
     const res = await identity.register('alice', 'secret');
     expect(res.playerId).toBeTruthy();
     expect(res.token).toBeTruthy();
-    expect(res.balance).toBe(GRANT_AMOUNT);
+    expect(res.balances.USD).toBe(GRANT_AMOUNT);
     expect(ledger.getBalance(res.playerId, 'USD')).toBe(GRANT_AMOUNT);
     expect(ledger.getEntries(res.playerId)[0].type).toBe('GRANT');
   });
@@ -94,7 +94,7 @@ describe('identity.clearPassword (soft reset)', () => {
     expect(reclaim.playerId).toBe(first.playerId); // same account, standings intact
     // No new GRANT — balance is exactly what the soft reset left.
     expect(ledger.getBalance(first.playerId, 'USD')).toBe(balanceAfterReset);
-    expect(reclaim.balance).toBe(balanceAfterReset);
+    expect(reclaim.balances.USD).toBe(balanceAfterReset);
     // The new password works; the old one does not.
     await expect(identity.login('heidi', 'new-pw')).resolves.toBeTruthy();
     await expect(identity.login('heidi', 'pw')).rejects.toThrow(/invalid credentials/i);

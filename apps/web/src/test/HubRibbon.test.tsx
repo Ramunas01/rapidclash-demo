@@ -2,10 +2,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
+import { balancesOf } from './testBalances.js';
 
 describe('HubRibbon — tight-cropped wordmark, shrunk logo box (Advisor #2)', () => {
   it('renders the wordmark at h-8 (32px), not the old oversized h-24 (96px) or h-10 (40px)', () => {
-    render(<HubRibbon balance={1000} onLogo={vi.fn()} onWallet={vi.fn()} />);
+    render(<HubRibbon balances={balancesOf(1000)} onLogo={vi.fn()} onWallet={vi.fn()} />);
     const logo = screen.getByAltText('RapidClash');
     expect(logo.className).toContain('h-8');
     expect(logo.className).not.toContain('h-24');
@@ -13,7 +14,7 @@ describe('HubRibbon — tight-cropped wordmark, shrunk logo box (Advisor #2)', (
   });
 
   it('keeps the single safe-area-inset-top padding on the outer header — no doubled/removed inset', () => {
-    render(<HubRibbon balance={1000} onLogo={vi.fn()} onWallet={vi.fn()} />);
+    render(<HubRibbon balances={balancesOf(1000)} onLogo={vi.fn()} onWallet={vi.fn()} />);
     const header = screen.getByAltText('RapidClash').closest('header');
     expect(header?.className).toContain('pt-[env(safe-area-inset-top)]');
   });
@@ -21,7 +22,7 @@ describe('HubRibbon — tight-cropped wordmark, shrunk logo box (Advisor #2)', (
 
 describe('HubRibbon — solid full-width bg + below-header gap (Advisor #7)', () => {
   it('fills the outer header with the solid --rc-bg token (issue #484 — was bg-background, dark-only, no light override), full width (not max-w-md)', () => {
-    render(<HubRibbon balance={1000} onLogo={vi.fn()} onWallet={vi.fn()} />);
+    render(<HubRibbon balances={balancesOf(1000)} onLogo={vi.fn()} onWallet={vi.fn()} />);
     const header = screen.getByAltText('RapidClash').closest('header');
     expect(header?.className).toContain('bg-[var(--rc-bg)]');
     expect(header?.className).not.toContain('bg-background');
@@ -31,7 +32,7 @@ describe('HubRibbon — solid full-width bg + below-header gap (Advisor #7)', ()
   });
 
   it('constrains the inner row to max-w-md and keeps it transparent (fill lives on the outer header)', () => {
-    render(<HubRibbon balance={1000} onLogo={vi.fn()} onWallet={vi.fn()} />);
+    render(<HubRibbon balances={balancesOf(1000)} onLogo={vi.fn()} onWallet={vi.fn()} />);
     const header = screen.getByAltText('RapidClash').closest('header');
     const row = header?.querySelector(':scope > div');
     expect(row?.className).toContain('max-w-md');
@@ -39,7 +40,7 @@ describe('HubRibbon — solid full-width bg + below-header gap (Advisor #7)', ()
   });
 
   it('adds a pb-3.5 gap on the inner row below the header content (reconciliation sweep, matches the prototype\'s 14px)', () => {
-    render(<HubRibbon balance={1000} onLogo={vi.fn()} onWallet={vi.fn()} />);
+    render(<HubRibbon balances={balancesOf(1000)} onLogo={vi.fn()} onWallet={vi.fn()} />);
     const header = screen.getByAltText('RapidClash').closest('header');
     const row = header?.querySelector(':scope > div');
     expect(row?.className).toContain('pb-3.5');
@@ -52,7 +53,7 @@ describe('HubRibbon — guest mode (issue #267)', () => {
     // the logo used to be a live button, unconditionally, and tapping it routed a guest to the
     // full Home hub's unrestricted game grid (no guest concept there at all).
     const onLogo = vi.fn();
-    render(<HubRibbon balance={200} onLogo={onLogo} onWallet={vi.fn()} loggedIn isGuest />);
+    render(<HubRibbon balances={balancesOf(200)} onLogo={onLogo} onWallet={vi.fn()} loggedIn isGuest />);
     const logo = screen.getByAltText('RapidClash');
     expect(logo.closest('button')).toBeNull();
     expect(screen.queryByLabelText('RapidClash — home')).toBeNull();
@@ -61,7 +62,7 @@ describe('HubRibbon — guest mode (issue #267)', () => {
   });
 
   it('isGuest renders a plain "Demo" badge with the balance, not the tappable Wallet chip', () => {
-    render(<HubRibbon balance={200} onLogo={vi.fn()} onWallet={vi.fn()} loggedIn isGuest />);
+    render(<HubRibbon balances={balancesOf(200)} onLogo={vi.fn()} onWallet={vi.fn()} loggedIn isGuest />);
     expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument();
     expect(screen.getByTestId('hub-balance').textContent).toContain('200');
     expect(screen.queryByTestId('hub-wallet-chip')).toBeNull();
@@ -71,14 +72,14 @@ describe('HubRibbon — guest mode (issue #267)', () => {
 
 describe('HubRibbon — logo aligned to the content grid (Advisor #4)', () => {
   it('drops the leftover -ml-3 negative margin so the logo sits on the px-4 grid', () => {
-    render(<HubRibbon balance={1000} onLogo={vi.fn()} onWallet={vi.fn()} />);
+    render(<HubRibbon balances={balancesOf(1000)} onLogo={vi.fn()} onWallet={vi.fn()} />);
     const logoButton = screen.getByAltText('RapidClash').closest('button');
     expect(logoButton?.className).not.toContain('-ml-3');
     expect(logoButton?.className).toContain('flex items-center');
   });
 
   it('keeps the inner row on the px-4 content gutter the logo now aligns to', () => {
-    render(<HubRibbon balance={1000} onLogo={vi.fn()} onWallet={vi.fn()} />);
+    render(<HubRibbon balances={balancesOf(1000)} onLogo={vi.fn()} onWallet={vi.fn()} />);
     const header = screen.getByAltText('RapidClash').closest('header');
     const row = header?.querySelector(':scope > div');
     expect(row?.className).toContain('px-4');
@@ -87,7 +88,7 @@ describe('HubRibbon — logo aligned to the content grid (Advisor #4)', () => {
 
 describe('HubRibbon — T2 rebuild (issue #484): prototype auth pills + $ wallet chip + light theme', () => {
   it('signed-out renders literal "LOGIN"/"SIGNUP" (one word each — prototype line ~2222/2225), not "LOG IN"/"SIGN UP"', () => {
-    render(<HubRibbon balance={1000} onLogo={vi.fn()} onWallet={vi.fn()} loggedIn={false} />);
+    render(<HubRibbon balances={balancesOf(1000)} onLogo={vi.fn()} onWallet={vi.fn()} loggedIn={false} />);
     expect(screen.getByTestId('hub-login-chip').textContent).toBe('LOGIN');
     expect(screen.getByTestId('hub-signin-chip').textContent).toBe('SIGNUP');
     expect(screen.queryByText('LOG IN')).toBeNull();
@@ -95,20 +96,20 @@ describe('HubRibbon — T2 rebuild (issue #484): prototype auth pills + $ wallet
   });
 
   it('signed-in (registered, non-guest) balance renders the Owner-approved $ skin (CHARTER.md #4), not the play-money ¢ RcIcon', () => {
-    render(<HubRibbon balance={1642} onLogo={vi.fn()} onWallet={vi.fn()} loggedIn />);
+    render(<HubRibbon balances={balancesOf(1642)} onLogo={vi.fn()} onWallet={vi.fn()} loggedIn />);
     const balance = screen.getByTestId('hub-balance');
     expect(balance.textContent).toBe('$1,642');
   });
 
   it('guest mode keeps the play-money ¢ RcIcon balance — the $ skin is a registered-app-only change (CHARTER.md guest surface stays unchanged)', () => {
-    render(<HubRibbon balance={200} onLogo={vi.fn()} onWallet={vi.fn()} loggedIn isGuest />);
+    render(<HubRibbon balances={balancesOf(200)} onLogo={vi.fn()} onWallet={vi.fn()} loggedIn isGuest />);
     const balance = screen.getByTestId('hub-balance');
     expect(balance.textContent).not.toContain('$');
     expect(balance.textContent).toContain('200');
   });
 
   it('the wallet/login pill wrapper and balance/label text use --rc-* tokens, not the theme-unaware foreground/muted-foreground shadcn tokens', () => {
-    render(<HubRibbon balance={1000} onLogo={vi.fn()} onWallet={vi.fn()} loggedIn />);
+    render(<HubRibbon balances={balancesOf(1000)} onLogo={vi.fn()} onWallet={vi.fn()} loggedIn />);
     const balance = screen.getByTestId('hub-balance');
     expect(balance.className).toContain('text-[var(--rc-text)]');
     expect(balance.className).not.toContain('text-foreground');
@@ -116,7 +117,7 @@ describe('HubRibbon — T2 rebuild (issue #484): prototype auth pills + $ wallet
 
   it('swaps the wordmark image by resolved theme (prototype logoWhiteDisplay/logoDarkDisplay — white "Rapid" is unreadable on a light --rc-bg)', async () => {
     const { setThemeChoice } = await import('../lib/theme.js');
-    render(<HubRibbon balance={1000} onLogo={vi.fn()} onWallet={vi.fn()} />);
+    render(<HubRibbon balances={balancesOf(1000)} onLogo={vi.fn()} onWallet={vi.fn()} />);
     const darkSrc = screen.getByAltText('RapidClash').getAttribute('src');
     act(() => setThemeChoice('light'));
     const lightSrc = screen.getByAltText('RapidClash').getAttribute('src');

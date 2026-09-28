@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { AlertCircle, Loader2 } from 'lucide-react';
-import type { AvatarId } from '@rapidclash/shared';
+import type { AvatarId, Currency } from '@rapidclash/shared';
 import { api } from '../api.js';
 import { BottomSheet } from './hub-chrome/BottomSheet.js';
 
@@ -17,7 +17,7 @@ interface Props {
    *  (`App.tsx`'s `handleAuthSuccess`) is what actually closes the sheet (`setAuthOpen(false)`) —
    *  this component only clears its own local form fields on a successful submit, since it no
    *  longer unmounts on close and stale text would otherwise persist into the next open. */
-  onSuccess(token: string, playerId: string, balance: number, username: string, avatarId: AvatarId): void;
+  onSuccess(token: string, playerId: string, balances: Record<Currency, number>, username: string, avatarId: AvatarId): void;
   onClose(): void;
 }
 
@@ -90,7 +90,7 @@ export function AuthModal({ open, onSuccess, onClose }: Props) {
         : await api.login({ username, password });
       setUsername('');
       setPassword('');
-      onSuccess(res.token, res.playerId, res.balance, res.username, res.avatarId);
+      onSuccess(res.token, res.playerId, res.balances, res.username, res.avatarId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {

@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { AuthScreen } from '../screens/Auth.js';
+import { balancesOf } from './testBalances.js';
 
 describe('AuthScreen', () => {
   beforeEach(() => {
@@ -19,7 +20,7 @@ describe('AuthScreen', () => {
     const onLogin = vi.fn();
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ token: 'tok123', playerId: 'pid1', balance: 1000, username: 'alice', avatarId: 'default' }),
+      json: async () => ({ token: 'tok123', playerId: 'pid1', balances: balancesOf(1000), username: 'alice', avatarId: 'default' }),
     } as Response);
 
     render(<AuthScreen onLogin={onLogin} />);
@@ -29,7 +30,7 @@ describe('AuthScreen', () => {
 
     await waitFor(() => {
       // #34: the alias is forwarded so the app can show "who you are"; #12 ii adds the avatar.
-      expect(onLogin).toHaveBeenCalledWith('tok123', 'pid1', 1000, 'alice', 'default');
+      expect(onLogin).toHaveBeenCalledWith('tok123', 'pid1', balancesOf(1000), 'alice', 'default');
     });
   });
 
@@ -56,7 +57,7 @@ describe('AuthScreen', () => {
     const onLogin = vi.fn();
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ token: 'tok9', playerId: 'pid9', balance: 500, username: 'bob', avatarId: 'rc-02' }),
+      json: async () => ({ token: 'tok9', playerId: 'pid9', balances: balancesOf(500), username: 'bob', avatarId: 'rc-02' }),
     } as Response);
 
     render(<AuthScreen onLogin={onLogin} />);
@@ -69,7 +70,7 @@ describe('AuthScreen', () => {
     fireEvent.click(screen.getByText('Sign In'));
 
     await waitFor(() => {
-      expect(onLogin).toHaveBeenCalledWith('tok9', 'pid9', 500, 'bob', 'rc-02');
+      expect(onLogin).toHaveBeenCalledWith('tok9', 'pid9', balancesOf(500), 'bob', 'rc-02');
     });
     // The login endpoint was hit (data layer unchanged).
     expect(vi.mocked(fetch).mock.calls[0][0]).toContain('/auth/login');

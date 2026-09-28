@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { GUEST_COINFLIP_STAKE } from '@rapidclash/shared';
 import { App } from '../App.js';
+import { balancesOf } from './testBalances.js';
 
 // The Coinflip hub's coin is a real Three.js cylinder now (COINFLIP_COIN.md); jsdom has no WebGL
 // context, so the real THREE.WebGLRenderer throws when this file routes into the Coinflip screen.
@@ -57,7 +58,7 @@ describe('App — own alias persistence + logout (#34)', () => {
       'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ balance: 1000, entries: [] }),
+        json: async () => ({ balances: balancesOf(1000), entries: [] }),
       } as Response)
     );
   });
@@ -125,7 +126,7 @@ describe('App — connection banner (#30)', () => {
       'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ balance: 1000, entries: [] }),
+        json: async () => ({ balances: balancesOf(1000), entries: [] }),
       } as Response)
     );
   });
@@ -204,7 +205,7 @@ describe('App — match.start routes by the server-authoritative gameId (open-ch
       'fetch',
       vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ balance: 1000, entries: [] }),
+        json: async () => ({ balances: balancesOf(1000), entries: [] }),
       } as Response)
     );
   });
@@ -303,7 +304,7 @@ describe('App — challenge rejection notice (ticket 2026-09-18#2 item 2)', () =
     localStorage.setItem('rc_token', 'tok');
     localStorage.setItem('rc_playerId', 'pid');
     localStorage.setItem('rc_username', 'alice');
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response));
   });
 
   afterEach(() => {
@@ -408,12 +409,12 @@ describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
             json: async () => ({
               token: 'NEWT',
               playerId: 'NEWP',
-              balance: 1000,
+              balances: balancesOf(1000),
               username: body.username,
             }),
           } as Response;
         }
-        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+        return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
       })
     );
   });
@@ -578,7 +579,7 @@ describe('App — hubs no longer auto-enter Searching on entry after another gam
         const u = String(url);
         if (u.includes('/games'))
           return { ok: true, json: async () => [COINFLIP, RPS] } as Response;
-        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+        return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
       })
     );
   });
@@ -758,7 +759,7 @@ describe('App — round-scoped state wiped as one unit on the destroy events (PL
       vi.fn(async (url: string) => {
         const u = String(url);
         if (u.includes('/games')) return { ok: true, json: async () => ROSTER } as Response;
-        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+        return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
       })
     );
     // jsdom has no layout — the Coinflip board scrolls itself into view on a reveal.
@@ -791,7 +792,7 @@ describe('App — round-scoped state wiped as one unit on the destroy events (PL
     deliver(sock, 'match.start', { matchId: 'm1', opponent: 'bob-id', gameId, state });
     deliver(sock, 'match.end', {
       outcome: { type: 'win', winner: 'pid' },
-      settlement: { delta: 19, newBalance: 1019 },
+      settlement: { delta: 19, newBalance: 1019, currency: 'USD' },
     });
     // Settle into the RESULT phase (PLAY re-enabled). Coinflip holds a ~2.6s reveal beat after
     // match.end (holdResultMs — bumped from 1.5s so the win/lose bar never lights before the 3D
@@ -896,7 +897,7 @@ describe('App — round-scoped state wiped as one unit on the destroy events (PL
     });
     deliver(sock, 'match.end', {
       outcome: { type: 'win', winner: 'pid' },
-      settlement: { delta: 19, newBalance: 1019 },
+      settlement: { delta: 19, newBalance: 1019, currency: 'USD' },
     });
     // holdResultMs bumped to 2.6s (COINFLIP_COIN.md flag #2 — see enterAndFinish above).
     await waitFor(() => expect(screen.getByTestId('hub-play')).not.toBeDisabled(), {
@@ -948,12 +949,12 @@ describe('App — guest mode never gets stuck on an uncurated hub (issue #283)',
           return {
             ok: true,
             json: async () => ({
-              token: 'GT', playerId: 'guest:G1', balance: 300,
+              token: 'GT', playerId: 'guest:G1', balances: balancesOf(300),
               username: 'Guest', avatarId: 'default', isGuest: true,
             }),
           } as Response;
         }
-        return { ok: true, json: async () => ({ balance: 300, entries: [] }) } as Response;
+        return { ok: true, json: async () => ({ balances: balancesOf(300), entries: [] }) } as Response;
       })
     );
   });

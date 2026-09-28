@@ -1,3 +1,4 @@
+import type { Currency } from '@rapidclash/shared';
 import { Credits } from '../hub-shared/RcIcon.js';
 import { useTheme } from '../../lib/theme.js';
 import { CurrencyPicker } from './CurrencyPicker.js';
@@ -5,8 +6,11 @@ import logoLightBgUrl from '../../assets/brand/rapidclash-wordmark.webp';
 import logoDarkBgUrl from '../../assets/brand/rapidclash-wordmark-dark.png';
 
 interface Props {
-  /** Live balance in integer credits, or null while it's still loading. */
-  balance: number | null;
+  /** Every currency's own live balance in integer credits, or null while it's still loading
+   *  (ticket 2026-09-27#7, D69, PR 3). The guest "Demo" badge below still reads only `.USD`
+   *  (guest mode stays USD-only by design, CHARTER #4's own carve-out); `CurrencyPicker` gets the
+   *  full map. */
+  balances: Record<Currency, number> | null;
   /** Tap the logo → home / game list. Ignored when `isGuest` (see below) — never called. */
   onLogo(): void;
   /** Tap the auth control → account / wallet (or the sign-in modal when logged out). */
@@ -74,7 +78,10 @@ interface Props {
  * default (a deliberate PM call — see that component's own doc comment). The purple WALLET
  * sub-pill stays right here, unchanged, still calling `onWallet` directly.
  */
-export function HubRibbon({ balance, onLogo, onWallet, loggedIn = false, isGuest = false }: Props) {
+export function HubRibbon({ balances, onLogo, onWallet, loggedIn = false, isGuest = false }: Props) {
+  // Guest "Demo" badge stays USD-only by design (PR 3 scope) — everything else below is
+  // byte-identical to pre-D69 behavior.
+  const balance = balances === null ? null : balances.USD;
   const { resolved } = useTheme();
   const logoUrl = resolved === 'light' ? logoDarkBgUrl : logoLightBgUrl;
   return (
@@ -116,7 +123,7 @@ export function HubRibbon({ balance, onLogo, onWallet, loggedIn = false, isGuest
             // 8px)`, prototype `:2247` — the panel spans the SAME width as this whole pill, not
             // just the currency half, matching the prototype's own sibling-of-the-pill layout).
             <div className="relative flex items-center gap-0 rounded-full bg-surface py-1 pl-[14px] pr-1">
-              <CurrencyPicker balance={balance} />
+              <CurrencyPicker balances={balances} />
               <button
                 type="button"
                 onClick={onWallet}

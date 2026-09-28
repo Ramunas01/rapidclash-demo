@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { HomeHubScreen } from '../screens/HomeHub.js';
 import type { GameMeta, OpenChallenge } from '@rapidclash/shared';
+import { balancesOf } from './testBalances.js';
 
 type Props = Parameters<typeof HomeHubScreen>[0];
 
@@ -18,7 +19,7 @@ const GAMES: GameMeta[] = [META('coinflip', 'Coinflip'), META('chess', 'Chess'),
 function baseProps(over: Partial<Props> = {}): Props {
   return {
     token: 'tok',
-    balance: 1000,
+    balances: balancesOf(1000),
     challengesByGame: {},
     onTrackChallenges: vi.fn(),
     onUntrackChallenges: vi.fn(),
@@ -43,7 +44,7 @@ describe('HomeHubScreen', () => {
       if (u.includes('/games/popularity')) return { ok: true, json: async () => ({}) } as Response;
       if (u.includes('/games')) return { ok: true, json: async () => GAMES } as Response;
       if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
-      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
     }));
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -105,7 +106,7 @@ describe('HomeHubScreen', () => {
   it('JOIN refuses clearly when the stake is uncovered, without taking', () => {
     const onTakeChallenge = vi.fn();
     const challengesByGame = { coinflip: [challenge('c1', 'alice', 50, 100)] };
-    render(<HomeHubScreen {...baseProps({ balance: 5, challengesByGame, onTakeChallenge })} />);
+    render(<HomeHubScreen {...baseProps({ balances: balancesOf(5), challengesByGame, onTakeChallenge })} />);
     const c1Row = document.querySelector('[data-match-id="c1"]') as HTMLElement;
     fireEvent.click(within(c1Row).getByTestId(/^games-carousel-join-/));
     expect(onTakeChallenge).not.toHaveBeenCalled();
@@ -187,7 +188,7 @@ describe('HomeHubScreen — Bring a Rival banner (#301)', () => {
       if (u.includes('/games/popularity')) return { ok: true, json: async () => ({}) } as Response;
       if (u.includes('/games')) return { ok: true, json: async () => GAMES } as Response;
       if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
-      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
     }));
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -262,7 +263,7 @@ describe('HomeHubScreen — no-art game handling (#148)', () => {
       if (u.includes('/games/popularity')) return { ok: true, json: async () => ({}) } as Response;
       if (u.includes('/games')) return { ok: true, json: async () => GAMES_148 } as Response;
       if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
-      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
     }));
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -300,7 +301,7 @@ describe('HomeHubScreen (logged out)', () => {
       if (u.includes('/games/popularity')) return { ok: true, json: async () => ({}) } as Response;
       if (u.includes('/games')) return { ok: true, json: async () => GAMES } as Response;
       if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
-      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
     }));
   }
   beforeEach(() => stubFetch());
@@ -391,7 +392,7 @@ describe('HomeHubScreen — category rail, SEARCH, SORT, RANDOM (issue #465)', (
       if (u.includes('/games/popularity')) return { ok: true, json: async () => popularity } as Response;
       if (u.includes('/games')) return { ok: true, json: async () => ALL_12 } as Response;
       if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
-      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
     }));
   }
   beforeEach(() => stubFetch());

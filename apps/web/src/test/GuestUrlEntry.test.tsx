@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { App } from '../App.js';
+import { balancesOf } from './testBalances.js';
 
 // The Coinflip hub's coin is a real Three.js cylinder; jsdom has no WebGL context (mirrors App.test.tsx).
 vi.mock('three', async () => import('./three-stub.js'));
@@ -59,11 +60,11 @@ describe('App — ?mode=guest URL entry point (issue #284)', () => {
         if (u.includes('/auth/guest')) {
           return {
             ok: true,
-            json: async () => ({ token: 'GT', playerId: 'guest:G1', balance: 300, username: 'Guest', avatarId: 'default', isGuest: true }),
+            json: async () => ({ token: 'GT', playerId: 'guest:G1', balances: balancesOf(300), username: 'Guest', avatarId: 'default', isGuest: true }),
           } as Response;
         }
         if (u.includes('/open-challenges')) return { ok: true, json: async () => [] } as Response;
-        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+        return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
       }),
     );
   }
@@ -117,7 +118,7 @@ describe('App — ?mode=guest URL entry point (issue #284)', () => {
     localStorage.setItem('rc_token', 'real-tok');
     localStorage.setItem('rc_playerId', 'real-pid');
     localStorage.setItem('rc_username', 'alice');
-    const fetchMock = vi.fn(async (_url: string) => ({ ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response));
+    const fetchMock = vi.fn(async (_url: string) => ({ ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response));
     vi.stubGlobal('fetch', fetchMock);
 
     render(<App />);
@@ -132,7 +133,7 @@ describe('App — ?mode=guest URL entry point (issue #284)', () => {
       'fetch',
       vi.fn(async (url: string) => {
         if (String(url).includes('/auth/guest')) return { ok: false, status: 500, json: async () => ({ error: 'boom' }) } as Response;
-        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+        return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
       }),
     );
     vi.spyOn(console, 'error').mockImplementation(() => {});

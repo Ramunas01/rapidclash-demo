@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { GameMeta, Move, Outcome, SettlementSummary, OpenChallenge, PlayerClocks, AvatarId, GameEvent, Currency } from '@rapidclash/shared';
-import { GUEST_COINFLIP_STAKE, GUEST_CHESS_STAKE, GUEST_CHESS_TIME_CONTROL, GUEST_BLACKJACK_STAKE, GUEST_CURATED_GAMES } from '@rapidclash/shared';
+import { GUEST_COINFLIP_STAKE, GUEST_CHESS_STAKE, GUEST_CHESS_TIME_CONTROL, GUEST_BLACKJACK_STAKE, GUEST_CURATED_GAMES, CURRENCIES } from '@rapidclash/shared';
 import { getCurSel } from './lib/currency.js';
 import { WsClient, hasStoredMatch, readStoredGameId, writeStoredGameId, type WsStatus } from './ws.js';
 import { initGuestEvents, emitReady, emitResize, emitRequestFullscreenOnMobileEntry, emitFirstWin } from './guest/events.js';
@@ -48,6 +48,10 @@ type AuthIntent =
   | { action: 'join'; matchId: string; gameId: string; stake: number };
 
 const RECONNECT_NOTICE = 'Connection lost — reconnecting. Try again in a moment.';
+
+/** Ticket 2026-09-27#7 (D69), PR 3: the pre-auth default for `balances` state — every currency at
+ *  0, matching what a brand-new logged-out session actually has (nothing yet). */
+const ZERO_BALANCES = Object.fromEntries(CURRENCIES.map((c) => [c, 0])) as Record<Currency, number>;
 
 /** Games that play through the shared one-screen Game hub (vs the multi-screen flow).
  *  Each maps to a `<gameId>-hub` screen. Adding a game here wires it to the hub. */
@@ -385,7 +389,7 @@ export function App() {
   // Guest mode's pre-armed time control (issue #279) — set when a picker tile is chosen, fixed at
   // GUEST_CHESS_TIME_CONTROL for chess, undefined for every other curated game (Coinflip has none).
   const [guestTimeControl, setGuestTimeControl] = useState<string | undefined>(undefined);
-  const [balance, setBalance] = useState(0);
+  const [balances, setBalances] = useState<Record<Currency, number>>(ZERO_BALANCES);
   const [currentMatchId, setCurrentMatchId] = useState<string | null>(null);
   const [opponentId, setOpponentId] = useState<string | null>(null);
   // The opponent's real display name, known ONLY when we JOINed their open challenge (its owner
@@ -460,7 +464,7 @@ export function App() {
   const searchingRef = useRef(false);
   const searchGameRef = useRef<string | null>(null);
 
-  const handleLogin = useCallback((tok: string, pid: string, bal: number, name: string, avatar: AvatarId) => {
+  const handleLogin = useCallback((tok: string, pid: string, bal: Record<Currency, number>, name: string, avatar: AvatarId) => {
     localStorage.setItem('rc_token', tok);
     localStorage.setItem('rc_playerId', pid);
     localStorage.setItem('rc_username', name);
@@ -469,7 +473,7 @@ export function App() {
     setPlayerId(pid);
     setUsername(name);
     setAvatarId(avatar);
-    setBalance(bal);
+    setBalances(bal);
 
     const ws = new WsClient(tok, {});
     wsRef.current = ws;
@@ -572,7 +576,7 @@ export function App() {
   // Register/login from the modal: store the token + connect the WS (as handleLogin), then land the
   // user on the intent's hub with the stake ARMED — nothing auto-fires. They press PLAY to commit
   // (a PLAY intent) or post their own challenge (a JOIN intent). No resume runs on connect.
-  const handleAuthSuccess = useCallback((tok: string, pid: string, bal: number, name: string, avatar: AvatarId) => {
+  const handleAuthSuccess = useCallback((tok: string, pid: string, bal: Record<Currency, number>, name: string, avatar: AvatarId) => {
     localStorage.setItem('rc_token', tok);
     localStorage.setItem('rc_playerId', pid);
     localStorage.setItem('rc_username', name);
@@ -581,7 +585,7 @@ export function App() {
     setPlayerId(pid);
     setUsername(name);
     setAvatarId(avatar);
-    setBalance(bal);
+    setBalances(bal);
     const ws = new WsClient(tok, {});
     wsRef.current = ws;
     setWsEpoch((n) => n + 1); // rebind handlers on the new socket before its onopen fires
@@ -612,12 +616,12 @@ export function App() {
   // into a game — the curated set is data (GUEST_CURATED_GAMES), so which game(s) exist here is not
   // this handler's decision. No auth intent to resume: guest mode never originates from a captured
   // PLAY/JOIN intent.
-  const handleGuestSuccess = useCallback((tok: string, pid: string, bal: number) => {
+  const handleGuestSuccess = useCallback((tok: string, pid: string, bal: Record<Currency, number>) => {
     setToken(tok);
     setPlayerId(pid);
     setUsername('Guest');
     setAvatarId('default');
-    setBalance(bal);
+    setBalances(bal);
     setIsGuest(true);
     const ws = new WsClient(tok, {});
     wsRef.current = ws;
@@ -675,7 +679,7 @@ export function App() {
     if (savedToken || !isGuestModeUrl()) return;
     guestUrlEntryFired.current = true;
     api.guestAuth()
-      .then((res) => handleGuestSuccess(res.token, res.playerId, res.balance))
+      .then((res) => handleGuestSuccess(res.token, res.playerId, res.balances))
       .catch((err) => {
         console.error('[guest] ?mode=guest entry failed', err);
         setScreen('home'); // fall back to the normal flow rather than a stuck loading screen
@@ -829,7 +833,9 @@ export function App() {
       onMatchEnd(payload, _matchId) {
         setLastOutcome(payload.outcome);
         setLastSettlement(payload.settlement);
-        setBalance(payload.settlement.newBalance);
+        // Ticket 2026-09-27#7 (D69): only THIS settlement's own currency bucket moves — every
+        // other currency's balance is untouched, matching the server's own per-currency ledger.
+        setBalances((prev) => ({ ...prev, [payload.settlement.currency]: payload.settlement.newBalance }));
         setCurrentMatchId(null);
         // Guest-mode `firstWin` (GUEST_MODE_CONTRACT.md §5, issue #271): the module itself
         // guards "exactly once per session" — safe to call on every guest win.
@@ -981,7 +987,9 @@ export function App() {
   }, []);
 
   const goToWallet = useCallback((newBalance?: number) => {
-    if (newBalance !== undefined) setBalance(newBalance);
+    // No real caller passes this today (kept for interface parity with onBack-style callbacks
+    // that might); a value here is always meant as USD, matching the pre-D69 single-balance shape.
+    if (newBalance !== undefined) setBalances((prev) => ({ ...prev, USD: newBalance }));
     setScreen('wallet');
   }, []);
   const goToLeaderboard = useCallback(() => setScreen('leaderboard'), []);
@@ -1168,7 +1176,7 @@ export function App() {
       case 'home':
         return <HomeHubScreen
           token={token ?? ''}
-          balance={balance}
+          balances={balances}
           challengesByGame={homeChallenges}
           onTrackChallenges={handleTrackChallenges}
           onUntrackChallenges={handleUntrackChallenges}
@@ -1187,7 +1195,7 @@ export function App() {
           username={username}
           avatarId={avatarId}
           onAvatarChange={handleSetAvatar}
-          balance={balance}
+          balances={balances}
           onLogout={handleLogout}
           onHome={goToHome}
           onOpenProfile={goToProfile}
@@ -1200,7 +1208,7 @@ export function App() {
       case 'affiliate':
         return <AffiliateHubScreen
           username={username}
-          balance={balance}
+          balances={balances}
           onBack={goToProfile}
           onHome={goToHome}
           onOpenProfile={goToProfile}
@@ -1213,14 +1221,14 @@ export function App() {
           loggedIn={loggedIn}
           username={username}
           avatarId={avatarId}
-          balance={balance}
+          balances={balances}
           onHome={goToHome}
           onOpenProfile={goToProfile}
           onOpenRewards={goToRewards}
           onOpenAffiliate={goToAffiliate}
         />;
       case 'wallet':
-        return <WalletScreen token={token!} username={username} balance={balance} onPlay={goToHome} onLogout={handleLogout} />;
+        return <WalletScreen token={token!} username={username} balances={balances} onPlay={goToHome} onLogout={handleLogout} />;
       case 'game-list':
         return <GameListScreen token={token!} onSelect={handleSelectGame} onBack={goToWallet} />;
       case 'guest-loading':
@@ -1276,7 +1284,7 @@ export function App() {
           opponentAvatarId={opponentAvatarId}
           matchStake={matchStake}
           serverClockOffset={serverClockOffset}
-          balance={balance}
+          balances={balances}
           currentMatchId={currentMatchId}
           gameState={gameState}
           events={lastMatchEvents}

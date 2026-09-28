@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { App } from '../App.js';
+import { balancesOf } from './testBalances.js';
 
 // The Coinflip hub's coin is a real Three.js cylinder; jsdom has no WebGL context (mirrors App.test.tsx).
 vi.mock('three', async () => import('./three-stub.js'));
@@ -65,11 +66,11 @@ describe('App — guest game picker (issue #279)', () => {
         if (u.includes('/auth/guest')) {
           return {
             ok: true,
-            json: async () => ({ token: 'GT', playerId: 'guest:G1', balance: 300, username: 'Guest', avatarId: 'default', isGuest: true }),
+            json: async () => ({ token: 'GT', playerId: 'guest:G1', balances: balancesOf(300), username: 'Guest', avatarId: 'default', isGuest: true }),
           } as Response;
         }
         if (u.includes('/open-challenges')) return { ok: true, json: async () => [] } as Response;
-        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+        return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
       }),
     );
   });
@@ -183,7 +184,7 @@ describe('App — guest game picker (issue #279)', () => {
     const sock = sockets[0];
     openSocket(sock);
     deliver(sock, 'match.start', { matchId: 'm1', opponent: 'demo-bot:coinflip', gameId: 'coinflip', state: { players: ['guest:G1', 'demo-bot:coinflip'], choices: {} } });
-    deliver(sock, 'match.end', { outcome: { type: 'win', winner: 'guest:G1' }, settlement: { delta: 100, newBalance: 400 } }, 'm1');
+    deliver(sock, 'match.end', { outcome: { type: 'win', winner: 'guest:G1' }, settlement: { delta: 100, newBalance: 400, currency: 'USD' } }, 'm1');
 
     await waitFor(() => expect(emitFirstWinMock).toHaveBeenCalledTimes(1));
   });

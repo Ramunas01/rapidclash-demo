@@ -30,10 +30,10 @@ describe('POST /auth/register', () => {
       payload: { username: 'alice', password: 'hunter2' },
     });
     expect(res.statusCode).toBe(201);
-    const body = res.json<{ token: string; playerId: string; balance: number; username: string }>();
+    const body = res.json<{ token: string; playerId: string; balances: Record<string, number>; username: string }>();
     expect(body.token).toBeTruthy();
     expect(body.playerId).toBeTruthy();
-    expect(body.balance).toBe(GRANT_AMOUNT);
+    expect(body.balances.USD).toBe(GRANT_AMOUNT);
     // #34: the client needs its own alias to show "who you are".
     expect(body.username).toBe('alice');
   });

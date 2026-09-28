@@ -3,13 +3,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { BaccaratHubScreen } from '../screens/BaccaratHub.js';
 import type { BaccaratView } from '../App.js';
+import { balancesOf } from './testBalances.js';
 
 vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
 type Props = Parameters<typeof BaccaratHubScreen>[0];
 
 function baseProps(over: Partial<Props> = {}): Props {
   return {
-    token: 'tok', playerId: 'me', username: 'me', opponentId: 'opp', balance: 1000, serverClockOffset: 0,
+    token: 'tok', playerId: 'me', username: 'me', opponentId: 'opp', balances: balancesOf(1000), serverClockOffset: 0,
     currentMatchId: null, gameState: null, legalMoves: [], waitingExpiresAt: null, lobbyExpired: false,
     lastOutcome: null, lastSettlement: null, challengesByGame: {},
     onPlay: vi.fn(), onCancel: vi.fn(), onRepost: vi.fn(), onTakeChallenge: vi.fn(),
@@ -36,7 +37,7 @@ describe('BaccaratHubScreen', () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);
       if (u.includes('/games') || u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
-      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
     }));
   });
   afterEach(() => vi.unstubAllGlobals());

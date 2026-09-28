@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { Identity } from '@rapidclash/core';
+import { getAllBalances } from '@rapidclash/core';
 import type { AuthResponse } from '@rapidclash/shared';
 import type { GuestServices } from '../guest/index.js';
 import { mintGuestId } from '../guest/index.js';
@@ -32,14 +33,15 @@ export function registerGuestAuthRoutes(app: FastifyInstance, identity: Identity
     async (_request, reply) => {
       const playerId = mintGuestId();
       guest.ledger.grant(playerId);
-      // Ticket 2026-09-27#7 (D69): guest sessions stay USD-only by design (see
-      // ephemeral-ledger.ts's own top doc comment) — 'USD' explicitly.
-      const balance = guest.ledger.getBalance(playerId, 'USD');
+      // Ticket 2026-09-27#7 (D69): PR 3 — full balances map (guest's grant() still only ever
+      // seeds USD, per ephemeral-ledger.ts's own top doc comment, so every other currency reads
+      // 0 here — that's the correct, intentional value, not a placeholder).
+      const balances = getAllBalances(guest.ledger, playerId);
       const token = identity.signGuestToken(playerId);
       const body: AuthResponse = {
         token,
         playerId,
-        balance,
+        balances,
         username: 'Guest',
         avatarId: 'default',
         isGuest: true,

@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { CrashHubScreen, altitudeAt } from '../screens/CrashHub.js';
 import type { CrashView } from '../App.js';
+import { balancesOf } from './testBalances.js';
 
 // canvas-confetti needs a real <canvas> (absent in jsdom) — mock it (matches the other hub tests).
 vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
@@ -11,7 +12,7 @@ type Props = Parameters<typeof CrashHubScreen>[0];
 
 function baseProps(over: Partial<Props> = {}): Props {
   return {
-    token: 'tok', playerId: 'pid', username: 'me', opponentId: 'bob', balance: 1000,
+    token: 'tok', playerId: 'pid', username: 'me', opponentId: 'bob', balances: balancesOf(1000),
     currentMatchId: null, gameState: null, legalMoves: [], waitingExpiresAt: null, lobbyExpired: false,
     lastOutcome: null, lastSettlement: null, challengesByGame: {},
     onPlay: vi.fn(), onCancel: vi.fn(), onRepost: vi.fn(), onTakeChallenge: vi.fn(),
@@ -39,7 +40,7 @@ describe('CrashHubScreen (GameHub + CrashPanel)', () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);
       if (u.includes('/games') || u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
-      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
     }));
   });
   afterEach(() => vi.unstubAllGlobals());

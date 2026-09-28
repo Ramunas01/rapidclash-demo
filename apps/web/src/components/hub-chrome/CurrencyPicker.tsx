@@ -1,14 +1,17 @@
 import { useId, useState } from 'react';
+import type { Currency } from '@rapidclash/shared';
 import { useTheme } from '../../lib/theme.js';
 import { useCurSel } from '../../lib/currency.js';
 import { CUR_BAL, CUR_CRYPTO, CUR_NAME, OPEN_CURS } from './currencyData.js';
 
 interface Props {
-  /** Live balance in integer credits, or null while it's still loading. Read-only: this
-   *  component only ever formats it for display — it is never written, never derived-from for
-   *  any other currency's mock value, and no action in here can change it (Charter #4, the
-   *  balance-invariant test in `docs/COMMS/ADVISOR_TO_PM.md` 2026-09-11#5). */
-  balance: number | null;
+  /** Every currency's own live balance in integer credits, or null while it's still loading.
+   *  Ticket 2026-09-27#7 (D69), PR 3: the full map now arrives from the server — this component
+   *  still only ever reads its own `.USD` entry (PR 4 is what makes the rest of the panel real).
+   *  Read-only: this component only ever formats it for display — it is never written, never
+   *  derived-from for any other currency's mock value, and no action in here can change it
+   *  (Charter #4, the balance-invariant test in `docs/COMMS/ADVISOR_TO_PM.md` 2026-09-11#5). */
+  balances: Record<Currency, number> | null;
 }
 
 /**
@@ -35,7 +38,10 @@ interface Props {
  * the trigger once a non-USD currency is selected — comes from `currencyData.ts`'s hardcoded mock
  * constants, literal copies of the prototype's own values, never the live balance.
  */
-export function CurrencyPicker({ balance }: Props) {
+export function CurrencyPicker({ balances }: Props) {
+  // PR 3 scope (ticket 2026-09-27#7, D69): still only the USD entry, unpacked once here so
+  // every existing reference below stays byte-identical to pre-D69 behavior.
+  const balance = balances === null ? null : balances.USD;
   const { resolved } = useTheme();
   const light = resolved === 'light';
   const [open, setOpen] = useState(false);

@@ -113,7 +113,7 @@ describe('guest mode over the real WS gateway (issue #267)', () => {
     const b = await mintGuest();
     expect(a.isGuest).toBe(true);
     expect(a.playerId).not.toBe(b.playerId);
-    expect(a.balance).toBe(GUEST_COINFLIP_STAKE * 3); // 300¢ / 100 per round
+    expect(a.balances.USD).toBe(GUEST_COINFLIP_STAKE * 3); // 300¢ / 100 per round
     expect(a.avatarId).toBe('default');
   });
 
@@ -160,6 +160,28 @@ describe('guest mode over the real WS gateway (issue #267)', () => {
 
     expect(isDemoBotId(start.opponent)).toBe(true);
     expect(start.opponentName).toBe('Demo Opponent 🤖'); // honestly labelled, never disguised
+  });
+
+  // Ticket 2026-09-27#7 (D69): Advisor's own PR2 review flagged that the guest-forces-USD guard
+  // (gateway.ts's `isGuest ? 'USD' : reqCurrency`) was only confirmed by code read, not a
+  // regression-catching test — a guest world is USD-only by design (CHARTER #4's own carve-out),
+  // and this must hold even for a tampered/hostile client that lies about its own currency.
+  it('a tampered non-USD currency in the payload is silently forced to USD — the guest world never honors it', async () => {
+    const guest = await mintGuest();
+    const sock = await openSocket(port, guest.token);
+    sockets.push(sock);
+
+    // A real client never sends this (guest mode's own UI is USD-only), but a tampered/hostile
+    // one could — the server must force USD regardless, not merely reject an unknown currency.
+    sock.send('queue.join', { gameId: 'coinflip', stake: STAKE, currency: 'SOL' });
+    const start = (await sock.waitFor('match.start')).payload as MatchStartPayload;
+
+    expect(start.currency).toBe('USD');
+    expect(services.guest.matchmaking.getActiveMatch(start.matchId)?.currency[guest.playerId]).toBe('USD');
+    // And the escrow genuinely moved the USD bucket, not a phantom SOL one (the ephemeral ledger
+    // has no SOL activity at all for this guest).
+    expect(services.guest.ledger.getBalance(guest.playerId, 'USD')).toBe(guest.balances.USD - STAKE);
+    expect(services.guest.ledger.getBalance(guest.playerId, 'SOL')).toBe(0);
   });
 
   it("the Demo-Opponent's pick stays redacted until reveal — the guest sees no more than a real client would", async () => {
@@ -217,8 +239,8 @@ describe('guest mode over the real WS gateway (issue #267)', () => {
 
     // Balances are independently tracked (both escrowed the same stake out of the same starting
     // stack, but keyed separately — neither's escrow touched the other's balance).
-    expect(services.guest.ledger.getBalance(guestA.playerId, 'USD')).toBe(guestA.balance - STAKE);
-    expect(services.guest.ledger.getBalance(guestB.playerId, 'USD')).toBe(guestB.balance - STAKE);
+    expect(services.guest.ledger.getBalance(guestA.playerId, 'USD')).toBe(guestA.balances.USD - STAKE);
+    expect(services.guest.ledger.getBalance(guestB.playerId, 'USD')).toBe(guestB.balances.USD - STAKE);
   });
 
   it('a guest match never appears in the real /games matchmaking or leaderboard writes', async () => {
