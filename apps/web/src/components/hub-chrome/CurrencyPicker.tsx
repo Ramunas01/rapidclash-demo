@@ -2,46 +2,38 @@ import { useId, useState } from 'react';
 import type { Currency } from '@rapidclash/shared';
 import { useTheme } from '../../lib/theme.js';
 import { useCurSel } from '../../lib/currency.js';
-import { CUR_BAL, CUR_CRYPTO, CUR_NAME, OPEN_CURS } from './currencyData.js';
+import { fiatDisplay, nativeDisplay, CUR_NAME, OPEN_CURS } from './currencyData.js';
 
 interface Props {
   /** Every currency's own live balance in integer credits, or null while it's still loading.
-   *  Ticket 2026-09-27#7 (D69), PR 3: the full map now arrives from the server — this component
-   *  still only ever reads its own `.USD` entry (PR 4 is what makes the rest of the panel real).
-   *  Read-only: this component only ever formats it for display — it is never written, never
-   *  derived-from for any other currency's mock value, and no action in here can change it
-   *  (Charter #4, the balance-invariant test in `docs/COMMS/ADVISOR_TO_PM.md` 2026-09-11#5). */
+   *  Ticket 2026-09-27#7 (D69), PR 4: every row now reads its own real entry here — the panel is
+   *  no longer mock data (CHARTER #4's prior "cosmetic-only currency skin" reversed, Owner-
+   *  confirmed 2026-09-28). Read-only: this component only ever formats it for display; nothing
+   *  here writes to it or otherwise touches the real credits ledger. */
   balances: Record<Currency, number> | null;
 }
 
 /**
- * Currency picker (issue #530, `docs/COMMS/ADVISOR_TO_PM.md` 2026-09-11#5) — the trigger
- * (currency icon + balance, prototype `Full Spec.html:2233-2236`) plus its dropdown panel
- * (`:2242-2321`). Self-contained: owns `open`/`query`/`curSel`/`fiatOn`/`hideZero` locally, no
- * shared hook (only one screen-position ever renders this). Rendered from inside `HubRibbon.tsx`,
- * as the left half of the wallet pill — the right half (purple WALLET sub-pill) is a sibling
- * `HubRibbon` renders itself and is untouched by anything here.
+ * Currency picker (issue #530, `docs/COMMS/ADVISOR_TO_PM.md` 2026-09-11#5, made real by ticket
+ * 2026-09-27#7 D69 PR 4) — the trigger (currency icon + balance, prototype `Full Spec.html:2233-
+ * 2236`) plus its dropdown panel (`:2242-2321`). Self-contained: owns `open`/`query`/`curSel`/
+ * `fiatOn`/`hideZero` locally, no shared hook (only one screen-position ever renders this).
+ * Rendered from inside `HubRibbon.tsx`, as the left half of the wallet pill — the right half
+ * (purple WALLET sub-pill) is a sibling `HubRibbon` renders itself and is untouched by anything
+ * here.
  *
  * **PM decision (2026-09-11#5), overriding the prototype's own literal default:** the prototype
- * defaults `curSel` to `'SOL'` (`:3579`), meaning its trigger never shows a real balance at all —
- * everything in it is mock data. This app's trigger must keep showing the REAL `balance` prop by
- * default, unchanged from today's (post-T9) behavior, so `curSel` defaults to `'USD'` here, and
- * the USD case is special-cased to always render the live `balance` prop rather than
- * `currencyData.ts`'s `CUR_BAL.USD` mock string — both at rest AND if a user re-picks USD from
- * the open panel (the simplest reading of "least surprise": USD in the trigger always means "my
- * real balance", full stop). SOL/BTC/etc. mock balances are purely additive — they only ever
- * appear once a user explicitly opens the panel and picks a non-USD currency.
+ * defaults `curSel` to `'SOL'` (`:3579`). This app defaults to `'USD'` instead (a deliberate PM
+ * call, unrelated to the mock-vs-real question below — kept even now that every currency is real).
  *
- * **Balance invariant:** `balance` is read here ONLY to format the USD trigger string. Nothing in
- * this file writes to it, derives another currency's value from it, or reads/touches any real
- * credits ledger. Every other number rendered by this component — every row in the panel, and
- * the trigger once a non-USD currency is selected — comes from `currencyData.ts`'s hardcoded mock
- * constants, literal copies of the prototype's own values, never the live balance.
+ * **Every currency is now real** (D69 PR 4, reversing the PR-3-era "USD only" carve-out): the
+ * trigger and every panel row read straight from the `balances` prop via `fiatDisplay`/
+ * `nativeDisplay` (`currencyData.ts`) — no more hardcoded `CUR_BAL`/`CUR_CRYPTO` mock strings, no
+ * more USD-vs-everything-else special case. USD's own row still always shows the fiat format
+ * regardless of the toggle (a dollar has no separate native unit) — that ONE asymmetry survives
+ * from the old design, now applied to real data instead of a mock string.
  */
 export function CurrencyPicker({ balances }: Props) {
-  // PR 3 scope (ticket 2026-09-27#7, D69): still only the USD entry, unpacked once here so
-  // every existing reference below stays byte-identical to pre-D69 behavior.
-  const balance = balances === null ? null : balances.USD;
   const { resolved } = useTheme();
   const light = resolved === 'light';
   const [open, setOpen] = useState(false);
@@ -49,33 +41,36 @@ export function CurrencyPicker({ balances }: Props) {
   // Promoted to app-wide shared state (ticket 2026-09-13#6 item 2) — `lib/currency.ts`, the same
   // module-level-singleton shape as `lib/theme.ts` — so `GamesCarousel.tsx`'s logged-in stake
   // rows reflect this exact selection too, kept in sync without either component knowing about
-  // the other. This is a storage-location change only: every other behavior in this file
-  // (search/filter, fiat toggle, hide-zero, the USD-always-shows-real-balance rule) is unchanged.
+  // the other.
   const { curSel, setCurSel } = useCurSel();
   const [fiatOn, setFiatOn] = useState(true);
   const [hideZero, setHideZero] = useState(false);
 
   const q = query.trim().toLowerCase();
 
+  function balanceOf(sym: string): number {
+    return balances === null ? 0 : balances[sym as Currency];
+  }
+
   // Row-visibility logic, exact (prototype `:3586-3592`): a row shows if it matches the search
   // query (by symbol OR full name, case-insensitive substring) AND (it's the currently-selected
-  // currency OR hide-zero is off OR its balance isn't exactly '$0.00'). The selected currency is
-  // NEVER hidden by hide-zero, even if it's also zero.
+  // currency OR hide-zero is off OR its balance isn't exactly zero). The selected currency is
+  // NEVER hidden by hide-zero, even if it's also zero. While balances is still loading (null),
+  // nothing reads as zero — never hide a row for lack of data.
   function visible(sym: string): boolean {
-    const zero = CUR_BAL[sym] === '$0.00';
+    const zero = balances !== null && balanceOf(sym) === 0;
     const hit = !q || sym.toLowerCase().includes(q) || CUR_NAME[sym].toLowerCase().includes(q);
     return hit && (sym === curSel || !hideZero || !zero);
   }
 
-  const shown = fiatOn ? CUR_BAL : CUR_CRYPTO;
-  // USD's row always shows CUR_BAL.USD regardless of the fiat/crypto toggle (prototype `:3596`,
-  // "a dollar has no separate crypto unit") — this is a MOCK string, not the real balance; the
-  // real balance only ever appears in the trigger, never inside the panel's USD row.
+  // USD's row always shows the fiat format regardless of the fiat/crypto toggle (prototype
+  // `:3596`, "a dollar has no separate crypto unit") — every other currency respects the toggle.
   function rowValue(sym: string): string {
-    return sym === 'USD' ? CUR_BAL.USD : shown[sym];
+    const amount = balanceOf(sym);
+    return sym === 'USD' || fiatOn ? fiatDisplay(amount) : nativeDisplay(sym as Currency, amount);
   }
   function rowMuted(sym: string): boolean {
-    return CUR_BAL[sym] === '$0.00';
+    return balances !== null && balanceOf(sym) === 0;
   }
 
   const usdVisible = visible('USD');
@@ -86,10 +81,9 @@ export function CurrencyPicker({ balances }: Props) {
     setOpen(false);
   }
 
-  // Trigger value: USD → the real live balance (PM decision above); anything else → that
-  // currency's mock balance, fiat/crypto per the toggle.
-  const triggerValue =
-    curSel === 'USD' ? (balance === null ? '—' : `$${balance.toLocaleString('en-US')}`) : rowValue(curSel);
+  // Trigger value: every currency now reads its own real balance the same way (rowValue already
+  // special-cases USD to always-fiat, so no separate branch is needed here anymore).
+  const triggerValue = balances === null ? '—' : rowValue(curSel);
 
   const searchBg = light ? '#E7E7EE' : '#12121F';
   const panelShadow = light ? '0 18px 40px rgba(20,20,40,0.18)' : '0 22px 44px rgba(0,0,0,0.45)';
@@ -156,7 +150,7 @@ export function CurrencyPicker({ balances }: Props) {
                 <CurrencyRow
                   sym="USD"
                   active={curSel === 'USD'}
-                  value={CUR_BAL.USD}
+                  value={rowValue('USD')}
                   muted={rowMuted('USD')}
                   onClick={() => pick('USD')}
                   activeBg={activeRowBg}

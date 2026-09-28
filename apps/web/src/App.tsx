@@ -938,6 +938,20 @@ export function App() {
   // eslint-disable-next-line -- savedToken is intentionally read once on mount
   }, []);
 
+  // Ticket 2026-09-27#7 (D69), PR 4: a restored session (reload with an already-stored token)
+  // never runs handleLogin/handleAuthSuccess, so `balances` starts at ZERO_BALANCES — correct for
+  // a brand-new session, wrong for an existing account. A fresh login/register/guest response
+  // already returns the true full map; mirror that here so a reload converges to it too, instead
+  // of leaving every currency the account never happens to settle a match in stuck at 0 (a real
+  // gap: GameHub's own liveBalances re-syncs from this prop on every change, including a partial
+  // per-currency update from onMatchEnd, so a stale/zero App-level value here would clobber an
+  // already-correct fetch GameHub made on its own).
+  useEffect(() => {
+    if (!savedToken) return;
+    api.wallet(savedToken).then((w) => setBalances(w.balances)).catch(() => {});
+  // eslint-disable-next-line -- savedToken is intentionally read once on mount
+  }, []);
+
   const handleLogout = useCallback(() => {
     localStorage.removeItem('rc_token');
     localStorage.removeItem('rc_playerId');
