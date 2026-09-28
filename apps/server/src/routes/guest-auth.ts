@@ -32,7 +32,9 @@ export function registerGuestAuthRoutes(app: FastifyInstance, identity: Identity
     async (_request, reply) => {
       const playerId = mintGuestId();
       guest.ledger.grant(playerId);
-      const balance = guest.ledger.getBalance(playerId);
+      // Ticket 2026-09-27#7 (D69): guest sessions stay USD-only by design (see
+      // ephemeral-ledger.ts's own top doc comment) — 'USD' explicitly.
+      const balance = guest.ledger.getBalance(playerId, 'USD');
       const token = identity.signGuestToken(playerId);
       const body: AuthResponse = {
         token,

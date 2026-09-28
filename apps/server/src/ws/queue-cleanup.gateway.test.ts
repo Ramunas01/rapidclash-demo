@@ -120,17 +120,17 @@ describe('#152 — interrupted-search queue cleanup on socket close', () => {
   it('closing the socket while resting dequeues the player AND refunds the escrow', async () => {
     const alice = await openSocket(port, aliceToken);
     sockets.push(alice);
-    const start = services.ledger.getBalance(aliceId);
+    const start = services.ledger.getBalance(aliceId, 'USD');
 
     alice.send('queue.join', { gameId: 'rps', stake: 10 });
     await alice.waitFor('queue.waiting');
-    expect(services.ledger.getBalance(aliceId)).toBe(start - 10); // escrowed while resting
+    expect(services.ledger.getBalance(aliceId, 'USD')).toBe(start - 10); // escrowed while resting
 
     alice.close();
     await tick();
 
     // Escrow refunded on close — never stranded.
-    expect(services.ledger.getBalance(aliceId)).toBe(start);
+    expect(services.ledger.getBalance(aliceId, 'USD')).toBe(start);
 
     // And the entry is gone: a later joiner does NOT pair with the ghost — bob rests instead.
     const bob = await openSocket(port, bobToken);
@@ -144,7 +144,7 @@ describe('#152 — interrupted-search queue cleanup on socket close', () => {
   it('a fast reconnect (newer socket live) does NOT dequeue the in-flight search', async () => {
     const alice1 = await openSocket(port, aliceToken);
     sockets.push(alice1);
-    const start = services.ledger.getBalance(aliceId);
+    const start = services.ledger.getBalance(aliceId, 'USD');
     alice1.send('queue.join', { gameId: 'rps', stake: 10 });
     await alice1.waitFor('queue.waiting');
 
@@ -157,7 +157,7 @@ describe('#152 — interrupted-search queue cleanup on socket close', () => {
     await tick();
 
     // Still escrowed → still queued: the transient reconnect preserved the search.
-    expect(services.ledger.getBalance(aliceId)).toBe(start - 10);
+    expect(services.ledger.getBalance(aliceId, 'USD')).toBe(start - 10);
 
     // Proof it's still live: bob pairs with alice's surviving resting bet.
     const bob = await openSocket(port, bobToken);

@@ -294,7 +294,10 @@ export function createRewards(
       // ledger's own UNIQUE constraint is defense-in-depth against a duplicate call landing
       // between the SELECT and the UPDATE below in some future, less-synchronous DB driver.
       stmtClaim.run(newSeq, playerId);
-      ledger.creditRewardClaim(playerId, credited, `reward_claim:${playerId}:${newSeq}`);
+      // Ticket 2026-09-27#7 (D69): reward claims stay USD-only — not a currency-selectable
+      // feature in this ticket's scope (rewards accrue from wagered volume across all
+      // currencies, but the claimable payout itself lands in the one platform-display currency).
+      ledger.creditRewardClaim(playerId, credited, `reward_claim:${playerId}:${newSeq}`, 'USD');
     });
     txn();
 

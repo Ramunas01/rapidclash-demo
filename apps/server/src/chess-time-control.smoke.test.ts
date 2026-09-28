@@ -51,8 +51,8 @@ describe('chess time control — flag → loss-on-time (end-to-end with the real
     expect(resolved[0].settlement!['alice'].delta).toBe(80);
     expect(resolved[0].settlement!['bob'].delta).toBe(-100);
     // Final balances = the 1000-credit grant ± the settlement delta (stake was escrowed first).
-    expect(ledger.getBalance('alice')).toBe(1080);
-    expect(ledger.getBalance('bob')).toBe(900);
+    expect(ledger.getBalance('alice', 'USD')).toBe(1080);
+    expect(ledger.getBalance('bob', 'USD')).toBe(900);
     expect(mm.getActiveMatch(matchId)).toBeUndefined(); // settled + removed
   });
 

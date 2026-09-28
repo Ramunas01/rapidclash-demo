@@ -68,11 +68,11 @@ describe('OC1 — typed-amount path is unchanged', () => {
 
     // A separate waiter can leave and be made whole.
     bet(ledger, 'carol');
-    const before = ledger.getBalance('carol');
+    const before = ledger.getBalance('carol', 'USD');
     matchmaking.joinQueue('carol', 'mock', 50);
-    expect(ledger.getBalance('carol')).toBe(before - 50);
+    expect(ledger.getBalance('carol', 'USD')).toBe(before - 50);
     matchmaking.leaveQueue('carol', 'mock', 50);
-    expect(ledger.getBalance('carol')).toBe(before);
+    expect(ledger.getBalance('carol', 'USD')).toBe(before);
   });
 
   it('joinQueue now also reports expiresAt = since + TTL (OC7 data)', () => {
@@ -123,7 +123,7 @@ describe('OC3 — atomic claim (headline)', () => {
     expect(bobEsc + carolEsc).toBe(1); // only the winner paid
     // The loser's balance is untouched (full grant).
     const loserId = bobEsc === 0 ? 'bob' : 'carol';
-    expect(ledger.getBalance(loserId)).toBe(GRANT_AMOUNT);
+    expect(ledger.getBalance(loserId, 'USD')).toBe(GRANT_AMOUNT);
   });
 });
 
@@ -169,22 +169,22 @@ describe('OC6 — expiry sweep refunds once (idempotent)', () => {
     const t = 1_000;
     const { ledger, matchmaking } = setup({ now: () => t });
     bet(ledger, 'owner');
-    const before = ledger.getBalance('owner');
+    const before = ledger.getBalance('owner', 'USD');
     const open = matchmaking.joinQueue('owner', 'mock', 100);
-    expect(ledger.getBalance('owner')).toBe(before - 100); // escrowed
+    expect(ledger.getBalance('owner', 'USD')).toBe(before - 100); // escrowed
 
     // Not yet expired.
     expect(matchmaking.sweepExpired(1_000 + TTL - 1)).toEqual([]);
-    expect(ledger.getBalance('owner')).toBe(before - 100);
+    expect(ledger.getBalance('owner', 'USD')).toBe(before - 100);
 
     // At/after expiry: swept, refunded, reported.
     const expired = matchmaking.sweepExpired(1_000 + TTL);
     expect(expired).toEqual([{ matchId: open.matchId, ownerId: 'owner', gameId: 'mock' }]);
-    expect(ledger.getBalance('owner')).toBe(before); // refunded in full
+    expect(ledger.getBalance('owner', 'USD')).toBe(before); // refunded in full
 
     // Idempotent: a second sweep finds nothing and does not double-refund.
     expect(matchmaking.sweepExpired(1_000 + TTL + 10)).toEqual([]);
-    expect(ledger.getBalance('owner')).toBe(before);
+    expect(ledger.getBalance('owner', 'USD')).toBe(before);
 
     // And it is gone from the feed.
     expect(matchmaking.listOpenChallenges('mock', 'viewer', 1_000 + TTL + 10).entries).toEqual([]);

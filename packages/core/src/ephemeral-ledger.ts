@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { LedgerEntry, LedgerEntryType } from '@rapidclash/shared';
+import type { LedgerEntry, LedgerEntryType, Currency } from '@rapidclash/shared';
 import { PLATFORM_ACCOUNT, type Ledger } from './ledger.js';
 
 /** Default starting stack for a guest session, per GUEST_MODE_CONTRACT.md §2's stated default. */
@@ -26,6 +26,15 @@ interface StoredEntry extends LedgerEntry {
  * One shared instance serves every guest session concurrently: isolation comes from each guest
  * having a unique `accountId` (their `playerId`), not from one ledger-object-per-session — every
  * method here is already keyed by `accountId`, exactly like the real ledger.
+ *
+ * Ticket 2026-09-27#7 (D69): the guest preview surface is explicitly carved OUT of the real
+ * per-currency feature — CHARTER.md #4's own citation states plainly: "the guest preview surface
+ * stays ¢/play-money-framed, unchanged." `grant()` therefore still writes exactly ONE flat
+ * `grantAmount` entry in 'USD' (unchanged from pre-D69), never the real ledger's multi-currency
+ * `STARTING_BALANCE` table. Every OTHER function here still genuinely honors a passed `currency`
+ * argument (real per-bucket tracking, mirroring `createLedger`'s own design) rather than silently
+ * ignoring it — interface parity with the real ledger, correct even if some future caller ever
+ * did pass a non-USD currency through a guest session (defensive, not just type-compatible).
  */
 export function createEphemeralLedger(opts: { grantAmount?: number } = {}): EphemeralLedger {
   const grantAmount = opts.grantAmount ?? GUEST_GRANT_AMOUNT;
@@ -47,6 +56,7 @@ export function createEphemeralLedger(opts: { grantAmount?: number } = {}): Ephe
     type: LedgerEntryType,
     amount: number,
     idempotencyKey: string,
+    currency: Currency,
   ): LedgerEntry {
     const existing = entryByIdempotencyKey.get(idempotencyKey);
     if (existing) return toPublic(existing); // idempotent no-op, mirrors INSERT OR IGNORE
@@ -56,6 +66,7 @@ export function createEphemeralLedger(opts: { grantAmount?: number } = {}): Ephe
       accountId,
       type,
       amount,
+      currency,
       idempotencyKey,
       createdAt: new Date().toISOString(),
     };
@@ -73,10 +84,10 @@ export function createEphemeralLedger(opts: { grantAmount?: number } = {}): Ephe
     return toPublic(entry);
   }
 
-  function getBalance(accountId: string): number {
+  function getBalance(accountId: string, currency: Currency): number {
     const list = entriesByAccount.get(accountId);
     if (!list) return 0;
-    return list.reduce((sum, e) => sum + e.amount, 0);
+    return list.reduce((sum, e) => (e.currency === currency ? sum + e.amount : sum), 0);
   }
 
   function getEntries(accountId: string): LedgerEntry[] {
@@ -84,13 +95,15 @@ export function createEphemeralLedger(opts: { grantAmount?: number } = {}): Ephe
   }
 
   function grant(accountId: string): LedgerEntry {
-    return writeEntry(accountId, null, 'GRANT', grantAmount, `grant:${accountId}`);
+    // Deliberately NOT the real ledger's multi-currency STARTING_BALANCE — guest mode stays a
+    // single flat USD-equivalent grant, unchanged (see this file's own top doc comment).
+    return writeEntry(accountId, null, 'GRANT', grantAmount, `grant:${accountId}`, 'USD');
   }
 
-  function escrow(accountId: string, matchId: string, amount: number): LedgerEntry {
+  function escrow(accountId: string, matchId: string, amount: number, currency: Currency): LedgerEntry {
     if (amount <= 0) throw new RangeError('Escrow amount must be a positive integer');
-    if (getBalance(accountId) < amount) throw new Error('Insufficient balance for escrow');
-    return writeEntry(accountId, matchId, 'BET_ESCROW', -amount, `escrow:${matchId}:${accountId}`);
+    if (getBalance(accountId, currency) < amount) throw new Error('Insufficient balance for escrow');
+    return writeEntry(accountId, matchId, 'BET_ESCROW', -amount, `escrow:${matchId}:${accountId}`, currency);
   }
 
   function refundEscrow(accountId: string, matchId: string): LedgerEntry {
@@ -105,6 +118,7 @@ export function createEphemeralLedger(opts: { grantAmount?: number } = {}): Ephe
       'SETTLE_REFUND',
       Math.abs(playerEscrow.amount),
       `refund:escrow:${matchId}:${accountId}`,
+      playerEscrow.currency,
     );
   }
 
@@ -114,6 +128,7 @@ export function createEphemeralLedger(opts: { grantAmount?: number } = {}): Ephe
     winnerId: string | undefined,
     potAmount: number,
     feeRate: number,
+    winnerCurrency?: Currency,
   ): void {
     const matchEntries = entriesByMatch.get(matchId) ?? [];
     const alreadySettled = matchEntries.some(
@@ -123,15 +138,17 @@ export function createEphemeralLedger(opts: { grantAmount?: number } = {}): Ephe
 
     if (outcome === 'win') {
       if (!winnerId) throw new Error('winnerId required for win outcome');
+      if (!winnerCurrency) throw new Error('winnerCurrency required for win outcome');
       const rake = Math.round(potAmount * feeRate);
-      writeEntry(winnerId, matchId, 'SETTLE_WIN', potAmount - rake, `settle:${matchId}:win`);
+      writeEntry(winnerId, matchId, 'SETTLE_WIN', potAmount - rake, `settle:${matchId}:win`, winnerCurrency);
       if (rake > 0) {
-        writeEntry(PLATFORM_ACCOUNT, matchId, 'RAKE', rake, `settle:${matchId}:rake`);
+        writeEntry(PLATFORM_ACCOUNT, matchId, 'RAKE', rake, `settle:${matchId}:rake`, winnerCurrency);
       }
     } else {
-      // draw or void: return each player's own stake, no rake
+      // draw or void: return each player's own stake, no rake — each in their own escrow's
+      // own currency, same reasoning as the real ledger.
       for (const e of matchEntries.filter((e) => e.type === 'BET_ESCROW')) {
-        writeEntry(e.accountId, matchId, 'SETTLE_REFUND', Math.abs(e.amount), `settle:${matchId}:refund:${e.accountId}`);
+        writeEntry(e.accountId, matchId, 'SETTLE_REFUND', Math.abs(e.amount), `settle:${matchId}:refund:${e.accountId}`, e.currency);
       }
     }
   }
@@ -162,18 +179,18 @@ export function createEphemeralLedger(opts: { grantAmount?: number } = {}): Ephe
       .map((e) => e.matchId);
   }
 
-  function adminCredit(accountId: string, amount: number, idempotencyKey: string): LedgerEntry {
+  function adminCredit(accountId: string, amount: number, idempotencyKey: string, currency: Currency): LedgerEntry {
     if (amount <= 0) throw new RangeError('Credit amount must be a positive integer');
-    return writeEntry(accountId, null, 'ADMIN_CREDIT', amount, idempotencyKey);
+    return writeEntry(accountId, null, 'ADMIN_CREDIT', amount, idempotencyKey, currency);
   }
 
   // Rewards (issue #306) is never wired to guest sessions (server.ts only hooks the REAL
   // matchmaking instance's onPlayerSettled into Rewards) — this exists solely to satisfy the
   // `Ledger` interface EphemeralLedger extends. Included for completeness/type-safety, not
   // because a guest session can ever actually reach it.
-  function creditRewardClaim(accountId: string, amount: number, idempotencyKey: string): LedgerEntry {
+  function creditRewardClaim(accountId: string, amount: number, idempotencyKey: string, currency: Currency): LedgerEntry {
     if (amount <= 0) throw new RangeError('Reward claim amount must be a positive integer');
-    return writeEntry(accountId, null, 'REWARD_CLAIM', amount, idempotencyKey);
+    return writeEntry(accountId, null, 'REWARD_CLAIM', amount, idempotencyKey, currency);
   }
 
   // Ticket 2026-09-24#1: exists solely to satisfy the `Ledger` interface EphemeralLedger

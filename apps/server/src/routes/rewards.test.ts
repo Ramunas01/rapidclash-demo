@@ -89,7 +89,7 @@ describe('GET /rewards + POST /rewards/claim (issue #306)', () => {
     const claimable = before.json<RewardsSnapshot>().claimableBalance;
     expect(claimable).toBeGreaterThan(0);
 
-    const walletBefore = services.ledger.getBalance(playerId);
+    const walletBefore = services.ledger.getBalance(playerId, 'USD');
 
     // Fire two claim requests back-to-back (double-tap simulation) — better-sqlite3's
     // synchronous transactions mean these can never interleave, but assert the outcome anyway.
@@ -102,7 +102,7 @@ describe('GET /rewards + POST /rewards/claim (issue #306)', () => {
     const credited = results.map((r) => r.credited).sort((a, b) => b - a);
     expect(credited).toEqual([claimable, 0]); // exactly one of the two actually credited
 
-    expect(services.ledger.getBalance(playerId)).toBe(walletBefore + claimable);
+    expect(services.ledger.getBalance(playerId, 'USD')).toBe(walletBefore + claimable);
     const claimEntries = services.ledger.getEntries(playerId).filter((e) => e.type === 'REWARD_CLAIM');
     expect(claimEntries).toHaveLength(1);
     expect(claimEntries[0].amount).toBe(claimable);

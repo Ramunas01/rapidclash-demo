@@ -46,14 +46,17 @@ describe('GET /wallet', () => {
     expect(res.statusCode).toBe(200);
     const wallet = res.json<WalletResponse>();
     expect(wallet.balance).toBe(GRANT_AMOUNT);
-    const grants = wallet.entries.filter((e) => e.type === 'GRANT');
+    // Ticket 2026-09-27#7 (D69): grant() now writes one GRANT per STARTING_BALANCE currency
+    // (USD/SOL/USDT), so there are 3 GRANT entries, not 1 — isolate the USD-currency one to
+    // keep testing this test's own real concern (S1's starting balance).
+    const grants = wallet.entries.filter((e) => e.type === 'GRANT' && e.currency === 'USD');
     expect(grants).toHaveLength(1);
     expect(grants[0].amount).toBe(GRANT_AMOUNT);
   });
 
   it('balance is ledger-derived: it reflects a later credit, never a stored number', async () => {
     // Credit directly through the ledger, then confirm GET /wallet reflects it.
-    services.ledger.adminCredit(playerId, 250, 'wallet-test-credit');
+    services.ledger.adminCredit(playerId, 250, 'wallet-test-credit', 'USD');
     const res = await app.inject({
       method: 'GET',
       url: '/wallet',
@@ -61,7 +64,7 @@ describe('GET /wallet', () => {
     });
     const wallet = res.json<WalletResponse>();
     expect(wallet.balance).toBe(GRANT_AMOUNT + 250);
-    expect(wallet.balance).toBe(services.ledger.getBalance(playerId));
+    expect(wallet.balance).toBe(services.ledger.getBalance(playerId, 'USD'));
     expect(wallet.entries.some((e) => e.type === 'ADMIN_CREDIT' && e.amount === 250)).toBe(true);
   });
 

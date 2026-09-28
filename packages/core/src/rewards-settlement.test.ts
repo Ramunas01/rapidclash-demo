@@ -139,8 +139,8 @@ describe('settleMatch → onPlayerSettled → Rewards (issue #306 acceptance cri
     expect(rewards.getSnapshot('bob').claimableBalance).toBe(0);
     // Draws refund stake in full (ledger.ts) — confirms this test's draw is a real, decisive-free
     // settlement, not an artifact of a broken match.
-    expect(ledger.getBalance('alice')).toBe(GRANT_AMOUNT);
-    expect(ledger.getBalance('bob')).toBe(GRANT_AMOUNT);
+    expect(ledger.getBalance('alice', 'USD')).toBe(GRANT_AMOUNT);
+    expect(ledger.getBalance('bob', 'USD')).toBe(GRANT_AMOUNT);
   });
 
   it('settleMatch is idempotent — a second call (or forfeitMatch\'s internal re-settle) never double-accrues', () => {

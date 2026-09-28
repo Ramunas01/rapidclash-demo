@@ -180,7 +180,7 @@ describe('claim — atomic, idempotent reward-claim → wallet credit', () => {
 
   it('claiming moves the whole claimable_balance into the wallet as one REWARD_CLAIM entry', () => {
     const { ledger, rewards } = seedClaimableBalance();
-    const startingBalance = ledger.getBalance('alice');
+    const startingBalance = ledger.getBalance('alice', 'USD');
     const before = rewards.getSnapshot('alice').claimableBalance;
     expect(before).toBeGreaterThan(0);
 
@@ -189,7 +189,7 @@ describe('claim — atomic, idempotent reward-claim → wallet credit', () => {
     expect(result.credited).toBe(before);
     expect(result.newClaimableBalance).toBe(0);
     expect(rewards.getSnapshot('alice').claimableBalance).toBe(0);
-    expect(ledger.getBalance('alice')).toBe(startingBalance + before);
+    expect(ledger.getBalance('alice', 'USD')).toBe(startingBalance + before);
     const claimEntries = ledger.getEntries('alice').filter((e) => e.type === 'REWARD_CLAIM');
     expect(claimEntries).toHaveLength(1);
     expect(claimEntries[0].amount).toBe(before);
@@ -199,7 +199,7 @@ describe('claim — atomic, idempotent reward-claim → wallet credit', () => {
     const { ledger, rewards } = seedClaimableBalance();
     const first = rewards.claim('alice');
     expect(first.credited).toBeGreaterThan(0);
-    const balanceAfterFirst = ledger.getBalance('alice');
+    const balanceAfterFirst = ledger.getBalance('alice', 'USD');
 
     // Simulate a double-tap: the same button fires the request again.
     const second = rewards.claim('alice');
@@ -207,7 +207,7 @@ describe('claim — atomic, idempotent reward-claim → wallet credit', () => {
 
     expect(second.credited).toBe(0);
     expect(third.credited).toBe(0);
-    expect(ledger.getBalance('alice')).toBe(balanceAfterFirst); // unchanged
+    expect(ledger.getBalance('alice', 'USD')).toBe(balanceAfterFirst); // unchanged
     expect(ledger.getEntries('alice').filter((e) => e.type === 'REWARD_CLAIM')).toHaveLength(1);
   });
 
@@ -217,7 +217,7 @@ describe('claim — atomic, idempotent reward-claim → wallet credit', () => {
     const result = rewards.claim('bob');
     expect(result).toEqual({ credited: 0, newClaimableBalance: 0 });
     expect(ledger.getEntries('bob').filter((e) => e.type === 'REWARD_CLAIM')).toHaveLength(0);
-    expect(ledger.getBalance('bob')).toBe(GRANT_AMOUNT);
+    expect(ledger.getBalance('bob', 'USD')).toBe(GRANT_AMOUNT);
   });
 
   it('a second earn-then-claim cycle credits again (claiming zeroes the balance, it does not disable future accrual)', () => {

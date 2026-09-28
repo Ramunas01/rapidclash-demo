@@ -47,8 +47,8 @@ describe('chess draw offers — end-to-end (real chess module + core + ledger se
   it('accept completes the draw → settle: stakes returned, no rake, match removed', () => {
     const { ledger, mm, matchId } = setup(100);
     // Escrow debited on join: both at 900.
-    expect(ledger.getBalance('alice')).toBe(900);
-    expect(ledger.getBalance('bob')).toBe(900);
+    expect(ledger.getBalance('alice', 'USD')).toBe(900);
+    expect(ledger.getBalance('bob', 'USD')).toBe(900);
 
     mm.offerDraw(matchId, 'alice');
     const res = mm.acceptDraw(matchId, 'bob'); // Bob accepts Alice's offer → draw completes
@@ -60,8 +60,8 @@ describe('chess draw offers — end-to-end (real chess module + core + ledger se
     // Draw = refund both in full, no rake: delta 0 each, balances back to the 1000 grant.
     expect(settled.settlement['alice'].delta).toBe(0);
     expect(settled.settlement['bob'].delta).toBe(0);
-    expect(ledger.getBalance('alice')).toBe(1000);
-    expect(ledger.getBalance('bob')).toBe(1000);
+    expect(ledger.getBalance('alice', 'USD')).toBe(1000);
+    expect(ledger.getBalance('bob', 'USD')).toBe(1000);
     expect(mm.getActiveMatch(matchId)).toBeUndefined(); // settled + removed
   });
 

@@ -15,7 +15,7 @@ function playToTerminal(mod: GameModule) {
   const ledger = createLedger(new Database(':memory:'));
   const mm = createMatchmaking(ledger, [mod]);
   for (const p of ['alice', 'bob']) ledger.grant(p);
-  const start = ledger.getBalance('alice');
+  const start = ledger.getBalance('alice', 'USD');
 
   expect(mm.joinQueue('alice', mod.meta.id, 10).status).toBe('waiting'); // registered ⇒ joinable
   const m = mm.joinQueue('bob', mod.meta.id, 10);
@@ -59,8 +59,8 @@ describe('Dice — independent-roll smoke (real core + module)', () => {
     // Settlement: winner up, loser down by the stake, house keeps the 2.5% rake.
     const winner = out.type === 'win' ? out.winner : null;
     expect(winner).toBe(higher);
-    expect(ledger.getBalance(winner!)).toBeGreaterThan(start);
-    expect(ledger.getBalance(winner === 'alice' ? 'bob' : 'alice')).toBe(start - 10);
+    expect(ledger.getBalance(winner!, 'USD')).toBeGreaterThan(start);
+    expect(ledger.getBalance(winner === 'alice' ? 'bob' : 'alice', 'USD')).toBe(start - 10);
   });
 });
 
@@ -77,7 +77,7 @@ describe('Baccarat — independent-hand smoke (real core + module)', () => {
     expect(t.winner).toBe(closer); // higher last-digit total (closest to 9) wins
 
     const winner = out.type === 'win' ? out.winner : null;
-    expect(ledger.getBalance(winner!)).toBeGreaterThan(start);
-    expect(ledger.getBalance(winner === 'alice' ? 'bob' : 'alice')).toBe(start - 10);
+    expect(ledger.getBalance(winner!, 'USD')).toBeGreaterThan(start);
+    expect(ledger.getBalance(winner === 'alice' ? 'bob' : 'alice', 'USD')).toBe(start - 10);
   });
 });

@@ -67,8 +67,8 @@ describe('guest services', () => {
     const { ledger, matchmaking, onDemoBotMatched } = createGuestServices();
     ledger.grant('guest:a');
     ledger.grant('guest:b');
-    ledger.escrow('guest:a', 'preexisting-a', 10);
-    expect(ledger.getBalance('guest:a')).not.toBe(ledger.getBalance('guest:b'));
+    ledger.escrow('guest:a', 'preexisting-a', 10, 'USD');
+    expect(ledger.getBalance('guest:a', 'USD')).not.toBe(ledger.getBalance('guest:b', 'USD'));
 
     const r1 = matchmaking.joinQueue('guest:a', 'coinflip', STAKE);
     if (r1.status !== 'matched') throw new Error('expected matched');
@@ -115,7 +115,7 @@ describe('guest services', () => {
     ledger.grant(id);
     // GUEST_HUMAN_RESERVED_STAKE (1) aside, the grant amount is independent of #351's bot pools —
     // just confirming the ephemeral ledger (not the real one) is what's checked here.
-    expect(ledger.getBalance(id)).toBeGreaterThan(0);
+    expect(ledger.getBalance(id, 'USD')).toBeGreaterThan(0);
   });
 
   describe('usernameFor', () => {
