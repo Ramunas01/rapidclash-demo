@@ -18,7 +18,7 @@ describe('identity.register', () => {
     expect(res.playerId).toBeTruthy();
     expect(res.token).toBeTruthy();
     expect(res.balance).toBe(GRANT_AMOUNT);
-    expect(ledger.getBalance(res.playerId)).toBe(GRANT_AMOUNT);
+    expect(ledger.getBalance(res.playerId, 'USD')).toBe(GRANT_AMOUNT);
     expect(ledger.getEntries(res.playerId)[0].type).toBe('GRANT');
   });
 
@@ -86,14 +86,14 @@ describe('identity.clearPassword (soft reset)', () => {
     const first = await identity.register('heidi', 'pw');
     // Simulate the soft reset: clear password + the admin wallet grant (null match_id).
     identity.clearPassword(first.playerId);
-    ledger.adminCredit(first.playerId, GRANT_AMOUNT, `soft-reset:${first.playerId}`);
-    const balanceAfterReset = ledger.getBalance(first.playerId);
+    ledger.adminCredit(first.playerId, GRANT_AMOUNT, `soft-reset:${first.playerId}`, 'USD');
+    const balanceAfterReset = ledger.getBalance(first.playerId, 'USD');
 
     // A returning player re-registers the freed alias with a fresh password.
     const reclaim = await identity.register('heidi', 'new-pw');
     expect(reclaim.playerId).toBe(first.playerId); // same account, standings intact
     // No new GRANT — balance is exactly what the soft reset left.
-    expect(ledger.getBalance(first.playerId)).toBe(balanceAfterReset);
+    expect(ledger.getBalance(first.playerId, 'USD')).toBe(balanceAfterReset);
     expect(reclaim.balance).toBe(balanceAfterReset);
     // The new password works; the old one does not.
     await expect(identity.login('heidi', 'new-pw')).resolves.toBeTruthy();
@@ -260,7 +260,7 @@ describe('identity.ensureAdmin', () => {
     const { token } = await identity.login('admin', 'admin-dev');
     const payload = identity.verifyToken(token);
     expect(payload.role).toBe('admin');
-    expect(ledger.getBalance(payload.sub)).toBe(GRANT_AMOUNT);
+    expect(ledger.getBalance(payload.sub, 'USD')).toBe(GRANT_AMOUNT);
   });
 
   it('is idempotent — calling twice does not throw or double-grant', async () => {
@@ -269,6 +269,6 @@ describe('identity.ensureAdmin', () => {
     await expect(identity.ensureAdmin('admin', 'admin-dev')).resolves.not.toThrow();
     const { token } = await identity.login('admin', 'admin-dev');
     const payload = identity.verifyToken(token);
-    expect(ledger.getBalance(payload.sub)).toBe(GRANT_AMOUNT);
+    expect(ledger.getBalance(payload.sub, 'USD')).toBe(GRANT_AMOUNT);
   });
 });

@@ -198,14 +198,14 @@ describe('matchmaking', () => {
 
   it('leaveQueue before matching refunds the escrow; balance returns to pre-join level', () => {
     ledger.grant('alice');
-    const before = ledger.getBalance('alice');
+    const before = ledger.getBalance('alice', 'USD');
 
     const result = matchmaking.joinQueue('alice', 'mock', 100);
     expect(result.status).toBe('waiting');
-    expect(ledger.getBalance('alice')).toBe(before - 100);
+    expect(ledger.getBalance('alice', 'USD')).toBe(before - 100);
 
     matchmaking.leaveQueue('alice', 'mock', 100);
-    expect(ledger.getBalance('alice')).toBe(before);
+    expect(ledger.getBalance('alice', 'USD')).toBe(before);
   });
 
   it('escrow and settle share the same matchId (draw restores both balances)', () => {
@@ -219,13 +219,13 @@ describe('matchmaking', () => {
     const matchId = r1.matchId;
     ledger.settle(matchId, 'draw', undefined, 200, 0.1);
 
-    expect(ledger.getBalance('alice')).toBe(GRANT_AMOUNT);
-    expect(ledger.getBalance('bob')).toBe(GRANT_AMOUNT);
+    expect(ledger.getBalance('alice', 'USD')).toBe(GRANT_AMOUNT);
+    expect(ledger.getBalance('bob', 'USD')).toBe(GRANT_AMOUNT);
   });
 
   it('never matches an account against itself — a second session of the same player rests (#1)', () => {
     ledger.grant('alice');
-    const granted = ledger.getBalance('alice');
+    const granted = ledger.getBalance('alice', 'USD');
     const r1 = matchmaking.joinQueue('alice', 'mock', 100);
     const r2 = matchmaking.joinQueue('alice', 'mock', 100); // alice's 2nd open session, same key
     expect(r1.status).toBe('waiting');
@@ -233,7 +233,7 @@ describe('matchmaking', () => {
     // The 2nd session REUSES the resting entry (same matchId) — no duplicate queue entry, and the
     // stake is escrowed exactly ONCE (no double-debit, no orphaned bookkeeping).
     if (r1.status === 'waiting' && r2.status === 'waiting') expect(r2.matchId).toBe(r1.matchId);
-    expect(ledger.getBalance('alice')).toBe(granted - 100);
+    expect(ledger.getBalance('alice', 'USD')).toBe(granted - 100);
   });
 
   it('a different player then matches the self-rested challenge normally', () => {
@@ -349,12 +349,12 @@ describe('S6 — settleMatch (win)', () => {
     expect(settled.settlement['alice'].delta).toBe(stake - rake); // +80 (100 − 20)
     expect(settled.settlement['bob'].delta).toBe(-stake); // -100
 
-    expect(ledger.getBalance('alice')).toBe(GRANT_AMOUNT + stake - rake);
-    expect(ledger.getBalance('bob')).toBe(GRANT_AMOUNT - stake);
-    expect(ledger.getBalance(PLATFORM_ACCOUNT)).toBe(rake);
+    expect(ledger.getBalance('alice', 'USD')).toBe(GRANT_AMOUNT + stake - rake);
+    expect(ledger.getBalance('bob', 'USD')).toBe(GRANT_AMOUNT - stake);
+    expect(ledger.getBalance(PLATFORM_ACCOUNT, 'USD')).toBe(rake);
 
     // Conservation: total money is preserved
-    const total = ledger.getBalance('alice') + ledger.getBalance('bob') + ledger.getBalance(PLATFORM_ACCOUNT);
+    const total = ledger.getBalance('alice', 'USD') + ledger.getBalance('bob', 'USD') + ledger.getBalance(PLATFORM_ACCOUNT, 'USD');
     expect(total).toBe(2 * GRANT_AMOUNT);
   });
 });
@@ -374,9 +374,9 @@ describe('S6 — settleMatch (draw)', () => {
     expect(settled.settlement['alice'].delta).toBe(0);
     expect(settled.settlement['bob'].delta).toBe(0);
 
-    expect(ledger.getBalance('alice')).toBe(GRANT_AMOUNT);
-    expect(ledger.getBalance('bob')).toBe(GRANT_AMOUNT);
-    expect(ledger.getBalance(PLATFORM_ACCOUNT)).toBe(0);
+    expect(ledger.getBalance('alice', 'USD')).toBe(GRANT_AMOUNT);
+    expect(ledger.getBalance('bob', 'USD')).toBe(GRANT_AMOUNT);
+    expect(ledger.getBalance(PLATFORM_ACCOUNT, 'USD')).toBe(0);
 
     // Confirm no RAKE entry was written
     const platformEntries = ledger.getEntries(PLATFORM_ACCOUNT);
@@ -456,8 +456,8 @@ describe('forfeitMatch', () => {
     const settled = matchmaking.forfeitMatch(matchId, 'alice');
 
     expect(settled.outcome).toEqual({ type: 'win', winner: 'bob' });
-    expect(ledger.getBalance('bob')).toBe(GRANT_AMOUNT + stake - rake);
-    expect(ledger.getBalance('alice')).toBe(GRANT_AMOUNT - stake);
+    expect(ledger.getBalance('bob', 'USD')).toBe(GRANT_AMOUNT + stake - rake);
+    expect(ledger.getBalance('alice', 'USD')).toBe(GRANT_AMOUNT - stake);
   });
 
   it('forfeit when neither player has moved → void; both stakes refunded', () => {
@@ -466,8 +466,8 @@ describe('forfeitMatch', () => {
     const settled = matchmaking.forfeitMatch(matchId, 'alice');
 
     expect(settled.outcome).toEqual({ type: 'void' });
-    expect(ledger.getBalance('alice')).toBe(GRANT_AMOUNT);
-    expect(ledger.getBalance('bob')).toBe(GRANT_AMOUNT);
+    expect(ledger.getBalance('alice', 'USD')).toBe(GRANT_AMOUNT);
+    expect(ledger.getBalance('bob', 'USD')).toBe(GRANT_AMOUNT);
   });
 
   it('forfeit is idempotent — calling twice returns the same result', () => {
@@ -523,9 +523,9 @@ describe('sweepStaleMatches', () => {
     expect(resolved[0].matchId).toBe(matchId);
     expect(resolved[0].outcome).toEqual({ type: 'void' });
     // Both stakes refunded in full, no rake — net ledger movement is zero.
-    expect(ledger.getBalance('alice')).toBe(GRANT_AMOUNT);
-    expect(ledger.getBalance('bob')).toBe(GRANT_AMOUNT);
-    expect(ledger.getBalance(PLATFORM_ACCOUNT)).toBe(0);
+    expect(ledger.getBalance('alice', 'USD')).toBe(GRANT_AMOUNT);
+    expect(ledger.getBalance('bob', 'USD')).toBe(GRANT_AMOUNT);
+    expect(ledger.getBalance(PLATFORM_ACCOUNT, 'USD')).toBe(0);
     // The match is settled and removed from the active set — no orphaned escrow.
     expect(matchmaking.getActiveMatch(matchId)).toBeUndefined();
   });
@@ -543,11 +543,11 @@ describe('sweepStaleMatches', () => {
 
     expect(resolved).toHaveLength(1);
     expect(resolved[0].outcome).toEqual({ type: 'win', winner: 'bob' });
-    expect(ledger.getBalance('bob')).toBe(GRANT_AMOUNT + stake - rake);
-    expect(ledger.getBalance('alice')).toBe(GRANT_AMOUNT - stake);
+    expect(ledger.getBalance('bob', 'USD')).toBe(GRANT_AMOUNT + stake - rake);
+    expect(ledger.getBalance('alice', 'USD')).toBe(GRANT_AMOUNT - stake);
     // Conservation: nothing left escrowed — the two balances plus rake reconstruct both grants.
     const total =
-      ledger.getBalance('alice') + ledger.getBalance('bob') + ledger.getBalance(PLATFORM_ACCOUNT);
+      ledger.getBalance('alice', 'USD') + ledger.getBalance('bob', 'USD') + ledger.getBalance(PLATFORM_ACCOUNT, 'USD');
     expect(total).toBe(GRANT_AMOUNT * 2);
     expect(matchmaking.getActiveMatch(matchId)).toBeUndefined();
   });
@@ -731,7 +731,7 @@ describe('per-player move timers', () => {
     expect(res[0].outcome).toEqual({ type: 'win', winner: 'alice' });
     expect(res[0].settlement!['alice'].delta).toBe(95); // 100 − round(200*0.025)=5
     expect(res[0].settlement!['bob'].delta).toBe(-100);
-    expect(ledger.getBalance(PLATFORM_ACCOUNT)).toBe(5);
+    expect(ledger.getBalance(PLATFORM_ACCOUNT, 'USD')).toBe(5);
   });
 
   it('injects a random LEGAL covered square via the seeded match rng (Mines-shape)', () => {
@@ -848,8 +848,8 @@ describe('scheduled deadlines (absolute per-player auto-fire, Crash-shape)', () 
     expect(res[1].terminal).toBe(true);
     expect(res[1].outcome).toEqual({ type: 'draw' });
     expect(mm.getActiveMatch(matchId)).toBeUndefined(); // settled + removed
-    expect(ledger.getBalance('alice')).toBe(GRANT_AMOUNT); // refunded, no rake
-    expect(ledger.getBalance(PLATFORM_ACCOUNT)).toBe(0);
+    expect(ledger.getBalance('alice', 'USD')).toBe(GRANT_AMOUNT); // refunded, no rake
+    expect(ledger.getBalance(PLATFORM_ACCOUNT, 'USD')).toBe(0);
   });
 
   it('one banks before the crash, the other rides to the crash → banker wins (rake once)', () => {
@@ -864,7 +864,7 @@ describe('scheduled deadlines (absolute per-player auto-fire, Crash-shape)', () 
     expect(res[0]).toMatchObject({ playerId: 'bob', terminal: true });
     expect(res[0].outcome).toEqual({ type: 'win', winner: 'alice' });
     expect(res[0].settlement!['alice'].delta).toBe(95); // 100 − round(200·0.025)=5
-    expect(ledger.getBalance(PLATFORM_ACCOUNT)).toBe(5);
+    expect(ledger.getBalance(PLATFORM_ACCOUNT, 'USD')).toBe(5);
   });
 
   // startedAt = (now at the bank) − 2000 elapsed; crash = startedAt + OFFSET.
@@ -998,7 +998,7 @@ describe('lock-on-timeout (ADR-012 — scheduledDeadlines + lockOnTimeout, no ti
     expect(res[1].outcome).toEqual({ type: 'win', winner: 'alice' });
     expect(res[1].settlement!['alice'].delta).toBe(95); // 100 − round(200*0.025)=5
     expect(res[1].settlement!['bob'].delta).toBe(-100);
-    expect(ledger.getBalance(PLATFORM_ACCOUNT)).toBe(5);
+    expect(ledger.getBalance(PLATFORM_ACCOUNT, 'USD')).toBe(5);
     expect(applyMoveSpy).toHaveBeenCalledTimes(1); // only the explicit tap — never for the timeout locks
   });
 
@@ -1111,7 +1111,7 @@ describe('time control (cumulative per-player clock)', () => {
     // Settles like any decisive loss: rake = round(200 * 0.1) = 20 → +80 / −100.
     expect(resolved[0].settlement!['alice'].delta).toBe(80);
     expect(resolved[0].settlement!['bob'].delta).toBe(-100);
-    expect(ledger.getBalance(PLATFORM_ACCOUNT)).toBe(20);
+    expect(ledger.getBalance(PLATFORM_ACCOUNT, 'USD')).toBe(20);
     expect(mm.getActiveMatch(matchId)).toBeUndefined(); // settled + removed
   });
 
@@ -1282,15 +1282,15 @@ describe('ticket 2026-09-24#2: escrow-orphan hardening + self-healing reconcilia
       // matchId that was NEVER posted through joinQueue/takeChallenge, so it's in neither
       // in-memory index. This IS the historical bug's end state: the ledger write succeeded,
       // the in-memory bookkeeping never (or no longer) knows about it.
-      ledger.escrow('alice', 'orphan-1', 300);
+      ledger.escrow('alice', 'orphan-1', 300, 'USD');
       expect(ledger.getOpenEscrowMatchIds('alice')).toContain('orphan-1');
 
-      const before = ledger.getBalance('alice');
+      const before = ledger.getBalance('alice', 'USD');
       matchmaking.joinQueue('alice', 'mock', 100);
 
       expect(ledger.getOpenEscrowMatchIds('alice')).not.toContain('orphan-1');
       // orphan-1 (300) refunded, then 100 escrowed for the new bet: net +300 -100.
-      expect(ledger.getBalance('alice')).toBe(before + 300 - 100);
+      expect(ledger.getBalance('alice', 'USD')).toBe(before + 300 - 100);
     });
 
     it('does NOT touch a genuinely still-resting escrow', () => {
@@ -1299,7 +1299,7 @@ describe('ticket 2026-09-24#2: escrow-orphan hardening + self-healing reconcilia
       const r1 = matchmaking.joinQueue('alice', 'mock', 100);
       if (r1.status !== 'waiting') throw new Error('expected waiting');
 
-      ledger.escrow('alice', 'orphan-2', 50); // a separate stuck orphan alongside the real one
+      ledger.escrow('alice', 'orphan-2', 50, 'USD'); // a separate stuck orphan alongside the real one
 
       // Re-joining the same game/stake returns the existing resting entry without re-escrowing —
       // but reconciliation still runs on the way in.
@@ -1317,7 +1317,7 @@ describe('ticket 2026-09-24#2: escrow-orphan hardening + self-healing reconcilia
       const r2 = matchmaking.joinQueue('bob', 'mock', 100);
       if (r2.status !== 'matched') throw new Error('expected matched');
 
-      ledger.escrow('alice', 'orphan-3', 20);
+      ledger.escrow('alice', 'orphan-3', 20, 'USD');
 
       // A different game triggers reconciliation without touching alice's live 'mock' match.
       matchmaking.joinQueue('alice', 'mock2', 50);
@@ -1329,8 +1329,8 @@ describe('ticket 2026-09-24#2: escrow-orphan hardening + self-healing reconcilia
     it('checks ALL of the account\'s open escrows, not just the most recent', () => {
       const { ledger, matchmaking } = setup();
       ledger.grant('alice');
-      ledger.escrow('alice', 'orphan-old', 40);
-      ledger.escrow('alice', 'orphan-newer', 25);
+      ledger.escrow('alice', 'orphan-old', 40, 'USD');
+      ledger.escrow('alice', 'orphan-newer', 25, 'USD');
 
       matchmaking.joinQueue('alice', 'mock', 10);
 
@@ -1345,7 +1345,7 @@ describe('ticket 2026-09-24#2: escrow-orphan hardening + self-healing reconcilia
       const w = matchmaking.joinQueue('alice', 'mock', 100);
       if (w.status !== 'waiting') throw new Error('expected waiting');
 
-      ledger.escrow('bob', 'orphan-4', 15);
+      ledger.escrow('bob', 'orphan-4', 15, 'USD');
       matchmaking.takeChallenge('bob', w.matchId);
 
       expect(ledger.getOpenEscrowMatchIds('bob')).not.toContain('orphan-4');

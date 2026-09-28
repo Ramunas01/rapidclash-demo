@@ -59,7 +59,7 @@ describe('WS gateway ledger cleanup wiring (ticket 2026-09-24#1)', () => {
     const db = new Database(':memory:');
     const services = createServices(db, []);
     services.ledger.grant('alice');
-    services.ledger.escrow('alice', 'backlog-1', 50);
+    services.ledger.escrow('alice', 'backlog-1', 50, 'USD');
     services.ledger.refundEscrow('alice', 'backlog-1'); // already a fully-refunded, eligible group
     expect(rowCount(db, 'backlog-1')).toBe(2);
 
@@ -73,7 +73,7 @@ describe('WS gateway ledger cleanup wiring (ticket 2026-09-24#1)', () => {
 
     expect(rowCount(db, 'backlog-1')).toBe(0);
     expect(onWrite).toHaveBeenCalled();
-    expect(services.ledger.getBalance('alice')).toBe(1000); // money-neutral: GRANT_AMOUNT unchanged
+    expect(services.ledger.getBalance('alice', 'USD')).toBe(1000); // money-neutral: GRANT_AMOUNT unchanged
   });
 
   it('the independent hourly timer also runs — a group that becomes eligible AFTER startup still gets pruned', async () => {
@@ -83,7 +83,7 @@ describe('WS gateway ledger cleanup wiring (ticket 2026-09-24#1)', () => {
     onWrite.mockClear();
 
     services.ledger.grant('bob');
-    services.ledger.escrow('bob', 'post-startup-1', 25);
+    services.ledger.escrow('bob', 'post-startup-1', 25, 'USD');
     services.ledger.refundEscrow('bob', 'post-startup-1');
     expect(rowCount(services.db, 'post-startup-1')).toBe(2);
 
@@ -100,7 +100,7 @@ describe('WS gateway ledger cleanup wiring (ticket 2026-09-24#1)', () => {
     const db = new Database(':memory:');
     const services = createServices(db, []);
     services.ledger.grant('carol');
-    services.ledger.escrow('carol', 'still-open-1', 30); // resting, not yet expired/refunded — never deleted, so freelist stays empty
+    services.ledger.escrow('carol', 'still-open-1', 30, 'USD'); // resting, not yet expired/refunded — never deleted, so freelist stays empty
 
     const onWrite = vi.fn();
     app = buildApp(services, [], { seedAdmin: false, onWrite });
@@ -171,7 +171,7 @@ describe('WS gateway ledger cleanup: VACUUM (ticket 2026-09-24#3)', () => {
 
     services.ledger.grant('dave');
     for (let i = 0; i < 200; i++) {
-      services.ledger.escrow('dave', `hourly-bloat-${i}`, 1);
+      services.ledger.escrow('dave', `hourly-bloat-${i}`, 1, 'USD');
       services.ledger.refundEscrow('dave', `hourly-bloat-${i}`);
     }
     expect(rowCount(services.db, 'hourly-bloat-0')).toBe(2); // still present — not yet swept
@@ -208,7 +208,7 @@ describe('WS gateway ledger cleanup retention parsing (ticket 2026-09-24#5)', ()
     const db = new Database(':memory:');
     const services = createServices(db, []);
     services.ledger.grant('alice');
-    services.ledger.escrow('alice', 'fresh-1', 50);
+    services.ledger.escrow('alice', 'fresh-1', 50, 'USD');
     services.ledger.refundEscrow('alice', 'fresh-1'); // created_at = now — well under 6h old
 
     app = buildApp(services, [], { seedAdmin: false });
@@ -235,7 +235,7 @@ describe('WS gateway ledger cleanup retention parsing (ticket 2026-09-24#5)', ()
     const db = new Database(':memory:');
     const services = createServices(db, []);
     services.ledger.grant('bob');
-    services.ledger.escrow('bob', 'default-window-1', 50);
+    services.ledger.escrow('bob', 'default-window-1', 50, 'USD');
     services.ledger.refundEscrow('bob', 'default-window-1');
     const oldIso = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(); // 12h old
     db.prepare(`UPDATE ledger_entry SET created_at = ? WHERE match_id = 'default-window-1'`).run(oldIso);

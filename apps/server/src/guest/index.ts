@@ -211,14 +211,17 @@ export function createGuestServices(
   // only the first and silently no-op the rest. Every minted identity across every stake lane
   // needs its own grant (issue #351 — one per Coinflip lane, `CHESS_POOL_SIZE`/
   // `BLACKJACK_POOL_SIZE` per Chess/Blackjack lane).
+  // Ticket 2026-09-27#7 (D69): 'USD' explicitly — this whole guest world's ephemeral ledger
+  // stays single-currency by design (CHARTER.md #4's own carve-out: "the guest preview surface
+  // stays ¢/play-money-framed, unchanged"), so every bot notional balance here is USD.
   for (const botId of Object.values(DEMO_BOT_COINFLIP_IDS)) {
-    ledger.adminCredit(botId, DEMO_BOT_NOTIONAL_BALANCE, `demo-bot:init:${botId}`);
+    ledger.adminCredit(botId, DEMO_BOT_NOTIONAL_BALANCE, `demo-bot:init:${botId}`, 'USD');
   }
   for (const botId of Object.values(DEMO_BOT_CHESS_IDS).flat()) {
-    ledger.adminCredit(botId, DEMO_BOT_NOTIONAL_BALANCE, `demo-bot:init:${botId}`);
+    ledger.adminCredit(botId, DEMO_BOT_NOTIONAL_BALANCE, `demo-bot:init:${botId}`, 'USD');
   }
   for (const botId of Object.values(DEMO_BOT_BLACKJACK_IDS).flat()) {
-    ledger.adminCredit(botId, DEMO_BOT_NOTIONAL_BALANCE, `demo-bot:init:${botId}`);
+    ledger.adminCredit(botId, DEMO_BOT_NOTIONAL_BALANCE, `demo-bot:init:${botId}`, 'USD');
   }
 
   const random = opts.random ?? Math.random;
@@ -386,7 +389,7 @@ export function createGuestServices(
     if (!GUEST_CURATED_GAMES.includes(gameId)) return undefined; // defensive — see doc comment above
 
     const takerId = `demo-bot:${gameId}:taker:${randomUUID()}`;
-    ledger.adminCredit(takerId, DEMO_BOT_NOTIONAL_BALANCE, `demo-bot:init:${takerId}`);
+    ledger.adminCredit(takerId, DEMO_BOT_NOTIONAL_BALANCE, `demo-bot:init:${takerId}`, 'USD');
     try {
       return matchmaking.takeChallenge(takerId, matchId);
     } catch (err) {

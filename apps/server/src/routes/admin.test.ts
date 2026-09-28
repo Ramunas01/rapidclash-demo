@@ -82,7 +82,7 @@ describe('POST /admin/players/:id/credit', () => {
       payload: { amount: 500, idempotencyKey: 'top-up-bob' },
     });
 
-    expect(services.ledger.getBalance(bobId)).toBe(GRANT_AMOUNT + 500);
+    expect(services.ledger.getBalance(bobId, 'USD')).toBe(GRANT_AMOUNT + 500);
     await freshApp.close();
   });
 
@@ -114,7 +114,7 @@ describe('POST /admin/players/:id/credit', () => {
     expect(first.statusCode).toBe(200);
     expect(second.statusCode).toBe(200);
     expect(first.json<{ id: string }>().id).toBe(second.json<{ id: string }>().id);
-    expect(services.ledger.getBalance(carolId)).toBe(GRANT_AMOUNT + 200);
+    expect(services.ledger.getBalance(carolId, 'USD')).toBe(GRANT_AMOUNT + 200);
     await freshApp.close();
   });
 
@@ -286,7 +286,7 @@ describe('POST /admin/players/:id/clear-password (soft reset)', () => {
     expect(body.username).toBe('alice');
     // Fresh grant appended on top of the signup grant (append-only ledger).
     expect(body.newBalance).toBe(GRANT_AMOUNT * 2);
-    expect(services.ledger.getBalance(playerId)).toBe(GRANT_AMOUNT * 2);
+    expect(services.ledger.getBalance(playerId, 'USD')).toBe(GRANT_AMOUNT * 2);
   });
 
   it('the wallet grant is a NULL-match ADMIN_CREDIT entry', async () => {
@@ -303,17 +303,17 @@ describe('POST /admin/players/:id/clear-password (soft reset)', () => {
     const second = await clearPassword(playerId);
     expect(second.statusCode).toBe(200);
     // Still exactly one extra grant — the deterministic idempotency key dedupes.
-    expect(services.ledger.getBalance(playerId)).toBe(GRANT_AMOUNT * 2);
+    expect(services.ledger.getBalance(playerId, 'USD')).toBe(GRANT_AMOUNT * 2);
     const credits = services.ledger.getEntries(playerId).filter((e) => e.type === 'ADMIN_CREDIT');
     expect(credits).toHaveLength(1);
   });
 
   it('refuses (409) while the player has an unsettled escrow (active match / resting challenge)', async () => {
-    services.ledger.escrow(playerId, 'live-match', 100);
+    services.ledger.escrow(playerId, 'live-match', 100, 'USD');
     const res = await clearPassword(playerId);
     expect(res.statusCode).toBe(409);
     // Nothing was changed: no password cleared (login still works), no grant written.
-    expect(services.ledger.getBalance(playerId)).toBe(GRANT_AMOUNT - 100);
+    expect(services.ledger.getBalance(playerId, 'USD')).toBe(GRANT_AMOUNT - 100);
     await expect(services.identity.login('alice', 'pw')).resolves.toBeTruthy();
   });
 
@@ -328,9 +328,9 @@ describe('POST /admin/players/:id/clear-password (soft reset)', () => {
   });
 
   it('frees the alias: register with the same name succeeds afterwards with NO second grant', async () => {
-    const balanceBeforeClear = services.ledger.getBalance(playerId);
+    const balanceBeforeClear = services.ledger.getBalance(playerId, 'USD');
     await clearPassword(playerId);
-    const balanceAfterClear = services.ledger.getBalance(playerId);
+    const balanceAfterClear = services.ledger.getBalance(playerId, 'USD');
     expect(balanceAfterClear).toBe(balanceBeforeClear + GRANT_AMOUNT);
 
     // Re-register the freed alias (the re-claim path on /auth/register).
@@ -360,9 +360,9 @@ describe('POST /admin/players/:id/clear-password (soft reset)', () => {
 
     // Build a real leaderboard: several settled coinflip matches through the ledger.
     function playMatch(matchId: string, a: string, b: string, winner: string, stake: number) {
-      services.ledger.escrow(a, matchId, stake);
-      services.ledger.escrow(b, matchId, stake);
-      services.ledger.settle(matchId, 'win', winner, stake * 2, 0.05);
+      services.ledger.escrow(a, matchId, stake, 'USD');
+      services.ledger.escrow(b, matchId, stake, 'USD');
+      services.ledger.settle(matchId, 'win', winner, stake * 2, 0.05, 'USD');
       services.matchHistory.recordResult(matchId, 'coinflip', [a, b], 'win', winner, stake);
     }
     playMatch('m1', players.alice, players.bob, players.alice, 100);
@@ -377,7 +377,7 @@ describe('POST /admin/players/:id/clear-password (soft reset)', () => {
     // Soft-reset alice (no open escrow — every match settled).
     const res = await clearPassword(players.alice);
     expect(res.statusCode).toBe(200);
-    expect(services.ledger.getBalance(players.alice)).toBeGreaterThan(0); // wallet was credited
+    expect(services.ledger.getBalance(players.alice, 'USD')).toBeGreaterThan(0); // wallet was credited
 
     const after = services.matchHistory.getLeaderboard('coinflip');
     // Identical ranks, scores, displayNames — the null-match_id credit is excluded.

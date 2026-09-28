@@ -159,7 +159,9 @@ export function createIdentity(db: Database.Database, ledger: Ledger): Identity 
       // here would double it. The original role AND stored avatar are preserved.
       const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
       stmtSetPassword.run(passwordHash, existing.id);
-      const balance = ledger.getBalance(existing.id);
+      // Ticket 2026-09-27#7 (D69): PR 1 scope — 'USD' literal here, generalized to the full
+      // multi-currency balances map in PR 3 once WalletResponse/AuthResponse carry it.
+      const balance = ledger.getBalance(existing.id, 'USD');
       return {
         token: signToken(existing.id, existing.role as UserRole),
         playerId: existing.id,
@@ -172,7 +174,8 @@ export function createIdentity(db: Database.Database, ledger: Ledger): Identity 
     // avatar_id defaults to 'default' via the column DEFAULT — a new registrant starts there.
     stmtInsert.run(playerId, username, passwordHash, role);
     ledger.grant(playerId);
-    const balance = ledger.getBalance(playerId);
+    // Ticket 2026-09-27#7 (D69): PR 1 scope — 'USD' literal here, generalized in PR 3.
+    const balance = ledger.getBalance(playerId, 'USD');
     return { token: signToken(playerId, role), playerId, balance, avatarId: 'default' };
   }
 
@@ -190,7 +193,8 @@ export function createIdentity(db: Database.Database, ledger: Ledger): Identity 
     if (!valid) {
       throw Object.assign(new Error('Invalid credentials'), { code: 'INVALID_CREDENTIALS' });
     }
-    const balance = ledger.getBalance(account.id);
+    // Ticket 2026-09-27#7 (D69): PR 1 scope — 'USD' literal here, generalized in PR 3.
+    const balance = ledger.getBalance(account.id, 'USD');
     return {
       token: signToken(account.id, account.role as UserRole),
       playerId: account.id,

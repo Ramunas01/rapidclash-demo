@@ -162,8 +162,8 @@ function playMatch(
   stake: number,
   feeRate = 0.05,
 ) {
-  for (const p of players) ledger.escrow(p, matchId, stake);
-  ledger.settle(matchId, 'win', winner, stake * 2, feeRate);
+  for (const p of players) ledger.escrow(p, matchId, stake, 'USD');
+  ledger.settle(matchId, 'win', winner, stake * 2, feeRate, 'USD');
   mh.recordResult(matchId, gameId, players, 'win', winner, stake);
 }
 
@@ -231,7 +231,7 @@ describe('createMatchHistory — net_winnings leaderboard', () => {
 
   it('excludes GRANT/ADMIN_CREDIT (null match_id) — only match-scoped entries count', () => {
     const { ledger, mh } = setup();
-    ledger.adminCredit('alice', 500, 'credit:alice:1'); // null match_id, must not appear
+    ledger.adminCredit('alice', 500, 'credit:alice:1', 'USD'); // null match_id, must not appear
     playMatch(ledger, mh, 'c1', 'coinflip', ['alice', 'bob'], 'alice', 100);
 
     const alice = mh.getLeaderboard('coinflip').find((e) => e.playerId === 'alice')!;
@@ -241,8 +241,8 @@ describe('createMatchHistory — net_winnings leaderboard', () => {
 
   it('a void match nets zero (escrow then full refund)', () => {
     const { ledger, mh } = setup();
-    ledger.escrow('alice', 'c1', 100);
-    ledger.escrow('bob', 'c1', 100);
+    ledger.escrow('alice', 'c1', 100, 'USD');
+    ledger.escrow('bob', 'c1', 100, 'USD');
     ledger.settle('c1', 'void', undefined, 200, 0.05); // refunds each stake, no rake
     mh.recordResult('c1', 'coinflip', ['alice', 'bob'], 'void', undefined, 100);
 
@@ -493,7 +493,7 @@ describe('createMatchHistory — getRecentMatches', () => {
     const { ledger, mh } = setup();
     playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100); // alice won
     playMatch(ledger, mh, 'm2', 'rps', ['carol', 'alice'], 'carol', 100); // alice lost
-    for (const p of ['alice', 'bob'] as const) ledger.escrow(p, 'm3', 100);
+    for (const p of ['alice', 'bob'] as const) ledger.escrow(p, 'm3', 100, 'USD');
     ledger.settle('m3', 'draw', undefined, 200, 0.05);
     mh.recordResult('m3', 'rps', ['alice', 'bob'], 'draw', undefined, 100);
 
@@ -529,8 +529,8 @@ describe('createMatchHistory — getRecentMatches', () => {
 
   it('excludes void (refunded) matches entirely — documented choice, issue #400', () => {
     const { ledger, mh } = setup();
-    ledger.escrow('alice', 'v1', 100);
-    ledger.escrow('bob', 'v1', 100);
+    ledger.escrow('alice', 'v1', 100, 'USD');
+    ledger.escrow('bob', 'v1', 100, 'USD');
     ledger.settle('v1', 'void', undefined, 200, 0.05);
     mh.recordResult('v1', 'rps', ['alice', 'bob'], 'void', undefined, 100);
     playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100); // a real result too

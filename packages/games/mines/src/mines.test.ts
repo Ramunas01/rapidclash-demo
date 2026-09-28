@@ -670,7 +670,7 @@ describe('minesModule via the real core matchmaking sweep (ADR-012 end-to-end, n
     expect(res[1]).toMatchObject({ playerId: 'bob', terminal: true });
     expect(res[1].outcome).toEqual({ type: 'win', winner: 'alice' });
     expect(res[1].settlement!['alice'].delta).toBe(95); // 100 stake each − round(200*0.025)=5 rake
-    expect(ledger.getBalance(PLATFORM_ACCOUNT)).toBe(5);
+    expect(ledger.getBalance(PLATFORM_ACCOUNT, 'USD')).toBe(5);
     expect(mm.getActiveMatch(matchId)).toBeUndefined(); // settled + removed
   });
 
@@ -683,7 +683,7 @@ describe('minesModule via the real core matchmaking sweep (ADR-012 end-to-end, n
     mm.applyMove(matchId, 'alice', safe[0], Date.now());
     const settled = mm.forfeitMatch(matchId, 'bob'); // bob quits at 0, alice ahead at 1
     expect(settled.outcome).toEqual({ type: 'win', winner: 'alice' });
-    expect(ledger.getBalance('alice')).toBeGreaterThan(GRANT_AMOUNT); // won the pot
+    expect(ledger.getBalance('alice', 'USD')).toBeGreaterThan(GRANT_AMOUNT); // won the pot
   });
 });
 

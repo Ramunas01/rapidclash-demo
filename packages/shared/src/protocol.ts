@@ -11,6 +11,7 @@ import type {
   PlayerId,
   RankingType,
 } from './game-contract.js';
+import type { Currency } from './currency.js';
 
 // ─── WebSocket envelope ──────────────────────────────────────────────────────
 
@@ -304,6 +305,10 @@ export interface LedgerEntry {
   type: LedgerEntryType;
   /** Signed minor units: positive = credit, negative = debit. */
   amount: number;
+  /** Ticket 2026-09-27#7 (D69): which currency bucket this entry belongs to. Every entry has
+   *  exactly one — the pre-D69 single-ledger world is the implicit 'USD' case (the DB column's
+   *  own `DEFAULT 'USD'`, ledger.ts). */
+  currency: Currency;
   matchId?: string;
   idempotencyKey: string;
   createdAt: string; // ISO-8601

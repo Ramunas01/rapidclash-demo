@@ -46,11 +46,11 @@ describe('WS gateway transaction compaction wiring (ticket 2026-09-24#4)', () =>
     const services = createServices(db, []);
     services.ledger.grant('alice');
     services.ledger.grant('bob');
-    services.ledger.escrow('alice', 'startup-win-1', 100);
-    services.ledger.escrow('bob', 'startup-win-1', 100);
-    services.ledger.settle('startup-win-1', 'win', 'alice', 200, 0.1);
-    const aliceBefore = services.ledger.getBalance('alice');
-    const bobBefore = services.ledger.getBalance('bob');
+    services.ledger.escrow('alice', 'startup-win-1', 100, 'USD');
+    services.ledger.escrow('bob', 'startup-win-1', 100, 'USD');
+    services.ledger.settle('startup-win-1', 'win', 'alice', 200, 0.1, 'USD');
+    const aliceBefore = services.ledger.getBalance('alice', 'USD');
+    const bobBefore = services.ledger.getBalance('bob', 'USD');
 
     const onWrite = vi.fn();
     app = buildApp(services, [], { seedAdmin: false, onWrite });
@@ -59,8 +59,8 @@ describe('WS gateway transaction compaction wiring (ticket 2026-09-24#4)', () =>
     // The startup pass is fire-and-forget — give its setImmediate yield(s) a moment to run.
     await delay(100);
 
-    expect(services.ledger.getBalance('alice')).toBe(aliceBefore); // money-neutral
-    expect(services.ledger.getBalance('bob')).toBe(bobBefore);
+    expect(services.ledger.getBalance('alice', 'USD')).toBe(aliceBefore); // money-neutral
+    expect(services.ledger.getBalance('bob', 'USD')).toBe(bobBefore);
     expect(rowsFor(db, 'alice').every((r) => r.type === 'OPENING_BALANCE')).toBe(true);
     expect(onWrite).toHaveBeenCalled();
   });
@@ -76,16 +76,18 @@ describe('WS gateway transaction compaction wiring (ticket 2026-09-24#4)', () =>
     onWrite.mockClear();
 
     services.ledger.grant('carol');
-    services.ledger.adminCredit('carol', 40, 'admin-post-startup');
-    const before = services.ledger.getBalance('carol');
+    services.ledger.adminCredit('carol', 40, 'admin-post-startup', 'USD');
+    const before = services.ledger.getBalance('carol', 'USD');
 
     // Wait past at least one 40ms tick — the PERIODIC timer, not the one-shot startup pass, must
     // be what catches this (retention=0 means it's eligible the instant it exists).
     await delay(150);
 
-    expect(services.ledger.getBalance('carol')).toBe(before);
-    expect(rowsFor(db, 'carol')).toHaveLength(1);
-    expect(rowsFor(db, 'carol')[0].type).toBe('OPENING_BALANCE');
+    expect(services.ledger.getBalance('carol', 'USD')).toBe(before);
+    // Ticket 2026-09-27#7 (D69): grant() seeds USD/SOL/USDT — 3 checkpoints, one per currency.
+    const rows = rowsFor(db, 'carol');
+    expect(rows).toHaveLength(3);
+    expect(rows.every((r) => r.type === 'OPENING_BALANCE')).toBe(true);
     expect(onWrite).toHaveBeenCalled();
   });
 
@@ -98,7 +100,7 @@ describe('WS gateway transaction compaction wiring (ticket 2026-09-24#4)', () =>
     const db = new Database(':memory:');
     const services = createServices(db, []);
     services.ledger.grant('dave');
-    services.ledger.escrow('dave', 'still-open-1', 30); // resting, unsettled
+    services.ledger.escrow('dave', 'still-open-1', 30, 'USD'); // resting, unsettled
 
     const onWrite = vi.fn();
     app = buildApp(services, [], { seedAdmin: false, onWrite });
@@ -115,7 +117,7 @@ describe('WS gateway transaction compaction wiring (ticket 2026-09-24#4)', () =>
     const db = new Database(':memory:');
     const services = createServices(db, []);
     services.ledger.grant('erin');
-    services.ledger.escrow('erin', 'still-open-2', 30); // resting, unsettled — "old enough" (retention=0) but never resolved
+    services.ledger.escrow('erin', 'still-open-2', 30, 'USD'); // resting, unsettled — "old enough" (retention=0) but never resolved
 
     app = buildApp(services, [], { seedAdmin: false });
     await app.listen({ port: 0, host: '127.0.0.1' });

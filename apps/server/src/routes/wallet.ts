@@ -14,8 +14,10 @@ export function registerWalletRoutes(
   // Balance is summed from the append-only ledger (invariant #3), never a stored number.
   app.get('/wallet', { preHandler: [requireAuth] }, async (request, reply) => {
     const playerId = request.player!.id;
+    // Ticket 2026-09-27#7 (D69): PR 1 scope — 'USD' literal here, generalized to the full
+    // multi-currency balances map in PR 3.
     const body: WalletResponse = {
-      balance: ledger.getBalance(playerId),
+      balance: ledger.getBalance(playerId, 'USD'),
       entries: ledger.getEntries(playerId),
     };
     return reply.send(body);

@@ -36,7 +36,9 @@ export function registerAdminRoutes(
         return reply.code(404).send({ error: 'Player not found' });
       }
 
-      const entry = ledger.adminCredit(id, amount, idempotencyKey);
+      // Ticket 2026-09-27#7 (D69): admin manual credit stays USD-only — not expanding the admin
+      // tool's own scope to a currency-selectable feature.
+      const entry = ledger.adminCredit(id, amount, idempotencyKey, 'USD');
       // Ledger write — durable-persistence gap (issue #378): fire on the success path only,
       // never from the 400/404 branches above.
       onWrite?.();
@@ -75,8 +77,11 @@ export function registerAdminRoutes(
       // NULL match_id, so it is excluded from net_winnings by construction (ADR-007)
       // — standings are untouched. The deterministic idempotency key makes a retry of
       // this reset a no-op (it never double-credits).
-      ledger.adminCredit(id, GRANT_AMOUNT, `soft-reset:${id}`);
-      const newBalance = ledger.getBalance(id);
+      // Ticket 2026-09-27#7 (D69): soft-reset re-grant deliberately stays USD-only, not
+      // expanded to also restore the SOL/USDT starting balances — an admin-tool behavior
+      // change beyond what this ticket asks for.
+      ledger.adminCredit(id, GRANT_AMOUNT, `soft-reset:${id}`, 'USD');
+      const newBalance = ledger.getBalance(id, 'USD');
 
       return reply.code(200).send({ playerId: id, username, newBalance });
     },

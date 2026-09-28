@@ -173,7 +173,7 @@ describe('guest bot-taker over the real WS gateway (issue #352)', () => {
     // (not left escrowed under a bet nobody will ever claim now).
     await new Promise((r) => setTimeout(r, 500));
     expect(sock.received.some((e) => e.type === 'match.start')).toBe(false);
-    expect(services.guest.ledger.getBalance(guest.playerId)).toBe(guest.balance);
+    expect(services.guest.ledger.getBalance(guest.playerId, 'USD')).toBe(guest.balance);
   });
 
   it('concurrent guests posting different off-lane stakes are ALL claimed, each against its own distinct bot identity, in distinct matches', async () => {

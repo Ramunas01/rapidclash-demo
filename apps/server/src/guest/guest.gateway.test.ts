@@ -189,7 +189,7 @@ describe('guest mode over the real WS gateway (issue #267)', () => {
     await sock.waitFor('match.end', 5000);
 
     // The real ledger (services.ledger, SQLite-backed) never saw this guest id.
-    expect(services.ledger.getBalance(guest.playerId)).toBe(0);
+    expect(services.ledger.getBalance(guest.playerId, 'USD')).toBe(0);
     expect(services.ledger.accountExists(guest.playerId)).toBe(false);
     // The ephemeral ledger DID settle it.
     expect(services.guest.ledger.accountExists(guest.playerId)).toBe(true);
@@ -217,8 +217,8 @@ describe('guest mode over the real WS gateway (issue #267)', () => {
 
     // Balances are independently tracked (both escrowed the same stake out of the same starting
     // stack, but keyed separately — neither's escrow touched the other's balance).
-    expect(services.guest.ledger.getBalance(guestA.playerId)).toBe(guestA.balance - STAKE);
-    expect(services.guest.ledger.getBalance(guestB.playerId)).toBe(guestB.balance - STAKE);
+    expect(services.guest.ledger.getBalance(guestA.playerId, 'USD')).toBe(guestA.balance - STAKE);
+    expect(services.guest.ledger.getBalance(guestB.playerId, 'USD')).toBe(guestB.balance - STAKE);
   });
 
   it('a guest match never appears in the real /games matchmaking or leaderboard writes', async () => {
@@ -341,7 +341,7 @@ describe('guest session cleanup on WS disconnect (issue #267 §"session lifetime
 
     await new Promise((r) => setTimeout(r, 400)); // well past the 150ms delay
     expect(services.guest.ledger.accountExists(guest.playerId)).toBe(false);
-    expect(services.guest.ledger.getBalance(guest.playerId)).toBe(0);
+    expect(services.guest.ledger.getBalance(guest.playerId, 'USD')).toBe(0);
   });
 
   it('a reconnect within the grace window cancels the eviction — balance survives past the original deadline', async () => {

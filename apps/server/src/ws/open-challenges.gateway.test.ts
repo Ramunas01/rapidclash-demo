@@ -336,7 +336,7 @@ describe('OC8 — open-challenges feed over the WS gateway', () => {
     expect(removed.removed).toEqual({ matchId, reason: 'expired' });
 
     // Escrow refunded by the sweep — alice is whole again (1000 grant).
-    expect(services.ledger.getBalance(aliceId)).toBe(1000);
+    expect(services.ledger.getBalance(aliceId, 'USD')).toBe(1000);
   });
 
   it('chess time control: a resting bet carries its control on the feed (default when omitted)', async () => {

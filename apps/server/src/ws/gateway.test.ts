@@ -216,9 +216,9 @@ describe('S8 — WS reconnect / match.resume', () => {
 
     // Snapshot the ledger after settlement.
     const balBefore = {
-      alice: services.ledger.getBalance(aliceId),
-      bob: services.ledger.getBalance(bobId),
-      platform: services.ledger.getBalance(PLATFORM_ACCOUNT),
+      alice: services.ledger.getBalance(aliceId, 'USD'),
+      bob: services.ledger.getBalance(bobId, 'USD'),
+      platform: services.ledger.getBalance(PLATFORM_ACCOUNT, 'USD'),
     };
     const entriesBefore =
       services.ledger.getEntries(aliceId).length +
@@ -247,9 +247,9 @@ describe('S8 — WS reconnect / match.resume', () => {
       services.ledger.getEntries(PLATFORM_ACCOUNT).length;
 
     // Invariant #3: no second payout — balances and ledger entry count are unchanged.
-    expect(services.ledger.getBalance(aliceId)).toBe(balBefore.alice);
-    expect(services.ledger.getBalance(bobId)).toBe(balBefore.bob);
-    expect(services.ledger.getBalance(PLATFORM_ACCOUNT)).toBe(balBefore.platform);
+    expect(services.ledger.getBalance(aliceId, 'USD')).toBe(balBefore.alice);
+    expect(services.ledger.getBalance(bobId, 'USD')).toBe(balBefore.bob);
+    expect(services.ledger.getBalance(PLATFORM_ACCOUNT, 'USD')).toBe(balBefore.platform);
     expect(entriesAfter).toBe(entriesBefore);
   }, 15000);
 
@@ -371,9 +371,9 @@ describe('#31 — stuck-but-connected match resolves via the timeout sweep', () 
 
     // Stake settled, nothing left escrowed: balances + rake reconstruct both grants.
     const total =
-      services.ledger.getBalance(aliceId) +
-      services.ledger.getBalance(bobId) +
-      services.ledger.getBalance(PLATFORM_ACCOUNT);
+      services.ledger.getBalance(aliceId, 'USD') +
+      services.ledger.getBalance(bobId, 'USD') +
+      services.ledger.getBalance(PLATFORM_ACCOUNT, 'USD');
     expect(total).toBe(GRANT_AMOUNT * 2);
   }, 20000);
 });
