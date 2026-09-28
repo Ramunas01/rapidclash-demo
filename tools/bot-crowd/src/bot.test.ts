@@ -37,10 +37,12 @@ function challenge(overrides: Partial<OpenChallenge> = {}): OpenChallenge {
   return {
     matchId: 'm1',
     ownerName: 'Investor1',
+    ownerTier: 'Unranked',
     stake: 5,
     openedAt: 0,
     expiresAt: 0,
     timeControlId: 'none',
+    currency: 'USD',
     ...overrides,
   };
 }
@@ -237,6 +239,7 @@ describe('Bot#ensureFunds — top-up idempotency key (issue #532)', () => {
       id: 'e1',
       type: 'ADMIN_CREDIT',
       amount: 500,
+      currency: 'USD',
       idempotencyKey: body.idempotencyKey,
       createdAt: new Date().toISOString(),
     }));
@@ -258,6 +261,7 @@ describe('Bot#ensureFunds — top-up idempotency key (issue #532)', () => {
       id: `e-${body.idempotencyKey}`,
       type: 'ADMIN_CREDIT',
       amount: 500,
+      currency: 'USD',
       idempotencyKey: body.idempotencyKey,
       createdAt: new Date().toISOString(),
     }));
@@ -283,6 +287,7 @@ describe('Bot#ensureFunds — top-up idempotency key (issue #532)', () => {
       id: `e-${body.idempotencyKey}`,
       type: 'ADMIN_CREDIT',
       amount: 500,
+      currency: 'USD',
       idempotencyKey: body.idempotencyKey,
       createdAt: new Date().toISOString(),
     }));
@@ -310,6 +315,7 @@ describe('Bot#ensureFunds — top-up idempotency key (issue #532)', () => {
       id: 'e1',
       type: 'ADMIN_CREDIT',
       amount: 500,
+      currency: 'USD',
       idempotencyKey: 'botcrowd:topup:dup-player:fixed-key', // deliberately reused below
       createdAt: new Date().toISOString(),
     };
