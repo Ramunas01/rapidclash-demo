@@ -122,7 +122,7 @@ describe('#152 — interrupted-search queue cleanup on socket close', () => {
     sockets.push(alice);
     const start = services.ledger.getBalance(aliceId, 'USD');
 
-    alice.send('queue.join', { gameId: 'rps', stake: 10 });
+    alice.send('queue.join', { gameId: 'rps', stake: 10 , currency: 'USD' });
     await alice.waitFor('queue.waiting');
     expect(services.ledger.getBalance(aliceId, 'USD')).toBe(start - 10); // escrowed while resting
 
@@ -135,7 +135,7 @@ describe('#152 — interrupted-search queue cleanup on socket close', () => {
     // And the entry is gone: a later joiner does NOT pair with the ghost — bob rests instead.
     const bob = await openSocket(port, bobToken);
     sockets.push(bob);
-    bob.send('queue.join', { gameId: 'rps', stake: 10 });
+    bob.send('queue.join', { gameId: 'rps', stake: 10 , currency: 'USD' });
     const bobMsg = await bob.waitFor('queue.waiting');
     expect((bobMsg.payload as QueueWaitingPayload).matchId).toBeTruthy();
     await bob.expectSilence('match.start');
@@ -145,7 +145,7 @@ describe('#152 — interrupted-search queue cleanup on socket close', () => {
     const alice1 = await openSocket(port, aliceToken);
     sockets.push(alice1);
     const start = services.ledger.getBalance(aliceId, 'USD');
-    alice1.send('queue.join', { gameId: 'rps', stake: 10 });
+    alice1.send('queue.join', { gameId: 'rps', stake: 10 , currency: 'USD' });
     await alice1.waitFor('queue.waiting');
 
     // Reconnect BEFORE closing the old socket: the newer socket becomes the live connection,
@@ -162,7 +162,7 @@ describe('#152 — interrupted-search queue cleanup on socket close', () => {
     // Proof it's still live: bob pairs with alice's surviving resting bet.
     const bob = await openSocket(port, bobToken);
     sockets.push(bob);
-    bob.send('queue.join', { gameId: 'rps', stake: 10 });
+    bob.send('queue.join', { gameId: 'rps', stake: 10 , currency: 'USD' });
     await bob.waitFor('match.start');
     await alice2.waitFor('match.start');
   });
@@ -177,13 +177,13 @@ describe('#152 — interrupted-search queue cleanup on socket close', () => {
   it("a benign already-consumed race (owner's resting bet taken by someone else, then their own socket closes) now logs instead of staying silent", async () => {
     const alice = await openSocket(port, aliceToken);
     sockets.push(alice);
-    alice.send('queue.join', { gameId: 'rps', stake: 10 });
+    alice.send('queue.join', { gameId: 'rps', stake: 10 , currency: 'USD' });
     const waitMsg = await alice.waitFor('queue.waiting');
     const matchId = (waitMsg.payload as QueueWaitingPayload).matchId;
 
     const bob = await openSocket(port, bobToken);
     sockets.push(bob);
-    bob.send('challenge.take', { matchId });
+    bob.send('challenge.take', { matchId , currency: 'USD' });
     await bob.waitFor('match.start');
     await alice.waitFor('match.start'); // alice's own connection also gets match.start as the owner
 

@@ -159,7 +159,7 @@ describe('RouletteHubScreen (GameHub + RoulettePanel)', () => {
     const r = render(<RouletteHubScreen {...baseProps({ currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
     r.rerender(
       <RouletteHubScreen
-        {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'alice' }, lastSettlement: { delta: 9, newBalance: 1009 } })}
+        {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'alice' }, lastSettlement: { delta: 9, newBalance: 1009, currency: 'USD' } })}
       />,
     );
     return r;
@@ -201,7 +201,7 @@ describe('RouletteHubScreen (GameHub + RoulettePanel)', () => {
       forcedOutcome: { type: 'void' },
     };
     const { rerender } = render(<RouletteHubScreen {...baseProps({ currentMatchId: 'm1', gameState: terminal })} />);
-    rerender(<RouletteHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'void' }, lastSettlement: { delta: 0, newBalance: 1000 } })} />);
+    rerender(<RouletteHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'void' }, lastSettlement: { delta: 0, newBalance: 1000, currency: 'USD' } })} />);
     expect(screen.getByTestId('result-verdict').textContent).toMatch(/push/i);
     expect(within(screen.getByTestId('result-you')).queryByText(/win/i)).toBeNull();
   });

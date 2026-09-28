@@ -293,7 +293,7 @@ describe('guest mode over the real WS gateway (issue #267)', () => {
     const realA = regA.json<AuthResponse>();
     const realSockA = await openSocket(port, realA.token);
     sockets.push(realSockA);
-    realSockA.send('queue.join', { gameId: 'coinflip', stake: 5 });
+    realSockA.send('queue.join', { gameId: 'coinflip', stake: 5, currency: 'USD' });
     await realSockA.waitFor('queue.waiting'); // rests — announced via pushChallengesUpdate
 
     await new Promise((r) => setTimeout(r, 300));

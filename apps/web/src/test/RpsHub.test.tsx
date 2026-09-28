@@ -39,7 +39,7 @@ function baseProps(over: Partial<Props> = {}): Props {
   };
 }
 
-const CHALLENGE: OpenChallenge = { matchId: 'c1', ownerName: 'rival', ownerTier: 'Unranked', stake: 50, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'none' };
+const CHALLENGE: OpenChallenge = { matchId: 'c1', ownerName: 'rival', ownerTier: 'Unranked', stake: 50, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'none', currency: 'USD' };
 
 describe('RpsHubScreen (GameHub + RpsPanel)', () => {
   beforeEach(() => {
@@ -237,7 +237,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
               currentMatchId: null,
               gameState: terminalState,
               lastOutcome: { type: 'win', winner: 'pid' },
-              lastSettlement: { delta: 9, newBalance: 1009 },
+              lastSettlement: { delta: 9, newBalance: 1009, currency: 'USD' },
             })}
           />,
         );
@@ -356,7 +356,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
     rerender(
       <RpsHubScreen
-        {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 9, newBalance: 1009 } })}
+        {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 9, newBalance: 1009, currency: 'USD' } })}
       />,
     );
     // No separate popup ever appears — the board itself carries the result.
@@ -390,7 +390,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
       const { rerender } = render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
       rerender(
         <RpsHubScreen
-          {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 9, newBalance: 1009 } })}
+          {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 9, newBalance: 1009, currency: 'USD' } })}
         />,
       );
     }
@@ -442,7 +442,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
       const { rerender } = render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
       rerender(
         <RpsHubScreen
-          {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'bob' }, lastSettlement: { delta: -5, newBalance: 995 } })}
+          {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'bob' }, lastSettlement: { delta: -5, newBalance: 995, currency: 'USD' } })}
         />,
       );
       act(() => { vi.advanceTimersByTime(700); });
@@ -484,7 +484,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     expect(screen.getByTestId('rps-countdown').parentElement!.style.transform).toContain('scale(1)');
     rerender(
       <RpsHubScreen
-        {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 9, newBalance: 1009 } })}
+        {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 9, newBalance: 1009, currency: 'USD' } })}
       />,
     );
     // `RpsBoard` remounts per match (keyed on `currentMatchId`, ticket 2026-09-25#1 item 3) — the
@@ -560,7 +560,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
       const { rerender } = render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
       rerender(
         <RpsHubScreen
-          {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 9, newBalance: 1009 } })}
+          {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 9, newBalance: 1009, currency: 'USD' } })}
         />,
       );
       // Not lit yet — `RpsBoard`'s own revealStage hasn't reached 'done' (needs the full 700+900ms).
@@ -579,7 +579,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
       const { rerender } = render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
       rerender(
         <RpsHubScreen
-          {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'bob' }, lastSettlement: { delta: -5, newBalance: 995 } })}
+          {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'bob' }, lastSettlement: { delta: -5, newBalance: 995, currency: 'USD' } })}
         />,
       );
       const ownBar = screen.getByTestId('hub-slot-own');
@@ -617,7 +617,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
             currentMatchId: null,
             gameState: terminalState,
             lastOutcome: { type: 'win', winner: 'pid' },
-            lastSettlement: { delta: 9, newBalance: 1009 },
+            lastSettlement: { delta: 9, newBalance: 1009, currency: 'USD' },
           })}
         />,
       );
@@ -685,7 +685,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     const { rerender } = render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
     rerender(
       <RpsHubScreen
-        {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'void' }, lastSettlement: { delta: 0, newBalance: 1000 } })}
+        {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'void' }, lastSettlement: { delta: 0, newBalance: 1000, currency: 'USD' } })}
       />,
     );
     await new Promise((r) => setTimeout(r, 1700));
@@ -912,7 +912,7 @@ describe('RpsHubScreen — opponent bar during matchmaking (ticket 2026-09-15#9)
   });
 
   it('item 4: the scanned name strips the bot-disclosure emoji, reusing GamesCarousel\'s displayHostName', () => {
-    const botChallenge: OpenChallenge = { matchId: 'c2', ownerName: '🤖@sweeper', ownerTier: 'Unranked', stake: 50, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'none' };
+    const botChallenge: OpenChallenge = { matchId: 'c2', ownerName: '🤖@sweeper', ownerTier: 'Unranked', stake: 50, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'none', currency: 'USD' };
     render(<RpsHubScreen {...baseProps({ initialStake: 10, waitingExpiresAt: Date.now() + 10_000, challengesByGame: { rps: [botChallenge] } })} />);
     const scan = within(screen.getByTestId('hub-slot-opponent')).getByTestId('hub-search-scan');
     // Ticket 2026-09-25#6, Part 1: `displayHostName` strips the 🤖 but always prepends its own

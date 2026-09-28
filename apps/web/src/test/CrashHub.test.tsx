@@ -179,7 +179,7 @@ describe('CrashHubScreen (GameHub + CrashPanel)', () => {
     expect(screen.getByTestId('crash-opp-pill').textContent).toMatch(/crashed/i); // bob never ejected
     expect(screen.queryByTestId('hub-result-crash')).toBeNull(); // the side-by-side overlay is gone
 
-    rerender(<CrashHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
+    rerender(<CrashHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019, currency: 'USD' } })} />);
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull(); // suppressed — pill outline instead
     // 0.5s after the opponent's reveal, the own pill outlines green (won) — driven by the server outcome.
     await waitFor(() => expect(screen.getByTestId('crash-own-pill').className).toContain('ring-success'), { timeout: 2000 });

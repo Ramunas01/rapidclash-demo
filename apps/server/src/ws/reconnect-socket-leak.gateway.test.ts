@@ -119,9 +119,9 @@ describe('WS reconnect socket leak (ticket 2026-09-22#7)', () => {
     const aliceOldRec = new Recorder(aliceOld);
     const bobRec = new Recorder(bobWs);
 
-    aliceOldRec.send('queue.join', { gameId: 'rps', stake: STAKE });
+    aliceOldRec.send('queue.join', { gameId: 'rps', stake: STAKE , currency: 'USD' });
     await aliceOldRec.waitFor('queue.waiting');
-    bobRec.send('queue.join', { gameId: 'rps', stake: STAKE });
+    bobRec.send('queue.join', { gameId: 'rps', stake: STAKE , currency: 'USD' });
     const aStart = await aliceOldRec.waitFor('match.start');
     await bobRec.waitFor('match.start');
     const matchId = (aStart.payload as { matchId: string }).matchId;

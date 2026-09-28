@@ -16,7 +16,7 @@ const STAKE = GUEST_BOT_STAKE_LANES.chess[0];
 const OTHER_STAKE = GUEST_BOT_STAKE_LANES.chess[1];
 
 function joinChess(matchmaking: ReturnType<typeof createGuestServices>['matchmaking'], playerId: string, stake: number = STAKE) {
-  return matchmaking.joinQueue(playerId, 'chess', stake, GUEST_CHESS_TIME_CONTROL);
+  return matchmaking.joinQueue(playerId, 'chess', stake, GUEST_CHESS_TIME_CONTROL, 'USD');
 }
 
 describe('chess Demo-Opponent pool (issue #278, multi-lane per issue #351)', () => {

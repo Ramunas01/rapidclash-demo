@@ -17,7 +17,7 @@ describe('createGuestServices().takeGuestStake', () => {
     const { ledger, matchmaking, usernameFor, takeGuestStake } = createGuestServices();
     ledger.grant('guest:a');
 
-    const rested = matchmaking.joinQueue('guest:a', 'coinflip', OFF_LANE_STAKE);
+    const rested = matchmaking.joinQueue('guest:a', 'coinflip', OFF_LANE_STAKE, undefined, 'USD');
     expect(rested.status).toBe('waiting');
     if (rested.status !== 'waiting') throw new Error('expected waiting');
 
@@ -40,7 +40,7 @@ describe('createGuestServices().takeGuestStake', () => {
     const { ledger, matchmaking, takeGuestStake } = createGuestServices();
     ledger.grant('guest:human');
 
-    const rested = matchmaking.joinQueue('guest:human', 'coinflip', GUEST_HUMAN_RESERVED_STAKE);
+    const rested = matchmaking.joinQueue('guest:human', 'coinflip', GUEST_HUMAN_RESERVED_STAKE, undefined, 'USD');
     expect(rested.status).toBe('waiting');
     if (rested.status !== 'waiting') throw new Error('expected waiting');
 
@@ -66,7 +66,7 @@ describe('createGuestServices().takeGuestStake', () => {
     for (const gameId of ['coinflip', 'chess', 'blackjack'] as const) {
       const guestId = `guest:${gameId}`;
       ledger.grant(guestId);
-      const rested = matchmaking.joinQueue(guestId, gameId, OFF_LANE_STAKE, gameId === 'chess' ? 'blitz5' : undefined);
+      const rested = matchmaking.joinQueue(guestId, gameId, OFF_LANE_STAKE, gameId === 'chess' ? 'blitz5' : undefined, 'USD');
       expect(rested.status).toBe('waiting');
       if (rested.status !== 'waiting') throw new Error(`expected ${gameId} waiting`);
 
@@ -83,8 +83,8 @@ describe('createGuestServices().takeGuestStake', () => {
     ledger.grant('guest:x');
     ledger.grant('guest:y');
 
-    const r1 = matchmaking.joinQueue('guest:x', 'coinflip', 30);
-    const r2 = matchmaking.joinQueue('guest:y', 'coinflip', 31);
+    const r1 = matchmaking.joinQueue('guest:x', 'coinflip', 30, undefined, 'USD');
+    const r2 = matchmaking.joinQueue('guest:y', 'coinflip', 31, undefined, 'USD');
     if (r1.status !== 'waiting' || r2.status !== 'waiting') throw new Error('expected both waiting');
 
     const t1 = takeGuestStake(r1.matchId, 'coinflip', 30);

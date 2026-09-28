@@ -6,7 +6,7 @@ import { createServices, buildApp, type AppServices } from '../server.js';
 import { rpsModule } from '@rapidclash/game-rps';
 import { PLATFORM_ACCOUNT, GRANT_AMOUNT } from '@rapidclash/core';
 import { avatarIdForName, stripBotDisclosure } from '@rapidclash/shared';
-import type { Envelope, MatchStartPayload, MatchStatePayload } from '@rapidclash/shared';
+import type { Envelope, MatchStartPayload, MatchStatePayload, MatchEndPayload } from '@rapidclash/shared';
 
 // ─── Test harness ──────────────────────────────────────────────────────────────
 //
@@ -140,9 +140,9 @@ describe('S8 — WS reconnect / match.resume', () => {
 
   /** Pair alice + bob into an RPS match and return the shared matchId. */
   async function startMatch(alice: SocketRecorder, bob: SocketRecorder): Promise<string> {
-    alice.send('queue.join', { gameId: 'rps', stake: STAKE });
+    alice.send('queue.join', { gameId: 'rps', stake: STAKE , currency: 'USD' });
     await alice.waitFor('queue.waiting');
-    bob.send('queue.join', { gameId: 'rps', stake: STAKE });
+    bob.send('queue.join', { gameId: 'rps', stake: STAKE , currency: 'USD' });
     const aStart = await alice.waitFor('match.start');
     await bob.waitFor('match.start');
     await alice.waitFor('match.your_turn');
@@ -335,9 +335,9 @@ describe('#31 — stuck-but-connected match resolves via the timeout sweep', () 
   });
 
   async function startMatch(alice: SocketRecorder, bob: SocketRecorder): Promise<string> {
-    alice.send('queue.join', { gameId: 'rps', stake: STAKE });
+    alice.send('queue.join', { gameId: 'rps', stake: STAKE , currency: 'USD' });
     await alice.waitFor('queue.waiting');
-    bob.send('queue.join', { gameId: 'rps', stake: STAKE });
+    bob.send('queue.join', { gameId: 'rps', stake: STAKE , currency: 'USD' });
     const aStart = await alice.waitFor('match.start');
     await bob.waitFor('match.start');
     await alice.waitFor('match.your_turn');
@@ -421,9 +421,9 @@ describe('2026-09-25#6 — match.start carries the opponent\'s real, resolved av
     const a = await openSocket(port, aToken);
     const b = await openSocket(port, bToken);
     sockets.push(a, b);
-    a.send('queue.join', { gameId: 'rps', stake: STAKE });
+    a.send('queue.join', { gameId: 'rps', stake: STAKE , currency: 'USD' });
     await a.waitFor('queue.waiting');
-    b.send('queue.join', { gameId: 'rps', stake: STAKE });
+    b.send('queue.join', { gameId: 'rps', stake: STAKE , currency: 'USD' });
     const aStart = await a.waitFor('match.start');
     const bStart = await b.waitFor('match.start');
     return [aStart.payload as MatchStartPayload, bStart.payload as MatchStartPayload];
@@ -473,4 +473,96 @@ describe('2026-09-25#6 — match.start carries the opponent\'s real, resolved av
     const resumed = await alice2.waitFor('match.state');
     expect((resumed.payload as MatchStatePayload).opponentAvatarId).toBe(avatarIdForName(stripBotDisclosure('🤖@nightowl')));
   });
+});
+
+// ─── Ticket 2026-09-27#7 (D69): cross-currency match, real WS round-trip ─────────
+// Two real players pick DIFFERENT currencies for the SAME match over the real gateway — proves
+// the wire format (match.start's own `currency`, match.end's `settlement.currency`) carries each
+// side's OWN resolved currency end-to-end, and that settlement genuinely only moves each side's
+// own bucket, with no reconciliation between them.
+
+describe('2026-09-27#7 (D69) — cross-currency match over the real WS gateway', () => {
+  let app: FastifyInstance;
+  let services: AppServices;
+  let port: number;
+  let aliceToken: string;
+  let aliceId: string;
+  let bobToken: string;
+  let bobId: string;
+  const sockets: SocketRecorder[] = [];
+  let prevWindow: string | undefined;
+
+  beforeEach(async () => {
+    prevWindow = process.env.RC_PICK_WINDOW_MS;
+    process.env.RC_PICK_WINDOW_MS = '1500';
+    const db = new Database(':memory:');
+    services = createServices(db, [rpsModule]);
+    app = buildApp(services, [rpsModule], { seedAdmin: false });
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const addr = app.server.address();
+    port = typeof addr === 'object' && addr ? addr.port : 0;
+
+    const reg = async (username: string) => {
+      const res = await app.inject({ method: 'POST', url: '/auth/register', payload: { username, password: 'pw' } });
+      return res.json<{ token: string; playerId: string }>();
+    };
+    const a = await reg('alice');
+    aliceToken = a.token;
+    aliceId = a.playerId;
+    const b = await reg('bob');
+    bobToken = b.token;
+    bobId = b.playerId;
+  });
+
+  afterEach(async () => {
+    for (const s of sockets) s.close();
+    sockets.length = 0;
+    await app.close();
+    if (prevWindow === undefined) delete process.env.RC_PICK_WINDOW_MS;
+    else process.env.RC_PICK_WINDOW_MS = prevWindow;
+  });
+
+  it('match.start carries each side their OWN currency; match.end settles only that side\'s own bucket', async () => {
+    const alice = await openSocket(port, aliceToken);
+    const bob = await openSocket(port, bobToken);
+    sockets.push(alice, bob);
+
+    // Alice picks SOL, bob picks USDT — two different currencies, one match, no reconciliation.
+    alice.send('queue.join', { gameId: 'rps', stake: STAKE, currency: 'SOL' });
+    await alice.waitFor('queue.waiting');
+    bob.send('queue.join', { gameId: 'rps', stake: STAKE, currency: 'USDT' });
+    const aStart = await alice.waitFor('match.start');
+    const bStart = await bob.waitFor('match.start');
+    await alice.waitFor('match.your_turn');
+    await bob.waitFor('match.your_turn');
+
+    // Each side's OWN match.start carries THEIR OWN resolved currency — never the opponent's.
+    expect((aStart.payload as MatchStartPayload).currency).toBe('SOL');
+    expect((bStart.payload as MatchStartPayload).currency).toBe('USDT');
+    const matchId = (aStart.payload as MatchStartPayload).matchId;
+
+    expect(services.ledger.getBalance(aliceId, 'SOL')).toBe(1642 - STAKE);
+    expect(services.ledger.getBalance(bobId, 'USDT')).toBe(837 - STAKE);
+
+    // Rock beats scissors → alice wins.
+    alice.send('move.make', { move: 'rock' }, matchId);
+    bob.send('move.make', { move: 'scissors' }, matchId);
+    const aliceEnd = await alice.waitFor('match.end', 5000);
+    const bobEnd = await bob.waitFor('match.end', 5000);
+
+    const aliceSettlement = (aliceEnd.payload as MatchEndPayload).settlement;
+    const bobSettlement = (bobEnd.payload as MatchEndPayload).settlement;
+    expect(aliceSettlement.currency).toBe('SOL');
+    expect(bobSettlement.currency).toBe('USDT');
+
+    const rake = Math.round(STAKE * 2 * FEE_RATE);
+    // Alice's win credits SOL only; bob's loss debits USDT only — neither ever touches USD or
+    // the other player's currency bucket.
+    expect(services.ledger.getBalance(aliceId, 'SOL')).toBe(1642 - STAKE + (STAKE * 2 - rake));
+    expect(services.ledger.getBalance(bobId, 'USDT')).toBe(837 - STAKE);
+    expect(services.ledger.getBalance(aliceId, 'USD')).toBe(1000);
+    expect(services.ledger.getBalance(bobId, 'USD')).toBe(1000);
+    expect(services.ledger.getBalance(PLATFORM_ACCOUNT, 'SOL')).toBe(rake);
+    expect(services.ledger.getBalance(PLATFORM_ACCOUNT, 'USDT')).toBe(0);
+  }, 15000);
 });

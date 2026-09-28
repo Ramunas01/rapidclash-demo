@@ -101,8 +101,8 @@ describe('per-player move-timer sweep over the WS gateway', () => {
     const bob = await openSocket(port, await register('bob'));
     sockets.push(alice, bob);
 
-    alice.send('queue.join', { gameId: 'standgame', stake: 10 });
-    bob.send('queue.join', { gameId: 'standgame', stake: 10 });
+    alice.send('queue.join', { gameId: 'standgame', stake: 10 , currency: 'USD' });
+    bob.send('queue.join', { gameId: 'standgame', stake: 10 , currency: 'USD' });
     await alice.waitFor('match.start');
     await bob.waitFor('match.start');
     // Both players have a legal move ('stand') and neither sends it — the per-player timers fire.
@@ -125,8 +125,8 @@ describe('per-player move-timer sweep over the WS gateway', () => {
     const bob = await openSocket(port, await register('bob2'));
     sockets.push(alice, bob);
 
-    alice.send('queue.join', { gameId: 'standgame', stake: 10 });
-    bob.send('queue.join', { gameId: 'standgame', stake: 10 });
+    alice.send('queue.join', { gameId: 'standgame', stake: 10 , currency: 'USD' });
+    bob.send('queue.join', { gameId: 'standgame', stake: 10 , currency: 'USD' });
     const start = (await alice.waitFor('match.start')).payload as { matchId: string };
     await bob.waitFor('match.start');
     await alice.waitFor('match.your_turn');

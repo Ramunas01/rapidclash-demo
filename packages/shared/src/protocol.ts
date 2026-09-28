@@ -35,6 +35,10 @@ export interface QueueJoinPayload {
    *  (or 'none' for untimed games). The server resolves + validates it; pairing is on
    *  (game, stake, time-control). */
   timeControlId?: string;
+  /** Ticket 2026-09-27#7 (D69): which of the sender's own currency buckets to escrow this stake
+   *  from. Each side of a match resolves independently — the two players in one match may hold
+   *  different currencies with no reconciliation needed. */
+  currency: Currency;
 }
 
 /** Leave the lobby before being matched; escrow is refunded. */
@@ -91,6 +95,9 @@ export type ChallengeUnsubscribePayload = ChallengeSubscribePayload;
 /** Client → Server: claim a specific resting bet (atomic; escrow on success only). */
 export interface ChallengeTakePayload {
   matchId: string;
+  /** Ticket 2026-09-27#7 (D69): the taker's own currency selection — independent of whatever
+   *  currency the challenge owner escrowed their own side in. */
+  currency: Currency;
 }
 
 /** One resting bet as shown in the feed. */
@@ -110,6 +117,9 @@ export interface OpenChallenge {
   /** The control this resting bet pairs on — always present ('none' for untimed games) so the
    *  feed row can show e.g. "Chess · Blitz 5 min · 10¢". Taking it inherits this control. */
   timeControlId: string;
+  /** Ticket 2026-09-27#7 (D69): the currency the owner escrowed their own side in. Threaded for
+   *  data completeness; not required to be rendered in the feed yet. */
+  currency: Currency;
 }
 
 /** One resting bet in the PUBLIC cross-game snapshot (GET /open-challenges) — an OpenChallenge
@@ -170,6 +180,9 @@ export interface MatchStartPayload {
    *  safe to trust either way here, since a JOIN can only ever succeed at the exact stake already
    *  publicly listed on the open-challenges row it came from. */
   stake: number;
+  /** Ticket 2026-09-27#7 (D69): THIS recipient's own resolved currency for the match — never the
+   *  opponent's. Each side settles independently against their own bucket. */
+  currency: Currency;
 }
 
 /** Updated redacted view after a move, plus events to animate on the client. */
@@ -204,6 +217,9 @@ export interface SettlementSummary {
   delta: number;
   /** Derived wallet balance after the settlement entries are applied. */
   newBalance: number;
+  /** Ticket 2026-09-27#7 (D69): which currency bucket `newBalance` belongs to — this recipient's
+   *  own currency for the match, mirroring MatchStartPayload's. */
+  currency: Currency;
 }
 
 /** The match is over; result and wallet impact. */

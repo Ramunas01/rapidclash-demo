@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { GameMeta, Move, Outcome, SettlementSummary, OpenChallenge, PlayerClocks, AvatarId, GameEvent } from '@rapidclash/shared';
+import type { GameMeta, Move, Outcome, SettlementSummary, OpenChallenge, PlayerClocks, AvatarId, GameEvent, Currency } from '@rapidclash/shared';
 import { GUEST_COINFLIP_STAKE, GUEST_CHESS_STAKE, GUEST_CHESS_TIME_CONTROL, GUEST_BLACKJACK_STAKE, GUEST_CURATED_GAMES } from '@rapidclash/shared';
+import { getCurSel } from './lib/currency.js';
 import { WsClient, hasStoredMatch, readStoredGameId, writeStoredGameId, type WsStatus } from './ws.js';
 import { initGuestEvents, emitReady, emitResize, emitRequestFullscreenOnMobileEntry, emitFirstWin } from './guest/events.js';
 import { applyChallengesUpdate } from './screens/OpenChallengesList.js';
@@ -1026,7 +1027,9 @@ export function App() {
     setPendingTimeControl(timeControlId);
     // No silent drop (#30): if the socket is down, stay put and tell the user — don't
     // strand them on the lobby "waiting" screen never actually queued.
-    if (!wsRef.current.joinQueue(pendingGameId, stake, timeControlId)) {
+    // Ticket 2026-09-27#7 (D69): the wire format carries a real currency end-to-end from PR 2 on,
+    // but CurrencyPicker stays mock-only until PR 4 — curSel is 'USD' for every real user today.
+    if (!wsRef.current.joinQueue(pendingGameId, stake, timeControlId, getCurSel() as Currency)) {
       setActionNotice(RECONNECT_NOTICE);
       return;
     }
@@ -1084,7 +1087,7 @@ export function App() {
     // The opponent's real name now arrives authoritatively on match.start (both paths), so no
     // client-side ownerName capture is needed here.
     // On success the server pushes match.start → we land in the match; on failure → onError.
-    if (!wsRef.current.takeChallenge(matchId)) setActionNotice(RECONNECT_NOTICE);
+    if (!wsRef.current.takeChallenge(matchId, getCurSel() as Currency)) setActionNotice(RECONNECT_NOTICE);
   }, [token, openAuth, lookupChallenge]);
 
   // A JOIN from the logged-out public ticker: the row already carries game + stake, so capture a
@@ -1100,7 +1103,7 @@ export function App() {
   // ── Owner lobby re-post (OC7) ───────────────────────────────────────────────
   const handleRepost = useCallback(() => {
     if (!pendingGameId || !wsRef.current) return;
-    if (!wsRef.current.joinQueue(pendingGameId, pendingStake, pendingTimeControl)) {
+    if (!wsRef.current.joinQueue(pendingGameId, pendingStake, pendingTimeControl, getCurSel() as Currency)) {
       setActionNotice(RECONNECT_NOTICE);
       return;
     }

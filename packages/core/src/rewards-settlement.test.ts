@@ -73,8 +73,8 @@ function setupMatch(mod: GameModule, stake: number) {
   });
   ledger.grant('alice');
   ledger.grant('bob');
-  matchmaking.joinQueue('alice', mod.meta.id, stake);
-  const r = matchmaking.joinQueue('bob', mod.meta.id, stake);
+  matchmaking.joinQueue('alice', mod.meta.id, stake, undefined, 'USD');
+  const r = matchmaking.joinQueue('bob', mod.meta.id, stake, undefined, 'USD');
   if (r.status !== 'matched') throw new Error('expected matched');
   return { ledger, rewards, matchmaking, matchId: r.matchId, settled };
 }

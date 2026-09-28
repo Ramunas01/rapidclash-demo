@@ -1,5 +1,5 @@
 import { randomUUID, randomBytes } from 'node:crypto';
-import type { GameModule, GameState, LedgerEntry, PlayerId, Rng, Move, ApplyResult, Outcome, OpenChallenge, PlayerClocks, VipTier } from '@rapidclash/shared';
+import type { GameModule, GameState, LedgerEntry, PlayerId, Rng, Move, ApplyResult, Outcome, OpenChallenge, PlayerClocks, VipTier, Currency } from '@rapidclash/shared';
 import { IllegalMove, UNTIMED_TIME_CONTROL } from '@rapidclash/shared';
 import type { Ledger } from './ledger.js';
 import type { MatchHistory } from './match-history.js';
@@ -111,6 +111,8 @@ interface QueueEntry {
   since: number;
   /** since + TTL. Server-authoritative; uniform across bets so oldest-first ≡ soonest-to-expire (OC9). */
   expiresAt: number;
+  /** Ticket 2026-09-27#7 (D69): the currency this entry's own stake was escrowed in. */
+  currency: Currency;
 }
 
 export interface JoinWaiting {
@@ -151,6 +153,10 @@ export interface MatchRecord {
    *  (`meta.moveTimeoutMs` + `timeoutMove`). A player's entry exists iff they currently
    *  have legal moves; on expiry the core injects their `timeoutMove`. */
   playerDeadlines?: Record<PlayerId, number>;
+  /** Ticket 2026-09-27#7 (D69): each player's OWN resolved currency for this match. The two
+   *  sides may differ — no reconciliation needed, each settles independently against their own
+   *  bucket. */
+  currency: Record<PlayerId, Currency>;
 }
 
 export interface PlayerSettlement {
@@ -158,6 +164,9 @@ export interface PlayerSettlement {
   delta: number;
   /** Derived balance after all settlement entries. */
   newBalance: number;
+  /** Ticket 2026-09-27#7 (D69): which currency bucket `newBalance` belongs to — this player's
+   *  own currency for the match. */
+  currency: Currency;
 }
 
 export interface SettledMatch {
@@ -267,8 +276,10 @@ export interface MatchmakingOptions {
 export interface Matchmaking {
   /** `timeControlId` selects the pairing control (chess). Omitted/'none' → the game's default
    *  (or 'none' for untimed games); an explicit unknown id throws. Pairing is on
-   *  (game, stake, time-control). */
-  joinQueue(playerId: PlayerId, gameId: string, stake: number, timeControlId?: string): JoinQueueResult;
+   *  (game, stake, time-control). `currency` (ticket 2026-09-27#7, D69) is this player's OWN
+   *  bucket to escrow the stake from — independent of whichever currency a matched opponent
+   *  escrows theirs in. */
+  joinQueue(playerId: PlayerId, gameId: string, stake: number, timeControlId: string | undefined, currency: Currency): JoinQueueResult;
   /** `expectedMatchId` (ticket 2026-09-24#2): `playerEntry` can only ever hold ONE resting
    *  entry per (playerId, gameId) — if a caller's own knowledge of "which entry I meant" is
    *  stale (e.g. a delayed socket-close cleanup firing after the player's own expire-refund-
@@ -277,8 +288,10 @@ export interface Matchmaking {
    *  knows which matchId it means, pass it — the call refuses to act on a DIFFERENT entry that
    *  happens to share the same (playerId, gameId, stake) instead of silently touching it. */
   leaveQueue(playerId: PlayerId, gameId: string, stake: number, expectedMatchId?: string): LedgerEntry;
-  /** Atomic specific-claim of a resting bet (OC3). Escrow on success only; throws ChallengeError on refusal. */
-  takeChallenge(takerId: PlayerId, matchId: string): JoinMatched;
+  /** Atomic specific-claim of a resting bet (OC3). Escrow on success only; throws ChallengeError on
+   *  refusal. `currency` (ticket 2026-09-27#7, D69) is the TAKER's own currency selection —
+   *  independent of whatever currency the owner escrowed their own side in. */
+  takeChallenge(takerId: PlayerId, matchId: string, currency: Currency): JoinMatched;
   /** Eligible (rested + safe margin), self-excluded, longest-waiting-first, capped, username-joined (OC2). */
   listOpenChallenges(gameId: string, viewerId: PlayerId, now?: number): OpenChallengeList;
   /** Remove + idempotently refund every bet past its TTL; return them so the gateway can notify (OC6). */
@@ -456,7 +469,7 @@ export function createMatchmaking(
     }
   }
 
-  function joinQueue(playerId: PlayerId, gameId: string, stake: number, timeControlId?: string): JoinQueueResult {
+  function joinQueue(playerId: PlayerId, gameId: string, stake: number, timeControlId: string | undefined, currency: Currency): JoinQueueResult {
     const mod = moduleByGame.get(gameId);
     if (!mod) throw new Error(`Unknown gameId: ${gameId}`);
 
@@ -472,9 +485,7 @@ export function createMatchmaking(
     // otherwise-affordable bet look insufficient.
     reconcileStaleEscrows(playerId);
 
-    // Ticket 2026-09-27#7 (D69): PR 1 scope — 'USD' literal here, real per-player currency
-    // threading lands in PR 2.
-    const balance = ledger.getBalance(playerId, 'USD');
+    const balance = ledger.getBalance(playerId, currency);
     if (balance < stake) {
       throw new Error(`Insufficient balance: have ${balance}, need ${stake}`);
     }
@@ -498,9 +509,9 @@ export function createMatchmaking(
       // Use the waiter's pre-generated matchId as the canonical matchId.
       const matchId = waiter.matchId;
 
-      // Escrow the joining player under the same canonical matchId.
-      // Ticket 2026-09-27#7 (D69): PR 1 scope — 'USD' literal, real threading in PR 2.
-      ledger.escrow(playerId, matchId, stake, 'USD');
+      // Escrow the joining player under the same canonical matchId, in THEIR OWN currency —
+      // independent of whatever the waiter escrowed theirs in (ticket 2026-09-27#7, D69).
+      ledger.escrow(playerId, matchId, stake, currency);
 
       // Initialise the game state.
       const seed = randomBytes(4).readUInt32LE(0);
@@ -516,6 +527,7 @@ export function createMatchmaking(
         seed,
         rng,
         deadlineAt: nowFn() + turnTimeoutMs,
+        currency: { [waiter.playerId]: waiter.currency, [playerId]: currency },
       };
       matches.set(matchId, record);
       // Both players queued under the same key → the same control (the waiter's intrinsic one).
@@ -540,12 +552,11 @@ export function createMatchmaking(
 
     // No waiter — add this player to the queue as an open challenge.
     const matchId = randomUUID();
-    // Ticket 2026-09-27#7 (D69): PR 1 scope — 'USD' literal, real threading in PR 2.
-    ledger.escrow(playerId, matchId, stake, 'USD');
+    ledger.escrow(playerId, matchId, stake, currency);
 
     const since = nowFn();
     const expiresAt = since + ttlMs;
-    const entry: QueueEntry = { playerId, matchId, gameId, stake, timeControlId: tcId, since, expiresAt };
+    const entry: QueueEntry = { playerId, matchId, gameId, stake, timeControlId: tcId, since, expiresAt, currency };
     queues.set(key, [...(queues.get(key) ?? []), entry]);
     playerEntry.set(`${playerId}:${gameId}`, entry);
     entryByMatchId.set(matchId, entry);
@@ -583,7 +594,7 @@ export function createMatchmaking(
 
   // ── Open challenges (ADR-008) ──────────────────────────────────────────────
 
-  function takeChallenge(takerId: PlayerId, matchId: string): JoinMatched {
+  function takeChallenge(takerId: PlayerId, matchId: string, currency: Currency): JoinMatched {
     // One synchronous critical section — JS is single-threaded, so two concurrent
     // takers of the same challenge cannot both pass: the first removes the entry
     // before yielding, and the second's lookup misses (CHALLENGE_TAKEN), never
@@ -603,8 +614,7 @@ export function createMatchmaking(
     // stale stuck escrow can't wrongly make an otherwise-affordable take look insufficient.
     reconcileStaleEscrows(takerId);
 
-    // Ticket 2026-09-27#7 (D69): PR 1 scope — 'USD' literal, real threading in PR 2.
-    const balance = ledger.getBalance(takerId, 'USD');
+    const balance = ledger.getBalance(takerId, currency);
     if (balance < entry.stake) {
       throw new ChallengeError(
         'INSUFFICIENT_BALANCE',
@@ -615,8 +625,8 @@ export function createMatchmaking(
     // Claim it: drop from every index, THEN escrow + form the match (mirrors joinQueue's
     // matched branch — owner keeps players[0], the canonical matchId is the owner's).
     removeEntry(entry);
-    // Ticket 2026-09-27#7 (D69): PR 1 scope — 'USD' literal, real threading in PR 2.
-    ledger.escrow(takerId, matchId, entry.stake, 'USD');
+    // Taker's own currency — independent of the owner's own `entry.currency` (2026-09-27#7, D69).
+    ledger.escrow(takerId, matchId, entry.stake, currency);
 
     const seed = randomBytes(4).readUInt32LE(0);
     const rng = createRng(seed);
@@ -631,6 +641,7 @@ export function createMatchmaking(
       seed,
       rng,
       deadlineAt: nowFn() + turnTimeoutMs,
+      currency: { [ownerId]: entry.currency, [takerId]: currency },
     };
     matches.set(matchId, record);
     // The control is intrinsic to the resting challenge — taking it inherits the owner's.
@@ -668,6 +679,7 @@ export function createMatchmaking(
       openedAt: e.since,
       expiresAt: e.expiresAt,
       timeControlId: e.timeControlId,
+      currency: e.currency,
     }));
 
     return { entries, more: Math.max(0, eligible.length - listCap) };
@@ -908,9 +920,9 @@ export function createMatchmaking(
     const pot = match.stake * 2;
     const winnerId = outcome.type === 'win' ? outcome.winner : undefined;
 
-    // Ticket 2026-09-27#7 (D69): PR 1 scope — 'USD' literal winnerCurrency, real per-player
-    // currency threading (incl. the winner's own selected currency) lands in PR 2.
-    ledger.settle(matchId, outcome.type, winnerId, pot, feeRate, 'USD');
+    // Ticket 2026-09-27#7 (D69): the winner's OWN currency — draw/void needs no currency arg,
+    // ledger.settle already reads each refund's currency off its own stored escrow row.
+    ledger.settle(matchId, outcome.type, winnerId, pot, feeRate, winnerId ? match.currency[winnerId] : undefined);
     matchHistory?.recordResult(matchId, match.gameId, match.players, outcome.type, winnerId, match.stake);
 
     const rake = outcome.type === 'win' ? Math.round(pot * feeRate) : 0;
@@ -925,8 +937,7 @@ export function createMatchmaking(
         // draw or void: stake was escrowed then fully refunded — net zero
         delta = 0;
       }
-      // Ticket 2026-09-27#7 (D69): PR 1 scope — 'USD' literal, real threading in PR 2.
-      settlement[pid] = { delta, newBalance: ledger.getBalance(pid, 'USD') };
+      settlement[pid] = { delta, newBalance: ledger.getBalance(pid, match.currency[pid]), currency: match.currency[pid] };
 
       // Rewards accrual seam (issue #306) — storage-agnostic: the core only reports the
       // facts (stake, feeRate, outcome), the Rewards module (if wired) decides what to do

@@ -206,7 +206,7 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       winner: 'pid',
     });
     const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
-    rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
+    rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019, currency: 'USD' } })} />);
     // Blackjack opts OUT of the shared result pop-up.
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
     // The board stays up with BOTH hands revealed (no face-down) — the final cards persist.
@@ -231,7 +231,7 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       winner: 'pid',
     });
     const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
-    rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
+    rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019, currency: 'USD' } })} />);
     // The win frame lands a beat after the reveal (FRAME_DELAY_MS) and stays.
     // Ticket 2026-09-27#5 (D67): the ring is now the inline literal #16A34A, not the shared
     // ring-success class (cardFrameClass is Blackjack-local, not the shared outlineClasses()).
@@ -257,7 +257,7 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
     });
     const { rerender, unmount } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
     // A loss is the server outcome `type:'win'` with the OPPONENT as winner (there is no 'lose').
-    rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'bob' }, lastSettlement: { delta: -10, newBalance: 990 } })} />);
+    rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'bob' }, lastSettlement: { delta: -10, newBalance: 990, currency: 'USD' } })} />);
     // Ticket 2026-09-27#5 (D67): inline literal #FF3E5E, not the shared ring-destructive class.
     await waitFor(() => {
       const card = within(screen.getByTestId('own-hand')).getAllByTestId('card')[0] as HTMLElement;
@@ -275,7 +275,7 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       forcedOutcome: { type: 'draw' },
     });
     const { rerender: rr2 } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm2', gameState: drawView, legalMoves: [] })} />);
-    rr2(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: drawView, lastOutcome: { type: 'draw' }, lastSettlement: { delta: 0, newBalance: 1000 } })} />);
+    rr2(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: drawView, lastOutcome: { type: 'draw' }, lastSettlement: { delta: 0, newBalance: 1000, currency: 'USD' } })} />);
     await new Promise((r) => setTimeout(r, 1200));
     for (const c of within(screen.getByTestId('own-hand')).getAllByTestId('card')) {
       expect(c.className).not.toMatch(/ring-\[3px\]/);
@@ -292,7 +292,7 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
     });
     const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
     expect(screen.getByTestId('hub-play').textContent).toMatch(/playing/i); // in-match
-    rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
+    rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019, currency: 'USD' } })} />);
     // Result phase: PLAY is back (panel unfrozen) so a new game can start; bet re-enabled.
     const play = screen.getByTestId('hub-play');
     expect(play.textContent).toMatch(/play/i);
@@ -336,7 +336,7 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
     // searching, the decorative scan must draw only from other players — never the current alias,
     // which would read as being matched against yourself.
     const ch = (matchId: string, ownerName: string): OpenChallenge => ({
-      matchId, ownerName, ownerTier: 'Unranked', stake: 50, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'none',
+      matchId, ownerName, ownerTier: 'Unranked', stake: 50, openedAt: 0, expiresAt: Date.now() + 30_000, timeControlId: 'none', currency: 'USD',
     });
     render(
       <BlackjackHubScreen
@@ -554,7 +554,7 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
         winner: 'pid',
       });
       const { rerender } = render(<BlackjackHubScreen {...baseProps({ username: 'me', currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
-      rerender(<BlackjackHubScreen {...baseProps({ username: 'me', currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
+      rerender(<BlackjackHubScreen {...baseProps({ username: 'me', currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019, currency: 'USD' } })} />);
 
       // The bar runs the SAME shared component as Coinflip: green fill + "You Win" alongside the
       // username (never swapped out), settling to the green outline. Ticket 2026-09-27#5 (D67):
@@ -585,7 +585,7 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
         winner: 'bob',
       });
       const { rerender } = render(<BlackjackHubScreen {...baseProps({ username: 'me', currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
-      rerender(<BlackjackHubScreen {...baseProps({ username: 'me', currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'bob' }, lastSettlement: { delta: -10, newBalance: 990 } })} />);
+      rerender(<BlackjackHubScreen {...baseProps({ username: 'me', currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'bob' }, lastSettlement: { delta: -10, newBalance: 990, currency: 'USD' } })} />);
 
       // Ticket 2026-09-27#5 (D67): inline literal #FF3E5E, not the shared ring-destructive class.
       await waitFor(() => {
@@ -637,7 +637,7 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
 
       // Terminal: the paced reveal lands (TERMINAL_HOLD_MS) → the hole flips in place (now a card, no
       // card-back) and the hit card is dealt in → the full opponent hand is shown.
-      rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
+      rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019, currency: 'USD' } })} />);
       await waitFor(() => {
         expect(within(screen.getByTestId('opp-hand')).getAllByTestId('card')).toHaveLength(3);
       }, { timeout: 2000 });
@@ -726,7 +726,7 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       // delivers lastOutcome/lastSettlement — no artificial hold.
       rerender(<BlackjackHubScreen {...baseProps({
         currentMatchId: null, gameState: terminal, legalMoves: [],
-        lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 },
+        lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019, currency: 'USD' },
       })} />);
 
       // The board must have stayed mounted throughout — the SAME DOM nodes persist, own card
@@ -744,7 +744,7 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
         winner: 'pid',
       });
       const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: [] })} />);
-      rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
+      rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019, currency: 'USD' } })} />);
       await waitFor(() => {
         expect(within(screen.getByTestId('opp-hand')).getAllByTestId('card')).toHaveLength(3);
       }, { timeout: 2000 });
@@ -775,7 +775,7 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
         });
         const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
         // The real decisive-terminal transition: currentMatchId clears to null with the outcome.
-        rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, legalMoves: [], lastOutcome: { type: 'win', winner: 'bob' }, lastSettlement: { delta: -10, newBalance: 990 } })} />);
+        rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, legalMoves: [], lastOutcome: { type: 'win', winner: 'bob' }, lastSettlement: { delta: -10, newBalance: 990, currency: 'USD' } })} />);
 
         // Before the last hit lands (< revealMs), the own bar shows NO verdict outline — in-play look.
         await act(async () => { await vi.advanceTimersByTimeAsync(1400); });
@@ -808,7 +808,7 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
           winner: 'pid',
         });
         const { rerender } = render(<BlackjackHubScreen {...baseProps({ username: 'me', currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />);
-        rerender(<BlackjackHubScreen {...baseProps({ username: 'me', currentMatchId: null, gameState: terminal, legalMoves: [], lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
+        rerender(<BlackjackHubScreen {...baseProps({ username: 'me', currentMatchId: null, gameState: terminal, legalMoves: [], lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019, currency: 'USD' } })} />);
 
         // Before the flip completes, the win reveal ("You Win" verdict) has NOT started on the bar.
         await act(async () => { await vi.advanceTimersByTimeAsync(500); });
@@ -837,7 +837,7 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
         expect(screen.getByTestId('hub-balance').textContent).toContain('1,000');
 
         // Match ends: the settled balance (1019) arrives with the null currentMatchId.
-        rerender(<BlackjackHubScreen {...baseProps({ balance: 1019, currentMatchId: null, gameState: terminal, legalMoves: [], lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019 } })} />);
+        rerender(<BlackjackHubScreen {...baseProps({ balance: 1019, currentMatchId: null, gameState: terminal, legalMoves: [], lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019, currency: 'USD' } })} />);
 
         // Before reveal-complete the ribbon HOLDS the pre-settlement balance (no jump ahead).
         await act(async () => { await vi.advanceTimersByTimeAsync(500); });

@@ -15,8 +15,8 @@ describe('chess time control — flag → loss-on-time (end-to-end with the real
     const mm = createMatchmaking(ledger, [chessModule], undefined, { now: () => clock });
     ledger.grant('alice');
     ledger.grant('bob');
-    mm.joinQueue('alice', 'chess', stake);
-    const r = mm.joinQueue('bob', 'chess', stake);
+    mm.joinQueue('alice', 'chess', stake, undefined, 'USD');
+    const r = mm.joinQueue('bob', 'chess', stake, undefined, 'USD');
     if (r.status !== 'matched') throw new Error('expected matched');
     return { ledger, mm, matchId: r.matchId, advance: (ms: number) => { clock += ms; }, now: () => clock };
   }

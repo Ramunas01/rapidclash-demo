@@ -341,8 +341,8 @@ describe('settlement triggers the debounced snapshot upload (ADR-011)', () => {
 
     ledger.grant('alice');
     ledger.grant('bob');
-    matchmaking.joinQueue('alice', 'settle-mock', 50);
-    const r = matchmaking.joinQueue('bob', 'settle-mock', 50);
+    matchmaking.joinQueue('alice', 'settle-mock', 50, undefined, 'USD');
+    const r = matchmaking.joinQueue('bob', 'settle-mock', 50, undefined, 'USD');
     if (r.status !== 'matched') throw new Error('expected matched');
 
     matchmaking.settleMatch(r.matchId);
@@ -365,8 +365,8 @@ describe('settlement triggers the debounced snapshot upload (ADR-011)', () => {
 
     ledger.grant('alice');
     ledger.grant('bob');
-    matchmaking.joinQueue('alice', 'settle-mock', 50);
-    const r = matchmaking.joinQueue('bob', 'settle-mock', 50);
+    matchmaking.joinQueue('alice', 'settle-mock', 50, undefined, 'USD');
+    const r = matchmaking.joinQueue('bob', 'settle-mock', 50, undefined, 'USD');
     if (r.status !== 'matched') throw new Error('expected matched');
 
     matchmaking.settleMatch(r.matchId);
