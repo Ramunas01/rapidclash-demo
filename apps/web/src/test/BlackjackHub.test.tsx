@@ -5,6 +5,7 @@ import { BlackjackHubScreen } from '../screens/BlackjackHub.js';
 import type { BlackjackView } from '../App.js';
 import type { OpenChallenge } from '@rapidclash/shared';
 import { balancesOf } from './testBalances.js';
+import { setCurSel } from '../lib/currency.js';
 
 // canvas-confetti needs a real <canvas> (absent in jsdom) — mock it (matches the other hub tests).
 vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
@@ -43,6 +44,10 @@ const c = (rank: string, suit = '♠'): { rank: string; suit: string } => ({ ran
 
 describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
   beforeEach(() => {
+    // Ticket 2026-09-27#7's SOL-default reversal changed the app-wide curSel singleton's own
+    // default — these tests are about the USD `$` ribbon balance specifically, not currency
+    // switching, so force USD explicitly.
+    setCurSel('USD');
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);
       if (u.includes('/games') || u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;

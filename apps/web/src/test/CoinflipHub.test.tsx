@@ -5,6 +5,7 @@ import { CoinflipHubScreen } from '../screens/CoinflipHub.js';
 import type { CoinflipView } from '../App.js';
 import type { OpenChallenge } from '@rapidclash/shared';
 import { balancesOf } from './testBalances.js';
+import { setCurSel } from '../lib/currency.js';
 
 // canvas-confetti needs a real <canvas> (absent in jsdom) — mock it (matches Result/CoinflipPlay tests).
 vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
@@ -20,6 +21,10 @@ vi.mock('three', async () => import('./three-stub.js'));
 // timers, and only the short path reliably lands within either. Coin.test.tsx covers the full-motion
 // spin (turn count, duration, ease-out) directly.
 beforeEach(() => {
+  // Ticket 2026-09-27#7's SOL-default reversal changed the app-wide curSel singleton's own
+  // default — these tests are about the USD `$` ribbon balance specifically, not currency
+  // switching, so force USD explicitly.
+  setCurSel('USD');
   // Belt-and-braces: guarantee any previous test's Coin (and its in-flight rAF loop) is fully
   // unmounted before this test starts — some tests mount a coin already mid-terminal (`face` set
   // from the first render, e.g. a same-side-draw fixture), which can still be flipping when the

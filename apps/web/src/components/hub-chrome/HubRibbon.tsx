@@ -71,12 +71,13 @@ interface Props {
  * unchanged — CHARTER.md's guest surface stays `¢`/play-money-framed, so the `isGuest` branch
  * below still renders `<Credits>`.
  *
- * Currency picker (issue #530, `docs/COMMS/ADVISOR_TO_PM.md` 2026-09-11#5): the currency-badge +
- * balance half of the signed-in pill is now `CurrencyPicker` (own file) — it owns the dropdown
- * panel (search, Cash/Cryptocurrency rows, fiat/hide-zero toggles) entirely internally and
- * defaults to `'USD'`, i.e. the real `balance` prop, unlike the prototype's own literal `'SOL'`
- * default (a deliberate PM call — see that component's own doc comment). The purple WALLET
- * sub-pill stays right here, unchanged, still calling `onWallet` directly.
+ * Currency picker (issue #530, `docs/COMMS/ADVISOR_TO_PM.md` 2026-09-11#5, default reversed to SOL
+ * by ticket 2026-09-27#7 D69): the currency-badge + balance half of the signed-in pill is now
+ * `CurrencyPicker` (own file) — it owns the dropdown panel (search, Cash/Cryptocurrency rows,
+ * fiat/hide-zero toggles) entirely internally and defaults to `'SOL'`, matching the prototype's
+ * own literal default (see that component's own doc comment for the full history — an earlier
+ * USD-default override was reversed once every currency's balance became real, not just USD's).
+ * The purple WALLET sub-pill stays right here, unchanged, still calling `onWallet` directly.
  */
 export function HubRibbon({ balances, onLogo, onWallet, loggedIn = false, isGuest = false }: Props) {
   // Guest "Demo" badge stays USD-only by design (PR 3 scope) — everything else below is
