@@ -144,6 +144,25 @@ export function createLedger(db: Database.Database): Ledger {
       idempotency_key TEXT NOT NULL UNIQUE,
       created_at      TEXT NOT NULL
     );
+  `);
+
+  // Snapshot-safe, idempotent migration (ADR-011, same pattern as identity.ts's own avatar_id
+  // migration): a restored OLD snapshot predates the currency column (ticket 2026-09-27#7, D69)
+  // — `CREATE TABLE IF NOT EXISTS` above is a no-op against an already-existing table, so an
+  // existing production DB never actually gains this column without an explicit ALTER. Guarded
+  // by a PRAGMA check so a fresh DB (column already in the CREATE above) and an already-migrated
+  // DB both no-op safely. Existing rows inherit DEFAULT 'USD'. Must run BEFORE the index below,
+  // which references the column. Never caught by tests, which always start from a fresh
+  // `:memory:` DB (the CREATE-only path) — only a real pre-existing snapshot exercises this.
+  const hasCurrencyColumn = db
+    .prepare<[], { name: string }>(`PRAGMA table_info(ledger_entry)`)
+    .all()
+    .some((c) => c.name === 'currency');
+  if (!hasCurrencyColumn) {
+    db.exec(`ALTER TABLE ledger_entry ADD COLUMN currency TEXT NOT NULL DEFAULT 'USD'`);
+  }
+
+  db.exec(`
     CREATE INDEX IF NOT EXISTS idx_ledger_account ON ledger_entry (account_id);
     CREATE INDEX IF NOT EXISTS idx_ledger_match   ON ledger_entry (match_id);
     CREATE INDEX IF NOT EXISTS idx_ledger_account_currency ON ledger_entry (account_id, currency);

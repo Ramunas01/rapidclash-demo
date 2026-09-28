@@ -597,4 +597,62 @@ describe('ledger', () => {
       }
     });
   });
+
+  // Ticket 2026-09-27#7 (D69): a real production deploy against the live snapshot DB crashed on
+  // startup with `SqliteError: no such column: currency` — `CREATE TABLE IF NOT EXISTS` is a
+  // no-op against an already-existing table, so an existing DB never actually gained the column.
+  // No test caught this because every other test here starts from a fresh `:memory:` DB (the
+  // CREATE-only path); this describe block is the one place that simulates a real pre-existing
+  // snapshot, the same way identity.test.ts's own avatar_id migration test already does.
+  describe('currency column migration (snapshot-safe, ADR-011)', () => {
+    it('a ledger_entry row predating the currency column reads back as USD after migration', () => {
+      const migDb = new Database(':memory:');
+      // Simulate a RESTORED OLD SNAPSHOT: a ledger_entry table WITHOUT currency, with a legacy row.
+      migDb.exec(`
+        CREATE TABLE ledger_entry (
+          id              TEXT PRIMARY KEY,
+          account_id      TEXT NOT NULL,
+          match_id        TEXT,
+          type            TEXT NOT NULL,
+          amount          INTEGER NOT NULL,
+          idempotency_key TEXT NOT NULL UNIQUE,
+          created_at      TEXT NOT NULL
+        )
+      `);
+      migDb
+        .prepare(
+          `INSERT INTO ledger_entry (id, account_id, match_id, type, amount, idempotency_key, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run('e1', 'legacy-alice', null, 'GRANT', 1000, 'grant:legacy-alice', new Date().toISOString());
+      // createLedger runs the ALTER migration on the existing table; the old row inherits USD.
+      expect(() => createLedger(migDb)).not.toThrow();
+      const migLedger = createLedger(migDb);
+      expect(migLedger.getBalance('legacy-alice', 'USD')).toBe(1000);
+      expect(migLedger.getEntries('legacy-alice')).toHaveLength(1);
+      expect(migLedger.getEntries('legacy-alice')[0].currency).toBe('USD');
+    });
+
+    it('the migration is idempotent — re-initialising over the same db does not throw or duplicate the column', () => {
+      const migDb = new Database(':memory:');
+      migDb.exec(`
+        CREATE TABLE ledger_entry (
+          id              TEXT PRIMARY KEY,
+          account_id      TEXT NOT NULL,
+          match_id        TEXT,
+          type            TEXT NOT NULL,
+          amount          INTEGER NOT NULL,
+          idempotency_key TEXT NOT NULL UNIQUE,
+          created_at      TEXT NOT NULL
+        )
+      `);
+      const l1 = createLedger(migDb);
+      l1.grant('bob');
+      // Running init again (as a snapshot restore / second buildApp would) must not throw a
+      // duplicate-column error, and must not touch existing data.
+      expect(() => createLedger(migDb)).not.toThrow();
+      const l3 = createLedger(migDb);
+      expect(l3.getBalance('bob', 'USD')).toBe(GRANT_AMOUNT);
+    });
+  });
 });
