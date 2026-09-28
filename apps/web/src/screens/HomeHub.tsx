@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from 'react';
-import type { GameMeta, OpenChallenge } from '@rapidclash/shared';
+import type { Currency, GameMeta, OpenChallenge } from '@rapidclash/shared';
 import { api } from '../api.js';
 import { cn } from '@/lib/utils';
 import { useTheme } from '../lib/theme.js';
@@ -38,7 +38,9 @@ interface Tile {
 
 interface Props {
   token: string;
-  balance: number;
+  /** Ticket 2026-09-27#7 (D69), PR 3: every currency's own live balance. This hub's own internal
+   *  consumers still only ever read `.USD`. */
+  balances: Record<Currency, number>;
   /** Cross-game open challenges, keyed by gameId (App aggregates per-game feeds). */
   challengesByGame: Record<string, OpenChallenge[]>;
   /** Subscribe to every game's challenge feed (App wraps ws.subscribeChallenges). */
@@ -70,11 +72,14 @@ interface Props {
  * Presentation only — real data, play-money credits, no house games playable.
  */
 export function HomeHubScreen({
-  token, balance, challengesByGame, onTrackChallenges, onUntrackChallenges,
+  token, balances, challengesByGame, onTrackChallenges, onUntrackChallenges,
   onTakeChallenge, onTakePublicChallenge, onSelectGame, onOpenWallet, onOpenRewards, onOpenAffiliate, onHome, loggedIn = true,
 }: Props) {
+  const balance = balances.USD;
   const [games, setGames] = useState<GameMeta[]>([]);
   const [liveBalance, setLiveBalance] = useState(balance);
+  // The full map, fed to HubRibbon (→ CurrencyPicker) only.
+  const [liveBalances, setLiveBalances] = useState(balances);
   // Issue #465: all-time settled-match count per gameId, backing the SORT sheet's default
   // "Popularity" mode. Public endpoint — fetched regardless of loggedIn, same as /games.
   const [popularity, setPopularity] = useState<Record<string, number>>({});
@@ -91,11 +96,11 @@ export function HomeHubScreen({
     menu.close();
     chat.openChat();
   }
-  useEffect(() => { setLiveBalance(balance); }, [balance]);
+  useEffect(() => { setLiveBalance(balance); setLiveBalances(balances); }, [balance, balances]);
   useEffect(() => {
     let alive = true;
     // /games is public; the wallet is auth-only — only fetch it when signed in.
-    if (loggedIn) api.wallet(token).then((w) => { if (alive) setLiveBalance(w.balance); }).catch(() => {});
+    if (loggedIn) api.wallet(token).then((w) => { if (alive) { setLiveBalance(w.balances.USD); setLiveBalances(w.balances); } }).catch(() => {});
     api.games(token).then((g) => { if (alive && Array.isArray(g)) setGames(g); }).catch(() => {});
     api.gamePopularity().then((p) => { if (alive && p && typeof p === 'object') setPopularity(p); }).catch(() => {});
     return () => { alive = false; };
@@ -201,7 +206,7 @@ export function HomeHubScreen({
 
   return (
     <div className={HUB_SHELL}>
-      <HubRibbon balance={loggedIn ? liveBalance : null} onLogo={onHome} onWallet={onOpenWallet} loggedIn={loggedIn} />
+      <HubRibbon balances={loggedIn ? liveBalances : null} onLogo={onHome} onWallet={onOpenWallet} loggedIn={loggedIn} />
 
       <main data-testid="home-hub">
         <div className="mx-auto flex w-full max-w-md flex-col gap-6">

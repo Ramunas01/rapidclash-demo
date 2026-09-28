@@ -4,6 +4,7 @@ import { render, screen, cleanup, fireEvent, within, waitFor, act } from '@testi
 import { GamesCarousel } from '../components/hub-shared/GamesCarousel.js';
 import { setCurSel } from '../lib/currency.js';
 import type { OpenChallenge, VipTier } from '@rapidclash/shared';
+import { balancesOf } from './testBalances.js';
 
 /** Some `CurrencyIcon` symbols (e.g. SOL's gradient) use `useId()` for an internal `<defs>` id,
  *  so two separate instances of the SAME symbol render byte-different `outerHTML` even though
@@ -497,7 +498,7 @@ describe('GamesCarousel — curSel is wired to the same shared state as Currency
     const challengesByGame = { coinflip: [challenge('c1', 'alice', 5, 100)] };
     render(
       <>
-        <HubRibbon balance={100} onLogo={vi.fn()} onWallet={vi.fn()} loggedIn />
+        <HubRibbon balances={balancesOf(100)} onLogo={vi.fn()} onWallet={vi.fn()} loggedIn />
         <GamesCarousel {...baseProps({ challengesByGame })} />
       </>,
     );

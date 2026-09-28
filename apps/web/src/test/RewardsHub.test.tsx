@@ -4,6 +4,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { RewardsHubScreen } from '../screens/RewardsHub.js';
 import { api } from '../api.js';
 import type { RewardsSnapshot } from '@rapidclash/shared';
+import { balancesOf } from './testBalances.js';
 
 type Props = Parameters<typeof RewardsHubScreen>[0];
 
@@ -12,7 +13,7 @@ function baseProps(over: Partial<Props> = {}): Props {
     token: 'tok',
     loggedIn: true,
     username: 'Bobbylee',
-    balance: 1642,
+    balances: balancesOf(1642),
     onHome: vi.fn(),
     onOpenProfile: vi.fn(),
     onOpenRewards: vi.fn(),
@@ -66,7 +67,7 @@ function stubFetch(snapshot: RewardsSnapshot, claimResponse?: { credited: number
       return { ok: true, json: async () => (claimResponse ?? { credited: snapshot.claimableBalance, newClaimableBalance: 0 }) } as Response;
     }
     if (u.includes('/rewards')) return { ok: true, json: async () => snapshot } as Response;
-    if (u.includes('/wallet')) return { ok: true, json: async () => ({ balance: 1642, entries: [] }) } as Response;
+    if (u.includes('/wallet')) return { ok: true, json: async () => ({ balances: balancesOf(1642), entries: [] }) } as Response;
     return { ok: true, json: async () => ({}) } as Response;
   }));
 }

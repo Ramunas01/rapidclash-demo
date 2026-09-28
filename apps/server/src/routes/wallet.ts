@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { Ledger } from '@rapidclash/core';
+import { getAllBalances } from '@rapidclash/core';
 import type { WalletResponse } from '@rapidclash/shared';
 import type { makeAuthMiddleware } from '../middleware/auth.js';
 
@@ -14,10 +15,9 @@ export function registerWalletRoutes(
   // Balance is summed from the append-only ledger (invariant #3), never a stored number.
   app.get('/wallet', { preHandler: [requireAuth] }, async (request, reply) => {
     const playerId = request.player!.id;
-    // Ticket 2026-09-27#7 (D69): PR 1 scope — 'USD' literal here, generalized to the full
-    // multi-currency balances map in PR 3.
+    // Ticket 2026-09-27#7 (D69): PR 3 — every currency's own derived balance, not just USD's.
     const body: WalletResponse = {
-      balance: ledger.getBalance(playerId, 'USD'),
+      balances: getAllBalances(ledger, playerId),
       entries: ledger.getEntries(playerId),
     };
     return reply.send(body);

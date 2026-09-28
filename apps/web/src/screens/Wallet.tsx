@@ -14,7 +14,7 @@ import {
   Wallet as WalletIcon,
   type LucideIcon,
 } from 'lucide-react';
-import type { LedgerEntry, LedgerEntryType } from '@rapidclash/shared';
+import type { Currency, LedgerEntry, LedgerEntryType } from '@rapidclash/shared';
 import { api } from '../api.js';
 import { Credits } from '../components/hub-shared/RcIcon.js';
 import { cn } from '@/lib/utils';
@@ -23,7 +23,10 @@ interface Props {
   token: string;
   /** The signed-in player's own alias (#34); null only on a legacy session pre-dating the field. */
   username: string | null;
-  balance: number;
+  /** Ticket 2026-09-27#7 (D69), PR 3: every currency's own live balance. This screen's own big
+   *  centered figure still only ever shows `.USD` — a real multi-currency wallet view is a later
+   *  ticket's own scope, not this PR's. */
+  balances: Record<Currency, number>;
   onPlay(): void;
   onLogout(): void;
 }
@@ -122,15 +125,15 @@ function EntryRow({ entry, index }: { entry: LedgerEntry; index: number }) {
   );
 }
 
-export function WalletScreen({ token, username, balance: initialBalance, onPlay, onLogout }: Props) {
-  const [balance, setBalance] = useState(initialBalance);
+export function WalletScreen({ token, username, balances: initialBalances, onPlay, onLogout }: Props) {
+  const [balance, setBalance] = useState(initialBalances.USD);
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Data layer unchanged: balance + recent ledger come straight from GET /wallet.
   useEffect(() => {
     api.wallet(token).then(data => {
-      setBalance(data.balance);
+      setBalance(data.balances.USD);
       setEntries(data.entries.slice(-5).reverse());
     }).catch(console.error).finally(() => setLoading(false));
   }, [token]);

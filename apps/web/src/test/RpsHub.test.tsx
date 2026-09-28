@@ -6,6 +6,7 @@ import type { RpsView } from '../App.js';
 import type { OpenChallenge } from '@rapidclash/shared';
 import { setCurSel } from '../lib/currency.js';
 import { BOLT_PATH } from '../components/cards/CardBack.js';
+import { balancesOf } from './testBalances.js';
 
 // canvas-confetti needs a real <canvas> (absent in jsdom) — mock it (matches the other hub tests).
 vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
@@ -29,7 +30,7 @@ type Props = Parameters<typeof RpsHubScreen>[0];
 
 function baseProps(over: Partial<Props> = {}): Props {
   return {
-    token: 'tok', playerId: 'pid', username: 'me', opponentId: 'bob', balance: 1000,
+    token: 'tok', playerId: 'pid', username: 'me', opponentId: 'bob', balances: balancesOf(1000),
     currentMatchId: null, gameState: null, legalMoves: [], waitingExpiresAt: null, lobbyExpired: false,
     lastOutcome: null, lastSettlement: null, challengesByGame: {},
     onPlay: vi.fn(), onCancel: vi.fn(), onRepost: vi.fn(), onTakeChallenge: vi.fn(),
@@ -46,7 +47,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);
       if (u.includes('/games') || u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
-      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
     }));
     playMock.mockClear();
   });
@@ -699,7 +700,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
 
   it('JOIN balance-check + chrome (shared GameHub behaviour holds for RPS)', () => {
     const onTakeChallenge = vi.fn();
-    render(<RpsHubScreen {...baseProps({ balance: 5, challengesByGame: { rps: [CHALLENGE] }, onTakeChallenge })} />);
+    render(<RpsHubScreen {...baseProps({ balances: balancesOf(5), challengesByGame: { rps: [CHALLENGE] }, onTakeChallenge })} />);
     const row = document.querySelector('[data-match-id="c1"]') as HTMLElement;
     // registered (default loggedIn: true) → the Owner-approved $ skin, 2026-09-11#8 item B.2
     expect(within(row).getByTestId(/^games-carousel-stake-/).textContent).toBe('$50');
@@ -709,14 +710,14 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
   });
 
   it('T9: registered users see the Owner-approved $ skin in the bet panel too, not just the header wallet chip (GameHub.tsx PlayPanel, CHARTER.md #4)', () => {
-    const { container } = render(<RpsHubScreen {...baseProps({ balance: 5 })} />);
+    const { container } = render(<RpsHubScreen {...baseProps({ balances: balancesOf(5) })} />);
     const header = container.querySelector('header');
     const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');
     expect(bodyText).toMatch(/\$/);
   });
 
   it('T9: guest mode keeps the play-money RcIcon bet display — no $ leaks into the game body', () => {
-    const { container } = render(<RpsHubScreen {...baseProps({ balance: 5, isGuest: true })} />);
+    const { container } = render(<RpsHubScreen {...baseProps({ balances: balancesOf(5), isGuest: true })} />);
     const header = container.querySelector('header');
     const bodyText = (container.textContent ?? '').replace(header?.textContent ?? '', '');
     expect(bodyText).not.toMatch(/\$/);
@@ -756,7 +757,7 @@ describe('GameHub (logged out — via RpsHub)', () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);
       if (u.includes('/games') || u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
-      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
     }));
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -797,7 +798,7 @@ describe('RpsHubScreen — search dwell floor restored (2026-09-11#9)', () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);
       if (u.includes('/games') || u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
-      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
     }));
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -872,7 +873,7 @@ describe('RpsHubScreen — opponent bar during matchmaking (ticket 2026-09-15#9)
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);
       if (u.includes('/games') || u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
-      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
     }));
   });
   afterEach(() => vi.unstubAllGlobals());

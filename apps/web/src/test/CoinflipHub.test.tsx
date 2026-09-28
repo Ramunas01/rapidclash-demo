@@ -4,6 +4,7 @@ import { render, screen, fireEvent, waitFor, within, act, cleanup } from '@testi
 import { CoinflipHubScreen } from '../screens/CoinflipHub.js';
 import type { CoinflipView } from '../App.js';
 import type { OpenChallenge } from '@rapidclash/shared';
+import { balancesOf } from './testBalances.js';
 
 // canvas-confetti needs a real <canvas> (absent in jsdom) — mock it (matches Result/CoinflipPlay tests).
 vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
@@ -58,7 +59,7 @@ function baseProps(over: Partial<Props> = {}): Props {
     playerId: 'pid',
     username: 'me',
     opponentId: 'bob',
-    balance: 1000,
+    balances: balancesOf(1000),
     currentMatchId: null,
     gameState: null,
     legalMoves: [],
@@ -104,7 +105,7 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
         const u = String(url);
         if (u.includes('/games') || u.includes('/leaderboard'))
           return { ok: true, json: async () => [] } as Response;
-        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+        return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
       })
     );
   });
@@ -551,7 +552,7 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     const onTakeChallenge = vi.fn();
     render(
       <CoinflipHubScreen
-        {...baseProps({ balance: 5, challengesByGame: { coinflip: [CHALLENGE] }, onTakeChallenge })}
+        {...baseProps({ balances: balancesOf(5), challengesByGame: { coinflip: [CHALLENGE] }, onTakeChallenge })}
       />
     );
     const row = document.querySelector('[data-match-id="c1"]') as HTMLElement;
@@ -565,7 +566,7 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     render(
       <CoinflipHubScreen
         {...baseProps({
-          balance: 1000,
+          balances: balancesOf(1000),
           challengesByGame: { coinflip: [CHALLENGE] },
           onTakeChallenge,
         })}
@@ -581,7 +582,7 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
 
   it('chrome: wallet chip shows the live RC-icon balance and opens the wallet', () => {
     const onOpenWallet = vi.fn();
-    render(<CoinflipHubScreen {...baseProps({ balance: 1250, onOpenWallet })} />);
+    render(<CoinflipHubScreen {...baseProps({ balances: balancesOf(1250), onOpenWallet })} />);
     expect(screen.getByTestId('hub-balance').textContent).toContain('1,250');
     fireEvent.click(screen.getByTestId('hub-wallet-chip'));
     expect(onOpenWallet).toHaveBeenCalled();
@@ -708,7 +709,7 @@ describe('CoinflipHubScreen — search dwell floor restored (2026-09-11#9)', () 
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);
       if (u.includes('/games') || u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
-      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
     }));
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -828,7 +829,7 @@ describe('CoinflipHubScreen — waiting transforms in place (#154)', () => {
         const u = String(url);
         if (u.includes('/games') || u.includes('/leaderboard'))
           return { ok: true, json: async () => [] } as Response;
-        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+        return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
       })
     );
   });
@@ -935,7 +936,7 @@ describe('CoinflipHubScreen — related rail (item 5: all games, coming-soon inc
             json: async () => [META('coinflip', 'Coinflip'), META('blackjack', 'Blackjack')],
           } as Response;
         if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
-        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+        return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
       })
     );
   });
@@ -968,7 +969,7 @@ describe('CoinflipHubScreen — choice controls: optimistic purple pick (#160)',
         const u = String(url);
         if (u.includes('/games') || u.includes('/leaderboard'))
           return { ok: true, json: async () => [] } as Response;
-        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+        return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
       })
     );
   });
@@ -1123,14 +1124,14 @@ describe('CoinflipHubScreen — guest mode chrome (issue #267)', () => {
         const u = String(url);
         if (u.includes('/games') || u.includes('/leaderboard'))
           return { ok: true, json: async () => [] } as Response;
-        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+        return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
       }),
     );
   });
   afterEach(() => vi.unstubAllGlobals());
 
   it('hides the wallet chip, Open Games, related-games rail, and the bottom nav; shows a plain Demo badge', () => {
-    render(<CoinflipHubScreen {...baseProps({ isGuest: true, balance: 200, initialStake: 100 })} />);
+    render(<CoinflipHubScreen {...baseProps({ isGuest: true, balances: balancesOf(200), initialStake: 100 })} />);
 
     expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument();
     expect(screen.getByTestId('hub-balance').textContent).toContain('200');
@@ -1192,7 +1193,7 @@ describe('CoinflipHubScreen — guest mode skips the hidden-toolbar bottom paddi
         const u = String(url);
         if (u.includes('/games') || u.includes('/leaderboard'))
           return { ok: true, json: async () => [] } as Response;
-        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+        return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
       }),
     );
   });
@@ -1228,7 +1229,7 @@ describe('CoinflipHubScreen — guest surface fills its container height (issue 
         const u = String(url);
         if (u.includes('/games') || u.includes('/leaderboard'))
           return { ok: true, json: async () => [] } as Response;
-        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+        return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
       }),
     );
   });

@@ -300,6 +300,29 @@ describe('OC8 — open-challenges feed over the WS gateway', () => {
     expect(err.code).toBe('SELF_TAKE');
   });
 
+  // Ticket 2026-09-27#7 (D69): Advisor's own PR2 review flagged that a real player's currency was
+  // used as-sent with no validation against the known set — self-mitigated in practice (a bogus
+  // currency's always-zero balance already fails the escrow check), but an explicit check gives a
+  // clear error instead of a confusing "insufficient balance" for a typo'd currency.
+  it('INVALID_CURRENCY: a real player sending an unknown currency to queue.join is rejected, never silently accepted', async () => {
+    const alice = await openSocket(port, aliceToken);
+    sockets.push(alice);
+    alice.send('queue.join', { gameId: 'rps', stake: 10, currency: 'DOGE' });
+    const err = (await alice.waitFor('error')).payload as { code: string };
+    expect(err.code).toBe('INVALID_CURRENCY');
+  });
+
+  it('INVALID_CURRENCY: a real player sending an unknown currency to challenge.take is rejected', async () => {
+    const alice = await openSocket(port, aliceToken);
+    const bob = await openSocket(port, bobToken);
+    sockets.push(alice, bob);
+    alice.send('queue.join', { gameId: 'rps', stake: 10, currency: 'USD' });
+    const matchId = ((await alice.waitFor('queue.waiting')).payload as QueueWaitingPayload).matchId;
+    bob.send('challenge.take', { matchId, currency: 'DOGE' });
+    const err = (await bob.waitFor('error')).payload as { code: string };
+    expect(err.code).toBe('INVALID_CURRENCY');
+  });
+
   it('queue.leave pushes {removed: cancelled}', async () => {
     const bob = await openSocket(port, bobToken);
     sockets.push(bob);

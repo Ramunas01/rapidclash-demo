@@ -340,9 +340,9 @@ describe('POST /admin/players/:id/clear-password (soft reset)', () => {
       payload: { username: 'alice', password: 'new-pw' },
     });
     expect(reclaim.statusCode).toBe(201);
-    const body = reclaim.json<{ playerId: string; balance: number }>();
+    const body = reclaim.json<{ playerId: string; balances: Record<string, number> }>();
     expect(body.playerId).toBe(playerId); // SAME account — standings preserved
-    expect(body.balance).toBe(balanceAfterClear); // no extra grant from the re-claim
+    expect(body.balances.USD).toBe(balanceAfterClear); // no extra grant from the re-claim
 
     // New password authenticates; the old one no longer does.
     await expect(services.identity.login('alice', 'new-pw')).resolves.toBeTruthy();

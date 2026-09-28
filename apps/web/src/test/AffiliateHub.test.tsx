@@ -6,13 +6,14 @@ import { ProfileHubScreen } from '../screens/ProfileHub.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
 import { MenuOverlay } from '../components/hub-chrome/MenuOverlay.js';
 import { useMenuOverlay } from '../components/hub-chrome/useMenuOverlay.js';
+import { balancesOf } from './testBalances.js';
 
 type Props = Parameters<typeof AffiliateHubScreen>[0];
 
 function baseProps(over: Partial<Props> = {}): Props {
   return {
     username: 'alice',
-    balance: 1642,
+    balances: balancesOf(1642),
     onBack: vi.fn(),
     onHome: vi.fn(),
     onOpenProfile: vi.fn(),
@@ -35,7 +36,7 @@ describe('AffiliateHubScreen — entry points (issue #423)', () => {
       <ProfileHubScreen
         token="tok"
         username="alice"
-        balance={1000}
+        balances={balancesOf(1000)}
         onLogout={vi.fn()}
         onHome={vi.fn()}
         onOpenProfile={vi.fn()}

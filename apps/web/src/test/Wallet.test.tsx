@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { WalletScreen } from '../screens/Wallet.js';
+import { balancesOf } from './testBalances.js';
 
 describe('WalletScreen', () => {
   beforeEach(() => {
@@ -12,7 +13,7 @@ describe('WalletScreen', () => {
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
       json: async () => ({
-        balance: 950,
+        balances: balancesOf(950),
         entries: [
           { id: '1', type: 'GRANT', amount: 1000, idempotencyKey: 'g1', createdAt: '2024-01-01' },
           { id: '2', type: 'BET_ESCROW', amount: -50, idempotencyKey: 'e1', createdAt: '2024-01-02' },
@@ -20,7 +21,7 @@ describe('WalletScreen', () => {
       }),
     } as Response);
 
-    render(<WalletScreen token="tok" username="alice" balance={0} onPlay={() => {}} onLogout={() => {}} />);
+    render(<WalletScreen token="tok" username="alice" balances={balancesOf(0)} onPlay={() => {}} onLogout={() => {}} />);
 
     await waitFor(() => {
       expect(screen.getByLabelText('balance').textContent).toContain('950');
@@ -32,10 +33,10 @@ describe('WalletScreen', () => {
   it('shows the signed-in player their own alias (#34)', () => {
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ balance: 1000, entries: [] }),
+      json: async () => ({ balances: balancesOf(1000), entries: [] }),
     } as Response);
 
-    render(<WalletScreen token="tok" username="alice" balance={1000} onPlay={() => {}} onLogout={() => {}} />);
+    render(<WalletScreen token="tok" username="alice" balances={balancesOf(1000)} onPlay={() => {}} onLogout={() => {}} />);
 
     expect(screen.getByTestId('signed-in-as').textContent).toBe('Signed in as alice');
   });
@@ -48,9 +49,9 @@ describe('WalletScreen', () => {
       idempotencyKey: `k${i}`,
       createdAt: '2024-01-01',
     }));
-    vi.mocked(fetch).mockResolvedValueOnce({ ok: true, json: async () => ({ balance: 100, entries }) } as Response);
+    vi.mocked(fetch).mockResolvedValueOnce({ ok: true, json: async () => ({ balances: balancesOf(100), entries }) } as Response);
 
-    render(<WalletScreen token="tok" username="alice" balance={0} onPlay={() => {}} onLogout={() => {}} />);
+    render(<WalletScreen token="tok" username="alice" balances={balancesOf(0)} onPlay={() => {}} onLogout={() => {}} />);
 
     // newest entry (amount +6) shown; the trimmed-off oldest (+1) is not.
     await waitFor(() => expect(screen.getByText('+6')).toBeInTheDocument());
@@ -61,11 +62,11 @@ describe('WalletScreen', () => {
   it('keeps play-money framing — no deposit / crypto / buy-chips affordance', async () => {
     vi.mocked(fetch).mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ balance: 1000, entries: [] }),
+      json: async () => ({ balances: balancesOf(1000), entries: [] }),
     } as Response);
 
     const { container } = render(
-      <WalletScreen token="tok" username="alice" balance={1000} onPlay={() => {}} onLogout={() => {}} />,
+      <WalletScreen token="tok" username="alice" balances={balancesOf(1000)} onPlay={() => {}} onLogout={() => {}} />,
     );
     await waitFor(() => expect(screen.getByLabelText('balance')).toBeInTheDocument());
     expect(container.textContent).not.toMatch(/deposit|crypto|buy chips|buy credits|add funds|top up|\$/i);

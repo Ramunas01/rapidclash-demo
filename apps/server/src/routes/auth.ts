@@ -24,7 +24,7 @@ export function registerAuthRoutes(
       const body: AuthResponse = {
         token: result.token,
         playerId: result.playerId,
-        balance: result.balance,
+        balances: result.balances,
         username,
         avatarId: result.avatarId,
       };
@@ -51,7 +51,7 @@ export function registerAuthRoutes(
       const body: AuthResponse = {
         token: result.token,
         playerId: result.playerId,
-        balance: result.balance,
+        balances: result.balances,
         username,
         avatarId: result.avatarId,
       };

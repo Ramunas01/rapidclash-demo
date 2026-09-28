@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode, type UIEvent } from 'react';
+import type { Currency } from '@rapidclash/shared';
 import { cn } from '@/lib/utils';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
@@ -122,7 +123,9 @@ function formatDate(d: Date): string {
 
 interface Props {
   username: string | null;
-  balance: number;
+  /** Ticket 2026-09-27#7 (D69), PR 3: every currency's own live balance, fed straight to
+   *  HubRibbon (→ CurrencyPicker) — this screen has no other balance consumer. */
+  balances: Record<Currency, number>;
   /** Back button → Account (ProfileHub), matching the header pattern PreferencesHub.tsx already uses. */
   onBack(): void;
   /** Logo / Games nav. */
@@ -135,7 +138,7 @@ interface Props {
   onOpenAffiliate(): void;
 }
 
-export function AffiliateHubScreen({ username, balance, onBack, onHome, onOpenProfile, onOpenRewards, onOpenAffiliate }: Props) {
+export function AffiliateHubScreen({ username, balances, onBack, onHome, onOpenProfile, onOpenRewards, onOpenAffiliate }: Props) {
   const menu = useMenuOverlay();
   // Ticket 2026-09-11#7b: the chat sheet's own subscribe/open/close/message-list state.
   const chat = useChat();
@@ -268,10 +271,10 @@ export function AffiliateHubScreen({ username, balance, onBack, onHome, onOpenPr
   return (
     <div className={HUB_SHELL}>
       {/* Ticket 2026-09-15#7 hardening: HubRibbon's `loggedIn` default flipped to `false`
-          (fail closed). This screen's own `balance: number` (a real figure, unconditionally
-          shown, same design intent as ProfileHub.tsx) means it's only ever meant for an
-          authenticated user — passed explicitly now that the default no longer fails open. */}
-      <HubRibbon balance={balance} onLogo={onHome} onWallet={onOpenProfile} loggedIn />
+          (fail closed). This screen's own `balances` (a real map, unconditionally shown, same
+          design intent as ProfileHub.tsx) means it's only ever meant for an authenticated user —
+          passed explicitly now that the default no longer fails open. */}
+      <HubRibbon balances={balances} onLogo={onHome} onWallet={onOpenProfile} loggedIn />
 
       <main data-testid="affiliate-hub">
         <div className="mx-auto flex max-w-md flex-col px-4 pb-8 pt-1.5">

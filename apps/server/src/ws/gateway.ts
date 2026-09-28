@@ -37,6 +37,7 @@ import type {
   ChatHistoryPayload,
   Currency,
 } from '@rapidclash/shared';
+import { CURRENCIES } from '@rapidclash/shared';
 import type { GameModule } from '@rapidclash/shared';
 
 // Convenience alias for the underlying ws WebSocket instance type.
@@ -129,6 +130,16 @@ function send<T>(socket: WsSocket, type: string, payload: T, matchId?: string): 
 
 function sendError(socket: WsSocket, code: string, message: string): void {
   send<ErrorPayload>(socket, 'error', { code, message });
+}
+
+/** Ticket 2026-09-27#7 (D69): a real (non-guest) `queue.join`/`challenge.take` payload's own
+ *  `currency` is client-supplied and otherwise unchecked — validate it against the known set
+ *  rather than trusting it silently (a bogus value was already harmless in practice, since
+ *  `ledger.escrow`'s own balance check refuses an unknown currency's always-zero balance, but an
+ *  explicit check here is cheap and gives a clear error instead of a confusing "insufficient
+ *  balance" for a typo'd currency). */
+function isCurrency(v: unknown): v is Currency {
+  return typeof v === 'string' && (CURRENCIES as readonly string[]).includes(v);
 }
 
 /** Cancel a demo bot's pending delayed move for `matchId`, if one is scheduled — a no-op
@@ -996,6 +1007,10 @@ export function registerWsGateway(
               const { gameId, stake, timeControlId, currency: reqCurrency } = msg.payload as QueueJoinPayload;
               // Ticket 2026-09-27#7 (D69): the guest world stays USD-only by design (CHARTER #4's
               // own carve-out) — never trust a guest-sent currency, even a tampered one.
+              if (!isGuest && !isCurrency(reqCurrency)) {
+                sendError(socket, 'INVALID_CURRENCY', `Unknown currency "${String(reqCurrency)}"`);
+                break;
+              }
               const currency: Currency = isGuest ? 'USD' : reqCurrency;
               const result = mm.joinQueue(playerId, gameId, stake, timeControlId, currency);
 
@@ -1159,6 +1174,10 @@ export function registerWsGateway(
               const { matchId, currency: reqCurrency } = msg.payload as ChallengeTakePayload;
               // Ticket 2026-09-27#7 (D69): guest world stays USD-only by design — never trust a
               // guest-sent currency (see the same guard in queue.join above).
+              if (!isGuest && !isCurrency(reqCurrency)) {
+                sendError(socket, 'INVALID_CURRENCY', `Unknown currency "${String(reqCurrency)}"`);
+                break;
+              }
               const currency: Currency = isGuest ? 'USD' : reqCurrency;
               let result: JoinMatched;
               try {

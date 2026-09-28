@@ -3,13 +3,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { LimboHubScreen } from '../screens/LimboHub.js';
 import type { LimboView } from '../App.js';
+import { balancesOf } from './testBalances.js';
 
 vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
 
 type Props = Parameters<typeof LimboHubScreen>[0];
 function baseProps(over: Partial<Props> = {}): Props {
   return {
-    token: 'tok', playerId: 'alice', username: 'alice', opponentId: 'bob', balance: 1000,
+    token: 'tok', playerId: 'alice', username: 'alice', opponentId: 'bob', balances: balancesOf(1000),
     currentMatchId: null, gameState: null, legalMoves: [], waitingExpiresAt: null, lobbyExpired: false,
     lastOutcome: null, lastSettlement: null, challengesByGame: {},
     onPlay: vi.fn(), onCancel: vi.fn(), onRepost: vi.fn(), onTakeChallenge: vi.fn(),
@@ -32,7 +33,7 @@ describe('LimboHubScreen (GameHub + LimboPanel)', () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);
       if (u.includes('/games') || u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
-      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
     }));
   });
   afterEach(() => vi.unstubAllGlobals());

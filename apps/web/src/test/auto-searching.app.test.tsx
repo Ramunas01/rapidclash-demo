@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { App } from '../App.js';
 import type { GameMeta } from '@rapidclash/shared';
+import { balancesOf } from './testBalances.js';
 
 // #152 — a hub must enter "Searching…" ONLY from an explicit user PLAY this session with an
 // armed stake. No navigation/reconnect/stray-server-push path may auto-enter searching.
@@ -105,7 +106,7 @@ describe('#152 — hubs never auto-enter Searching…', () => {
         if (u.includes('/games'))
           return { ok: true, json: async () => [META('coinflip', 'Coinflip')] } as Response;
         if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
-        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+        return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
       })
     );
   });

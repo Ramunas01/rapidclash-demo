@@ -4,6 +4,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { CUR_BAL, CUR_CRYPTO, CUR_NAME, OPEN_CURS } from '../components/hub-chrome/currencyData.js';
 import { setCurSel } from '../lib/currency.js';
+import { balancesOf } from './testBalances.js';
 
 /**
  * Currency picker tests (issue #530, `docs/COMMS/ADVISOR_TO_PM.md` 2026-09-11#5). Rendered
@@ -21,7 +22,7 @@ beforeEach(() => setCurSel('USD'));
 function renderRibbon(balance: number | null = 1642) {
   const onLogo = vi.fn();
   const onWallet = vi.fn();
-  render(<HubRibbon balance={balance} onLogo={onLogo} onWallet={onWallet} loggedIn />);
+  render(<HubRibbon balances={balance === null ? null : balancesOf(balance)} onLogo={onLogo} onWallet={onWallet} loggedIn />);
   return { onLogo, onWallet };
 }
 
@@ -217,7 +218,7 @@ describe('CurrencyPicker — balance invariant (Charter #4, cosmetic-only)', () 
 
 describe('CurrencyPicker — guest mode never renders it', () => {
   it('isGuest renders the plain Demo badge, no currency trigger, no panel', () => {
-    render(<HubRibbon balance={200} onLogo={vi.fn()} onWallet={vi.fn()} loggedIn isGuest />);
+    render(<HubRibbon balances={balancesOf(200)} onLogo={vi.fn()} onWallet={vi.fn()} loggedIn isGuest />);
     expect(screen.queryByTestId('hub-currency-chip')).toBeNull();
     expect(screen.queryByTestId('currency-picker-panel')).toBeNull();
     expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument();

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from 'react';
-import type { AvatarId, GameMeta, RecentMatchEntry, RewardsSnapshot, VipTier } from '@rapidclash/shared';
+import type { AvatarId, Currency, GameMeta, RecentMatchEntry, RewardsSnapshot, VipTier } from '@rapidclash/shared';
 import { api } from '../api.js';
 import { TierIcon, progressPercent } from '../components/hub-shared/vipTier.js';
 import { TILE_ART, titleCase } from '../components/hub-shared/tiles.js';
@@ -26,7 +26,9 @@ interface Props {
   /** Save-picker callback — App mirrors the choice into its own state + localStorage so the own
    *  game bar + a reload reflect it. The endpoint already persisted it server-side. */
   onAvatarChange?(avatarId: AvatarId): void;
-  balance: number;
+  /** Ticket 2026-09-27#7 (D69), PR 3: every currency's own live balance, fed straight to
+   *  HubRibbon (→ CurrencyPicker) — this screen has no other balance consumer. */
+  balances: Record<Currency, number>;
   onLogout(): void;
   /** Logo / Games nav → Home. */
   onHome(): void;
@@ -226,13 +228,13 @@ function opponentTierOf(m: RecentMatchEntry): VipTier {
  * rest are inert placeholders per the design handoff's own stated scope), a standalone Affiliate
  * row (same placeholder), and LOG OUT. Read-only / play-money — no hidden info.
  */
-export function ProfileHubScreen({ token, username, avatarId = 'default', onAvatarChange, balance, onLogout, onHome, onOpenProfile, onOpenRewards, onOpenPreferences, onOpenAffiliate }: Props) {
+export function ProfileHubScreen({ token, username, avatarId = 'default', onAvatarChange, balances, onLogout, onHome, onOpenProfile, onOpenRewards, onOpenPreferences, onOpenAffiliate }: Props) {
   // Ticket 2026-09-13#8 item 4: the VIEW MORE ledge's light/dark boxShadow needs the resolved
   // theme, same `useTheme()` call already established elsewhere in this codebase's small
   // ledge-buttons (e.g. RewardsHub.tsx's CLAIM pill).
   const { resolved } = useTheme();
   const light = resolved === 'light';
-  const [liveBalance, setLiveBalance] = useState(balance);
+  const [liveBalances, setLiveBalances] = useState(balances);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [avatarError, setAvatarError] = useState('');
 
@@ -299,7 +301,7 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
     chat.openChat();
   }
 
-  useEffect(() => { setLiveBalance(balance); }, [balance]);
+  useEffect(() => { setLiveBalances(balances); }, [balances]);
 
   // Issue found live 2026-08-22: the App-level `balance` prop is only ever set from a fresh
   // login/register response or a match.end settlement — App.tsx has no independent /wallet
@@ -313,7 +315,7 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
   // be at that moment.
   useEffect(() => {
     let alive = true;
-    api.wallet(token).then((w) => { if (alive) setLiveBalance(w.balance); }).catch(() => {});
+    api.wallet(token).then((w) => { if (alive) setLiveBalances(w.balances); }).catch(() => {});
     return () => { alive = false; };
   }, [token]);
 
@@ -390,7 +392,7 @@ export function ProfileHubScreen({ token, username, avatarId = 'default', onAvat
           (fail closed). This screen's own `token: string` (non-nullable) prop already guarantees
           it's only ever rendered for a real authenticated user, so `loggedIn` is always true here
           — passed explicitly now that the default no longer fails open on our behalf. */}
-      <HubRibbon balance={liveBalance} onLogo={onHome} onWallet={onOpenProfile} loggedIn />
+      <HubRibbon balances={liveBalances} onLogo={onHome} onWallet={onOpenProfile} loggedIn />
 
       <main data-testid="profile-hub">
         <div className="mx-auto flex max-w-md flex-col gap-5">

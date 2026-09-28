@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { AvatarId, RewardsSnapshot, VipTier } from '@rapidclash/shared';
+import type { AvatarId, Currency, RewardsSnapshot, VipTier } from '@rapidclash/shared';
 import { api } from '../api.js';
 import { HubRibbon } from '../components/hub-chrome/HubRibbon.js';
 import { HubToolbar } from '../components/hub-chrome/HubToolbar.js';
@@ -84,7 +84,9 @@ interface Props {
    *  `undefined` is fine (a guest, or before the App-level fetch resolves) — `Avatar` itself
    *  defaults to `'default'`. */
   avatarId?: AvatarId;
-  balance: number;
+  /** Ticket 2026-09-27#7 (D69), PR 3: every currency's own live balance, fed straight to
+   *  HubRibbon (→ CurrencyPicker) — this screen has no other balance consumer. */
+  balances: Record<Currency, number>;
   /** Logo / Games nav → Home. */
   onHome(): void;
   /** Wallet chip / Account nav → Profile. */
@@ -154,9 +156,9 @@ const VOLUME_MILESTONES: Record<'Emerald' | 'Diamond', number[]> = {
  *     actually is. No duplicate "RC WAGERED" stat is added to the Rewards page itself; the real
  *     figure ships once, on ProfileHub, per that addition.
  */
-export function RewardsHubScreen({ token, loggedIn, username, avatarId, balance, onHome, onOpenProfile, onOpenRewards, onOpenAffiliate }: Props) {
+export function RewardsHubScreen({ token, loggedIn, username, avatarId, balances, onHome, onOpenProfile, onOpenRewards, onOpenAffiliate }: Props) {
   const { curSel } = useCurSel();
-  const [liveBalance, setLiveBalance] = useState(balance);
+  const [liveBalances, setLiveBalances] = useState(balances);
   // Issue #414: the Menu overlay's own open/close/reveal-origin state.
   const menu = useMenuOverlay();
   // Ticket 2026-09-11#7b: the chat sheet's own subscribe/open/close/message-list state.
@@ -171,7 +173,7 @@ export function RewardsHubScreen({ token, loggedIn, username, avatarId, balance,
   const [snapshot, setSnapshot] = useState<RewardsSnapshot | null>(null);
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState('');
-  useEffect(() => { setLiveBalance(balance); }, [balance]);
+  useEffect(() => { setLiveBalances(balances); }, [balances]);
 
   useEffect(() => {
     // Ticket 2026-09-13#5, item 2: a guest (`token === null`) has no account to fetch — the
@@ -179,7 +181,7 @@ export function RewardsHubScreen({ token, loggedIn, username, avatarId, balance,
     // as the neutral/guest-safe default. No new state, no fetch attempt.
     if (token === null) return;
     let alive = true;
-    api.wallet(token).then((w) => { if (alive) setLiveBalance(w.balance); }).catch(() => {});
+    api.wallet(token).then((w) => { if (alive) setLiveBalances(w.balances); }).catch(() => {});
     api.rewards(token).then((r) => { if (alive) setSnapshot(r); }).catch(() => {});
     return () => { alive = false; };
   }, [token]);
@@ -191,7 +193,8 @@ export function RewardsHubScreen({ token, loggedIn, username, avatarId, balance,
     try {
       const res = await api.claimRewards(token);
       setSnapshot((s) => (s ? { ...s, claimableBalance: res.newClaimableBalance } : s));
-      setLiveBalance((b) => b + res.credited);
+      // Reward claims stay USD-only (packages/core/src/rewards.ts's own PR 1 scope note).
+      setLiveBalances((b) => ({ ...b, USD: b.USD + res.credited }));
     } catch (err) {
       setClaimError(err instanceof Error ? err.message : 'Could not claim');
     } finally {
@@ -212,7 +215,7 @@ export function RewardsHubScreen({ token, loggedIn, username, avatarId, balance,
           pill for a logged-out guest. Rewards is the only guest-accessible screen with this gap
           (HomeHub/GameHub already pass it; ProfileHub/AffiliateHub's own gap is dormant since
           both are auth-only, unreachable by a guest at all). */}
-      <HubRibbon balance={liveBalance} onLogo={onHome} onWallet={onOpenProfile} loggedIn={loggedIn} />
+      <HubRibbon balances={liveBalances} onLogo={onHome} onWallet={onOpenProfile} loggedIn={loggedIn} />
 
       <main data-testid="rewards-hub">
         <div className="mx-auto flex max-w-md flex-col">

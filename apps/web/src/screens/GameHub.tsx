@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { motion } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import { Trophy, X } from 'lucide-react';
-import { GUEST_HUMAN_RESERVED_STAKE, stripBotDisclosure, type AvatarId, type GameEvent, type GameMeta, type OpenChallenge, type Outcome, type SettlementSummary } from '@rapidclash/shared';
+import { GUEST_HUMAN_RESERVED_STAKE, stripBotDisclosure, type AvatarId, type Currency, type GameEvent, type GameMeta, type OpenChallenge, type Outcome, type SettlementSummary } from '@rapidclash/shared';
 import type { GameView } from '../App.js';
 import { api } from '../api.js';
 import { formatClock } from '../format.js';
@@ -179,8 +179,11 @@ export interface GameHubScreenProps {
   matchStake?: number | null;
   /** Client→server clock offset (ms) for aligning display-only timers (see GameAreaArgs). */
   serverClockOffset?: number;
-  /** Live balance from the app (source of truth; updates on match.end settlement). */
-  balance: number;
+  /** Every currency's own live balance from the app (source of truth; updates on match.end
+   *  settlement — ticket 2026-09-27#7, D69, PR 3). This hub's own internal consumers (bet
+   *  affordability checks, GuestBotWaiters/GamesCarousel) still only ever read `.USD` — real
+   *  per-currency betting is PR 4's own scope. */
+  balances: Record<Currency, number>;
   currentMatchId: string | null;
   gameState: GameView | null;
   /** See GameAreaArgs.events — App.tsx threads the last match.state broadcast's events through
@@ -448,7 +451,7 @@ function useNow(active: boolean): number {
 export function GameHub(props: GameHubProps) {
   const {
     gameId, gameName, renderGameArea, renderSlotAside, renderResultReveal, renderPrimaryAction, renderSecondaryAction, suppressResultOverlay, holdResultMs, gateResultOnReveal, ownBarResult, suppressDrawBar, searchFloorMs = 2400, matchBarSlide, pinDark = false, highStakeCycle, resultConverge, oppGemRow, ownGemRow, oppGemText, oppGemTextVisible, ownGemText, ownGemTextVisible, onSectionTap, oppLocked, drawRingActive,
-    token, playerId, username, avatarId = 'default', opponentId, opponentName, opponentAvatarId, matchStake, serverClockOffset = 0, balance, currentMatchId, gameState, events,
+    token, playerId, username, avatarId = 'default', opponentId, opponentName, opponentAvatarId, matchStake, serverClockOffset = 0, balances, currentMatchId, gameState, events,
     legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
     onPlay, onCancel, onTakeChallenge, onTakePublicChallenge, onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, onTrackChallenges,
@@ -457,9 +460,16 @@ export function GameHub(props: GameHubProps) {
   } = props;
 
   // ── Live wallet balance ─────────────────────────────────────────────────────
+  // Ticket 2026-09-27#7 (D69), PR 3: `balances` carries every currency now; `balance` is the
+  // USD-only number every existing internal consumer here still reads (bet affordability,
+  // GuestBotWaiters/GamesCarousel) — real per-currency betting is PR 4's own scope.
   // The `balance`→`liveBalance` sync effect lives after `phase` is derived (it can HOLD on the
   // reveal-complete signal when gateResultOnReveal is set); the mount fetch stays here.
+  const balance = balances.USD;
   const [liveBalance, setLiveBalance] = useState(balance);
+  // The full map, fed to HubRibbon (→ CurrencyPicker) only — everything else in this file still
+  // reads the USD-only `liveBalance` above.
+  const [liveBalances, setLiveBalances] = useState(balances);
   // Issue #414: the Menu overlay's own open/close/reveal-origin state — never opened for a guest
   // (its HubToolbar, the only way to reach it, is already hidden below via `!isGuest &&`).
   const menu = useMenuOverlay();
@@ -482,7 +492,7 @@ export function GameHub(props: GameHubProps) {
     // WS match.end settlement, generic to any session) is already authoritative for it.
     if (!loggedIn || isGuest) return;
     let alive = true;
-    api.wallet(token).then((w) => { if (alive) setLiveBalance(w.balance); }).catch(() => {});
+    api.wallet(token).then((w) => { if (alive) { setLiveBalance(w.balances.USD); setLiveBalances(w.balances); } }).catch(() => {});
     return () => { alive = false; };
   }, [token, loggedIn, isGuest]);
 
@@ -646,7 +656,8 @@ export function GameHub(props: GameHubProps) {
   useEffect(() => {
     if (holdBalance) return;
     setLiveBalance(balance);
-  }, [balance, holdBalance]);
+    setLiveBalances(balances);
+  }, [balance, balances, holdBalance]);
 
   function dismissResult() {
     clearPendingResult();
@@ -1091,7 +1102,7 @@ export function GameHub(props: GameHubProps) {
 
   return (
     <div className={hubShellClass(isGuest)}>
-      <HubRibbon balance={loggedIn ? liveBalance : null} onLogo={onOpenGameList} onWallet={onOpenWallet} loggedIn={loggedIn} isGuest={isGuest} />
+      <HubRibbon balances={loggedIn ? liveBalances : null} onLogo={onOpenGameList} onWallet={onOpenWallet} loggedIn={loggedIn} isGuest={isGuest} />
       {/* T4 (issue #489): `pinDark` pins `bodyChrome` (everything except HubRibbon above) to
           `.dark`'s token values regardless of the app-wide theme — an interim fix for hubs whose
           own per-game files never got a light-mode pass (T1–T3 only threaded light overrides

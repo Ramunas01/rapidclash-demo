@@ -5,6 +5,7 @@ import confetti from 'canvas-confetti';
 import { ChessHubScreen } from '../screens/ChessHub.js';
 import type { ChessView, ChessMove, GameView } from '../App.js';
 import type { PlayerClocks, GameMeta, OpenChallenge } from '@rapidclash/shared';
+import { balancesOf } from './testBalances.js';
 
 // canvas-confetti needs a real <canvas> (absent in jsdom) — mock it (matches the other hub tests).
 vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
@@ -43,7 +44,7 @@ const CHESS_META: GameMeta = {
 type Props = Parameters<typeof ChessHubScreen>[0];
 function baseProps(over: Partial<Props> = {}): Props {
   return {
-    token: 'tok', playerId: 'alice', username: 'alice', opponentId: 'bob', balance: 1000,
+    token: 'tok', playerId: 'alice', username: 'alice', opponentId: 'bob', balances: balancesOf(1000),
     currentMatchId: null, gameState: null, legalMoves: [], waitingExpiresAt: null, lobbyExpired: false,
     lastOutcome: null, lastSettlement: null, challengesByGame: {},
     onPlay: vi.fn(), onCancel: vi.fn(), onRepost: vi.fn(), onTakeChallenge: vi.fn(),
@@ -68,7 +69,7 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
       const u = String(url);
       if (u.includes('/games')) return { ok: true, json: async () => [CHESS_META] } as Response;
       if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
-      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
     }));
   });
   afterEach(() => vi.unstubAllGlobals());
@@ -775,14 +776,14 @@ describe('ChessHubScreen — guest mode chrome + fixed time control (issue #279)
         const u = String(url);
         if (u.includes('/games') || u.includes('/leaderboard'))
           return { ok: true, json: async () => [] } as Response;
-        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+        return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
       }),
     );
   });
   afterEach(() => vi.unstubAllGlobals());
 
   it('hides the wallet chip, Open Games, related-games rail, and the bottom nav; shows a plain Demo badge — generalized, not Coinflip-only', () => {
-    render(<ChessHubScreen {...baseProps({ isGuest: true, balance: 200, initialStake: 100, initialTimeControl: 'blitz5' })} />);
+    render(<ChessHubScreen {...baseProps({ isGuest: true, balances: balancesOf(200), initialStake: 100, initialTimeControl: 'blitz5' })} />);
 
     expect(screen.getByTestId('hub-guest-badge')).toBeInTheDocument();
     expect(screen.getByTestId('hub-balance').textContent).toContain('200');
@@ -819,7 +820,7 @@ describe('ChessHubScreen — guest mode chrome + fixed time control (issue #279)
       const u = String(url);
       if (u.includes('/games')) return { ok: true, json: async () => [CHESS_META] } as Response;
       if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
-      return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+      return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
     }));
     render(<ChessHubScreen {...baseProps({ isGuest: false })} />);
     await screen.findByTestId('hub-tc-rapid10'); // the real picker still shows and defaults normally

@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { App } from '../App.js';
 import { UNTIMED_TIME_CONTROL } from '@rapidclash/shared';
+import { balancesOf } from './testBalances.js';
 
 // Issue #297 (Blackjack Demo-Opponent) mirrors GuestPickerChess.test.tsx's structure: exercises
 // the REAL, unmocked `GUEST_CURATED_GAMES` (now ['coinflip', 'chess', 'blackjack']) end-to-end —
@@ -66,13 +67,13 @@ describe('App — guest game picker with Blackjack curated (issue #297, real GUE
         if (u.includes('/auth/guest')) {
           return {
             ok: true,
-            json: async () => ({ token: 'GT', playerId: 'guest:G1', balance: 300, username: 'Guest', avatarId: 'default', isGuest: true }),
+            json: async () => ({ token: 'GT', playerId: 'guest:G1', balances: balancesOf(300), username: 'Guest', avatarId: 'default', isGuest: true }),
           } as Response;
         }
         if (u.includes('/open-challenges')) return { ok: true, json: async () => [] } as Response;
         // Guest sessions never call /games (GameHub skips the roster fetch for isGuest) — leaving
         // this wallet-shaped is a deliberate trap for any regression that reintroduces the fetch.
-        return { ok: true, json: async () => ({ balance: 1000, entries: [] }) } as Response;
+        return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
       }),
     );
   });
@@ -176,7 +177,7 @@ describe('App — guest game picker with Blackjack curated (issue #297, real GUE
       },
       events: [{ type: 'round_revealed', payload: {} }],
     }, 'm1');
-    deliver(sock, 'match.end', { outcome: { type: 'win', winner: 'guest:G1' }, settlement: { delta: 100, newBalance: 400 } }, 'm1');
+    deliver(sock, 'match.end', { outcome: { type: 'win', winner: 'guest:G1' }, settlement: { delta: 100, newBalance: 400, currency: 'USD' } }, 'm1');
 
     await waitFor(() => expect(emitFirstWinMock).toHaveBeenCalledTimes(1));
     expect(emitFirstWinMock).toHaveBeenCalledWith(); // no payload — no PII (issue #271's requirement, unaffected by this ticket)
@@ -217,7 +218,7 @@ describe('App — guest game picker with Blackjack curated (issue #297, real GUE
       },
       events: [{ type: 'round_revealed', payload: {} }],
     }, 'm1');
-    deliver(sock, 'match.end', { outcome: { type: 'win', winner: 'demo-bot:blackjack:0' }, settlement: { delta: -100, newBalance: 200 } }, 'm1');
+    deliver(sock, 'match.end', { outcome: { type: 'win', winner: 'demo-bot:blackjack:0' }, settlement: { delta: -100, newBalance: 200, currency: 'USD' } }, 'm1');
 
     // Blackjack's reveal choreography holds the pre-settlement balance/verdict on screen for a
     // beat (BLACKJACK.md's continuous reveal scene) before the settled balance applies — allow it

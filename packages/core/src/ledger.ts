@@ -119,6 +119,18 @@ export interface Ledger {
   getEntries(accountId: string): LedgerEntry[];
 }
 
+/** Ticket 2026-09-27#7 (D69), PR 3: every currency's own derived balance for one account, as the
+ *  `WalletResponse`/`AuthResponse` `balances` map — always all 8 `CURRENCIES` keys (0 for a
+ *  currency with no activity), so callers never need to special-case a missing key. Works against
+ *  either `Ledger` implementation (real or ephemeral-guest), since both share the same interface. */
+export function getAllBalances(ledger: Pick<Ledger, 'getBalance'>, accountId: string): Record<Currency, number> {
+  const balances = {} as Record<Currency, number>;
+  for (const currency of CURRENCIES) {
+    balances[currency] = ledger.getBalance(accountId, currency);
+  }
+  return balances;
+}
+
 export function createLedger(db: Database.Database): Ledger {
 
   db.exec(`

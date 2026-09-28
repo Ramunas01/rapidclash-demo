@@ -45,7 +45,7 @@ describe('GET /wallet', () => {
     });
     expect(res.statusCode).toBe(200);
     const wallet = res.json<WalletResponse>();
-    expect(wallet.balance).toBe(GRANT_AMOUNT);
+    expect(wallet.balances.USD).toBe(GRANT_AMOUNT);
     // Ticket 2026-09-27#7 (D69): grant() now writes one GRANT per STARTING_BALANCE currency
     // (USD/SOL/USDT), so there are 3 GRANT entries, not 1 — isolate the USD-currency one to
     // keep testing this test's own real concern (S1's starting balance).
@@ -63,8 +63,8 @@ describe('GET /wallet', () => {
       headers: { authorization: `Bearer ${token}` },
     });
     const wallet = res.json<WalletResponse>();
-    expect(wallet.balance).toBe(GRANT_AMOUNT + 250);
-    expect(wallet.balance).toBe(services.ledger.getBalance(playerId, 'USD'));
+    expect(wallet.balances.USD).toBe(GRANT_AMOUNT + 250);
+    expect(wallet.balances.USD).toBe(services.ledger.getBalance(playerId, 'USD'));
     expect(wallet.entries.some((e) => e.type === 'ADMIN_CREDIT' && e.amount === 250)).toBe(true);
   });
 

@@ -2,9 +2,10 @@ import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import type { AvatarId } from '@rapidclash/shared';
+import type { AvatarId, Currency } from '@rapidclash/shared';
 import { AVATAR_IDS } from '@rapidclash/shared';
 import type { Ledger } from './ledger.js';
+import { getAllBalances } from './ledger.js';
 
 export type UserRole = 'player' | 'admin' | 'guest';
 
@@ -32,11 +33,11 @@ export interface Identity {
     username: string,
     password: string,
     role?: UserRole,
-  ): Promise<{ token: string; playerId: string; balance: number; avatarId: AvatarId }>;
+  ): Promise<{ token: string; playerId: string; balances: Record<Currency, number>; avatarId: AvatarId }>;
   login(
     username: string,
     password: string,
-  ): Promise<{ token: string; playerId: string; balance: number; avatarId: AvatarId }>;
+  ): Promise<{ token: string; playerId: string; balances: Record<Currency, number>; avatarId: AvatarId }>;
   verifyToken(token: string): TokenPayload;
   /** Mint a token for a guest playerId (role 'guest') — pure (jwt.sign only), no accounts-table
    *  read or write. Verifiable by the SAME {@link verifyToken} (same jwtSecret) as any other
@@ -146,7 +147,7 @@ export function createIdentity(db: Database.Database, ledger: Ledger): Identity 
     username: string,
     password: string,
     role: UserRole = 'player',
-  ): Promise<{ token: string; playerId: string; balance: number; avatarId: AvatarId }> {
+  ): Promise<{ token: string; playerId: string; balances: Record<Currency, number>; avatarId: AvatarId }> {
     const existing = stmtFindByUsername.get(username);
     if (existing) {
       // Alias is taken AND still has a password → genuine collision.
@@ -159,13 +160,12 @@ export function createIdentity(db: Database.Database, ledger: Ledger): Identity 
       // here would double it. The original role AND stored avatar are preserved.
       const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
       stmtSetPassword.run(passwordHash, existing.id);
-      // Ticket 2026-09-27#7 (D69): PR 1 scope — 'USD' literal here, generalized to the full
-      // multi-currency balances map in PR 3 once WalletResponse/AuthResponse carry it.
-      const balance = ledger.getBalance(existing.id, 'USD');
+      // Ticket 2026-09-27#7 (D69): PR 3 — full balances map.
+      const balances = getAllBalances(ledger, existing.id);
       return {
         token: signToken(existing.id, existing.role as UserRole),
         playerId: existing.id,
-        balance,
+        balances,
         avatarId: coerceAvatar(existing.avatar_id),
       };
     }
@@ -174,15 +174,15 @@ export function createIdentity(db: Database.Database, ledger: Ledger): Identity 
     // avatar_id defaults to 'default' via the column DEFAULT — a new registrant starts there.
     stmtInsert.run(playerId, username, passwordHash, role);
     ledger.grant(playerId);
-    // Ticket 2026-09-27#7 (D69): PR 1 scope — 'USD' literal here, generalized in PR 3.
-    const balance = ledger.getBalance(playerId, 'USD');
-    return { token: signToken(playerId, role), playerId, balance, avatarId: 'default' };
+    // Ticket 2026-09-27#7 (D69): PR 3 — full balances map.
+    const balances = getAllBalances(ledger, playerId);
+    return { token: signToken(playerId, role), playerId, balances, avatarId: 'default' };
   }
 
   async function login(
     username: string,
     password: string,
-  ): Promise<{ token: string; playerId: string; balance: number; avatarId: AvatarId }> {
+  ): Promise<{ token: string; playerId: string; balances: Record<Currency, number>; avatarId: AvatarId }> {
     const account = stmtFindByUsername.get(username);
     if (!account || account.password_hash === null) {
       // No such account, or the alias was soft-reset and not yet re-claimed — either
@@ -193,12 +193,12 @@ export function createIdentity(db: Database.Database, ledger: Ledger): Identity 
     if (!valid) {
       throw Object.assign(new Error('Invalid credentials'), { code: 'INVALID_CREDENTIALS' });
     }
-    // Ticket 2026-09-27#7 (D69): PR 1 scope — 'USD' literal here, generalized in PR 3.
-    const balance = ledger.getBalance(account.id, 'USD');
+    // Ticket 2026-09-27#7 (D69): PR 3 — full balances map.
+    const balances = getAllBalances(ledger, account.id);
     return {
       token: signToken(account.id, account.role as UserRole),
       playerId: account.id,
-      balance,
+      balances,
       avatarId: coerceAvatar(account.avatar_id),
     };
   }
