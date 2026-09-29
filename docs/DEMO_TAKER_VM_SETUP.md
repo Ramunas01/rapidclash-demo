@@ -1,6 +1,8 @@
-# Gated demo-taker VM setup (plan-B)
+# Demo-taker VM setup (plan-B)
 
-A small, **always-on** Google Cloud VM that runs `tools/bot-crowd` in its **gated** mode: for each curated game it stands up one allowlist-gated **taker** plus a **weighted resting pool** (`gameId:N` in `TAKER_ONLY_GAMES`, issue #393 — `N` resters per game, default 1 if omitted), currently 32 bots across all 12 games. Any self-registered account whose name starts with `Demo` (e.g. `DemoAcme`, `DemoGM`) gets a near-instant, honestly-labelled `🤖` opponent at almost any stake, any time of day — no VM start/stop, no Owner action needed once it's running. Project: **`rapidclash-demotaker`**.
+A small, **always-on** Google Cloud VM that runs `tools/bot-crowd` in its **curated** mode: for each curated game it stands up one **taker** plus a **weighted resting pool** (`gameId:N` in `TAKER_ONLY_GAMES`, issue #393 — `N` resters per game, default 1 if omitted), currently 32 bots across all 12 games. Any self-registered account gets a near-instant, honestly-labelled `🤖` opponent at almost any stake, any time of day — no VM start/stop, no Owner action needed once it's running. Project: **`rapidclash-demotaker`**.
+
+*(Owner-approved 2026-08-20, **widened** 2026-09-29 — Designer request, relayed by Owner: the taker no longer gates on a `Demo`-prefixed username (`TAKER_ALLOW_PREFIX` unset on this VM as of that date) — every self-registered account, not just reserved `Demo*` demo accounts, now gets the instant bot fallback. The claim is still instant, no grace period for a human to take it first — a deliberate choice, matching the original `Demo*` behavior exactly rather than introducing a new wait. The `2¢` human-reserved stake (`HUMAN_RESERVED_STAKES`, unrelated to this prefix gate) is untouched: no taker, gated or not, has ever claimed it, so a lane for deliberately-arranged human-vs-human testing still exists regardless of username. See `docs/COMMS/ADVISOR_TO_PM.md` `2026-09-29#1`.)*
 
 **Standing policy (confirmed with the Owner): leave this VM running always. Do not stop it between demos.** It replaced the old start-before/stop-after plan-B — see §8.
 
@@ -81,7 +83,6 @@ sudo tee /etc/demo-taker.env >/dev/null <<'ENV'
 SERVER_URL=https://rapidclash-847070222251.us-central1.run.app
 ADMIN_PASSWORD=REPLACE_WITH_SERVER_ADMIN_PASSWORD
 TAKER_ONLY_GAMES=coinflip:3,blackjack:3,chess:3,rps:3,mines,crash,roulette,dice,baccarat,keno,limbo,hilo
-TAKER_ALLOW_PREFIX=Demo
 ENV
 sudo nano /etc/demo-taker.env      # replace the admin password line, save (Ctrl-O, Enter, Ctrl-X)
 sudo chmod 600 /etc/demo-taker.env
@@ -91,9 +92,9 @@ sudo chmod 600 /etc/demo-taker.env
 
 **Do not set `TAKER_STAKE`.** Leaving it unset (the default, `0`) means "claim any non-reserved stake" — the whole point of this setup. Setting it to a fixed value (e.g. `TAKER_STAKE=1`) is a real bug that has bitten this VM before: a leftover `TAKER_STAKE=1` from the old single-stake plan-B silently stopped 5¢/10¢ bets from ever being taken, with only 1¢ working. If you're rebuilding this VM from an older snapshot or notes, check `/etc/demo-taker.env` doesn't have this line.
 
-**`TAKER_ALLOW_PREFIX`, not `TAKER_ALLOW_NAMES`.** The old exact-name allowlist (`TAKER_ALLOW_NAMES=Demo`) was replaced outright — any account starting with `Demo` now qualifies automatically, no need to pre-register specific accounts. This must be **set explicitly** (it defaults to empty/any-human, on purpose, so the *general* 26-bot roster elsewhere never accidentally narrows to `Demo*` too).
+**Leave `TAKER_ALLOW_PREFIX` unset (2026-09-29 —`ADVISOR_TO_PM.md` `2026-09-29#1`).** It used to be set to `Demo` here, narrowing the taker to only claim challenges from `Demo`-prefixed accounts (issue #368's own username-prefix gate, replacing the even older exact-name `TAKER_ALLOW_NAMES` allowlist from #362). Widened per Designer request: unset (the code's own default), the taker claims *any* human's challenge, same as the *general* 26-bot roster elsewhere already did by default. If you ever need to narrow it back to reserved accounts only, set it explicitly to a prefix — it does not default to `Demo`.
 
-Optional: `TAKER_EXCLUDE_STAKE=<n>` reserves one more stake so two `Demo*` accounts can deliberately play *each other* without the gated taker sniping it. Not currently set on this VM (the Owner has held off on activating the reserved-account-pairing feature) — see `tools/bot-crowd/src/config.ts`'s doc comment on `takerExcludeStake` before turning it on; no single value is *guaranteed* free of the resting pool's randomized lanes anymore, only a best-effort pick.
+Optional: `TAKER_EXCLUDE_STAKE=<n>` reserves one more stake so two specific accounts (their names no longer need any particular prefix, now that the taker isn't gated) can deliberately play *each other* without the taker sniping it. Not currently set on this VM (the Owner has held off on activating the reserved-account-pairing feature) — see `tools/bot-crowd/src/config.ts`'s doc comment on `takerExcludeStake` before turning it on; no single value is *guaranteed* free of the resting pool's randomized lanes anymore, only a best-effort pick.
 
 (If you'd rather not use the admin password at all, delete that line — the bots still run on their signup grant; top-ups just turn off.)
 
@@ -138,11 +139,11 @@ journalctl -u demo-taker -f
 
 You should see bots come online for every game in `TAKER_ONLY_GAMES` — one `🤖@<handle>` taker plus its configured number of resters per game (each rester's stake is drawn randomly at boot, so exact numbers vary run to run) — ending in `All bots online`. With the example config above that's **32 bots**. Bot names are human-sounding handles (e.g. `🤖@knightfall`), not game-coded names.
 
-On your phone/laptop: **register a new account whose name starts with `Demo`** (e.g. `DemoTest`, exact case — the prefix match is case-sensitive), open Coinflip, set **any stake except `2¢`** (the one human-reserved tier — reachable via a tap-again gesture on the `1¢` preset, not its own button), press **PLAY** — within ~1s a gated taker should claim it and the match should settle. Posting at `2¢` instead should sit unclaimed, waiting for a real second `Demo*` account to join it — that's deliberate (see §9). Try blackjack and chess too. Press Ctrl-C to leave the log view (the service keeps running).
+On your phone/laptop: **register any account** (any name — no `Demo` prefix required as of 2026-09-29), open Coinflip, set **any stake except `2¢`** (the one human-reserved tier — reachable via a tap-again gesture on the `1¢` preset, not its own button), press **PLAY** — within ~1s a taker should claim it and the match should settle. Posting at `2¢` instead should sit unclaimed, waiting for a real second account to join it — that's deliberate (see §9). Try blackjack and chess too. Press Ctrl-C to leave the log view (the service keeps running).
 
 ## 8. Day-to-day: always-on, no start/stop
 
-**This VM stays running continuously — do not stop it between demos.** This is a deliberate change from the original plan-B (which had the Owner start it before each demo and stop it after): an investor can now show up at any hour, self-register a `Demo*`-prefixed account, and immediately have a bot opponent, with zero prep. `e2-micro` costs are negligible running 24/7.
+**This VM stays running continuously — do not stop it between demos.** This is a deliberate change from the original plan-B (which had the Owner start it before each demo and stop it after): an investor (or any self-registered user) can now show up at any hour and immediately have a bot opponent, with zero prep. `e2-micro` costs are negligible running 24/7.
 
 **Restart the bot service after every main-app deploy.** The Cloud Run deploy creates a new revision; the VM's WebSocket connections keep talking to whatever revision they connected to, which becomes invisible/stale once a new one is live. After deploying `rapidclash-demo`, always:
 ```bash
@@ -158,7 +159,7 @@ If you ever do need to fully retire it: `gcloud compute instances stop demo-take
 One stake tier is reserved for human-vs-human testing — a taker will never claim a challenge there, and no resting bot ever posts there either, so any open challenge you see at this stake in the lobby is genuinely human-posted:
 - **`2¢`** (issue #381): reachable only via a **tap-again gesture** on the `1¢` preset in the bet UI (`apps/web/src/screens/GameHub.tsx`) — deliberately not its own preset button, so it stays a "testers who know about it" tier rather than a visible option.
 
-This lets two `Demo*`-prefixed testers line up a genuine human-vs-human match (e.g. to demo real matchmaking, not just the bot) by both posting/joining at `2¢` — the gated taker leaves it alone.
+This lets two testers line up a genuine human-vs-human match (e.g. to demo real matchmaking, not just the bot) by both posting/joining at `2¢` — the taker leaves it alone regardless of either account's name.
 
 **`100¢` was released back to normal bot-claimable use by issue #384** (shipped and live on this VM): it was the original reserved tier, but now that `2¢` covers the human-only-testing role on its own, `100¢` no longer needs to be off-limits — the taker claims it like any other stake, and resters draw it like any other non-reserved value (issue #393 removed the old fixed 3-lane stake system in favor of each rester independently drawing from the same pool the general roster uses). Current authoritative value: `tools/bot-crowd/src/config.ts`'s `HUMAN_RESERVED_STAKES` (should read `[2]`).
 
@@ -166,7 +167,7 @@ This lets two `Demo*`-prefixed testers line up a genuine human-vs-human match (e
 
 ## Troubleshooting
 
-- **Bots start but never take a `Demo*` challenge.** Check the account name genuinely starts with `Demo` (case-sensitive) and that `TAKER_ALLOW_PREFIX=Demo` is actually set in `/etc/demo-taker.env` (it does **not** default to `Demo` — it defaults to empty/any-human, and must be set explicitly on this VM). Check the stake isn't `2¢` (§9 — reserved, never taken by design). Check you **posted** (pressed PLAY) rather than joined. `journalctl -u demo-taker -e` shows what it saw.
+- **Bots start but never take a challenge.** Check `/etc/demo-taker.env` doesn't have a stray `TAKER_ALLOW_PREFIX` line left over from before 2026-09-29 (it should be unset — any value there narrows the taker back to only that prefix, which is no longer this VM's intent). Check the stake isn't `2¢` (§9 — reserved, never taken by design). Check you **posted** (pressed PLAY) rather than joined. `journalctl -u demo-taker -e` shows what it saw.
 - **Only `1¢` bets get taken, nothing else.** This is the `TAKER_STAKE=1` leftover bug (§5) — check `/etc/demo-taker.env` for a `TAKER_STAKE` line and delete it, then `sudo systemctl restart demo-taker`.
 - **Bots go dark a while after the VM's been up, then reconnect on their own.** Expected and self-healing (issues #372/#373): Cloud Run's `--timeout 3600` force-closes every WebSocket at the 1-hour mark regardless of activity; the bots now detect this and automatically re-rest/re-take on reconnect. No action needed — if a bot stays dark for more than a minute or two after that, something else is wrong; check the log.
 - **Bots went dark right after a main-app deploy and don't recover on their own.** This is the stale-revision issue (§8), not the hourly reconnect above — restart the service manually.
