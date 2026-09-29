@@ -62,16 +62,17 @@ for a reserved investor-demo account (never the general 26-bot roster's
 games). `N` is optional and defaults to `1` when omitted (`blackjack` above is
 the same as `blackjack:1`). Per listed game:
 
-- **1 taker**, gated by `TAKER_ALLOW_PREFIX` (issue #368; the always-on VM sets
-  this to `Demo`) — claims *any* stake posted by an account whose username
-  starts with that prefix (optionally narrowed to one exact stake via
-  `TAKER_STAKE`), except `TAKER_EXCLUDE_STAKE` (issue #362) — one reserved
-  stake the taker never claims, so two `Demo*`-prefixed accounts can
-  deliberately pair with each other there. No Owner provisioning step is
-  needed: any self-registered account named `Demo<anything>` qualifies
-  automatically, the same Charter-step-1 flow as any real account. This is the
-  only gated part. Weight has no effect on the taker — every listed game
-  always gets exactly one.
+- **1 taker**, optionally narrowed by `TAKER_ALLOW_PREFIX` (issue #368) —
+  claims *any* stake posted by an account whose username starts with that
+  prefix (optionally narrowed to one exact stake via `TAKER_STAKE`), except
+  `TAKER_EXCLUDE_STAKE` (issue #362) — one reserved stake the taker never
+  claims, so two specific accounts can deliberately pair with each other
+  there. `TAKER_ALLOW_PREFIX` defaults to empty (any human) — the always-on
+  VM left it unset from 2026-09-29 onward (Designer request, widening it from
+  the earlier `Demo`-only gate; see `docs/DEMO_TAKER_VM_SETUP.md`), so a
+  self-registered account of any name qualifies automatically, the same
+  Charter-step-1 flow as any real account. Weight has no effect on the taker —
+  every listed game always gets exactly one.
 - **N resting bot-waiters**, where N is that game's weight (issue #393,
   replacing the old fixed-3-lane `GATED_RESTER_STAKES` system) — each a
   distinct human-sounding `🤖@<handle>` identity, policy `rester`, posting a
@@ -140,7 +141,7 @@ challenges — press JOIN on one to play it to settlement.
 | `BOT_LOW_BALANCE_FACTOR`| `5`                     | Top up when `balance < stake × factor`.                       |
 | `BOT_TOPUP_AMOUNT`      | `500`                   | Credits added per top-up.                                      |
 | `TAKER_ONLY_GAMES`      | *(unset)*               | Comma-separated game ids, each with an optional `:N` weight suffix (default `1`) → gated mode (see above). Unset = full general roster. |
-| `TAKER_ALLOW_PREFIX`    | *(unset = `''`)*        | Username prefix (case-sensitive) an owner name must start with for a taker to claim it. `''` (empty, the default) = any human — same "disabled" sentinel as `TAKER_STAKE`/`TAKER_EXCLUDE_STAKE`. The always-on gated-taker VM sets this to `Demo` explicitly. Resters are never gated by this. |
+| `TAKER_ALLOW_PREFIX`    | *(unset = `''`)*        | Username prefix (case-sensitive) an owner name must start with for a taker to claim it. `''` (empty, the default) = any human — same "disabled" sentinel as `TAKER_STAKE`/`TAKER_EXCLUDE_STAKE`. Left unset on the always-on demo-taker VM as of 2026-09-29 (was `Demo` from 2026-07-12 to 2026-09-29 — widened per Designer request). Resters are never gated by this. |
 | `TAKER_STAKE`           | `0`                     | Gated taker claims only this stake. `0` = any non-reserved stake. |
 | `TAKER_EXCLUDE_STAKE`   | `0`                     | Gated taker never claims this stake (issue #362). `0` = none excluded. Gated resters draw their stake at random per-identity (issue #393), so no fixed value here is *guaranteed* distinct from every rester's draw — see `takerExcludeStake`'s doc comment in `src/config.ts`. |
 

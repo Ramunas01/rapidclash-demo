@@ -386,16 +386,22 @@ export const config = {
    * Username-prefix gate a taker's target owner must match (issue #368, replacing the earlier
    * exact-name `TAKER_ALLOW_NAMES` allowlist from #362 outright — not layered alongside it). Any
    * self-registered account whose name starts with this prefix qualifies automatically, no Owner
-   * provisioning step needed — matching the existing single `Demo` account's own naming
-   * convention already used elsewhere in this project.
+   * provisioning step needed.
    *
-   * Defaults to `''` (any human, current ungated-roster behaviour) — same "0/empty = disabled"
-   * sentinel every other `TAKER_*` value here uses. `isTakeable` is shared by every taker, gated
-   * VM and the general 26-bot roster alike, so a non-empty default here would silently narrow the
-   * general roster's takers too (PM caught this pre-merge: the advisor spec's own §4 says "no
-   * change to the general roster's behaviour", which a default of `'Demo'` would violate). The
-   * always-on gated-taker VM sets this explicitly — `TAKER_ALLOW_PREFIX=Demo` — the same way it
-   * already sets `TAKER_ONLY_GAMES` and `TAKER_EXCLUDE_STAKE`.
+   * Defaults to `''` (any human) — same "0/empty = disabled" sentinel every other `TAKER_*` value
+   * here uses. `isTakeable` is shared by every taker, the always-on VM and the general 26-bot
+   * roster alike, so a non-empty default here would silently narrow the general roster's takers
+   * too (PM caught this pre-merge: the advisor spec's own §4 says "no change to the general
+   * roster's behaviour", which a non-empty default would violate).
+   *
+   * From 2026-07-12 (issue #234) through 2026-09-29, the always-on demo-taker VM set this
+   * explicitly to `Demo` — a taker there would only claim a reserved `Demo*`-prefixed account's
+   * own challenge, so a real self-registered user's posted challenge always waited for a genuine
+   * human instead. Widened 2026-09-29 per Designer request (relayed by Owner,
+   * `docs/COMMS/ADVISOR_TO_PM.md` `2026-09-29#1`): the VM now leaves this unset, so its taker
+   * behaves exactly like the general roster's always has — any human's challenge is fair game,
+   * claimed instantly, no grace period. `HUMAN_RESERVED_STAKES` (below) is untouched by this and
+   * still keeps one stake tier bot-free regardless of who owns the challenge.
    */
   takerAllowPrefix: process.env.TAKER_ALLOW_PREFIX ?? '',
   /** Only claim challenges at this stake (0 = any non-reserved stake — current behaviour). */
@@ -409,13 +415,16 @@ export const config = {
    * touches" shape, opposite mechanism, see that constant's own doc comment for why the two
    * must stay separate.
    *
-   * Purpose: two `Demo*`-prefixed reserved investor accounts (`TAKER_ALLOW_PREFIX`) can
-   * deliberately post/JOIN each other at this one stake — e.g. to demo a human-vs-human match end
-   * to end — without the gated taker sniping it first.
+   * Purpose: two specific reserved accounts can deliberately post/JOIN each other at this one
+   * stake — e.g. to demo a human-vs-human match end to end — without the taker sniping it first.
+   * Originally framed around `Demo*`-prefixed accounts back when `TAKER_ALLOW_PREFIX` gated the
+   * taker to that prefix (2026-07-12 through 2026-09-29) — the mechanism itself was always
+   * independent of that gate and still works the same way now that the prefix gate is unset.
    *
    * `0` (the default) means "no stake excluded" — a no-op, matching `takerStake`'s own
-   * "0 = disabled" sentinel, so this has zero effect regardless of `TAKER_ALLOW_PREFIX`. The
-   * always-on gated-taker VM sets this explicitly, e.g. `TAKER_EXCLUDE_STAKE=10`. Pick a value
+   * "0 = disabled" sentinel. The always-on demo-taker VM sets this explicitly, e.g.
+   * `TAKER_EXCLUDE_STAKE=10`, only if the reserved-account-pairing feature is actually turned on
+   * (not currently — see `docs/DEMO_TAKER_VM_SETUP.md`). Pick a value
    * that is (a) one of the app's own bet presets (`BET_PRESETS`, apps/web/src/screens/GameHub.tsx) —
    * a real account can only ever POST a stake the UI actually offers — and (b) ideally not one a
    * gated rester is likely to land on: a resting bot-waiter sitting at the same stake would
