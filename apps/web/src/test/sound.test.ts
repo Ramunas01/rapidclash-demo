@@ -20,6 +20,7 @@ function captureInstance(instance: FakeAudioContext): void {
 class FakeAudioContext {
   state: 'suspended' | 'running' | 'closed' = 'suspended';
   destination = {} as AudioDestinationNode;
+  onstatechange: ((ev: Event) => void) | null = null;
   resume = vi.fn(async () => {
     this.state = 'running'; // set synchronously so play() sees 'running' right after unlock()
   });
@@ -161,6 +162,46 @@ describe('sound module', () => {
 
       Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
       document.dispatchEvent(new Event('visibilitychange'));
+
+      expect(lastCtx!.resume.mock.calls.length).toBe(resumeCalls); // unchanged — no extra resume() attempt
+    });
+  });
+
+  // Ticket 2026-09-30#1 item 2: visibilitychange only catches screen-lock/backgrounding — a
+  // hardware mute-switch toggle doesn't hide/background the page, so it never fires
+  // visibilitychange, yet iOS/WebKit can still suspend/interrupt the AudioContext for it. Fix:
+  // listen to the context's own onstatechange directly, alongside (not instead of) visibilitychange.
+  describe('onstatechange re-unlock (ticket 2026-09-30#1 item 2)', () => {
+    it('a context suspended for a reason other than visibilitychange is revived via onstatechange', async () => {
+      const sound = await freshSound();
+      await sound.preloadSounds();
+      sound.installUnlockOnFirstGesture();
+
+      window.dispatchEvent(new Event('pointerdown')); // the initial real-gesture unlock
+      expect(lastCtx?.state).toBe('running');
+
+      sound.play('move');
+      expect(startSpy).toHaveBeenCalledTimes(1);
+
+      // Simulate an OS-level audio-session suspension (e.g. a hardware mute-switch toggle) that
+      // never fires visibilitychange — only the context's own state actually changes.
+      lastCtx!.state = 'suspended';
+      lastCtx!.onstatechange?.(new Event('statechange'));
+      await Promise.resolve(); // let the (async) resume() microtask settle
+
+      expect(lastCtx?.state).toBe('running');
+      sound.play('move');
+      expect(startSpy).toHaveBeenCalledTimes(2); // revived — no visibilitychange or new gesture needed
+    });
+
+    it('onstatechange firing while already running does not attempt a redundant resume', async () => {
+      const sound = await freshSound();
+      await sound.preloadSounds();
+      sound.installUnlockOnFirstGesture();
+      window.dispatchEvent(new Event('pointerdown'));
+      const resumeCalls = lastCtx!.resume.mock.calls.length;
+
+      lastCtx!.onstatechange?.(new Event('statechange')); // still 'running' — nothing to revive
 
       expect(lastCtx!.resume.mock.calls.length).toBe(resumeCalls); // unchanged — no extra resume() attempt
     });

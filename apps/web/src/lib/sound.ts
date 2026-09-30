@@ -107,6 +107,14 @@ function ensureContext(): AudioContext | null {
   if (!Ctor) return null;
   try {
     ctx = new Ctor();
+    // Ticket 2026-09-30#1 item 2: the 2026-09-22#6 visibilitychange listener only catches
+    // screen-lock/backgrounding — it never fires for a hardware mute-switch toggle, since that
+    // doesn't hide/background the page. iOS/WebKit can suspend/interrupt the AudioContext for
+    // other OS-level audio-session reasons too. Listening to the context's own state directly
+    // catches all of them, not just the one proxy signal visibilitychange represents.
+    ctx.onstatechange = () => {
+      if (ctx?.state !== 'running') unlock();
+    };
   } catch {
     ctx = null;
     return null;

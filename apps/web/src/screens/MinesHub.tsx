@@ -375,7 +375,22 @@ function MinesBoard({ playerId, gameState, legalMoves, onMove, serverClockOffset
   useEffect(() => {
     const seen = seenRef.current;
     if (seen.key !== roundKey) {
-      seenRef.current = { key: roundKey, uncovered: new Set(me?.uncovered ?? []), bustedOn: me?.bustedOn };
+      // Ticket 2026-09-30#1 item 1: a back-to-back tying bust (a second tie resolving while the
+      // FIRST tie's own `drawHold` is still being displayed, within DRAW_HOLD_MS) hits this reset
+      // branch with `drawHold` already non-null — but that snapshot is necessarily STALE (it's the
+      // PRIOR round's frozen data; the round this transition just moved to can only populate
+      // `drawHold` via a LATER, separate state update in MinesHubScreen, never synchronously with
+      // `roundKey` itself changing). Baselining from `me` in that case adopts a round-old bustedOn
+      // tile as the new "seen" value — which then poisons the very next (correctly-new) bust's own
+      // `seen.bustedOn === undefined` check below, silently swallowing it. Baseline to genuinely
+      // BLANK instead whenever `drawHold` is active at reset time, so the next real diff pass (once
+      // `drawHold` catches up to this round) sees the new round's data as entirely new, same as a
+      // fresh round always should. When `drawHold` is null, `me` reads LIVE view data instead —
+      // always trustworthy (never stale) — so a genuine reconnect/fresh-mount still baselines off
+      // it exactly as before, protecting against a later same-value rerender retroactively firing.
+      seenRef.current = drawHold
+        ? { key: roundKey, uncovered: new Set(), bustedOn: undefined }
+        : { key: roundKey, uncovered: new Set(me?.uncovered ?? []), bustedOn: me?.bustedOn };
       return;
     }
     const nextUncovered = me?.uncovered ?? [];
@@ -384,7 +399,7 @@ function MinesBoard({ playerId, gameState, legalMoves, onMove, serverClockOffset
     }
     if (me?.bustedOn !== undefined && seen.bustedOn === undefined) play('mines-mine');
     seenRef.current = { key: roundKey, uncovered: new Set(nextUncovered), bustedOn: me?.bustedOn };
-  }, [roundKey, me?.uncovered, me?.bustedOn]);
+  }, [roundKey, me?.uncovered, me?.bustedOn, drawHold]);
 
   // The mine layout is present in my view only once I've locked (busted/cleared); at terminal
   // it also arrives at the top level. Either way it's safe — I have no move left. During a
