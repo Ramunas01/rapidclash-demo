@@ -54,6 +54,25 @@ function view(me: Partial<MinesBoardView>, opp: Partial<MinesBoardView> = {}, ex
 // generic slot boundary, number-valued at runtime for Mines) — mirror that here.
 const asLegal = (idxs: number[]) => idxs as unknown as string[];
 
+// Builds a `new_round` event payload mirroring mines.ts's resolve() — the drawn round's own
+// frozen boards/mines snapshot, captured before the synchronous redeal overwrites the live state.
+// Hoisted to file scope (not just the ticket 2026-09-25#5 describe block) since the ticket
+// 2026-09-30#1 item 1 tests below need the identical shape.
+function drawEvent(draws: number, uncovered: number[], bustedOn: number, mines: number[]) {
+  return [{
+    type: 'new_round',
+    payload: {
+      round: 1,
+      draws,
+      boards: {
+        alice: { uncovered, locked: true, bustedOn, score: uncovered.length },
+        bob: { uncovered, locked: true, bustedOn, score: uncovered.length },
+      },
+      mines,
+    },
+  }];
+}
+
 describe('MinesHubScreen (GameHub + MinesPanel)', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
@@ -318,21 +337,6 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     // the 'converge'→'reveal' gate to accept `drawReveal` as proof-of-opponent-locked, resultPhase
     // would get stuck at 'converge' forever in exactly this ordering — even earlier than the
     // "stuck at final" symptom Designer originally reported.
-    function drawEvent(draws: number, uncovered: number[], bustedOn: number, mines: number[]) {
-      return [{
-        type: 'new_round',
-        payload: {
-          round: 1,
-          draws,
-          boards: {
-            alice: { uncovered, locked: true, bustedOn, score: uncovered.length },
-            bob: { uncovered, locked: true, bustedOn, score: uncovered.length },
-          },
-          mines,
-        },
-      }];
-    }
-
     it('shows the drawn round\'s REAL data (not blank) immediately, gates taps off entirely, and the ring lights on BOTH bars', async () => {
       vi.useFakeTimers();
       try {
@@ -1083,6 +1087,89 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
       );
       expect(playMock).toHaveBeenCalledTimes(1);
       expect(playMock).toHaveBeenCalledWith('mines-gem');
+    });
+
+    // Ticket 2026-09-30#1 item 1: a BACK-TO-BACK tying bust (a second tie resolving while the
+    // FIRST tie's own `drawHold` reveal is still being displayed, within DRAW_HOLD_MS) swallows
+    // the second bust's mines-mine sound. Root cause, found via direct empirical verification
+    // (component-level render tracing, not just static reading): at the exact render where the
+    // sound effect first detects the round-key has moved on (`seen.key !== roundKey`), `drawHold`
+    // is ALREADY non-null — but its data is necessarily STALE (the FIRST tie's snapshot; the round
+    // this transition just moved to can only populate `drawHold` via a LATER, separate render —
+    // local state updates triggered from an effect always lag the props that triggered them by at
+    // least one render). The original code unconditionally baselined `seen` from `me` at reset
+    // time — adopting the stale round's bustedOn tile as the new "seen" value. The very next
+    // render (once `drawHold` catches up to the real new round) then sees `seen.bustedOn` as
+    // already-defined and skips the genuinely-new bust. Fix: when `drawHold` is active at reset
+    // time, baseline to blank instead of reading (stale) `me` — `drawHold` being non-null is
+    // itself the signal that `me` cannot be trusted as "this round's data" yet.
+    describe('ticket 2026-09-30#1 item 1: a back-to-back tying bust is not swallowed by the round-bump reset', () => {
+      it('a single tying bust (bundled with the round already having bumped) still fires mines-mine — non-regression', () => {
+        const { rerender } = render(
+          <MinesHubScreen
+            {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [0, 1, 2] }, { uncovered: [0, 1, 2] }), legalMoves: asLegal([]) })}
+          />,
+        );
+        expect(playMock).not.toHaveBeenCalled(); // mount baseline — no retroactive sound
+
+        // Bob's lock resolves the tie and the server redeals SYNCHRONOUSLY — this rerender already
+        // carries the FRESH round-1 live gameState (round bumped, boards reset) bundled with the
+        // new_round event carrying round 0's frozen bust snapshot for both players.
+        const freshState = view({ uncovered: [] }, { uncovered: [] }, { round: 1, draws: 1 });
+        rerender(
+          <MinesHubScreen
+            {...baseProps({ currentMatchId: 'm1', gameState: freshState, legalMoves: asLegal(allCovered), events: drawEvent(1, [0, 1, 2], 10, [10, 11, 12]) })}
+          />,
+        );
+
+        expect(playMock).toHaveBeenCalledWith('mines-mine');
+      });
+
+      it('a genuine fresh mount (no prior baseline, no drawHold yet) still resets silently', () => {
+        // `seenRef`'s own initial sentinel (`seen.key === ''`) must still baseline from the LIVE
+        // `me` (drawHold is null here, so `me` is trustworthy) — a player who just connected
+        // mid-round has no "previous baseline" a bust could be new information relative to.
+        render(
+          <MinesHubScreen
+            {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [1, 4, 9] }, { uncovered: [] }), legalMoves: asLegal(allCovered.filter((i) => ![1, 4, 9].includes(i))) })}
+          />,
+        );
+        expect(playMock).not.toHaveBeenCalled();
+      });
+
+      it('a SECOND tying bust, resolving while the first tie\'s drawHold is still active, still fires its own mines-mine', () => {
+        // Round 0 draws (bustedOn 10) — establishes the first drawHold, sound plays normally.
+        const { rerender } = render(
+          <MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ uncovered: [] }, { uncovered: [] }), legalMoves: asLegal([]) })} />,
+        );
+        const round1Fresh = view({ uncovered: [] }, { uncovered: [] }, { round: 1, draws: 1 });
+        rerender(
+          <MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: round1Fresh, legalMoves: asLegal(allCovered), events: drawEvent(1, [0, 1, 2], 10, [10, 11, 12]) })} />,
+        );
+        expect(playMock).toHaveBeenCalledWith('mines-mine');
+        playMock.mockClear();
+
+        // Round 1 ALSO draws (a second tie, bustedOn 15, disjoint tile indices from round 0) —
+        // this transition's props arrive while the FIRST drawHold (round 0's snapshot) is still
+        // the active `drawHold`, reproducing the exact stale-baseline hazard.
+        const round2Fresh = view({ uncovered: [] }, { uncovered: [] }, { round: 2, draws: 2 });
+        const secondDrawEvent = [{
+          type: 'new_round',
+          payload: {
+            round: 2, draws: 2,
+            boards: {
+              alice: { uncovered: [5, 6, 7], locked: true, bustedOn: 15, score: 3 },
+              bob: { uncovered: [5, 6, 7], locked: true, bustedOn: 15, score: 3 },
+            },
+            mines: [15, 16, 17],
+          },
+        }];
+        rerender(
+          <MinesHubScreen {...baseProps({ currentMatchId: 'm1', gameState: round2Fresh, legalMoves: asLegal(allCovered), events: secondDrawEvent })} />,
+        );
+
+        expect(playMock).toHaveBeenCalledWith('mines-mine'); // the SECOND bust must not be swallowed
+      });
     });
   });
 });
