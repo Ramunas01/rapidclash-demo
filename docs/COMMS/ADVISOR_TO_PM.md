@@ -1,5 +1,41 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-01#2 — D71, Designer's global fix: iOS Safari auto-zooms the page on any text-field focus, triggered by a computed font-size under 16px. Independently verified EVERY input/textarea's actual current font-size (not the Designer's own per-field citations, which are against the prototype FILE, not our code) — found one correction worth flagging before PM starts: the Game Search field the ticket says is "already 16px, leave as is" is ACTUALLY 14px in our code and needs fixing too. Also found one entire file (2 of the cited inputs) that's genuinely dead, unreachable code — fixing it would have zero real-world effect            [READY TO TICKET]
+From: Designer's own report (relayed by Owner, screenshot in `D71/`, confirms the zoomed/cut-off symptom directly), verified via direct reads of every `<input>`/`<textarea>` in `apps/web/src` (9 raw elements across 7 files — confirmed the shared `components/ui/input.tsx`/`textarea.tsx` wrapper exists but is imported NOWHERE, dead boilerplate, not the actual source of any field's styling), `apps/web/index.html`'s viewport tag, `apps/web/tailwind.config.js` (confirmed no custom `fontSize` scale, so Tailwind's stock `text-sm`=14px/`text-base`=16px apply), and `App.tsx`'s own `screen`/`setScreen` state (traced every call site to confirm one cited file is unreachable)
+
+## Item 1 — every field's ACTUAL current font-size, checked directly, not assumed from the Designer's own file citations
+
+**Important framing correction: the ticket's own per-field line citations (`Full Spec.html:214/2246/2428/2467/2472/2487`) are against the PROTOTYPE FILE, not our code** — the ticket says "the build inherits it from the file," but our implementation doesn't literally copy the file's own font-size values field-by-field; each one was independently styled during its own rebuild ticket. So I checked each field's REAL current value directly rather than trusting the file-based assumption, and found a real discrepancy:
+
+- **Game Search, `HomeHub.tsx:578`** — ticket says "already 16px, leave as is" (matching the file). **Actually `text-sm` = 14px in our code.** This one needs the fix too, not a leave-alone.
+- **Wallet currency search, `CurrencyPicker.tsx:140`** — `text-[13px]`, matches the ticket's own citation exactly. The "only candidate" the ticket names for the scale-trick if 16px breaks the layout.
+- **Chat textarea, `ChatSheet.tsx:~271`** — `fontSize: '15px'` (inline style), matches the ticket's citation.
+- **Auth username/password, `AuthModal.tsx:161/171`** — `text-sm` = 14px (ticket cites 15px from the file; ours is 14px — same bug either way, same fix).
+- **Campaign name, `AffiliateHub.tsx:930`** — `text-[14px]` (ticket cites 15px from the file; same situation as Auth).
+- **Bet amount, `StakeEntry.tsx:172`** — checked per the ticket's own "any other input" catch-all: `text-2xl` = 24px, already well clear. **No change needed here**, confirmed rather than assumed.
+- **No promo/referral code entry field exists anywhere** — checked `BringARival.tsx`/`AffiliateHub.tsx` directly, neither has an input for one. Nothing to fix there.
+- **No editable profile-field inputs exist anywhere currently** — confirmed via the same exhaustive grep that found every other input in the app; none in `ProfileHub.tsx`.
+
+**One file is genuinely dead code — fixing it has zero real-world effect, flagging rather than silently skipping.** `Auth.tsx` (`AuthScreen`, NOT `AuthModal.tsx` — a different, older full-screen component) has two more `text-sm` inputs (`:116`/`:129`). Traced every `setScreen(...)` call in `App.tsx`: none ever sets `'auth'`, and the initial `screen` state (`:370-374`) never defaults to it either — `case 'auth': return <AuthScreen .../>` (`:1189`) is unreachable. A nearby comment (`:967`) confirms this directly: *"logged-out Home ... not the full auth screen."* `AuthModal.tsx`'s own bottom-sheet (ticket `2026-09-13#4`) is what users actually see. Recommend leaving `Auth.tsx` alone for this ticket (fixing unreachable code wastes effort) — separately worth a follow-up to delete it, out of this ticket's own scope.
+
+**Proposed fix, precisely scoped:** change each of the 5 real fields above to an explicit `text-[16px]` (not `text-base`, which happens to also resolve to 16px under Tailwind's stock scale but makes the fix depend on that scale never changing — being explicit matches the ticket's own literal "set font-size:16px" instruction and doesn't rely on an assumption). For the wallet search specifically, if `16px` visibly breaks that field's layout, apply the ticket's own named escape hatch verbatim: keep the element at `16px` and add `transform:scale(0.8125); transform-origin:left center; width:123%`.
+
+## Item 2 — viewport meta tag, confirmed exact current state
+
+**`apps/web/index.html:5`**: `<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />` — confirmed missing `maximum-scale=1` exactly as the ticket describes. One-line addition: `maximum-scale=1`. Confirmed the ticket's own explicit "don't add `user-scalable=no`" instruction — current tag doesn't have it either, nothing to remove.
+
+## Item 3 — regression check: the harness is the right hook, not a static lint rule
+
+**A static ESLint-style rule can't reliably catch this** — Tailwind classes like `text-sm` resolve to a pixel value only via the Tailwind config, and several fields here use inline `style={{fontSize: ...}}` or arbitrary-value classes (`text-[13px]`) that a naive source-text rule would need separate handling for anyway, with no guarantee of catching every future styling approach a new field might use.
+
+**`tools/design-fidelity/` is the right place — confirmed it's Playwright-based, not just screenshot diffing.** `tools/design-fidelity/package.json` depends on `playwright-core` directly, and the harness already drives a real browser per-screen (`src/app.ts`/`src/screens.ts`) for its own pixel-diff captures. Recommend adding one new assertion run alongside the existing capture step: for each registered screen, query every `input`/`textarea` in the live DOM and assert `getComputedStyle(el).fontSize` parses to `>= 16`. This catches the REAL computed value regardless of how a future field is styled (Tailwind class, inline style, or anything else) — matching the ticket's own "computed font-size, not the rendered one" framing exactly, and running against the actual rendered app rather than guessing from source text.
+
+## Verification plan
+
+**Ask:** once the font-size + viewport changes land, this is a `tools/design-fidelity` + manual-device check per the ticket's own "Check" section — I have no iPhone/Safari or browser tooling in this environment to verify the actual zoom-on-focus behavior myself. Recommend PM (or whoever has device access) confirm the 4 listed taps (login username, wallet search, chat box, campaign name) directly before calling this done, not just a code-level review — this bug class is specifically about real Safari behavior, not something a unit test can observe.
+
+---
+
 ### 2026-10-01#1 — D70, Designer's login/signup sheet report against `Full Spec.html:2452-2475`/`4171-4184`/`4207-4214`. Verified every claim against the actual current source (not transcribed as-is) — most are confirmed real and precisely scoped; one claim is confirmed WRONG as stated (the drag handle exists, it's a contrast issue not a missing element) and item 1's real scope is bigger than "swap a handler" — there is currently NO mode-selection mechanism anywhere in this codebase, not a wrong one            [READY TO TICKET]
 From: Designer's own report (relayed by Owner, screenshots in `D70/`), verified via direct reads of `apps/web/src/components/AuthModal.tsx`, `apps/web/src/components/hub-chrome/BottomSheet.tsx`, `apps/web/src/components/hub-chrome/HubRibbon.tsx`, `apps/web/src/App.tsx` (`openAuth`/`onAccountTap`/`authOpen` — traced the FULL call chain, not just the header buttons), `apps/web/src/index.css` (every cited color/shadow token), `apps/web/src/screens/GameHub.tsx` (`PLAY_BTN_SHADOW`, the ledge precedent the ticket itself points at), and the LIVE production bundle (confirmed the deployed revision matches current `main` for every string checked)
 
