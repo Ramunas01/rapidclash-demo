@@ -144,6 +144,22 @@ describe('ChatSheet — name color per VIP tier (Full Spec.html:4134, only Gold/
   }
 });
 
+// Ticket 2026-10-01#2 (D71): iOS Safari auto-zooms the page on focusing any text field with a
+// computed font-size under 16px — the real textarea was 15px. Its aria-hidden overlay (the visible
+// @mention-pill rendering) must stay pixel-aligned with it (own sibling comment in ChatSheet.tsx),
+// so both had to move together, not just the focusable element.
+describe('ChatSheet — composer font-size (ticket 2026-10-01#2, iOS Safari auto-zoom-on-focus)', () => {
+  it('the real textarea renders at 16px, not the old 15px', () => {
+    renderSheet({ open: true });
+    expect(screen.getByTestId('chat-composer-textarea').style.fontSize).toBe('16px');
+  });
+
+  it('the aria-hidden overlay stays pixel-aligned at 16px too, not left behind at 15px', () => {
+    renderSheet({ open: true });
+    expect(screen.getByTestId('chat-composer-overlay').style.fontSize).toBe('16px');
+  });
+});
+
 describe('ChatSheet — @mention pills: TWO DIFFERENT regexes for two different moments', () => {
   it('SENT-message rendering (Full Spec.html:4128): pill renders WITHOUT a trailing-space requirement, text uppercased and @ stripped', () => {
     const m = msg({ text: 'hey @bob check this out' }); // no trailing space after @bob — still a complete pill

@@ -2,7 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- Ticket 2026-10-01#2 (D71): maximum-scale=1 pins the viewport so a focused text field with
+         a computed font-size under 16px can't trigger iOS Safari's own auto-zoom-on-focus (the
+         actual fix is giving every field >=16px — this is the belt to that suspenders, matching
+         the ticket's own explicit instruction not to add user-scalable=no alongside it). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0B0B0B" />
     <link rel="icon" type="image/svg+xml" href="/icons/icon-192.svg" />
     <title>RapidClash</title>

@@ -242,7 +242,11 @@ export function ChatSheet({ open, expanded, messages, onClose, onToggleExpanded,
                   className="pointer-events-none absolute inset-0 overflow-hidden"
                   style={{
                     fontFamily: TEXT_FONT,
-                    fontSize: '15px',
+                    // Ticket 2026-10-01#2 (D71): 16px not 15px, matching the real textarea below it
+                    // (its own sibling comment already requires these two stay pixel-aligned) — the
+                    // iOS-zoom fix is on the real textarea; this overlay must track it or the two
+                    // visibly desync.
+                    fontSize: '16px',
                     lineHeight: '22px',
                     whiteSpace: 'pre-wrap',
                     overflowWrap: 'break-word',
@@ -281,7 +285,9 @@ export function ChatSheet({ open, expanded, messages, onClose, onToggleExpanded,
                     height: '22px',
                     maxHeight: '112px',
                     fontFamily: TEXT_FONT,
-                    fontSize: '15px',
+                    // Ticket 2026-10-01#2 (D71): 16px not 15px — iOS Safari auto-zooms the page on
+                    // focusing any text field with a computed font-size under 16px.
+                    fontSize: '16px',
                     lineHeight: '22px',
                     color: 'transparent',
                     caretColor: 'var(--rc-text)',

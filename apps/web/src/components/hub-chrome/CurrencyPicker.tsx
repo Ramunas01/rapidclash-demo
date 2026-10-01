@@ -142,7 +142,13 @@ export function CurrencyPicker({ balances }: Props) {
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search"
                   data-testid="currency-picker-search"
-                  className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[13px] text-[var(--rc-text)] outline-none"
+                  // Ticket 2026-10-01#2 (D71): text-[16px] not text-[13px] — iOS Safari auto-zooms
+                  // the page on focusing any text field with a computed font-size under 16px. This
+                  // row is a flexible `flex-1` layout (no fixed narrow width), so the bump should
+                  // absorb cleanly — re-verify visually (design-fidelity/device check) and fall
+                  // back to the ticket's own named scale-trick (`transform:scale(0.8125)`) only if
+                  // it turns out to visibly break.
+                  className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[16px] text-[var(--rc-text)] outline-none"
                   style={{ fontFamily: "'Inter Tight', Arial, Helvetica, sans-serif" }}
                 />
               </div>
