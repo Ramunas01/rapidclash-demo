@@ -526,6 +526,11 @@ export interface AdminPlayerSummary {
    *  `POST /auth/register`) this account registered through, or `null` for direct traffic / any
    *  registration before this ticket shipped. */
   source: string | null;
+  /** USD-bucket balance only (unchanged scope from ticket 2026-10-01#7 — this summary list stays
+   *  single-currency; the per-match/per-ledger-row detail view, by contrast, is NOT currency-
+   *  scoped as of ticket 2026-10-01#10 — see AdminMatchLogEntry/AdminPlayerLogResponse below). A
+   *  SOL-default player's balance here can legitimately read as the untouched 1000 USD starting
+   *  grant while gamesPlayed is nonzero — their real activity lives in a different bucket. */
   balance: number;
   gamesPlayed: number;
   wins: number;
@@ -533,6 +538,11 @@ export interface AdminPlayerSummary {
   draws: number;
   moneyWon: number;
   moneyLost: number;
+  /** Ticket 2026-10-01#10, item 2: latest of this account's own ledger entries (any currency) and
+   *  settled matches — derived at query time, not stored (accounts has no timestamp column).
+   *  `null` for an account with neither (registered, never funded/played — shouldn't happen in
+   *  practice since register() always grants, but kept nullable rather than assumed). */
+  lastSeenAt: string | null;
 }
 
 export interface AdminMatchLogEntry {
@@ -540,22 +550,35 @@ export interface AdminMatchLogEntry {
   gameId: string;
   opponent: PlayerId;
   result: 'win' | 'loss' | 'draw' | 'void';
-  /** Signed net change to this player's wallet. */
+  /** Signed net change to this player's wallet, denominated in `currency` below — NOT always USD
+   *  (ticket 2026-10-01#10's fix: the previous USD-only scoping silently dropped every match this
+   *  player settled in a non-USD bucket, e.g. the SOL default every new account joins with). */
   amount: number;
+  /** This player's own running balance in `currency`'s own bucket, immediately after this match's
+   *  last ledger entry — NOT a cross-currency total. */
   runningBalance: number;
+  /** Which of this player's currency buckets this match's own escrow/settlement happened in —
+   *  read off that match's own ledger rows (one player's rows for one match are always a single
+   *  currency, the one they joined with), never assumed to be USD. */
+  currency: Currency;
   createdAt: string;
 }
 
-/** Response of `GET /admin/players/:id/log` (ticket 2026-10-01#7) — both views of one account's
- *  activity: the match-centric summary (`matches`, one row per match, derived from `match_results`
- *  — never pruned) and the raw financial ledger (`ledgerEntries`, every GRANT, ADMIN_CREDIT,
- *  BET_ESCROW, SETTLE_WIN, SETTLE_REFUND, REWARD_CLAIM, and OPENING_BALANCE row, oldest-first, USD
- *  only). `matches` is reconstructed from ledger rows too (for `amount`/`runningBalance`) — a
- *  match whose own ledger rows have since been folded into an `OPENING_BALANCE` compaction
+/** Response of `GET /admin/players/:id/log` (ticket 2026-10-01#7, currency scoping fixed in
+ *  2026-10-01#10) — both views of one account's activity: the match-centric summary (`matches`,
+ *  one row per match, derived from `match_results` — never pruned) and the raw financial ledger
+ *  (`ledgerEntries`, every GRANT, ADMIN_CREDIT, BET_ESCROW, SETTLE_WIN, SETTLE_REFUND,
+ *  REWARD_CLAIM, and OPENING_BALANCE row, oldest-first, ACROSS EVERY CURRENCY BUCKET — the
+ *  original USD-only filter here was the exact bug 2026-10-01#10 fixed: it silently hid every
+ *  non-USD row, which is most of a SOL-default player's real activity). Each `LedgerEntry`/
+ *  `AdminMatchLogEntry` carries its own `currency` — the UI must label amounts by that field, not
+ *  assume `$`. `matches` is reconstructed from ledger rows too (for `amount`/`runningBalance`) —
+ *  a match whose own ledger rows have since been folded into an `OPENING_BALANCE` compaction
  *  checkpoint (`ledger.ts`'s `compactOldTransactions`) no longer appears there individually,
  *  though it's still visible in `ledgerEntries`' own `OPENING_BALANCE` row as part of that
- *  checkpoint's lump sum. A known, accepted limitation for old history — not a concern for
- *  observing current demo-link activity. */
+ *  checkpoint's lump sum (one checkpoint per currency bucket, per ledger.ts's own compaction
+ *  grouping — see its doc comment). A known, accepted limitation for old history — not a concern
+ *  for observing current demo-link activity. */
 export interface AdminPlayerLogResponse {
   matches: AdminMatchLogEntry[];
   ledgerEntries: LedgerEntry[];

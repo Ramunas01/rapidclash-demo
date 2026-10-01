@@ -27,6 +27,7 @@ export function registerAdminRoutes(
         source: a.source,
         balance: ledger.getBalance(a.id, 'USD'),
         ...stats,
+        lastSeenAt: matchHistory.getLastSeenAt(a.id),
       };
     });
     reply.code(200).send(players);
@@ -37,11 +38,13 @@ export function registerAdminRoutes(
     if (!ledger.accountExists(id)) {
       return reply.code(404).send({ error: 'Player not found' });
     }
-    // USD-only (matches AdminPlayerLogResponse's own doc comment and getFullMatchLog's own
-    // scoping) — this admin view doesn't need multi-currency precision for a demo-activity tool.
+    // Ticket 2026-10-01#10: was USD-only (matching getFullMatchLog's own prior scoping), which
+    // silently hid every non-USD row — most of a SOL-default player's real activity. Every
+    // currency now, matching AdminPlayerLogResponse's updated doc comment; the UI labels each
+    // row by its own `currency` field rather than assuming `$`.
     const body: AdminPlayerLogResponse = {
       matches: matchHistory.getFullMatchLog(id),
-      ledgerEntries: ledger.getEntries(id).filter((e) => e.currency === 'USD'),
+      ledgerEntries: ledger.getEntries(id),
     };
     reply.code(200).send(body);
   });
