@@ -1,5 +1,34 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-01#9 — D74 DEPLOYED LIVE (`rapidclash-00147-9hv`, confirmed healthy, zero errors, admin screen strings confirmed in the live bundle) — all four of D72/D73/D74/PR-797 are now live. PR #797 (bot-crowd WS heartbeat, the production-incident hardening) independently re-verified: reproduced BOTH load-bearing tests failing via my own revert-confirm (not just trusted PM's), confirmed the demo-taker VM is genuinely running the fix, and confirmed PM's own "can't port to the browser client" claim is a real platform constraint, not an excuse            [VERIFIED — deployed, correct]
+From: PM's own cross-session report (deploy + PR #797) — independently re-verified via `gcloud` (revision health/traffic/logs), a live-bundle fetch confirming D74's own strings are present, a live `/open-challenges` check confirming bot-crowd is posting, full diff review of PR #797, my OWN revert-confirm on both of its load-bearing tests, SSH confirmation the demo-taker VM's own git HEAD includes the fix and the bot-crowd process is genuinely running, and a direct read of `apps/web/src/ws.ts` confirming it has no ping/pong mechanism at all
+
+## D74 deploy, confirmed directly
+
+`gcloud` shows revision `rapidclash-00147-9hv` serving 100% traffic, created 17:51, zero `ERROR`-severity log entries in the 3 hours since. Fetched the live bundle directly: `Demo-link only`/`admin-source-filter`/`admin-players-table` all present — the admin screen itself, not just the backend, is live. Hit `/open-challenges` directly: 20 real bot challenges, confirming the demo-taker VM survived the deploy cleanly (matching PM's own "All bots online" report).
+
+## PR #797 — the heartbeat fix, independently reproduced, not just read
+
+**Confirmed the server-side precedent this mirrors is real, not just cited.** Read `gateway.ts`'s own D36 heartbeat directly (`:711-732`): `socketAlive` Map, ping every tick, `terminate()` on a socket still marked not-alive from the PREVIOUS tick. The new `ws-client.ts` code is a precise structural mirror — `alive` boolean instead of a Map (one client, one socket, no map needed), same ping-then-mark-false, same terminate-if-still-false-next-tick shape.
+
+**Independently reproduced BOTH of PM's claimed load-bearing tests failing, via my own edit — not just trusted the commit message's claim.** Temporarily disabled the `this.startHeartbeat()` call at connection-open time and re-ran the test suite: exactly 2 tests failed (`pings on the configured cadence...`, `terminates a socket that never answers a ping...`) — the other two (close/disconnect stop the heartbeat) correctly stayed green, since those never depend on the heartbeat having started in the first place. Restored the real code, confirmed 80/80 clean again. This precisely matches PM's own claimed revert-confirm scope.
+
+**Confirmed the reconnect-on-terminate mechanism is real, not assumed from "terminate() fires close."** The new test's own `MockSocket.terminate()` explicitly emits `'close'` synchronously (mirroring the real `ws` library's own documented behavior) — and the existing `ws.on('close')` handler (unchanged by this PR) already calls `setTimeout(() => this.connect(), this.reconnectDelayMs)` whenever `!this.closed`. Confirmed via the test's own assertion that a SECOND `connect()` genuinely runs after the reconnect delay (`instances.length === 2`), not just that `terminate()` was called.
+
+**Confirmed `disconnect()`'s own guard is correct, not just "probably fine."** `disconnect()` sets `this.closed = true` before calling `stopHeartbeat()`/`ws.close()` — so even though `ws.close()` also fires `'close'` (same as `terminate()`), the `!this.closed` check correctly suppresses the reconnect, and `stopHeartbeat()` (called in both `disconnect()` and the `close` handler) prevents a deliberately-retired socket from ever being pinged again. Confirmed by the test exercising exactly this path directly.
+
+**Confirmed the VM is genuinely running this fix, not just that the repo has it merged.** SSH'd into `demo-taker` directly: git HEAD is `57ab5e0` (my own later verification commit, confirmed to be a descendant of `6359f4c`, PR #797's own merge commit, via the earlier fast-forward), and the `bot-crowd` process is genuinely running (started 17:52, consistent with PM's own restart timing).
+
+**Confirmed the flagged-but-not-fixed browser-client gap is a real platform limitation, not an excuse to skip work.** Read `apps/web/src/ws.ts` directly: zero `ping`/`pong`/heartbeat logic anywhere — confirmed it really does rely solely on `onclose`, exactly as PM described. The standard browser `WebSocket` API genuinely has no JS-level access to protocol ping/pong control frames (unlike Node's `ws` package, which exposes them directly) — this is a real spec constraint, not something PM should have ported directly. An app-level heartbeat MESSAGE (not a protocol-level ping) would be the correct shape for that gap, same conclusion PM already reached — worth a ticket if Owner wants it addressed, not urgent given the browser client's own reconnect-on-close path is otherwise sound (the incident was specific to a server-side container restart, a scenario bots hit far more than any one browser tab does).
+
+**Ran the tests myself: 80/80 in `tools/bot-crowd` (76 existing + 4 new), clean typecheck. Confirmed the full monorepo `tsc -b` build is clean.**
+
+## Status: all four D72/D73/D74/PR-797 are now live, nothing pending
+
+**Advisor next:** available, no open thread. **PM next:** nothing pending — the WS-reconnect-hardening investigation Owner asked for is complete and deployed; the browser-client heartbeat gap is flagged for a future ticket if wanted, not blocking anything today.
+
+---
+
 ### 2026-10-01#8 — D73 (PR #794, `1fda05a`) and D74 (PR #796, `0de1ef5`) SHIPPED, MERGED, and BOTH independently re-verified end to end. D73 is ALREADY LIVE in production (D72 also deployed alongside it, confirmed via a live-bundle check); D74 is merged but NOT yet deployed. PM caught TWO genuine, non-trivial bugs beyond either ticket's own literal text — both confirmed real by me via direct reproduction, not just trusted            [VERIFIED — both tickets closed, correct; D73 live, D74 awaiting deploy]
 From: PM's own cross-session reports — independently re-verified via full diff review of both PRs, my OWN revert-confirm reproducing D74's loss-detection bug from scratch (not trusting PM's description), running every directly-affected test file myself (D73: 61/61 `HomeHub.test.tsx`; D74: 155/155 across 7 files), `tools/bot-crowd`'s own typecheck + tests (76/76, confirming PM's manual sweep was warranted and correctly found nothing to fix), a full monorepo build, and a full suite run (1918/1920 — both failures independently reproduced as genuine pre-existing standalone-passing flakes, not regressions)
 
