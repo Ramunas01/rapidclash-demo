@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft } from 'lucide-react';
-import type { AdminPlayerSummary, AdminPlayerLogResponse } from '@rapidclash/shared';
+import type { AdminMatchLogEntry, AdminPlayerSummary, AdminPlayerLogResponse, LedgerEntry } from '@rapidclash/shared';
 import { api } from '../api.js';
 
 interface Props {
@@ -30,6 +30,65 @@ function isBotName(displayName: string): boolean {
  *  every figure with its own currency code rather than a bare `$`. */
 function withCurrency(amount: number, currency: string): string {
   return `${amount} ${currency}`;
+}
+
+/** Ticket 2026-10-02#1 (D76) — one row of the merged Matches-table timeline: either a real match
+ *  or a standalone ledger event (no matchId) rendered inline at its real chronological position,
+ *  so an admin can see WHY a balance jumped without separately opening the Ledger entries table
+ *  and aligning timestamps by hand (the exact manual cross-reference Advisor's own DemoGM
+ *  investigation did). */
+type TimelineRow =
+  | { kind: 'match'; key: string; data: AdminMatchLogEntry }
+  | { kind: 'marker'; key: string; data: LedgerEntry };
+
+const MARKER_LABELS: Record<string, string> = {
+  OPENING_BALANCE: 'Account history compacted',
+  ADMIN_CREDIT: 'Admin credit',
+  REWARD_CLAIM: 'Reward claimed',
+  GRANT: 'Starting grant',
+};
+
+/** Friendly label for a standalone ledger entry's own `type` — falls back to the raw type string
+ *  for anything not in the map above, so an unrecognized/future entry type still renders instead
+ *  of silently disappearing. */
+function markerLabel(type: string): string {
+  return MARKER_LABELS[type] ?? type;
+}
+
+/** Ticket 2026-10-02#1 (D76): merges `matches` with every STANDALONE ledger entry (any row with
+ *  `matchId === null` — OPENING_BALANCE/ADMIN_CREDIT/REWARD_CLAIM/GRANT) into one chronological
+ *  timeline. `matches` arrives newest-first (`getFullMatchLog`'s own convention);
+ *  `ledgerEntries` arrives oldest-first (`AdminPlayerLogResponse`'s own doc comment) — both are
+ *  walked here in a single oldest-first pass (a standard two-pointer merge, since each input is
+ *  already sorted), then reversed once at the end to match the screen's own newest-first
+ *  convention. A marker whose timestamp ties exactly with a match's own `createdAt` is placed
+ *  BEFORE that match (`<=`), matching the real-world case this ticket was built from: a
+ *  compaction checkpoint's own timestamp always strictly precedes the next match it's adjacent
+ *  to, so this tie-break has no observable effect on real data — it only avoids an arbitrary
+ *  ordering decision in the (currently impossible, since one settles via `ledger.settle` and the
+ *  other via `compactOldTransactions`/`adminCredit`/`creditRewardClaim`, never the same
+ *  transaction) case of an exact-same-millisecond tie. */
+function buildMatchTimeline(matches: AdminMatchLogEntry[], ledgerEntries: LedgerEntry[]): TimelineRow[] {
+  const chronoMatches = [...matches].reverse();
+  const standalone = ledgerEntries
+    .filter((e) => e.matchId == null)
+    .slice()
+    .sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+
+  const rows: TimelineRow[] = [];
+  let si = 0;
+  for (const m of chronoMatches) {
+    while (si < standalone.length && standalone[si].createdAt <= m.createdAt) {
+      rows.push({ kind: 'marker', key: `marker-${standalone[si].id}`, data: standalone[si] });
+      si++;
+    }
+    rows.push({ kind: 'match', key: `match-${m.matchId}`, data: m });
+  }
+  while (si < standalone.length) {
+    rows.push({ kind: 'marker', key: `marker-${standalone[si].id}`, data: standalone[si] });
+    si++;
+  }
+  return rows.reverse();
 }
 
 /**
@@ -139,18 +198,27 @@ export function AdminScreen({ token, onBack }: Props) {
                   </tr>
                 </thead>
                 <tbody>
-                  {log.matches.map((m) => (
-                    <tr key={m.matchId} data-testid={`admin-match-${m.matchId}`} className="border-b border-white/5">
-                      <td className="py-1 pr-2">{m.gameId}</td>
-                      <td className="py-1 pr-2">{m.opponent}</td>
-                      <td className="py-1 pr-2">{m.result}</td>
-                      <td className={`py-1 pr-2 ${m.amount > 0 ? 'text-green-400' : m.amount < 0 ? 'text-red-400' : ''}`}>
-                        {m.amount > 0 ? '+' : ''}{withCurrency(m.amount, m.currency)}
-                      </td>
-                      <td className="py-1 pr-2">{withCurrency(m.runningBalance, m.currency)}</td>
-                      <td className="py-1 pr-2 text-white/50">{new Date(m.createdAt).toLocaleString()}</td>
-                    </tr>
-                  ))}
+                  {buildMatchTimeline(log.matches, log.ledgerEntries).map((row) =>
+                    row.kind === 'match' ? (
+                      <tr key={row.key} data-testid={`admin-match-${row.data.matchId}`} className="border-b border-white/5">
+                        <td className="py-1 pr-2">{row.data.gameId}</td>
+                        <td className="py-1 pr-2">{row.data.opponent}</td>
+                        <td className="py-1 pr-2">{row.data.result}</td>
+                        <td className={`py-1 pr-2 ${row.data.amount > 0 ? 'text-green-400' : row.data.amount < 0 ? 'text-red-400' : ''}`}>
+                          {row.data.amount > 0 ? '+' : ''}{withCurrency(row.data.amount, row.data.currency)}
+                        </td>
+                        <td className="py-1 pr-2">{withCurrency(row.data.runningBalance, row.data.currency)}</td>
+                        <td className="py-1 pr-2 text-white/50">{new Date(row.data.createdAt).toLocaleString()}</td>
+                      </tr>
+                    ) : (
+                      <tr key={row.key} data-testid={`admin-marker-${row.data.id}`} className="border-b border-white/5 bg-white/5 italic text-white/50">
+                        <td className="py-1 pr-2" colSpan={5}>
+                          {markerLabel(row.data.type)}: {row.data.amount > 0 ? '+' : ''}{withCurrency(row.data.amount, row.data.currency)}
+                        </td>
+                        <td className="py-1 pr-2">{new Date(row.data.createdAt).toLocaleString()}</td>
+                      </tr>
+                    ),
+                  )}
                 </tbody>
               </table>
             )}
