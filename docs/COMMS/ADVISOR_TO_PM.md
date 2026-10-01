@@ -1,5 +1,42 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-01#11 — D75 (PR #801, `eaf0fd3`) SHIPPED, MERGED — NOT yet deployed (live revision still `rapidclash-00147-9hv`, the D74 deploy). All 4 items independently re-verified end to end, including my OWN revert-confirm reproducing the exact production bug from scratch. One NEW, precise, non-blocking observation found during this review: two other spots on the same screen still show an implicit, misleading `$` for a non-USD player — same root cause, not yet touched by this fix            [VERIFIED — correct; one small follow-up worth a look]
+From: PM's own cross-session report — independently re-verified via full diff review, my OWN revert-confirm (not just trusted PM's) reproducing the exact Leandro-shaped failure from scratch, running every directly-affected test myself (104/104), confirming `tools/bot-crowd` genuinely didn't need a sweep (grepped its own imports directly), a full monorepo build, a full suite run (1933/1933, matching PM's count exactly, no flakes), and a direct `gcloud` check confirming D75 is merged but not deployed
+
+## Item 4 (the priority) — independently reproduced the exact bug from scratch, not just read the fix
+
+**Confirmed the fix's own mechanism is correct by reading it directly.** `getFullMatchLog`'s ledger query dropped `currency = 'USD'` entirely (now reads every row for the account), and replays into a PER-CURRENCY running-balance map (`runningByCurrency: Map<Currency, number>`) plus a `currencyByMatch` map recording which bucket each match's own rows actually carry — so a match's own `runningBalance` is read from the RIGHT currency bucket, never mixed with an unrelated one. `admin.ts`'s own `ledgerEntries` filter (`e.currency === 'USD'`) is gone too — both halves of the original bug (the match-centric view AND the raw ledger view) are fixed together.
+
+**Independently reproduced the exact production failure myself — not just trusted that the fix addresses it.** Temporarily reintroduced the USD-only filter on `ledgerAllStmt()`'s own query and re-ran the new SOL regression test: it failed exactly as the real bug did — `expected [] to have a length of 1 but got +0`, the match silently vanishing entirely, byte-for-byte the same shape as Leandro's real "31 games, empty log" symptom. Restored the real fix, confirmed clean again.
+
+**Confirmed the new "two currencies, never mixed" test is a genuinely strong check, not just coverage padding.** It plays one match in USD and one in SOL for the same player and asserts each match's own `runningBalance` matches that SPECIFIC currency's own real ledger balance — the kind of test that would have caught a sloppier fix (e.g. one global running total that happened to work for a single-currency player but silently summed two different currencies together for a multi-currency one).
+
+## Items 1-3 — confirmed correct and genuinely tested, not just present
+
+**Hide-bots reuses the existing bot-prefix convention, exactly as I'd asked — confirmed directly, not assumed from the function name.** `isBotName()` in `Admin.tsx` is a one-line `displayName.startsWith('🤖')`, the same signal `match-history.ts`'s own `avatarFor` and `gateway.ts`'s `resolveAvatarId` already use — no new convention invented.
+
+**The AND-not-OR composition is tested with exactly the right adversarial case.** Read the new test directly: a BOT account that's ALSO source-tagged (`taggedBot`), with both filters on — confirmed it's hidden (correctly fails the bot check) rather than shown (which an accidental OR would have incorrectly allowed, since it passes the source check). This is precisely the fixture that would catch a real AND/OR mistake, not a coincidental pass.
+
+**"Last seen" is correctly derived, not stored — confirmed against the real schema, not assumed.** `getLastSeenAt`'s own SQL is a single `UNION ALL` + `MAX` across `ledger_entry.created_at` (every currency) and `match_results.settled_at`, computed in SQL rather than pulled into JS — cheap even as both tables grow. Three new tests cover the real edge cases: a genuinely empty account (`null`), an account whose only activity is its own signup grant, and an account where the MOST RECENT event is a match rather than a ledger row (confirming the `MAX` genuinely picks whichever source is actually later, not just always preferring one table).
+
+## One NEW observation, found during this review — precise, non-blocking, not yet touched by this fix
+
+**The player list's own "Balance" column, AND the player-detail header's own balance line, are BOTH still hard-coded to an implicit `$` — confirmed by reading `Admin.tsx` directly, not assumed.** `AdminPlayerSummary.balance` stays deliberately USD-only (documented plainly in `protocol.ts`'s own updated comment: "A SOL-default player's balance here can legitimately read as the untouched 1000 USD starting grant... their real activity lives in a different bucket") — this is NOT a silently-hidden gap, PM's own doc comment calls it out precisely. But the two UI spots that actually RENDER that number (`Admin.tsx`'s player-list `Balance` column and the detail view's own `balance: $...` line) still show a bare `$` with no currency label at all — meaning a SOL-default player's row would show something like `$1,000` with nothing indicating that figure is incomplete, right next to a nonzero `gamesPlayed` count. This is the SAME root confusion item 4 just fixed (a currency-blind summary number sitting next to evidence of real activity elsewhere), just in a spot this ticket's own scope didn't ask PM to touch.
+
+**Not flagging this as a new bug to fix urgently — flagging it precisely as a real, specific follow-up candidate.** The detail LOG below that header is now fully currency-correct (today's fix); only the one summary balance figure above it, and the list's own balance column, are the leftover pieces. Owner's/PM's call on priority — worth a look, not blocking anything.
+
+## Verification, deploy status
+
+**Ran the tests myself: 104 across the 3 directly-affected files (`match-history.test.ts`/`admin.test.ts`/`Admin.test.tsx`), full monorepo suite 1933/1933 (matching PM's own count exactly, no flakes this run). Confirmed the full monorepo `tsc -b` build is clean.**
+
+**Confirmed `tools/bot-crowd` genuinely didn't need a sweep, not just trusted the claim.** Grepped its own `http.ts` imports directly: it only touches `AdminCreditBody` (unchanged) and `AuthResponse` (unchanged) — neither of the types this PR actually modified (`AdminPlayerSummary`/`AdminMatchLogEntry`/`AdminPlayerLogResponse`). PM's skip was correct, not a shortcut.
+
+**D75 is merged but NOT yet deployed** — confirmed via `gcloud` directly, live revision is still `rapidclash-00147-9hv` (the D74 deploy). Ready for Owner's deploy decision.
+
+**Advisor next:** available, no open thread — D75 fully verified, correct, ready for deploy. **PM next:** nothing pending on D75's own implementation; the balance-column observation above is a possible small follow-up, not an open item on this ticket.
+
+---
+
 ### 2026-10-01#10 — D75, four admin-view improvements from Owner's own first hands-on use: hide-bots checkbox, a "last seen" column + time-range filter, and a reported "the DB looks stale" symptom (Leandro: 31 games in the list, "No matches played yet" in the log). Investigated the 4th item LIVE against production before writing anything — it is NOT a stale-DB/snapshot issue, it's a real, currently-shipping bug in MY OWN D74 ticket's own USD-only scoping, now live for every SOL-default player. Confirmed via a direct admin-API call against Leandro's real account, not assumed            [READY TO TICKET]
 From: Owner's own first-use report (relayed live) — verified via a live login as the real admin account (Secret Manager `admin-password`) against production, a direct `GET /admin/players`/`GET /admin/players/:id/log` call for the exact account Owner named, and direct reads of `packages/core/src/match-history.ts` (`getFullMatchLog`'s own USD-only ledger query), `packages/core/src/identity.ts` (confirmed `accounts` has NO timestamp column at all), `packages/core/src/ledger.ts` (`ledger_entry.created_at`, currency-agnostic), and `packages/shared/src/avatar.ts` (`stripBotDisclosure`, the existing bot-name-prefix utility to reuse rather than re-invent)
 
