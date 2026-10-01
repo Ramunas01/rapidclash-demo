@@ -45,6 +45,7 @@ export function registerGuestAuthRoutes(app: FastifyInstance, identity: Identity
         username: 'Guest',
         avatarId: 'default',
         isGuest: true,
+        role: 'guest',
       };
       reply.code(201).send(body);
     },

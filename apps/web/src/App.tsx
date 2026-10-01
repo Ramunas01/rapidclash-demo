@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { GameMeta, Move, Outcome, SettlementSummary, OpenChallenge, PlayerClocks, AvatarId, GameEvent, Currency } from '@rapidclash/shared';
+import type { GameMeta, Move, Outcome, SettlementSummary, OpenChallenge, PlayerClocks, AvatarId, GameEvent, Currency, UserRole } from '@rapidclash/shared';
 import { GUEST_COINFLIP_STAKE, GUEST_CHESS_STAKE, GUEST_CHESS_TIME_CONTROL, GUEST_BLACKJACK_STAKE, GUEST_CURATED_GAMES, CURRENCIES } from '@rapidclash/shared';
 import { getCurSel } from './lib/currency.js';
 import { WsClient, hasStoredMatch, readStoredGameId, writeStoredGameId, type WsStatus } from './ws.js';
 import { initGuestEvents, emitReady, emitResize, emitRequestFullscreenOnMobileEntry, emitFirstWin } from './guest/events.js';
 import { applyChallengesUpdate } from './screens/OpenChallengesList.js';
 import { AuthScreen } from './screens/Auth.js';
+import { AdminScreen } from './screens/Admin.js';
 import { WalletScreen } from './screens/Wallet.js';
 import { GameListScreen } from './screens/GameList.js';
 import { StakeEntryScreen } from './screens/StakeEntry.js';
@@ -38,7 +39,7 @@ import { api } from './api.js';
 import { GuestGamePicker } from './screens/GuestGamePicker.js';
 import { play } from './lib/sound.js';
 
-type Screen = 'auth' | 'home' | 'profile' | 'preferences' | 'affiliate' | 'rewards' | 'wallet' | 'game-list' | 'guest-loading' | 'guest-picker' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub' | 'crash-hub' | 'roulette-hub' | 'dice-hub' | 'baccarat-hub' | 'keno-hub' | 'limbo-hub' | 'hilo-hub';
+type Screen = 'auth' | 'home' | 'profile' | 'preferences' | 'affiliate' | 'rewards' | 'wallet' | 'game-list' | 'guest-loading' | 'guest-picker' | 'stake-entry' | 'lobby' | 'play' | 'result' | 'leaderboard' | 'coinflip-hub' | 'rps-hub' | 'blackjack-hub' | 'mines-hub' | 'chess-hub' | 'crash-hub' | 'roulette-hub' | 'dice-hub' | 'baccarat-hub' | 'keno-hub' | 'limbo-hub' | 'hilo-hub' | 'admin';
 
 /** A commit-to-play action captured when a logged-out visitor hits the auth wall. After sign-in
  *  the user lands on the intent's hub with the stake armed and presses PLAY to commit — nothing
@@ -334,12 +335,21 @@ function loadAvatarId(): AvatarId {
   return (VALID as string[]).includes(v ?? '') ? (v as AvatarId) : 'default';
 }
 
+/** Ticket 2026-10-01#7: coerce a persisted role back to a valid UserRole (defensive, same
+ *  reasoning as loadAvatarId above). Defaults to `'player'` — the safe, non-admin default if the
+ *  stored value is ever missing/corrupted, never silently granting admin UI access. */
+function loadRole(): UserRole {
+  const v = localStorage.getItem('rc_role');
+  return v === 'admin' || v === 'guest' ? v : 'player';
+}
+
 function loadAuth() {
   return {
     token: localStorage.getItem('rc_token'),
     playerId: localStorage.getItem('rc_playerId'),
     username: localStorage.getItem('rc_username'),
     avatarId: loadAvatarId(),
+    role: loadRole(),
   };
 }
 
@@ -357,8 +367,22 @@ function isGuestModeUrl(): boolean {
   }
 }
 
+/** Ticket 2026-10-01#7: `?mode=admin` — the hidden entry point to the investor-visibility admin
+ *  screen (Owner-confirmed: a hidden route over a nav entry). Same router-less query-string
+ *  mechanism as `isGuestModeUrl` above. This alone does NOT grant access — it only makes the app
+ *  route to the 'admin' screen if/once the signed-in session's own `role` is genuinely `'admin'`;
+ *  the real authorization boundary stays server-side (`requireAdmin`). */
+function isAdminModeUrl(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URLSearchParams(window.location.search).get('mode') === 'admin';
+  } catch {
+    return false;
+  }
+}
+
 export function App() {
-  const { token: savedToken, playerId: savedPlayerId, username: savedUsername, avatarId: savedAvatarId } = loadAuth();
+  const { token: savedToken, playerId: savedPlayerId, username: savedUsername, avatarId: savedAvatarId, role: savedRole } = loadAuth();
   // A match persisted across a reload restores straight to the play view; match.state
   // (active) keeps us there, match.end (terminal) redirects to the result screen. A stored
   // coinflip match resumes onto the hub (in-place flow), not the standalone play screen.
@@ -367,8 +391,13 @@ export function App() {
   // `?mode=guest` (issue #284) with no already-persisted real session takes priority over both:
   // land on the blank guest-loading screen instead of a Home-hub flash while the guest-auth
   // network call (fired from an effect below) is in flight.
+  // `?mode=admin` (ticket 2026-10-01#7) with an ALREADY-persisted admin session goes straight to
+  // the admin screen on reload — a fresh (not-yet-logged-in) admin visit instead falls through to
+  // the ordinary 'home' branch below and only reaches 'admin' once they actually sign in (handled
+  // in handleAuthSuccess), same two-step shape every other auth-gated entry point already uses.
   const [screen, setScreen] = useState<Screen>(
     savedToken && hasStoredMatch() ? (hubScreenFor(readStoredGameId()) ?? 'play')
+      : savedToken && savedRole === 'admin' && isAdminModeUrl() ? 'admin'
       : !savedToken && isGuestModeUrl() ? 'guest-loading'
       : 'home',
   );
@@ -584,11 +613,12 @@ export function App() {
   // Register/login from the modal: store the token + connect the WS (as handleLogin), then land the
   // user on the intent's hub with the stake ARMED — nothing auto-fires. They press PLAY to commit
   // (a PLAY intent) or post their own challenge (a JOIN intent). No resume runs on connect.
-  const handleAuthSuccess = useCallback((tok: string, pid: string, bal: Record<Currency, number>, name: string, avatar: AvatarId) => {
+  const handleAuthSuccess = useCallback((tok: string, pid: string, bal: Record<Currency, number>, name: string, avatar: AvatarId, signedInRole: UserRole) => {
     localStorage.setItem('rc_token', tok);
     localStorage.setItem('rc_playerId', pid);
     localStorage.setItem('rc_username', name);
     localStorage.setItem('rc_avatarId', avatar);
+    localStorage.setItem('rc_role', signedInRole);
     setToken(tok);
     setPlayerId(pid);
     setUsername(name);
@@ -601,7 +631,12 @@ export function App() {
     setAuthOpen(false);
 
     const intent = pendingResumeRef.current;
-    if (intent) {
+    if (signedInRole === 'admin' && isAdminModeUrl()) {
+      // Ticket 2026-10-01#7: the hidden admin entry — takes priority over any captured
+      // PLAY/JOIN intent (not a realistic overlap in practice, but the more specific,
+      // deliberate route wins if it ever did).
+      setScreen('admin');
+    } else if (intent) {
       // Land on the intent's hub so the user resumes in place — but with the stake pre-armed (PLAY
       // ready), NOT auto-searching. For a 'play' intent, initialStake feeds the hub's bet row so it
       // opens armed; chess also pre-arms the picked time control. A 'join' intent likewise lands the
@@ -965,6 +1000,7 @@ export function App() {
     localStorage.removeItem('rc_playerId');
     localStorage.removeItem('rc_username');
     localStorage.removeItem('rc_avatarId');
+    localStorage.removeItem('rc_role');
     wsRef.current?.disconnect();
     wsRef.current = null;
     setToken(null);
@@ -1380,6 +1416,8 @@ export function App() {
         return <ResultScreen outcome={lastOutcome!} settlement={lastSettlement!} playerId={playerId ?? undefined} onPlayAgain={goToGameListFromResult} onLeaderboard={goToLeaderboard} />;
       case 'leaderboard':
         return <LeaderboardScreen token={token!} gameId={activeGameId ?? 'rps'} onBack={goToGameList} />;
+      case 'admin':
+        return <AdminScreen token={token!} onBack={goToHome} />;
     }
   }
 

@@ -210,6 +210,63 @@ describe('identity avatar persistence (Advisor #12 ii)', () => {
   });
 });
 
+// Ticket 2026-10-01#7: registration-source attribution, same migration shape as avatar_id above.
+describe('identity.register — source attribution (ticket 2026-10-01#7)', () => {
+  it('captures the passed source on a new registration', async () => {
+    const { identity } = makeServices();
+    const res = await identity.register('alice', 'secret', 'player', 'ramuns-demo');
+    const accounts = identity.listAccounts();
+    expect(accounts.find((a) => a.id === res.playerId)?.source).toBe('ramuns-demo');
+  });
+
+  it('defaults to null (direct traffic) when no source is passed', async () => {
+    const { identity } = makeServices();
+    const res = await identity.register('bob', 'secret');
+    const accounts = identity.listAccounts();
+    expect(accounts.find((a) => a.id === res.playerId)?.source).toBeNull();
+  });
+
+  it('a soft-reset re-claim preserves the ORIGINAL source, not whatever the re-claim itself passes', async () => {
+    const { identity } = makeServices();
+    const first = await identity.register('carol', 'pw1', 'player', 'investor-link-a');
+    identity.clearPassword(first.playerId);
+    await identity.register('carol', 'pw2', 'player', 'investor-link-b');
+    const accounts = identity.listAccounts();
+    expect(accounts.find((a) => a.id === first.playerId)?.source).toBe('investor-link-a');
+  });
+
+  it('an account row predating the source column reads null after migration (snapshot-safe), and a second init does not throw', () => {
+    const db = new Database(':memory:');
+    const ledger = createLedger(db);
+    // Simulate a RESTORED OLD SNAPSHOT: an accounts table WITHOUT source (but WITH avatar_id,
+    // the previous migration — a real snapshot would have already picked that one up).
+    db.exec(`
+      CREATE TABLE accounts (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE,
+        password_hash TEXT,
+        role TEXT NOT NULL DEFAULT 'player',
+        avatar_id TEXT NOT NULL DEFAULT 'default'
+      )
+    `);
+    db.prepare(`INSERT INTO accounts (id, username, password_hash, role) VALUES (?, ?, ?, ?)`)
+      .run('legacy-id', 'legacy', 'hash', 'player');
+    const identity = createIdentity(db, ledger);
+    expect(identity.listAccounts().find((a) => a.id === 'legacy-id')?.source).toBeNull();
+    expect(() => createIdentity(db, ledger)).not.toThrow();
+  });
+
+  it('listAccounts returns every account, oldest first, including role', async () => {
+    const { identity } = makeServices();
+    await identity.register('first', 'pw');
+    await identity.register('second', 'pw', 'admin', 'some-link');
+    const accounts = identity.listAccounts();
+    expect(accounts.map((a) => a.username)).toEqual(['first', 'second']);
+    expect(accounts[1].role).toBe('admin');
+    expect(accounts[1].source).toBe('some-link');
+  });
+});
+
 describe('identity.verifyToken', () => {
   it('rejects a tampered token', async () => {
     const { identity } = makeServices();

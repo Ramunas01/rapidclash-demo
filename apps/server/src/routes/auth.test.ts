@@ -3,7 +3,7 @@ import Database from 'better-sqlite3';
 import type { FastifyInstance } from 'fastify';
 import { createServices, buildApp, type AppServices } from '../server.js';
 import { GRANT_AMOUNT } from '@rapidclash/core';
-import type { AuthResponse, LeaderboardEntry } from '@rapidclash/shared';
+import type { AuthResponse, LeaderboardEntry, AdminPlayerSummary } from '@rapidclash/shared';
 
 function makeApp(): { app: FastifyInstance; services: AppServices } {
   const db = new Database(':memory:');
@@ -293,12 +293,16 @@ describe('admin routes — auth enforcement', () => {
     expect(res.statusCode).toBe(403);
   });
 
-  it('returns 501 when an admin token is used on /admin/players', async () => {
+  // Ticket 2026-10-01#7: /admin/players is implemented now — superseding this test's own
+  // original name/assertion (it used to confirm the 501 stub specifically).
+  it('returns 200 with the player list when an admin token is used on /admin/players', async () => {
     const res = await app.inject({
       method: 'GET',
       url: '/admin/players',
       headers: { authorization: `Bearer ${adminToken}` },
     });
-    expect(res.statusCode).toBe(501);
+    expect(res.statusCode).toBe(200);
+    const players = res.json<AdminPlayerSummary[]>();
+    expect(players.some((p) => p.displayName === 'player1')).toBe(true);
   });
 });

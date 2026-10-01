@@ -274,6 +274,12 @@ export type AvatarId = 'default' | 'rc-01' | 'rc-02' | 'rc-03' | 'rc-04' | 'rc-0
 /** Every valid AvatarId, for server-side validation of the set-avatar endpoint. */
 export const AVATAR_IDS: readonly AvatarId[] = ['default', 'rc-01', 'rc-02', 'rc-03', 'rc-04', 'rc-05', 'rc-06', 'rc-07', 'rc-08', 'rc-09', 'rc-10', 'rc-11', 'rc-12', 'rc-13', 'rc-14', 'rc-15', 'rc-16', 'rc-17', 'rc-18', 'rc-19', 'rc-20', 'rc-21', 'rc-22', 'rc-23', 'rc-24'];
 
+/** A signed-in account's own role — `'admin'` unlocks the hidden `/admin/*` REST surface
+ *  (server-side `requireAdmin`) and, client-side, the hidden `?mode=admin` screen (ticket
+ *  2026-10-01#7). The single source of truth for this union — `packages/core/src/identity.ts`
+ *  imports it rather than declaring its own copy. */
+export type UserRole = 'player' | 'admin' | 'guest';
+
 export interface AuthResponse {
   token: string;
   playerId: PlayerId;
@@ -289,6 +295,11 @@ export interface AuthResponse {
   /** True only for a `POST /auth/guest` session (CHARTER.md's "Guest mode" exception). Omitted
    *  (falsy) for `/auth/register` and `/auth/login` — existing callers see no shape change. */
   isGuest?: boolean;
+  /** Ticket 2026-10-01#7: the account's own role — `'player'` for every pre-existing caller (no
+   *  shape change), `'admin'` for the one admin account, letting the client gate its own hidden
+   *  `?mode=admin` screen. The REAL authorization boundary stays server-side (`requireAdmin`) —
+   *  this is UI convenience only, never trusted for anything security-relevant. */
+  role: UserRole;
 }
 
 /** Body of `POST /auth/avatar` — set the authenticated player's own avatar (presets-only). */
@@ -511,6 +522,10 @@ export interface AdminCreditBody {
 export interface AdminPlayerSummary {
   playerId: PlayerId;
   displayName: string;
+  /** Ticket 2026-10-01#7: which demo link (Cloudflare `X-Demo-Link` header, captured at
+   *  `POST /auth/register`) this account registered through, or `null` for direct traffic / any
+   *  registration before this ticket shipped. */
+  source: string | null;
   balance: number;
   gamesPlayed: number;
   wins: number;
@@ -529,6 +544,21 @@ export interface AdminMatchLogEntry {
   amount: number;
   runningBalance: number;
   createdAt: string;
+}
+
+/** Response of `GET /admin/players/:id/log` (ticket 2026-10-01#7) — both views of one account's
+ *  activity: the match-centric summary (`matches`, one row per match, derived from `match_results`
+ *  — never pruned) and the raw financial ledger (`ledgerEntries`, every GRANT, ADMIN_CREDIT,
+ *  BET_ESCROW, SETTLE_WIN, SETTLE_REFUND, REWARD_CLAIM, and OPENING_BALANCE row, oldest-first, USD
+ *  only). `matches` is reconstructed from ledger rows too (for `amount`/`runningBalance`) — a
+ *  match whose own ledger rows have since been folded into an `OPENING_BALANCE` compaction
+ *  checkpoint (`ledger.ts`'s `compactOldTransactions`) no longer appears there individually,
+ *  though it's still visible in `ledgerEntries`' own `OPENING_BALANCE` row as part of that
+ *  checkpoint's lump sum. A known, accepted limitation for old history — not a concern for
+ *  observing current demo-link activity. */
+export interface AdminPlayerLogResponse {
+  matches: AdminMatchLogEntry[];
+  ledgerEntries: LedgerEntry[];
 }
 
 // Re-export GameMeta so consumers can import it from '@rapidclash/shared' directly.
