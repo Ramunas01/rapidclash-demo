@@ -377,6 +377,14 @@ export const config = {
   // sub-second constant applied to every game's every decision was the one structurally
   // too-fast-to-be-human thing about the whole roster. See `moveDelayMsFor()` above.
   reconnectDelayMs: num('BOT_RECONNECT_DELAY_MS', 2000),
+  // Production incident 2026-10-01: a Cloud Run container restart dropped every bot's TCP
+  // connection without ever delivering a close/error event to the client (no FIN/RST reached
+  // it), so `ws-client.ts`'s existing on('close') reconnect never fired — the bot-crowd sat
+  // silently dead against a socket that looked OPEN but wasn't. Mirrors the server's own D36
+  // heartbeat idiom (apps/server/src/ws/gateway.ts's DEFAULT_HEARTBEAT_INTERVAL_MS=30s): ping on
+  // this cadence, and if the PREVIOUS ping went unanswered, terminate() — which does fire
+  // 'close' locally — so the existing reconnect path recovers without needing a new code path.
+  wsHeartbeatIntervalMs: num('BOT_WS_HEARTBEAT_INTERVAL_MS', 30_000),
 
   /** Top-ups: when balance < stake × factor, admin-credit `topUpAmount` (if admin login works). */
   lowBalanceFactor: num('BOT_LOW_BALANCE_FACTOR', 5),

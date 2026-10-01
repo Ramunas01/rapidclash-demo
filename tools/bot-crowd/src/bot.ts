@@ -203,6 +203,7 @@ export class Bot {
         onClose: () => this.onClose(),
       },
       config.reconnectDelayMs,
+      config.wsHeartbeatIntervalMs,
     );
   }
 
