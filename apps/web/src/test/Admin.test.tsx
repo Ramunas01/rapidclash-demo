@@ -209,3 +209,112 @@ describe('AdminScreen — hide-bots, last-seen, time-range (ticket 2026-10-01#10
     expect(within(screen.getByTestId('admin-ledger-e2')).getByText('+1642 SOL')).toBeInTheDocument();
   });
 });
+
+// Ticket 2026-10-02#1 (D76) — Advisor's own DemoGM investigation found that a standalone ledger
+// event (match_id IS NULL — e.g. compactOldTransactions' own OPENING_BALANCE checkpoint) landing
+// between two of a player's matches was invisible in the Matches table, forcing a manual
+// cross-reference against the separate Ledger entries table to explain a balance jump. These
+// cover the inline marker-row fix: a client-side merge of `matches` + the standalone subset of
+// `ledgerEntries` into one chronological timeline.
+describe('AdminScreen — inline standalone-ledger-event markers in the Matches table (ticket 2026-10-02#1, D76)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('a standalone ledger event between two matches renders as a marker row, in correct chronological order', async () => {
+    const log: AdminPlayerLogResponse = {
+      // getFullMatchLog's own contract is newest-first — m2 (later) before m1 (earlier).
+      matches: [
+        { matchId: 'm2', gameId: 'dice', opponent: 'bob', result: 'win', amount: 195, runningBalance: 13086, currency: 'USD', createdAt: '2026-09-24T09:38:50.000Z' },
+        { matchId: 'm1', gameId: 'rps', opponent: 'bob', result: 'win', amount: 90, runningBalance: 94, currency: 'USD', createdAt: '2026-09-24T05:44:57.000Z' },
+      ],
+      ledgerEntries: [
+        { id: 'opening', type: 'OPENING_BALANCE', amount: 12897, currency: 'USD', idempotencyKey: 'compaction:p1:USD:x', createdAt: '2026-09-24T07:09:39.000Z' },
+      ],
+    };
+    stubFetch([PLAYER_A], log);
+    render(<AdminScreen token="tok" onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('admin-players-table')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('admin-player-p1'));
+    await waitFor(() => expect(screen.getByTestId('admin-match-m1')).toBeInTheDocument());
+
+    const table = screen.getByTestId('admin-log-matches');
+    const rowTestIds = within(table)
+      .getAllByRole('row')
+      .map((r) => r.getAttribute('data-testid'))
+      .filter((id): id is string => id !== null);
+    // newest-first (matching the screen's own convention): m2, then the marker, then m1.
+    expect(rowTestIds).toEqual(['admin-match-m2', 'admin-marker-opening', 'admin-match-m1']);
+
+    const marker = screen.getByTestId('admin-marker-opening');
+    expect(within(marker).getByText(/Account history compacted/)).toBeInTheDocument();
+    expect(within(marker).getByText(/\+12897 USD/)).toBeInTheDocument();
+  });
+
+  it('a type not in the friendly-label map falls back to the raw ledger entry type, rather than disappearing', async () => {
+    // RAKE never actually lacks a matchId in real data (it's only ever written inside settle()) —
+    // used here purely as a type-valid value NOT in MARKER_LABELS, to exercise the defensive
+    // fallback path for a type the label map doesn't (yet) recognize.
+    const log: AdminPlayerLogResponse = {
+      matches: [
+        { matchId: 'm2', gameId: 'rps', opponent: 'bob', result: 'loss', amount: -50, runningBalance: 1040, currency: 'USD', createdAt: '2026-09-24T07:00:00.000Z' },
+        { matchId: 'm1', gameId: 'rps', opponent: 'bob', result: 'win', amount: 90, runningBalance: 1090, currency: 'USD', createdAt: '2026-09-24T05:00:00.000Z' },
+      ],
+      ledgerEntries: [
+        { id: 'mystery', type: 'RAKE', amount: 25, currency: 'USD', idempotencyKey: 'x', createdAt: '2026-09-24T06:00:00.000Z' },
+      ],
+    };
+    stubFetch([PLAYER_A], log);
+    render(<AdminScreen token="tok" onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('admin-players-table')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('admin-player-p1'));
+    await waitFor(() => expect(screen.getByTestId('admin-marker-mystery')).toBeInTheDocument());
+    expect(within(screen.getByTestId('admin-marker-mystery')).getByText(/RAKE/)).toBeInTheDocument();
+  });
+
+  it('a standalone event before the player\'s very first match still renders, at the end of the (newest-first) list', async () => {
+    const log: AdminPlayerLogResponse = {
+      matches: [
+        { matchId: 'm1', gameId: 'rps', opponent: 'bob', result: 'win', amount: 90, runningBalance: 1090, currency: 'USD', createdAt: '2026-09-24T07:00:00.000Z' },
+      ],
+      ledgerEntries: [
+        { id: 'grant', type: 'GRANT', amount: 1000, currency: 'USD', idempotencyKey: 'grant:p1', createdAt: '2026-09-01T00:00:00.000Z' },
+      ],
+    };
+    stubFetch([PLAYER_A], log);
+    render(<AdminScreen token="tok" onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('admin-players-table')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('admin-player-p1'));
+    await waitFor(() => expect(screen.getByTestId('admin-match-m1')).toBeInTheDocument());
+
+    const table = screen.getByTestId('admin-log-matches');
+    const rowTestIds = within(table)
+      .getAllByRole('row')
+      .map((r) => r.getAttribute('data-testid'))
+      .filter((id): id is string => id !== null);
+    expect(rowTestIds).toEqual(['admin-match-m1', 'admin-marker-grant']);
+    expect(within(screen.getByTestId('admin-marker-grant')).getByText(/Starting grant/)).toBeInTheDocument();
+  });
+
+  it('a ledger entry WITH a matchId is never shown as a marker (it belongs to its own match row, not a standalone timeline slot)', async () => {
+    const log: AdminPlayerLogResponse = {
+      matches: [
+        { matchId: 'm1', gameId: 'rps', opponent: 'bob', result: 'win', amount: 90, runningBalance: 1090, currency: 'USD', createdAt: '2026-09-24T07:00:00.000Z' },
+      ],
+      ledgerEntries: [
+        { id: 'escrow1', type: 'BET_ESCROW', amount: -100, matchId: 'm1', currency: 'USD', idempotencyKey: 'escrow:m1', createdAt: '2026-09-24T06:59:59.000Z' },
+        { id: 'settle1', type: 'SETTLE_WIN', amount: 190, matchId: 'm1', currency: 'USD', idempotencyKey: 'settle:m1', createdAt: '2026-09-24T07:00:00.000Z' },
+      ],
+    };
+    stubFetch([PLAYER_A], log);
+    render(<AdminScreen token="tok" onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('admin-players-table')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('admin-player-p1'));
+    await waitFor(() => expect(screen.getByTestId('admin-match-m1')).toBeInTheDocument());
+
+    expect(screen.queryByTestId('admin-marker-escrow1')).toBeNull();
+    expect(screen.queryByTestId('admin-marker-settle1')).toBeNull();
+    // Still visible in the separate Ledger entries table, unchanged.
+    expect(screen.getByTestId('admin-ledger-escrow1')).toBeInTheDocument();
+    expect(screen.getByTestId('admin-ledger-settle1')).toBeInTheDocument();
+  });
+
+});
