@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3';
 import {
   avatarIdForName,
   stripBotDisclosure,
+  type AdminMatchLogEntry,
   type AvatarId,
   type EloLeaderboardEntry,
   type LeaderboardEntry,
@@ -45,6 +46,22 @@ export interface MatchHistory {
    *  never really "played" to a result. A gameId with zero settled matches is simply absent from
    *  the returned map (callers default missing entries to 0), not present with a 0 value. */
   getPopularity(): Record<string, number>;
+  /** Ticket 2026-10-01#7 — `GET /admin/players`'s per-account game stats. ALL-time, every game,
+   *  `void` matches excluded (never "played" to a result, same convention as getRecentMatches/
+   *  getPopularity). `moneyWon`/`moneyLost` are separate positive sums (not one signed net) — a
+   *  per-match net delta (via the same matchNetStmt the match-log below uses) that's positive
+   *  adds to moneyWon, negative adds its absolute value to moneyLost; a match whose own ledger
+   *  rows have since been compacted (ledger.ts's compactOldTransactions) contributes 0 to both,
+   *  same known/accepted limitation as the match log. */
+  getPlayerStats(playerId: string): { gamesPlayed: number; wins: number; losses: number; draws: number; moneyWon: number; moneyLost: number };
+  /** Ticket 2026-10-01#7 — `GET /admin/players/:id/log`'s match-centric view: every one of this
+   *  account's settled matches (including `void`, unlike getRecentMatches — an admin wants to see
+   *  everything), newest-first, each with its own net delta and the account's real USD running
+   *  balance AT THAT POINT (reconstructed from the actual ledger entry stream, so it stays correct
+   *  even across a compaction checkpoint — see `AdminPlayerLogResponse`'s own doc comment in
+   *  protocol.ts for the one known limitation: a COMPACTED match's own row no longer appears
+   *  here individually, though its value still lives in the checkpoint's own lump sum). */
+  getFullMatchLog(playerId: string): AdminMatchLogEntry[];
 }
 
 interface ResultRow {
@@ -456,5 +473,97 @@ export function createMatchHistory(
     return Object.fromEntries(rows.map((r) => [r.game_id, r.cnt]));
   }
 
-  return { recordResult, getLeaderboard, getRecentMatches, getPopularity };
+  // Ticket 2026-10-01#7: ALL of a player's matches (no LIMIT/OFFSET, void INCLUDED — unlike
+  // stmtRecent, an admin wants everything). Chronological (oldest first, rowid tiebreak) so
+  // getFullMatchLog can accumulate a running balance forward, then reverse for display.
+  const stmtAllForPlayer = db.prepare<[string, string], RecentRow>(
+    `SELECT match_id, game_id, player1_id, player2_id, outcome, winner_id, settled_at
+     FROM match_results
+     WHERE (player1_id = ? OR player2_id = ?)
+     ORDER BY settled_at ASC, rowid ASC`,
+  );
+
+  // Ticket 2026-10-01#7: the account's own full USD ledger stream, chronological — the same
+  // "another module's table, reached lazily" idea as netStmt/matchNetStmt above (ledger_entry is
+  // owned/created by the ledger, not match-history). USD-only: the admin view doesn't need
+  // multi-currency precision for a demo-activity visibility tool.
+  let stmtUsdLedger: Database.Statement<[string], { type: string; amount: number; match_id: string | null }> | undefined;
+  function usdLedgerStmt(): Database.Statement<[string], { type: string; amount: number; match_id: string | null }> {
+    stmtUsdLedger ??= db.prepare<[string], { type: string; amount: number; match_id: string | null }>(
+      `SELECT type, amount, match_id FROM ledger_entry WHERE account_id = ? AND currency = 'USD' ORDER BY rowid ASC`,
+    );
+    return stmtUsdLedger;
+  }
+
+  /** Shared by getPlayerStats/getFullMatchLog — reframes one match_results row + its own net
+   *  ledger delta into the viewer's perspective, same reasoning as getRecentMatches' own inline
+   *  version but with a 4th outcome ('void') since the admin view doesn't exclude those. */
+  function resultFor(row: ResultRow & { match_id?: string }, playerId: string): 'win' | 'loss' | 'draw' | 'void' {
+    if (row.outcome === 'void') return 'void';
+    if (row.outcome === 'draw') return 'draw';
+    return row.winner_id === playerId ? 'win' : 'loss';
+  }
+
+  function getPlayerStats(playerId: string): { gamesPlayed: number; wins: number; losses: number; draws: number; moneyWon: number; moneyLost: number } {
+    const rows = stmtAllForPlayer.all(playerId, playerId).filter((r) => r.outcome !== 'void');
+    let wins = 0;
+    let losses = 0;
+    let draws = 0;
+    let moneyWon = 0;
+    let moneyLost = 0;
+    for (const row of rows) {
+      const result = resultFor(row, playerId);
+      if (result === 'win') wins++;
+      else if (result === 'loss') losses++;
+      else if (result === 'draw') draws++;
+      const net = matchNetStmt().get(row.match_id, playerId)?.net ?? 0;
+      if (net > 0) moneyWon += net;
+      else if (net < 0) moneyLost += -net;
+    }
+    return { gamesPlayed: rows.length, wins, losses, draws, moneyWon, moneyLost };
+  }
+
+  function getFullMatchLog(playerId: string): AdminMatchLogEntry[] {
+    // Chronological (oldest first — stmtAllForPlayer's own ORDER BY).
+    const matchRows = stmtAllForPlayer.all(playerId, playerId);
+    const ledgerRows = usdLedgerStmt().all(playerId);
+
+    // Replay the REAL ledger stream once, tracking running balance throughout — always correct,
+    // including GRANT/ADMIN_CREDIT/REWARD_CLAIM/OPENING_BALANCE rows a per-match view alone can't
+    // see. For each matchId, keep OVERWRITING its own entry — iterating in rowid order means the
+    // LAST write for a matchId is always its chronologically latest ledger row, giving "balance
+    // after this match's own last entry" correctly whether that match produced ONE ledger row for
+    // this player (a LOSER only ever gets their own BET_ESCROW debit — there's no separate
+    // SETTLE_WIN/SETTLE_REFUND for the losing side, so keying off entry TYPE instead of matchId
+    // would silently miss every loss) or two (a winner, or either side of a draw/void).
+    let running = 0;
+    const runningBalanceByMatch = new Map<string, number>();
+    for (const row of ledgerRows) {
+      running += row.amount;
+      if (row.match_id) runningBalanceByMatch.set(row.match_id, running);
+    }
+
+    const log: AdminMatchLogEntry[] = [];
+    for (const mr of matchRows) {
+      const runningBalance = runningBalanceByMatch.get(mr.match_id);
+      // No ledger trace left for this match (compacted away — ledger.ts's compactOldTransactions)
+      // — skip it individually; its value still lives in an OPENING_BALANCE checkpoint row (see
+      // AdminPlayerLogResponse's own doc comment).
+      if (runningBalance === undefined) continue;
+      const opponentId = mr.player1_id === playerId ? mr.player2_id : mr.player1_id;
+      const amount = matchNetStmt().get(mr.match_id, playerId)?.net ?? 0;
+      log.push({
+        matchId: mr.match_id,
+        gameId: mr.game_id,
+        opponent: opponentId,
+        result: resultFor(mr, playerId),
+        amount,
+        runningBalance,
+        createdAt: mr.settled_at,
+      });
+    }
+    return log.reverse(); // newest-first, matching getRecentMatches' own convention.
+  }
+
+  return { recordResult, getLeaderboard, getRecentMatches, getPopularity, getPlayerStats, getFullMatchLog };
 }

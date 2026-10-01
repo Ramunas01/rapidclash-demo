@@ -1,4 +1,4 @@
-import type { AuthRegisterBody, AuthLoginBody, AuthResponse, WalletResponse, GameMeta, LeaderboardEntry, PublicOpenChallenge, AvatarId, SetAvatarResponse, RewardsSnapshot, RewardsClaimResponse, RecentMatchesResponse } from '@rapidclash/shared';
+import type { AuthRegisterBody, AuthLoginBody, AuthResponse, WalletResponse, GameMeta, LeaderboardEntry, PublicOpenChallenge, AvatarId, SetAvatarResponse, RewardsSnapshot, RewardsClaimResponse, RecentMatchesResponse, AdminPlayerSummary, AdminPlayerLogResponse } from '@rapidclash/shared';
 
 const BASE = import.meta.env.VITE_API_URL ?? '';
 
@@ -75,4 +75,11 @@ export const api = {
     const qs = params.toString();
     return req<RecentMatchesResponse>('GET', `/matches/recent${qs ? `?${qs}` : ''}`, undefined, token);
   },
+  /** Ticket 2026-10-01#7 — the hidden `?mode=admin` screen's own player list. Server-side
+   *  `requireAdmin` is the real authorization boundary; a non-admin token gets a plain 403. */
+  adminPlayers: (token: string) =>
+    req<AdminPlayerSummary[]>('GET', '/admin/players', undefined, token),
+  /** One account's own ledger + match log, for the admin screen's detail view. */
+  adminPlayerLog: (playerId: string, token: string) =>
+    req<AdminPlayerLogResponse>('GET', `/admin/players/${playerId}/log`, undefined, token),
 };

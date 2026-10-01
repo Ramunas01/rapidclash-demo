@@ -670,3 +670,118 @@ describe('getPopularity (issue #465)', () => {
     expect('chess' in popularity).toBe(false);
   });
 });
+
+// Ticket 2026-10-01#7: GET /admin/players's per-account stats + GET /admin/players/:id/log's
+// match-centric view.
+describe('createMatchHistory — getPlayerStats / getFullMatchLog (ticket 2026-10-01#7)', () => {
+  function setup() {
+    const db = freshDb();
+    const ledger = createLedger(db);
+    const mh = createMatchHistory(db, new Map([['rps', RPS_WIN_RATE]]));
+    ledger.grant('alice');
+    ledger.grant('bob');
+    return { db, ledger, mh };
+  }
+
+  function playDraw(ledger: ReturnType<typeof createLedger>, mh: ReturnType<typeof createMatchHistory>, matchId: string, gameId: string, players: [string, string], stake: number) {
+    for (const p of players) ledger.escrow(p, matchId, stake, 'USD');
+    ledger.settle(matchId, 'draw', undefined, 0, 0);
+    mh.recordResult(matchId, gameId, players, 'draw', undefined, stake);
+  }
+
+  function playVoid(ledger: ReturnType<typeof createLedger>, mh: ReturnType<typeof createMatchHistory>, matchId: string, gameId: string, players: [string, string], stake: number) {
+    for (const p of players) ledger.escrow(p, matchId, stake, 'USD');
+    ledger.settle(matchId, 'void', undefined, 0, 0);
+    mh.recordResult(matchId, gameId, players, 'void', undefined, stake);
+  }
+
+  describe('getPlayerStats', () => {
+    it('all-zero for a player with no matches', () => {
+      const { mh } = setup();
+      expect(mh.getPlayerStats('alice')).toEqual({ gamesPlayed: 0, wins: 0, losses: 0, draws: 0, moneyWon: 0, moneyLost: 0 });
+    });
+
+    it('counts wins/losses/draws correctly, excludes void from gamesPlayed', () => {
+      const { ledger, mh } = setup();
+      playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100); // alice wins
+      playMatch(ledger, mh, 'm2', 'rps', ['alice', 'bob'], 'bob', 100); // alice loses
+      playDraw(ledger, mh, 'm3', 'rps', ['alice', 'bob'], 100);
+      playVoid(ledger, mh, 'm4', 'rps', ['alice', 'bob'], 100); // excluded entirely
+
+      const stats = mh.getPlayerStats('alice');
+      expect(stats.gamesPlayed).toBe(3); // void excluded
+      expect(stats.wins).toBe(1);
+      expect(stats.losses).toBe(1);
+      expect(stats.draws).toBe(1);
+    });
+
+    it('moneyWon/moneyLost are separate positive sums, not one signed net', () => {
+      const { ledger, mh } = setup();
+      // alice wins m1 (stake 100, 5% fee by default in playMatch → net +95), loses m2 (stake 50 → net -50).
+      playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100);
+      playMatch(ledger, mh, 'm2', 'rps', ['alice', 'bob'], 'bob', 50);
+
+      const stats = mh.getPlayerStats('alice');
+      expect(stats.moneyWon).toBe(90);
+      expect(stats.moneyLost).toBe(50);
+    });
+
+    it('a draw contributes 0 to both moneyWon and moneyLost (stake fully refunded, net zero)', () => {
+      const { ledger, mh } = setup();
+      playDraw(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 100);
+      const stats = mh.getPlayerStats('alice');
+      expect(stats.moneyWon).toBe(0);
+      expect(stats.moneyLost).toBe(0);
+    });
+  });
+
+  describe('getFullMatchLog', () => {
+    it('empty for a player with no matches', () => {
+      const { mh } = setup();
+      expect(mh.getFullMatchLog('alice')).toEqual([]);
+    });
+
+    it('newest-first, with the correct opponent/result/amount per match', () => {
+      const { ledger, mh } = setup();
+      playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100); // alice wins
+      playMatch(ledger, mh, 'm2', 'rps', ['alice', 'bob'], 'bob', 50); // alice loses
+
+      const log = mh.getFullMatchLog('alice');
+      expect(log.map((l) => l.matchId)).toEqual(['m2', 'm1']); // newest first
+      expect(log[1]).toMatchObject({ matchId: 'm1', gameId: 'rps', opponent: 'bob', result: 'win', amount: 90 });
+      expect(log[0]).toMatchObject({ matchId: 'm2', gameId: 'rps', opponent: 'bob', result: 'loss', amount: -50 });
+    });
+
+    it('includes void matches, unlike getRecentMatches', () => {
+      const { ledger, mh } = setup();
+      playVoid(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 100);
+      const log = mh.getFullMatchLog('alice');
+      expect(log).toHaveLength(1);
+      expect(log[0].result).toBe('void');
+      expect(log[0].amount).toBe(0); // refunded in full, net zero
+    });
+
+    it('runningBalance reflects the real USD ledger, seeded from the GRANT, accumulating across matches in order', () => {
+      const { ledger, mh } = setup();
+      const startingBalance = ledger.getBalance('alice', 'USD'); // the real GRANT amount
+      playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100); // +95
+      playMatch(ledger, mh, 'm2', 'rps', ['alice', 'bob'], 'bob', 50); // -50
+
+      const log = mh.getFullMatchLog('alice'); // newest first: m2, m1
+      expect(log[1].runningBalance).toBe(startingBalance + 90); // after m1
+      expect(log[0].runningBalance).toBe(startingBalance + 90 - 50); // after m2
+      // Matches the account's actual CURRENT balance — the log's own last (chronologically) entry.
+      expect(log[0].runningBalance).toBe(ledger.getBalance('alice', 'USD'));
+    });
+
+    it('only returns matches the player was actually in', () => {
+      const { ledger, mh } = setup();
+      ledger.grant('carol');
+      playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100);
+      playMatch(ledger, mh, 'm2', 'rps', ['bob', 'carol'], 'carol', 100); // alice not involved
+      const log = mh.getFullMatchLog('alice');
+      expect(log).toHaveLength(1);
+      expect(log[0].matchId).toBe('m1');
+    });
+  });
+});

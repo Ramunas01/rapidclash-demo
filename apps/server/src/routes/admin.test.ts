@@ -399,3 +399,105 @@ describe('POST /admin/players/:id/clear-password (soft reset)', () => {
     expect(res.statusCode).toBe(501);
   });
 });
+
+// Ticket 2026-10-01#7: investor-demo-link attribution + the GET /admin/players and
+// GET /admin/players/:id/log endpoints they were stubbed out for.
+describe('GET /admin/players and /admin/players/:id/log (ticket 2026-10-01#7)', () => {
+  let app: FastifyInstance;
+  let adminToken: string;
+
+  beforeEach(async () => {
+    const { app: a, services } = makeApp();
+    app = a;
+    const adminResult = await services.identity.register('admin', 'adminpw', 'admin');
+    adminToken = adminResult.token;
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it('POST /auth/register captures the X-Demo-Link header as source, surfaced on /admin/players', async () => {
+    await app.inject({
+      method: 'POST',
+      url: '/auth/register',
+      headers: { 'x-demo-link': 'investor-walkthrough' },
+      payload: { username: 'viaLink', password: 'pw' },
+    });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/admin/players',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const players = res.json<{ displayName: string; source: string | null }[]>();
+    expect(players.find((p) => p.displayName === 'viaLink')?.source).toBe('investor-walkthrough');
+  });
+
+  it('a registration with no X-Demo-Link header shows source: null — direct traffic, not an error', async () => {
+    await app.inject({
+      method: 'POST',
+      url: '/auth/register',
+      payload: { username: 'direct', password: 'pw' },
+    });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/admin/players',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    const players = res.json<{ displayName: string; source: string | null }[]>();
+    expect(players.find((p) => p.displayName === 'direct')?.source).toBeNull();
+  });
+
+  it('/admin/players lists every account, unfiltered by source (Owner-confirmed: the frontend owns any filter toggle)', async () => {
+    await app.inject({ method: 'POST', url: '/auth/register', headers: { 'x-demo-link': 'link-a' }, payload: { username: 'tagged', password: 'pw' } });
+    await app.inject({ method: 'POST', url: '/auth/register', payload: { username: 'untagged', password: 'pw' } });
+    const res = await app.inject({ method: 'GET', url: '/admin/players', headers: { authorization: `Bearer ${adminToken}` } });
+    const names = res.json<{ displayName: string }[]>().map((p) => p.displayName);
+    expect(names).toEqual(expect.arrayContaining(['admin', 'tagged', 'untagged']));
+  });
+
+  it('/admin/players includes each account\'s real USD balance and game stats', async () => {
+    const reg = await app.inject({ method: 'POST', url: '/auth/register', payload: { username: 'balanced', password: 'pw' } });
+    const { playerId } = reg.json<{ playerId: string }>();
+    const res = await app.inject({ method: 'GET', url: '/admin/players', headers: { authorization: `Bearer ${adminToken}` } });
+    const player = res.json<{ playerId: string; balance: number; gamesPlayed: number }[]>().find((p) => p.playerId === playerId);
+    expect(player?.balance).toBe(GRANT_AMOUNT);
+    expect(player?.gamesPlayed).toBe(0);
+  });
+
+  it('GET /admin/players/:id/log returns 404 for an unknown playerId', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/admin/players/does-not-exist/log',
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('GET /admin/players/:id/log returns the account\'s own ledger entries and match log', async () => {
+    const reg = await app.inject({ method: 'POST', url: '/auth/register', payload: { username: 'logged', password: 'pw' } });
+    const { playerId } = reg.json<{ playerId: string }>();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/admin/players/${playerId}/log`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ matches: unknown[]; ledgerEntries: { type: string }[] }>();
+    expect(body.matches).toEqual([]); // no matches played yet
+    expect(body.ledgerEntries.some((e) => e.type === 'GRANT')).toBe(true); // the registration grant
+  });
+
+  it('requires admin auth — a player token gets 403 on both endpoints, same as the existing admin routes', async () => {
+    const playerReg = await app.inject({ method: 'POST', url: '/auth/register', payload: { username: 'nonadmin', password: 'pw' } });
+    const { token: playerToken, playerId } = playerReg.json<{ token: string; playerId: string }>();
+
+    const listRes = await app.inject({ method: 'GET', url: '/admin/players', headers: { authorization: `Bearer ${playerToken}` } });
+    expect(listRes.statusCode).toBe(403);
+
+    const logRes = await app.inject({ method: 'GET', url: `/admin/players/${playerId}/log`, headers: { authorization: `Bearer ${playerToken}` } });
+    expect(logRes.statusCode).toBe(403);
+  });
+});

@@ -20,13 +20,21 @@ export function registerAuthRoutes(
   app.post<{ Body: AuthRegisterBody }>('/auth/register', async (request, reply) => {
     const { username, password } = request.body;
     try {
-      const result = await identity.register(username, password);
+      // Ticket 2026-10-01#7: the Cloudflare Worker forwards which demo link (if any) this
+      // request arrived through as X-Demo-Link (Fastify lowercases header names). Fastify
+      // returns a string[] if the header somehow repeats — take the first, matching how a
+      // browser-originated single header always arrives. Absent → undefined → identity.register's
+      // own default (null) — direct traffic, not an error.
+      const rawSource = request.headers['x-demo-link'];
+      const source = Array.isArray(rawSource) ? rawSource[0] : rawSource;
+      const result = await identity.register(username, password, undefined, source ?? null);
       const body: AuthResponse = {
         token: result.token,
         playerId: result.playerId,
         balances: result.balances,
         username,
         avatarId: result.avatarId,
+        role: result.role,
       };
       // New account row — durable-persistence gap (issue #378): the GCS snapshot was
       // previously only triggered on match settlement, so a registration between the last
@@ -54,6 +62,7 @@ export function registerAuthRoutes(
         balances: result.balances,
         username,
         avatarId: result.avatarId,
+        role: result.role,
       };
       reply.code(200).send(body);
     } catch (err: unknown) {

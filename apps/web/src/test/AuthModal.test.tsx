@@ -10,9 +10,9 @@ describe('AuthModal', () => {
       const u = String(url);
       const body = init?.body ? JSON.parse(String(init.body)) : {};
       if (u.includes('/auth/register'))
-        return { ok: true, json: async () => ({ token: 'T', playerId: 'P', balances: balancesOf(1000), username: body.username, avatarId: 'default' }) } as Response;
+        return { ok: true, json: async () => ({ token: 'T', playerId: 'P', balances: balancesOf(1000), username: body.username, avatarId: 'default', role: 'player' }) } as Response;
       if (u.includes('/auth/login'))
-        return { ok: true, json: async () => ({ token: 'T2', playerId: 'P2', balances: balancesOf(42), username: body.username, avatarId: 'rc-04' }) } as Response;
+        return { ok: true, json: async () => ({ token: 'T2', playerId: 'P2', balances: balancesOf(42), username: body.username, avatarId: 'rc-04', role: 'player' }) } as Response;
       return { ok: false, json: async () => ({ error: 'nope' }) } as Response;
     }));
   });
@@ -35,7 +35,7 @@ describe('AuthModal', () => {
     fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'neo' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'pw' } });
     fireEvent.click(screen.getByTestId('auth-submit'));
-    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith('T', 'P', balancesOf(1000), 'neo', 'default'));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith('T', 'P', balancesOf(1000), 'neo', 'default', 'player'));
   });
 
   it('login tab → onSuccess with the existing account', async () => {
@@ -45,7 +45,7 @@ describe('AuthModal', () => {
     fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'trinity' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'pw' } });
     fireEvent.click(screen.getByTestId('auth-submit'));
-    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith('T2', 'P2', balancesOf(42), 'trinity', 'rc-04'));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith('T2', 'P2', balancesOf(42), 'trinity', 'rc-04', 'player'));
   });
 
   it('surfaces a server error and does not resolve', async () => {

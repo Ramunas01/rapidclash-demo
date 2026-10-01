@@ -187,7 +187,7 @@ export function buildApp(
   app.register(async (instance) => {
     registerGuestAuthRoutes(instance, identity, guest);
   });
-  registerAdminRoutes(app, auth, ledger, identity, opts.onWrite);
+  registerAdminRoutes(app, auth, ledger, identity, matchHistory, opts.onWrite);
   registerGamesRoutes(app, matchmaking);
   registerOpenChallengesRoutes(app, matchmaking);
   // Guest-scoped equivalent (issue #354) — reads the ISOLATED `guest.matchmaking` instance only,

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import { GRANT_AMOUNT, type Identity, type Ledger } from '@rapidclash/core';
-import type { AdminCreditBody } from '@rapidclash/shared';
+import { GRANT_AMOUNT, type Identity, type Ledger, type MatchHistory } from '@rapidclash/core';
+import type { AdminCreditBody, AdminPlayerLogResponse, AdminPlayerSummary } from '@rapidclash/shared';
 import type { makeAuthMiddleware } from '../middleware/auth.js';
 
 export function registerAdminRoutes(
@@ -8,17 +8,42 @@ export function registerAdminRoutes(
   auth: ReturnType<typeof makeAuthMiddleware>,
   ledger: Ledger,
   identity: Identity,
+  matchHistory: MatchHistory,
   onWrite?: () => void,
 ): void {
   const { requireAuth, requireAdmin } = auth;
   const preHandler = [requireAuth, requireAdmin];
 
+  // Ticket 2026-10-01#7: every account (Owner-confirmed: unfiltered by `source` — the frontend
+  // owns any "demo-link only" filter toggle, not this endpoint). Guest sessions never reach here
+  // at all (they never touch the `accounts` table — identity.ts's own signGuestToken doc comment).
   app.get('/admin/players', { preHandler }, async (_request, reply) => {
-    reply.code(501).send({ error: 'Not implemented' });
+    const accounts = identity.listAccounts();
+    const players: AdminPlayerSummary[] = accounts.map((a) => {
+      const stats = matchHistory.getPlayerStats(a.id);
+      return {
+        playerId: a.id,
+        displayName: a.username,
+        source: a.source,
+        balance: ledger.getBalance(a.id, 'USD'),
+        ...stats,
+      };
+    });
+    reply.code(200).send(players);
   });
 
-  app.get<{ Params: { id: string } }>('/admin/players/:id/log', { preHandler }, async (_request, reply) => {
-    reply.code(501).send({ error: 'Not implemented' });
+  app.get<{ Params: { id: string } }>('/admin/players/:id/log', { preHandler }, async (request, reply) => {
+    const { id } = request.params;
+    if (!ledger.accountExists(id)) {
+      return reply.code(404).send({ error: 'Player not found' });
+    }
+    // USD-only (matches AdminPlayerLogResponse's own doc comment and getFullMatchLog's own
+    // scoping) — this admin view doesn't need multi-currency precision for a demo-activity tool.
+    const body: AdminPlayerLogResponse = {
+      matches: matchHistory.getFullMatchLog(id),
+      ledgerEntries: ledger.getEntries(id).filter((e) => e.currency === 'USD'),
+    };
+    reply.code(200).send(body);
   });
 
   app.post<{ Params: { id: string }; Body: AdminCreditBody }>(

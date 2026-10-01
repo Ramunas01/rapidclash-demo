@@ -2,12 +2,12 @@ import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import type { AvatarId, Currency } from '@rapidclash/shared';
+import type { AvatarId, Currency, UserRole } from '@rapidclash/shared';
 import { AVATAR_IDS } from '@rapidclash/shared';
 import type { Ledger } from './ledger.js';
 import { getAllBalances } from './ledger.js';
 
-export type UserRole = 'player' | 'admin' | 'guest';
+export type { UserRole };
 
 /** True iff `v` is one of the canonical AvatarId enum values (server-side validation). */
 export function isAvatarId(v: unknown): v is AvatarId {
@@ -33,11 +33,16 @@ export interface Identity {
     username: string,
     password: string,
     role?: UserRole,
-  ): Promise<{ token: string; playerId: string; balances: Record<Currency, number>; avatarId: AvatarId }>;
+    /** Ticket 2026-10-01#7: which demo link this registration came through (the Cloudflare
+     *  Worker's `X-Demo-Link` header, read by the `/auth/register` route) — `null`/omitted for
+     *  direct traffic. Stored once at registration; a re-claim via the soft-reset path (ADR-011)
+     *  keeps the ORIGINAL account's source, since re-claiming isn't a new registration. */
+    source?: string | null,
+  ): Promise<{ token: string; playerId: string; balances: Record<Currency, number>; avatarId: AvatarId; role: UserRole }>;
   login(
     username: string,
     password: string,
-  ): Promise<{ token: string; playerId: string; balances: Record<Currency, number>; avatarId: AvatarId }>;
+  ): Promise<{ token: string; playerId: string; balances: Record<Currency, number>; avatarId: AvatarId; role: UserRole }>;
   verifyToken(token: string): TokenPayload;
   /** Mint a token for a guest playerId (role 'guest') — pure (jwt.sign only), no accounts-table
    *  read or write. Verifiable by the SAME {@link verifyToken} (same jwtSecret) as any other
@@ -61,6 +66,11 @@ export interface Identity {
   clearPassword(playerId: string): { playerId: string; username: string };
   /** Creates the admin account if it does not already exist. Safe to call on every startup. */
   ensureAdmin(username: string, password: string): Promise<void>;
+  /** Ticket 2026-10-01#7: every account, for `GET /admin/players`. Deliberately unfiltered by
+   *  role — the Owner-confirmed decision is to show every account (player, guest rows never
+   *  land here since guest sessions never touch this table, and admin) with a client-side filter
+   *  toggle, not a server-side default narrowing to `source`-tagged accounts only. */
+  listAccounts(): { id: string; username: string; role: UserRole; source: string | null }[];
 }
 
 const DEV_JWT_SECRET = 'dev-jwt-secret-change-in-production';
@@ -74,6 +84,8 @@ interface AccountRow {
   password_hash: string | null;
   role: string;
   avatar_id: string;
+  // Ticket 2026-10-01#7: NULL for direct traffic / any account registered before this shipped.
+  source: string | null;
 }
 
 export function createIdentity(db: Database.Database, ledger: Ledger): Identity {
@@ -105,16 +117,32 @@ export function createIdentity(db: Database.Database, ledger: Ledger): Identity 
     db.exec(`ALTER TABLE accounts ADD COLUMN avatar_id TEXT NOT NULL DEFAULT 'default'`);
   }
 
-  const stmtInsert = db.prepare<[string, string, string, string]>(
-    `INSERT INTO accounts (id, username, password_hash, role) VALUES (?, ?, ?, ?)`,
+  // Same snapshot-safe, idempotent migration shape as avatar_id above (and ledger.ts's own
+  // currency column, D69) — ticket 2026-10-01#7. Nullable, no DEFAULT: unlike avatar_id (every
+  // account always HAS some avatar), "no source" is itself a meaningful, common value (direct
+  // traffic), not a placeholder to migrate away from.
+  const hasSourceColumn = db
+    .prepare<[], { name: string }>(`PRAGMA table_info(accounts)`)
+    .all()
+    .some((c) => c.name === 'source');
+  if (!hasSourceColumn) {
+    db.exec(`ALTER TABLE accounts ADD COLUMN source TEXT`);
+  }
+
+  const stmtInsert = db.prepare<[string, string, string, string, string | null]>(
+    `INSERT INTO accounts (id, username, password_hash, role, source) VALUES (?, ?, ?, ?, ?)`,
   );
 
   const stmtFindByUsername = db.prepare<[string], AccountRow>(
-    `SELECT id, username, password_hash, role, avatar_id FROM accounts WHERE username = ?`,
+    `SELECT id, username, password_hash, role, avatar_id, source FROM accounts WHERE username = ?`,
   );
 
   const stmtFindUsernameById = db.prepare<[string], { username: string }>(
     `SELECT username FROM accounts WHERE id = ?`,
+  );
+
+  const stmtListAccounts = db.prepare<[], { id: string; username: string; role: string; source: string | null }>(
+    `SELECT id, username, role, source FROM accounts ORDER BY rowid ASC`,
   );
 
   const stmtFindAvatarById = db.prepare<[string], { avatar_id: string }>(
@@ -147,7 +175,8 @@ export function createIdentity(db: Database.Database, ledger: Ledger): Identity 
     username: string,
     password: string,
     role: UserRole = 'player',
-  ): Promise<{ token: string; playerId: string; balances: Record<Currency, number>; avatarId: AvatarId }> {
+    source: string | null = null,
+  ): Promise<{ token: string; playerId: string; balances: Record<Currency, number>; avatarId: AvatarId; role: UserRole }> {
     const existing = stmtFindByUsername.get(username);
     if (existing) {
       // Alias is taken AND still has a password → genuine collision.
@@ -158,6 +187,10 @@ export function createIdentity(db: Database.Database, ledger: Ledger): Identity 
       // account so its match history, standings, and (already-reset) wallet carry over.
       // No grant — the soft reset already issued the starting credit; granting again
       // here would double it. The original role AND stored avatar are preserved.
+      // Ticket 2026-10-01#7: the original `source` is ALSO preserved (not overwritten with
+      // whatever link this re-claim happened to come through) — re-claiming an alias isn't a
+      // new registration, so re-attributing it would misrepresent where the account actually
+      // originated.
       const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
       stmtSetPassword.run(passwordHash, existing.id);
       // Ticket 2026-09-27#7 (D69): PR 3 — full balances map.
@@ -167,22 +200,23 @@ export function createIdentity(db: Database.Database, ledger: Ledger): Identity 
         playerId: existing.id,
         balances,
         avatarId: coerceAvatar(existing.avatar_id),
+        role: existing.role as UserRole,
       };
     }
     const playerId = randomUUID();
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     // avatar_id defaults to 'default' via the column DEFAULT — a new registrant starts there.
-    stmtInsert.run(playerId, username, passwordHash, role);
+    stmtInsert.run(playerId, username, passwordHash, role, source);
     ledger.grant(playerId);
     // Ticket 2026-09-27#7 (D69): PR 3 — full balances map.
     const balances = getAllBalances(ledger, playerId);
-    return { token: signToken(playerId, role), playerId, balances, avatarId: 'default' };
+    return { token: signToken(playerId, role), playerId, balances, avatarId: 'default', role };
   }
 
   async function login(
     username: string,
     password: string,
-  ): Promise<{ token: string; playerId: string; balances: Record<Currency, number>; avatarId: AvatarId }> {
+  ): Promise<{ token: string; playerId: string; balances: Record<Currency, number>; avatarId: AvatarId; role: UserRole }> {
     const account = stmtFindByUsername.get(username);
     if (!account || account.password_hash === null) {
       // No such account, or the alias was soft-reset and not yet re-claimed — either
@@ -200,6 +234,7 @@ export function createIdentity(db: Database.Database, ledger: Ledger): Identity 
       playerId: account.id,
       balances,
       avatarId: coerceAvatar(account.avatar_id),
+      role: account.role as UserRole,
     };
   }
 
@@ -238,5 +273,9 @@ export function createIdentity(db: Database.Database, ledger: Ledger): Identity 
     }
   }
 
-  return { register, login, verifyToken, signGuestToken, getUsername, getAvatarId, setAvatarId, clearPassword, ensureAdmin };
+  function listAccounts(): { id: string; username: string; role: UserRole; source: string | null }[] {
+    return stmtListAccounts.all().map((r) => ({ ...r, role: r.role as UserRole }));
+  }
+
+  return { register, login, verifyToken, signGuestToken, getUsername, getAvatarId, setAvatarId, clearPassword, ensureAdmin, listAccounts };
 }
