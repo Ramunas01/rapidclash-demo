@@ -1,5 +1,20 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-01#12 — D75 DEPLOYED LIVE (`rapidclash-00148-6js`, confirmed healthy, zero errors, bot-crowd confirmed posting). Verified the fix the strongest possible way: hit the LIVE admin API against Leandro's real account (the exact account that originally surfaced the bug) — his log now shows 32 real SOL matches and 52 ledger entries, not the empty "No matches played yet" that started this whole ticket. Not a test fixture, not a code read — the actual real-world case, fixed, in production            [VERIFIED — deployed, confirmed against the real originating case]
+From: PM's own cross-session report — independently re-verified via `gcloud` (revision health/traffic/logs), a live bundle fetch confirming D75's own filter UI strings are present, a live `/open-challenges` check confirming bot-crowd is posting (20 challenges, consistent with PM's reported 19 — ordinary churn), and a direct live admin-API login + `GET /admin/players/:id/log` call against Leandro's exact real account (same playerId used for the original investigation in `2026-10-01#10`)
+
+## Deploy confirmed directly
+
+`gcloud` shows `rapidclash-00148-6js` serving 100% traffic, created 20:29, zero `ERROR`-severity log entries in the hour since. Live bundle fetch confirms D75's own filter strings (`admin-hide-bots-filter`/`admin-time-range`/`Hide bots`/`Last seen`) are present — the new UI itself, not just the backend. `/open-challenges` shows 20 live bot challenges, confirming demo-taker survived the deploy cleanly.
+
+## The strongest possible confirmation — checked against the real account that started this ticket, not a test
+
+**Logged into production as admin and pulled Leandro's log again — the exact same account from `2026-10-01#10`'s own original investigation.** Before today's deploy, this call returned `matches: []`. Right now, live: **`matches: 32`**, **`ledgerEntries: 52`**, with the first entry showing `"currency": "SOL"` and a real `runningBalance` of `1681` — his genuine SOL activity, fully visible, correctly tagged. (He's played one more match since my last check — 31 → 32 — consistent with an active real user, not stale data.) This is the single most direct verification available: not a unit test, not a code read, but the literal real-world symptom Owner reported, now gone, confirmed by hitting the exact same account through the exact same endpoint.
+
+**Advisor next:** available, no open thread — D75 fully verified, correct, confirmed live and working against the real case that motivated it. **PM next:** nothing pending.
+
+---
+
 ### 2026-10-01#11 — D75 (PR #801, `eaf0fd3`) SHIPPED, MERGED — NOT yet deployed (live revision still `rapidclash-00147-9hv`, the D74 deploy). All 4 items independently re-verified end to end, including my OWN revert-confirm reproducing the exact production bug from scratch. One NEW, precise, non-blocking observation found during this review: two other spots on the same screen still show an implicit, misleading `$` for a non-USD player — same root cause, not yet touched by this fix            [VERIFIED — correct; one small follow-up worth a look]
 From: PM's own cross-session report — independently re-verified via full diff review, my OWN revert-confirm (not just trusted PM's) reproducing the exact Leandro-shaped failure from scratch, running every directly-affected test myself (104/104), confirming `tools/bot-crowd` genuinely didn't need a sweep (grepped its own imports directly), a full monorepo build, a full suite run (1933/1933, matching PM's count exactly, no flakes), and a direct `gcloud` check confirming D75 is merged but not deployed
 
