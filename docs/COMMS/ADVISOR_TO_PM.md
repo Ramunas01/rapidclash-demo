@@ -1,5 +1,32 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-02#2 — D76 (PR #805, `4ac232f`) SHIPPED, MERGED — not yet deployed (non-urgent, per the ticket's own framing). Independently re-verified: diff review, ran PM's own 4 new tests myself (18/18 in `Admin.test.tsx`), and a genuine revert-confirm — restored the pre-D76 rendering path and confirmed 3 of the 4 new tests fail with exactly the symptom this ticket exists to fix (no marker row at all)            [VERIFIED — correct]
+From: PM's own cross-session report — independently re-verified via full diff review of `Admin.tsx`/`Admin.test.tsx`, my OWN revert-confirm (temporarily restored the pre-D76 `buildMatchTimeline` body, re-ran the suite, confirmed the exact failure, restored the fix), a direct `grep` confirming `tools/bot-crowd` genuinely has no exposure to this change (touches `LedgerEntry` only via `adminCredit`, a shape this PR didn't alter), and a clean `tsc -b`
+
+## The merge logic — read directly, not assumed from the description
+
+`buildMatchTimeline` is a standard two-pointer merge of two already-sorted inputs: `matches` (newest-first, per `getFullMatchLog`'s own contract) reversed to chronological order, and the standalone subset of `ledgerEntries` (`matchId == null`) sorted oldest-first, walked together once and reversed back at the end to match the screen's newest-first convention. A standalone marker is a separate `TimelineRow` variant (`{ kind: 'marker' }`) rendered as one row spanning the first 5 columns, with a friendly label from a small `MARKER_LABELS` map (`OPENING_BALANCE`/`ADMIN_CREDIT`/`REWARD_CLAIM`/`GRANT`) and a fallback to the raw `type` string for anything unmapped — confirmed this fallback actually works, not just declared, via the dedicated `RAKE`-as-unmapped-type test.
+
+**Independently reproduced the exact pre-fix symptom myself.** Temporarily reverted `buildMatchTimeline` to the old one-line `matches.map(...)` (no merge at all) and re-ran `Admin.test.tsx`: 3 of the 4 new tests failed immediately — the DemoGM-shaped case (`toEqual(['admin-match-m2', 'admin-marker-opening', 'admin-match-m1'])` → got only the two match rows, no marker), the fallback-label case, and the before-first-match case — each failing by the marker row simply not existing, byte-for-byte the gap this ticket was filed to close. Restored the real fix, confirmed clean (18/18) and `git diff --stat` empty again — no residue left behind.
+
+**The 4th new test (ledger row WITH a `matchId` is never shown as a marker) passed even on the reverted code** — expected and correct: that code path never built markers at all, so "no marker rendered" trivially satisfies "no marker for a matched row" too. Not a gap in the test; a property of what that one test is actually guarding against (the merge filtering correctly on `matchId == null`, not a false-positive risk the revert could expose).
+
+## Test seeded directly from the real production case — confirmed, not just claimed
+
+The primary new test's fixture (`m1`: 90 USD win → balance 94 at `05:44:57`; `OPENING_BALANCE` +12897 at `07:09:39`; `m2`: 195 USD win → balance 13086 at `09:38:50`) is, line for line, the real DemoGM numbers from `2026-10-02#1`'s own investigation — this is the actual case verified end to end, not a synthetic stand-in.
+
+## Scope confirmed correct
+
+**No `tools/bot-crowd` sweep needed — confirmed directly, not just trusted.** Grepped its own source: it touches `LedgerEntry` only through `adminCredit`'s own return type (`http.ts:53`), a shape this PR never modified (`buildMatchTimeline` reads `ledgerEntries` but adds no new fields to `LedgerEntry` itself). Frontend-only change, correctly scoped.
+
+**`tsc -b` clean.** `Admin.test.tsx` suite 18/18 (14 pre-existing + 4 new). Full `apps/web` suite: 1022/1023, one unrelated failure (`DiceHub.test.tsx`'s own-bar win-fill test, a 5000ms timeout under full-suite resource contention) — confirmed harmless by re-running that single test in isolation (passes clean in 6.18s); nothing about D76 touches dice hub rendering or timers, so this isn't attributable to this change.
+
+**Not deployed — correctly so.** PM's own framing (non-blocking, non-urgent) stands; Owner's call on timing, no urgency from this end either.
+
+**Advisor next:** available, no open thread. **PM next:** nothing pending on D76.
+
+---
+
 ### 2026-10-02#1 — Investigated Owner's "DemoGM mystery" (balance jump 94→13086 USD between two identically-sized +95 wins). **Not a bug.** It's `compactOldTransactions` (ticket 2026-09-24#4) doing exactly what it's designed to do: DemoGM is an extreme-volume account (1052 games played) whose entire pre-cutoff history — net **+12897 USD** — got rolled into one `OPENING_BALANCE` checkpoint in the gap between the two matches Owner was looking at. Arithmetic verified exactly, live. One small, real admin-UX gap found along the way, ticketed below as **D76**: the Matches table gives an admin no way to tell that a non-match ledger event happened between two rows            [VERIFIED — not a bug; D76 ticketed for the UX gap]
 From: Owner's own report (two pasted admin-log rows) — investigated live end to end: `POST /auth/login` as admin, `GET /admin/players` to find DemoGM's real `playerId` (`34b668ba-49e9-48b5-b73a-6cbc89b38b73`), `GET /admin/players/:id/log` for the player's FULL log (339 matches / 549 ledger entries — this account is not lightly used), isolated every ledger row created between the two timestamps Owner named, read `compactOldTransactions` (`packages/core/src/ledger.ts:442-506`) directly to confirm the mechanism, and confirmed prod's retention/cadence config via `gcloud run services describe` (no env override — defaults apply: `DEFAULT_COMPACTION_RETENTION_DAYS = 10`, `DEFAULT_COMPACTION_INTERVAL_MS` = 1 hour, both in `apps/server/src/ws/gateway.ts`)
 
