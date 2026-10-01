@@ -1,5 +1,40 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-02#1 — Investigated Owner's "DemoGM mystery" (balance jump 94→13086 USD between two identically-sized +95 wins). **Not a bug.** It's `compactOldTransactions` (ticket 2026-09-24#4) doing exactly what it's designed to do: DemoGM is an extreme-volume account (1052 games played) whose entire pre-cutoff history — net **+12897 USD** — got rolled into one `OPENING_BALANCE` checkpoint in the gap between the two matches Owner was looking at. Arithmetic verified exactly, live. One small, real admin-UX gap found along the way, ticketed below as **D76**: the Matches table gives an admin no way to tell that a non-match ledger event happened between two rows            [VERIFIED — not a bug; D76 ticketed for the UX gap]
+From: Owner's own report (two pasted admin-log rows) — investigated live end to end: `POST /auth/login` as admin, `GET /admin/players` to find DemoGM's real `playerId` (`34b668ba-49e9-48b5-b73a-6cbc89b38b73`), `GET /admin/players/:id/log` for the player's FULL log (339 matches / 549 ledger entries — this account is not lightly used), isolated every ledger row created between the two timestamps Owner named, read `compactOldTransactions` (`packages/core/src/ledger.ts:442-506`) directly to confirm the mechanism, and confirmed prod's retention/cadence config via `gcloud run services describe` (no env override — defaults apply: `DEFAULT_COMPACTION_RETENTION_DAYS = 10`, `DEFAULT_COMPACTION_INTERVAL_MS` = 1 hour, both in `apps/server/src/ws/gateway.ts`)
+
+## The jump, explained exactly — the retention job working as designed, not a defect
+
+Querying DemoGM's full ledger directly (not trusting the two rows Owner saw) turned up exactly one row sitting in the gap between the blackjack win (`24d39c27...`, 05:44:57 UTC, balance 94) and the dice win (`616b45ee...`, 09:38:50 UTC, balance 13086 — Owner's own two rows, confirmed by timestamp+amount, though the actual `matchId`s differ from what Owner pasted; see the self-correction below):
+
+```
+2026-09-24T07:09:39.432Z  OPENING_BALANCE  +12897  compaction:34b668ba-...:USD:4fc76a46-...   matchId: null
+2026-09-24T09:38:48.445Z  BET_ESCROW       -100    escrow:616b45ee-...                        matchId: 616b45ee-...
+2026-09-24T09:38:50.898Z  SETTLE_WIN       +195    settle:616b45ee-...:win                     matchId: 616b45ee-...
+```
+
+That `OPENING_BALANCE` row is the hourly compaction job (`compactOldTransactions`, `ledger.ts:442`) doing its normal job: at 07:09:39 it swept every one of DemoGM's ledger rows older than the 10-day retention cutoff (~09-14) — standalone rows plus every fully-resolved match's rows — summed them to a net **+12897 USD**, deleted the originals, and wrote that single checkpoint in their place. This account has played **1052 games (628W/421L/3D)**, so by 09-24 it had weeks of compactable history; a normal lightly-used demo visitor would rarely if ever cross the 10-day window and would never show this. (DemoGM's `displayName` doesn't carry the `🤖` bot-disclosure prefix the codebase's own `isBotName()` convention checks for, so it isn't flagged as a bot by that signal — just an observation for Owner, not a guess about who/what the account actually is.)
+
+**Arithmetic, verified exactly:** 94 (balance before) + 12897 (checkpoint) = 12991; − 100 (next bet's escrow) = 12891; + 195 (that bet's win) = 13086. Matches Owner's own pasted number to the dollar.
+
+## Why it looked inexplicable: the checkpoint is real but invisible from where Owner was looking
+
+`Admin.tsx`'s "Matches" table (`log.matches`) only lists `match_results` rows — a ledger checkpoint has no match, so it never appears there. The `OPENING_BALANCE` row IS visible today, but only in the separate "Ledger entries" table further down the same screen (`Type: OPENING_BALANCE`, `Match: —`) — nothing on the page cross-references the two tables by time, so reading only the Matches table (the natural thing to do when following one player's match-by-match balance) makes a real, correctly-accounted-for jump look like a mystery.
+
+## One correction to my own prior framing, not Owner's
+
+My own working notes (written before this ticket, not seen by Owner) mislabeled the two long IDs Owner pasted as `matchId`s. They're actually the **`Opponent`** column — `Admin.tsx:145` renders `m.opponent` right there, correctly labeled — Owner's paste was accurate; I mis-transcribed the field name internally. No confusion on Owner's side; flagging purely as my own self-correction, since the actual match IDs for those two rows (`24d39c27-eb20-463d-969d-00fe3ee21a9a` and `616b45ee-b5fd-41f4-9484-23c6ad8f3548`) are different strings from the ones in Owner's paste.
+
+## D76 (new, small, non-blocking) — surface non-match ledger events in context, so a jump never needs detective work again
+
+**Ask:** when an `OPENING_BALANCE` / `ADMIN_CREDIT` / `REWARD_CLAIM` entry (any ledger row with `match_id IS NULL`) lands chronologically between two of a player's matches, the Matches table should say so inline — e.g. a synthetic marker row at the right point in time, labeled by type and signed amount ("Account history compacted: +12,897 USD", "Admin credit: +500 USD"), rather than requiring an admin to separately open the Ledger entries table and align timestamps by hand (the exact manual cross-reference this investigation just did). `AdminPlayerLogResponse` already carries both arrays with real timestamps on every row — this is a client-side merge-and-render, no new server data needed. Recommend against the cheaper alternative (just flagging a mismatched balance delta with a tooltip) — it still leaves the admin to go find the ledger row themselves; the inline marker is the only version that actually answers "why did the balance change" at a glance.
+
+**Verification plan:** a regression test seeding one match, one standalone `OPENING_BALANCE`/`ADMIN_CREDIT` row, then a second match — confirming the marker renders between the two match rows in correct time order with the right label and signed amount. Low risk, additive only; no existing behavior changes.
+
+**Advisor next:** available, no open thread. **PM next:** D76 above, whenever convenient — not blocking, Owner didn't ask for a fix, just an explanation (now given directly to Owner separately).
+
+---
+
 ### 2026-10-01#12 — D75 DEPLOYED LIVE (`rapidclash-00148-6js`, confirmed healthy, zero errors, bot-crowd confirmed posting). Verified the fix the strongest possible way: hit the LIVE admin API against Leandro's real account (the exact account that originally surfaced the bug) — his log now shows 32 real SOL matches and 52 ledger entries, not the empty "No matches played yet" that started this whole ticket. Not a test fixture, not a code read — the actual real-world case, fixed, in production            [VERIFIED — deployed, confirmed against the real originating case]
 From: PM's own cross-session report — independently re-verified via `gcloud` (revision health/traffic/logs), a live bundle fetch confirming D75's own filter UI strings are present, a live `/open-challenges` check confirming bot-crowd is posting (20 challenges, consistent with PM's reported 19 — ordinary churn), and a direct live admin-API login + `GET /admin/players/:id/log` call against Leandro's exact real account (same playerId used for the original investigation in `2026-10-01#10`)
 
