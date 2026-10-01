@@ -268,14 +268,18 @@ describe('HomeHubScreen — no-art game handling (#148)', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it('Limbo renders as a playable tile with its art (not the gradient-name fallback)', async () => {
+  // Ticket 2026-10-01#6 (D73): Limbo is now in COMING_SOON (Owner-confirmed deliberate reversal,
+  // despite being genuinely live) — this test's own original title/assertion ("Limbo is live, never
+  // coming-soon") is no longer true; updated to its new correct form, keeping issue #148's own
+  // underlying concern (Limbo has real art, not the gradient-name fallback) intact.
+  it('Limbo renders with its real art (not the gradient-name fallback) as a coming-soon tile, despite being live', async () => {
     render(<HomeHubScreen {...baseProps()} />);
-    const tile = await screen.findByTestId('home-tile-limbo');
+    const tile = await screen.findByTestId('home-coming-soon-limbo');
     // The designed art renders as an <img>; the fallback would be a gradient div with the name text.
     expect(tile.querySelector('img')).not.toBeNull();
     expect(within(tile).queryByText('Limbo')).toBeNull();
-    // It's never the coming-soon variant — Limbo is live.
-    expect(screen.queryByTestId('home-coming-soon-limbo')).toBeNull();
+    // Never the playable variant — COMING_SOON membership overrides live status (D73).
+    expect(screen.queryByTestId('home-tile-limbo')).toBeNull();
   });
 
   it('every live game is tracked for the cross-game challenge ticker', async () => {
@@ -395,9 +399,22 @@ const ALL_12: GameMeta[] = [
   META('keno', 'Keno'), META('baccarat', 'Baccarat'), META('limbo', 'Limbo'),
 ];
 
+// Ticket 2026-10-01#6 (D73): captures BOTH playable AND coming-soon tiles, in real DOM order —
+// sort/category/search filtering operates on the full `tiles` roster regardless of
+// playable-vs-coming-soon status (a presentation-layer classification these tests aren't about),
+// and 6 of the ALL_12 games below are now coming-soon despite being live, which would otherwise
+// silently vanish from a playable-only query and break every order assertion in this block.
+// Ticket 2026-10-01#6 (D73): category membership is independent of playable-vs-coming-soon status
+// — a game can be in CARD GAMES and ALSO be coming-soon. Presence checks below use this instead of
+// a fixed `home-tile-` lookup so they test category membership, not incidentally also testing
+// playable status (already covered by its own dedicated tests above).
+function tileFor(id: string): Element | null {
+  return document.querySelector(`[data-testid="home-tile-${id}"], [data-testid="home-coming-soon-${id}"]`);
+}
+
 function tileOrder(): string[] {
-  return Array.from(document.querySelectorAll('[data-testid^="home-tile-"]'))
-    .map((el) => el.getAttribute('data-testid')!.replace('home-tile-', ''));
+  return Array.from(document.querySelectorAll('[data-testid^="home-tile-"], [data-testid^="home-coming-soon-"]'))
+    .map((el) => el.getAttribute('data-testid')!.replace(/^home-(tile|coming-soon)-/, ''));
 }
 
 describe('HomeHubScreen — category rail, SEARCH, SORT, RANDOM (issue #465)', () => {
@@ -561,16 +578,16 @@ describe('HomeHubScreen — category rail, SEARCH, SORT, RANDOM (issue #465)', (
   it('ORIGINALS shows all 12 games', async () => {
     render(<HomeHubScreen {...baseProps()} />);
     await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
-    for (const g of ALL_12) expect(screen.getByTestId(`home-tile-${g.id}`)).toBeInTheDocument();
+    for (const g of ALL_12) expect(tileFor(g.id)).not.toBeNull();
   });
 
   it('CARD GAMES = blackjack, hilo, baccarat only', async () => {
     render(<HomeHubScreen {...baseProps()} />);
     await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('home-cat-card'));
-    for (const id of ['blackjack', 'hilo', 'baccarat']) expect(screen.getByTestId(`home-tile-${id}`)).toBeInTheDocument();
+    for (const id of ['blackjack', 'hilo', 'baccarat']) expect(tileFor(id)).not.toBeNull();
     for (const id of ['coinflip', 'chess', 'mines', 'rps', 'crash', 'dice', 'roulette', 'keno', 'limbo']) {
-      expect(screen.queryByTestId(`home-tile-${id}`)).toBeNull();
+      expect(tileFor(id)).toBeNull();
     }
   });
 
@@ -579,18 +596,18 @@ describe('HomeHubScreen — category rail, SEARCH, SORT, RANDOM (issue #465)', (
     await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('home-cat-chance'));
     for (const id of ['coinflip', 'dice', 'roulette', 'keno', 'limbo', 'mines', 'crash', 'baccarat']) {
-      expect(screen.getByTestId(`home-tile-${id}`)).toBeInTheDocument();
+      expect(tileFor(id)).not.toBeNull();
     }
-    for (const id of ['blackjack', 'chess', 'rps', 'hilo']) expect(screen.queryByTestId(`home-tile-${id}`)).toBeNull();
+    for (const id of ['blackjack', 'chess', 'rps', 'hilo']) expect(tileFor(id)).toBeNull();
   });
 
   it('SKILL GAMES = chess, blackjack, hilo, rps', async () => {
     render(<HomeHubScreen {...baseProps()} />);
     await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('home-cat-skill'));
-    for (const id of ['chess', 'blackjack', 'hilo', 'rps']) expect(screen.getByTestId(`home-tile-${id}`)).toBeInTheDocument();
+    for (const id of ['chess', 'blackjack', 'hilo', 'rps']) expect(tileFor(id)).not.toBeNull();
     for (const id of ['coinflip', 'mines', 'crash', 'dice', 'roulette', 'keno', 'baccarat', 'limbo']) {
-      expect(screen.queryByTestId(`home-tile-${id}`)).toBeNull();
+      expect(tileFor(id)).toBeNull();
     }
   });
 
@@ -824,5 +841,110 @@ describe('HomeHubScreen — category rail, SEARCH, SORT, RANDOM (issue #465)', (
     expect(dots[2].className).toContain('bg-brand');
     expect(dots[0].className).not.toContain('bg-brand');
     expect(dots[1].className).not.toContain('bg-brand');
+  });
+});
+
+// Ticket 2026-10-01#6 (D73): the "coming soon" grid treatment — Owner-confirmed deliberate
+// reversal of 6 already-live games (Crash, Roulette, Hilo, Keno, Baccarat, Limbo) back to
+// non-interactive grid tiles. All 6 are genuinely live via /games in this describe block's own
+// mock, exercising the real regression (COMING_SOON membership must override live status, not
+// just apply to not-yet-shipped games — see HomeHub.tsx's own `tiles` useMemo doc comment).
+describe('HomeHubScreen — "coming soon" tile treatment (ticket 2026-10-01#6, D73)', () => {
+  const ALL_12_LIVE: GameMeta[] = [
+    META('coinflip', 'Coinflip'), META('blackjack', 'Blackjack'), META('chess', 'Chess'),
+    META('mines', 'Mines'), META('rps', 'Rock Paper Scissors'), META('crash', 'Crash'),
+    META('dice', 'Dice'), META('roulette', 'Roulette'), META('hilo', 'Hilo'),
+    META('keno', 'Keno'), META('baccarat', 'Baccarat'), META('limbo', 'Limbo'),
+  ];
+  const SOON_IDS = ['crash', 'roulette', 'hilo', 'keno', 'baccarat', 'limbo'];
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/open-challenges')) return { ok: true, json: async () => [] } as Response;
+      if (u.includes('/games/popularity')) return { ok: true, json: async () => ({}) } as Response;
+      if (u.includes('/games')) return { ok: true, json: async () => ALL_12_LIVE } as Response;
+      if (u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
+      return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
+    }));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('all 6 games render as coming-soon tiles despite being genuinely live, with no playable variant', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    for (const id of SOON_IDS) {
+      const tile = screen.getByTestId(`home-coming-soon-${id}`);
+      expect(tile).toBeInTheDocument();
+      expect(tile.className).toContain('rc-card--soon');
+      expect(screen.queryByTestId(`home-tile-${id}`)).toBeNull();
+    }
+  });
+
+  it('a tap on any of the 6 coming-soon tiles does nothing — no onSelectGame call, no onClick wiring, default cursor', async () => {
+    const onSelectGame = vi.fn();
+    render(<HomeHubScreen {...baseProps({ onSelectGame })} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    for (const id of SOON_IDS) {
+      const tile = screen.getByTestId(`home-coming-soon-${id}`);
+      expect(tile.tagName).not.toBe('BUTTON'); // a plain div, never a button
+      expect(tile).toHaveAttribute('aria-disabled', 'true');
+      fireEvent.click(tile);
+    }
+    expect(onSelectGame).not.toHaveBeenCalled();
+  });
+
+  it('the pill reads "COMING SOON" (two words, uppercase) — not the old "Soon" corner badge', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    const tile = screen.getByTestId('home-coming-soon-crash');
+    expect(within(tile).getByText('COMING SOON')).toBeInTheDocument();
+    expect(within(tile).queryByText('Soon')).toBeNull();
+  });
+
+  it('still-live, never-coming-soon games keep their playable, tappable tile unaffected', async () => {
+    const onSelectGame = vi.fn();
+    render(<HomeHubScreen {...baseProps({ onSelectGame })} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('home-tile-coinflip'));
+    expect(onSelectGame).toHaveBeenCalledWith(expect.objectContaining({ id: 'coinflip' }));
+  });
+
+  it('every live game (including the 6 coming-soon ones) is STILL tracked for the cross-game challenge ticker — only the grid tile changes, not the underlying game', async () => {
+    const onTrackChallenges = vi.fn();
+    render(<HomeHubScreen {...baseProps({ onTrackChallenges })} />);
+    await waitFor(() => expect(onTrackChallenges).toHaveBeenCalled());
+    expect(onTrackChallenges).toHaveBeenCalledWith(expect.arrayContaining(SOON_IDS));
+  });
+
+  it('the grid carries position:relative and a single shared wave layer, with a clip-path driven by JS (not CSS) once coming-soon cards are present', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-coming-soon-crash')).toBeInTheDocument());
+    const grid = screen.getByTestId('home-coming-soon-crash').closest('.relative.grid') as HTMLElement;
+    expect(grid).not.toBeNull();
+    const wave = grid.querySelector('.rc-soon-wave') as HTMLElement;
+    expect(wave).not.toBeNull();
+    // `initSoonWave` runs its first measurement via requestAnimationFrame — wait for the inline
+    // clip-path to move off whatever the CSS default is (set once JS actually measures the cards).
+    await waitFor(() => expect(wave.style.clipPath).not.toBe(''));
+    expect(wave.style.clipPath).toContain('path(');
+  });
+
+  it('switching to a category with NO coming-soon games re-clips the wave to fully hidden', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-coming-soon-crash')).toBeInTheDocument());
+    const grid = screen.getByTestId('home-coming-soon-crash').closest('.relative.grid') as HTMLElement;
+    const wave = grid.querySelector('.rc-soon-wave') as HTMLElement;
+    await waitFor(() => expect(wave.style.clipPath).toContain('path('));
+
+    // SKILL GAMES = chess, blackjack, hilo, rps — hilo is the only coming-soon member; switch to
+    // a category with zero coming-soon members instead to assert the fully-hidden branch:
+    // ORIGINALS (all 12) always has coming-soon members in this mock, so use CARD GAMES minus
+    // its own coming-soon (hilo, baccarat) isn't zero either — SEARCH for a query matching only
+    // always-live games isolates a genuinely coming-soon-free view.
+    fireEvent.click(screen.getByTestId('home-search-toggle'));
+    fireEvent.change(screen.getByTestId('home-search-input'), { target: { value: 'coinflip' } });
+    await waitFor(() => expect(screen.queryByTestId('home-coming-soon-crash')).toBeNull());
+    await waitFor(() => expect(wave.style.clipPath).toBe('inset(100%)'));
   });
 });

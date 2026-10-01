@@ -11,6 +11,7 @@ import { ChatSheet } from '../components/hub-chrome/ChatSheet.js';
 import { useChat } from '../components/hub-chrome/useChat.js';
 import { HUB_SHELL } from '../components/hub-chrome/layout.js';
 import { TILE_ART, COMING_SOON, titleCase } from '../components/hub-shared/tiles.js';
+import { initSoonWave } from '../components/hub-shared/comingSoonWave.js';
 import { GamesCarousel } from '../components/hub-shared/GamesCarousel.js';
 import { BringARival } from '../components/hub-shared/BringARival.js';
 import { HubFooter } from '../components/hub-shared/HubFooter.js';
@@ -123,10 +124,25 @@ export function HomeHubScreen({
   const nameByGame = useMemo(() => new Map(games.map((g) => [g.id, g.displayName])), [games]);
 
   // The full roster: live playable tiles (data-driven) + coming-soon breadth tiles.
+  //
+  // Ticket 2026-10-01#6 (D73): COMING_SOON membership is now AUTHORITATIVE, overriding live
+  // `/games` status — not just a placeholder for not-yet-shipped games the way it worked before.
+  // The original logic (`COMING_SOON.filter(id => !live.has(id))`, keeping EVERY `games` entry in
+  // `playable` unconditionally) made the breadth mechanism INERT the moment a listed game actually
+  // shipped — exactly the situation this ticket's own 6 games were already in (confirmed: before
+  // this fix, simply updating the `COMING_SOON` constant to the full 6-game list was a no-op,
+  // since all 6 are already live — the filter would still evaluate to empty and these tiles would
+  // keep rendering as fully playable). Fixed by excluding COMING_SOON members from `playable`
+  // (regardless of live status) and always rendering the full COMING_SOON list as `soon` tiles —
+  // this still correctly handles a genuinely-unshipped future game too (no `meta`, falls back to
+  // `titleCase`), so the mechanism now serves BOTH cases through one consistent rule instead of
+  // silently going dormant for one of them.
   const tiles = useMemo<Tile[]>(() => {
-    const playable: Tile[] = games.map((g) => ({ id: g.id, name: g.displayName, playable: true, meta: g }));
-    const live = new Set(games.map((g) => g.id));
-    const soon: Tile[] = COMING_SOON.filter((id) => !live.has(id)).map((id) => ({ id, name: titleCase(id), playable: false }));
+    const soonSet = new Set(COMING_SOON);
+    const playable: Tile[] = games
+      .filter((g) => !soonSet.has(g.id))
+      .map((g) => ({ id: g.id, name: g.displayName, playable: true, meta: g }));
+    const soon: Tile[] = COMING_SOON.map((id) => ({ id, name: titleCase(id), playable: false }));
     return [...playable, ...soon];
   }, [games]);
 
@@ -182,6 +198,19 @@ export function HomeHubScreen({
   // EVENTS is empty by design (the prototype's own `catEmpty` state) — but only when there's no
   // active search; a search always looks across all 12 games regardless of the active tab.
   const eventsEmpty = !searching && cat === 'events';
+
+  // Ticket 2026-10-01#6 (D73): the shared purple diagonal line's clip-path, measured against
+  // whichever `.rc-card--soon` tiles are actually in the DOM right now. `initSoonWave` re-measures
+  // itself on resize and on any DOM/class change inside the grid (category switch, search filter,
+  // sort — all of which change which cards are mounted) via its own observers, so no dependency
+  // array plumbing is needed here beyond re-running if the grid element itself is ever swapped
+  // (the `eventsEmpty`/`shownTiles.length === 0` branches below unmount it entirely).
+  const comingSoonGridRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const grid = comingSoonGridRef.current;
+    if (!grid) return;
+    return initSoonWave(grid);
+  }, [eventsEmpty, shownTiles.length === 0]);
 
   // RANDOM (issue #465, prototype's `spinRandom`): spins for RANDOM_TOTAL_MS (1560ms — a 1500ms
   // die-spin keyframe + a 60ms post-settle delay), then navigates to a uniformly-random pick among
@@ -254,7 +283,11 @@ export function HomeHubScreen({
             ) : shownTiles.length === 0 ? (
               <p className="mt-4 px-4 py-6 text-center text-xs text-[var(--rc-muted)]">No games match — try a different search or category.</p>
             ) : (
-              <div className="mt-4 grid grid-cols-3 gap-2 px-4">
+              <div ref={comingSoonGridRef} className="relative mt-4 grid grid-cols-3 gap-2 px-4">
+                {/* Ticket 2026-10-01#6 (D73): the single shared purple diagonal line — one layer
+                    for the whole grid, clipped via JS (`comingSoonWave.ts`) to show only through
+                    the `.rc-card--soon` tiles below, never over gaps or live/playable ones. */}
+                <div className="rc-soon-wave"><div className="rc-soon-wave__band" /></div>
                 {shownTiles.map((t) =>
                   t.playable && t.meta
                     ? <PlayableTile key={t.id} meta={t.meta} onSelect={onSelectGame} />
@@ -727,18 +760,26 @@ function PlayableTile({ meta, onSelect }: { meta: GameMeta; onSelect(m: GameMeta
   );
 }
 
+// Ticket 2026-10-01#6 (D73): grayscale art + a centered dark-overlay pill reading "COMING SOON"
+// (two words, uppercase) — replaces the old opacity-50-on-the-whole-card + corner "Soon" badge
+// treatment, which matched neither the grayscale-only-on-the-art nor the centered-pill spec.
+// `rc-card--soon` is the hook `.rc-card--soon img` (styles.css) uses to grayscale/darken the art —
+// our `TileArt` renders an `<img>`, not the handoff's own CSS `background-image` div, but `filter`
+// applies identically either way. No separate press-animation suppression needed: `PlayableTile`'s
+// own hover-zoom is scoped to Tailwind's `group` class, which this component's wrapper never
+// carries, so `TileArt`'s shared `group-hover:scale-105` class is already structurally inert here.
 function ComingSoonTile({ id }: { id: string }) {
   return (
     <div
       aria-disabled="true"
       aria-label={`${titleCase(id)} — coming soon`}
       data-testid={`home-coming-soon-${id}`}
-      className="relative aspect-[112/158] overflow-hidden rounded-xl border border-[var(--rc-surface)] opacity-50"
+      className="rc-card--soon relative aspect-[112/158] overflow-hidden rounded-xl border border-[var(--rc-surface)] cursor-default"
     >
       <TileArt art={TILE_ART[id]} name={titleCase(id)} />
-      <span className="absolute right-1.5 top-1.5 rounded-full bg-black/55 px-1.5 py-0.5 text-[7px] font-bold uppercase tracking-wide text-white/80">
-        Soon
-      </span>
+      <div className="rc-card__soon">
+        <span className="rc-card__pill">COMING SOON</span>
+      </div>
     </div>
   );
 }

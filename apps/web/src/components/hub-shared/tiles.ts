@@ -19,13 +19,14 @@ export const TILE_ART: Record<string, string> = {
   limbo: limboArt,
 };
 
-/** Breadth: games not (yet) returned by /games render as dimmed, non-playable "coming soon"
- *  tiles. The whole house canon is a PvP-redefinition target (CHARTER / GAME_REDEFINITION) —
- *  never shown in house form, never a playable house route (invariant #1). */
-// Ticket 2026-09-15#12: 'dice' removed — stale, Dice has been fully playable all day this
-// session. Harmless while it lingered (every real consumer filters against the live roster, not
-// this list directly), but worth the one-line correction while in this exact area.
-export const COMING_SOON = ['baccarat', 'keno', 'hilo', 'roulette'];
+/** Games grid breadth list — membership here is now AUTHORITATIVE over live `/games` status
+ *  (ticket 2026-10-01#6, D73), not just a placeholder for not-yet-shipped games. All 6 currently
+ *  listed (Crash, Roulette, Hilo, Keno, Baccarat, Limbo) are genuinely live/playable today —
+ *  Owner-confirmed deliberate reversal of their earlier "registered + playable" ship (see
+ *  `HomeHub.tsx`'s own `tiles` useMemo doc comment for the full mechanism). To actually launch a
+ *  game from this grid again, remove it from this list — HomeHub's `tiles` derivation reacts
+ *  immediately, no other change needed. */
+export const COMING_SOON = ['crash', 'roulette', 'hilo', 'keno', 'baccarat', 'limbo'];
 
 export function titleCase(id: string): string {
   return id.charAt(0).toUpperCase() + id.slice(1);

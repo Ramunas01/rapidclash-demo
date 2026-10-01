@@ -259,3 +259,66 @@ p  { color: var(--muted); margin-bottom: 12px; }
   cursor: pointer;
 }
 .oc-row:active { background: var(--surface); }
+
+/* Ticket 2026-10-01#6 (D73) — the "coming soon" games-grid tile treatment: grayscale art, a
+ * centered dark-overlay pill, and one shared purple diagonal line clipped (via JS,
+ * `comingSoonWave.ts`) to show only through the coming-soon cards. Values lifted verbatim from
+ * the handoff's own `coming-soon.css` (`D73/coming-soon-effect/coming-soon.css`) — the only
+ * translation is the selector on the art itself: our `TileArt` (`HomeHub.tsx`) renders an `<img>`,
+ * not the handoff's own CSS `background-image` div, so `.rc-card--soon img` replaces
+ * `.rc-card--soon .rc-card__art` — `filter` applies identically either way. The grid/card base
+ * rules (`.rc-grid`/`.rc-card`) are NOT reproduced here — our existing Tailwind grid/card classes
+ * (`HomeHub.tsx`'s `PlayableTile`/`ComingSoonTile`) already satisfy those same values
+ * (`aspect-ratio:112/158`, `border-radius:12px`), confirmed directly rather than assumed. */
+.rc-card--soon img {
+  filter: grayscale(0.85) brightness(0.8);
+}
+
+.rc-card__soon {
+  position: absolute;
+  inset: 0;
+  background: rgba(11, 11, 11, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rc-card__pill {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #1A1A2E;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 1.2px;
+  color: #FFFFFF;
+  white-space: nowrap;
+}
+
+/* Single shared purple line over the whole grid. Static (no animation) — clipped via JS-generated
+ * clip-path (`comingSoonWave.ts`'s `updateSoonClip`) so it only shows through coming-soon cards. */
+.rc-soon-wave {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  overflow: hidden;
+  clip-path: inset(100%); /* hidden until JS measures cards */
+}
+
+.rc-soon-wave__band {
+  position: absolute;
+  left: -50%;
+  top: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    45deg,
+    rgba(139, 69, 240, 0) 45.5%,
+    rgba(139, 69, 240, 0.38) 50%,
+    rgba(139, 69, 240, 0) 54.5%
+  );
+  /* Fixed placement: line runs bottom-left → top-right, set toward the top-right of the
+     coming-soon block. */
+  transform: translate(14%, 6%);
+}
