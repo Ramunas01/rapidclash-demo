@@ -935,7 +935,9 @@ function CreateCampaignSheet({
         onBlur={onBlurName}
         placeholder="Enter campaign name"
         className={cn(
-          'mt-2 h-[50px] w-full rounded-full bg-[var(--rc-bg)] px-5 text-[14px] font-semibold text-[var(--rc-text)] outline-none',
+          // Ticket 2026-10-01#2 (D71): text-[16px] not text-[14px] — iOS Safari auto-zooms the
+          // page on focusing any text field with a computed font-size under 16px.
+          'mt-2 h-[50px] w-full rounded-full bg-[var(--rc-bg)] px-5 text-[16px] font-semibold text-[var(--rc-text)] outline-none',
           error ? 'border-[1.5px] border-[var(--rc-danger)]' : 'border-[1.5px] border-transparent',
         )}
       />

@@ -586,7 +586,11 @@ function GridControls({
           aria-label="Search games"
           data-testid="home-search-input"
           className={cn(
-            'h-11 min-w-0 flex-1 border-none bg-transparent text-sm font-semibold text-[var(--rc-text)] outline-none placeholder:text-[var(--rc-muted)] transition-opacity duration-[380ms]',
+            // Ticket 2026-10-01#2 (D71): text-[16px] not text-sm (14px) — iOS Safari auto-zooms
+            // the page on focusing any text field with a computed font-size under 16px. Explicit
+            // px value (not text-base, which happens to also be 16px today) so the fix doesn't
+            // silently depend on Tailwind's stock scale never changing.
+            'h-11 min-w-0 flex-1 border-none bg-transparent text-[16px] font-semibold text-[var(--rc-text)] outline-none placeholder:text-[var(--rc-muted)] transition-opacity duration-[380ms]',
             searchOpen ? 'opacity-100' : 'pointer-events-none w-0 opacity-0',
           )}
         />

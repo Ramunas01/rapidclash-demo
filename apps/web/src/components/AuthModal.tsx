@@ -197,6 +197,10 @@ export function AuthModal({ open, onSuccess, onClose, initialMode = 'register' }
           <span className="text-[10px] font-bold tracking-[1px] text-[var(--rc-text)]" style={{ fontFamily: AUTH_LABEL_FONT }}>
             USERNAME
           </span>
+          {/* Ticket 2026-10-01#2 (D71): 16px, not the prototype's literal 15px (`Full Spec.html`'s
+              own `authEmail`/`authPass` font-size) — iOS Safari auto-zooms the page on focusing any
+              text field with a computed font-size under 16px, a real UX bug the 1px fidelity gap
+              doesn't justify keeping. */}
           <input
             type="text"
             placeholder="Enter username"
@@ -205,7 +209,7 @@ export function AuthModal({ open, onSuccess, onClose, initialMode = 'register' }
             required
             autoComplete="username"
             aria-label="Username"
-            className="h-[50px] w-full rounded-full border-[1.5px] border-transparent bg-[var(--rc-bg)] px-[18px] text-[15px] font-semibold text-[var(--rc-text)] outline-none placeholder:text-[var(--rc-muted)]"
+            className="h-[50px] w-full rounded-full border-[1.5px] border-transparent bg-[var(--rc-bg)] px-[18px] text-[16px] font-semibold text-[var(--rc-text)] outline-none placeholder:text-[var(--rc-muted)]"
             style={{ fontFamily: AUTH_INPUT_FONT }}
           />
         </div>
@@ -221,7 +225,7 @@ export function AuthModal({ open, onSuccess, onClose, initialMode = 'register' }
             required
             autoComplete={tab === 'register' ? 'new-password' : 'current-password'}
             aria-label="Password"
-            className="h-[50px] w-full rounded-full border-[1.5px] border-transparent bg-[var(--rc-bg)] px-[18px] text-[15px] font-semibold text-[var(--rc-text)] outline-none placeholder:text-[var(--rc-muted)]"
+            className="h-[50px] w-full rounded-full border-[1.5px] border-transparent bg-[var(--rc-bg)] px-[18px] text-[16px] font-semibold text-[var(--rc-text)] outline-none placeholder:text-[var(--rc-muted)]"
             style={{ fontFamily: AUTH_INPUT_FONT }}
           />
         </div>

@@ -132,6 +132,15 @@ describe('CurrencyPicker — search filters by symbol AND name, case-insensitive
     expect(screen.getByTestId('currency-picker-row-LTC')).toBeInTheDocument();
     expect(screen.queryByTestId('currency-picker-row-SOL')).toBeNull();
   });
+
+  // Ticket 2026-10-01#2 (D71): iOS Safari auto-zooms the page on focusing any text field with a
+  // computed font-size under 16px — this field was text-[13px].
+  it('renders at 16px, not the old 13px (iOS Safari auto-zoom-on-focus, ticket 2026-10-01#2)', () => {
+    renderRibbon();
+    openPicker();
+    expect(screen.getByTestId('currency-picker-search').className).toContain('text-[16px]');
+    expect(screen.getByTestId('currency-picker-search').className).not.toContain('text-[13px]');
+  });
 });
 
 describe('CurrencyPicker — hide-zero-balances, with the selected-currency exception', () => {

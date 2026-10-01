@@ -613,6 +613,18 @@ describe('HomeHubScreen — category rail, SEARCH, SORT, RANDOM (issue #465)', (
     expect(screen.queryByTestId('home-grid')?.querySelector('[data-testid^="home-tile-"]')).toBeNull();
   });
 
+  // Ticket 2026-10-01#2 (D71): iOS Safari auto-zooms the page on focusing any text field with a
+  // computed font-size under 16px — this field was text-sm (14px), the ticket's own per-field
+  // citation incorrectly claimed it was "already 16px, leave as is" (independently re-verified
+  // against the actual source, not the citation).
+  it('SEARCH input renders at 16px, not the old 14px (iOS Safari auto-zoom-on-focus, ticket 2026-10-01#2)', async () => {
+    render(<HomeHubScreen {...baseProps()} />);
+    await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('home-search-toggle'));
+    expect(screen.getByTestId('home-search-input').className).toContain('text-[16px]');
+    expect(screen.getByTestId('home-search-input').className).not.toContain('text-sm');
+  });
+
   it('SEARCH: case-insensitive substring on display name, across ALL games, ignoring the active tab', async () => {
     render(<HomeHubScreen {...baseProps()} />);
     await waitFor(() => expect(screen.getByTestId('home-tile-coinflip')).toBeInTheDocument());

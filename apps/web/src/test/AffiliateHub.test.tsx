@@ -243,6 +243,17 @@ describe('AffiliateHubScreen — campaigns', () => {
     expect(screen.getByText('winorgohome')).toBeInTheDocument();
   });
 
+  // Ticket 2026-10-01#2 (D71): iOS Safari auto-zooms the page on focusing any text field with a
+  // computed font-size under 16px — this field was text-[14px].
+  it('the campaign name input renders at 16px, not the old 14px (iOS Safari auto-zoom-on-focus, ticket 2026-10-01#2)', () => {
+    render(<AffiliateHubScreen {...baseProps()} />);
+    fireEvent.click(screen.getByTestId('affiliate-tab-campaigns'));
+    fireEvent.click(screen.getByTestId('affiliate-create-campaign'));
+    const input = screen.getByTestId('affiliate-campaign-name-input');
+    expect(input.className).toContain('text-[16px]');
+    expect(input.className).not.toContain('text-[14px]');
+  });
+
   it('an existing campaign expands and its link/code can be copied', () => {
     const writeText = stubClipboard();
     render(<AffiliateHubScreen {...baseProps()} />);

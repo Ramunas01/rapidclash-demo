@@ -18,6 +18,17 @@ describe('AuthModal', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
+  // Ticket 2026-10-01#2 (D71): iOS Safari auto-zooms the page on focusing any text field with a
+  // computed font-size under 16px — these two fields were 15px (D70's own prototype-matching
+  // value), a real UX bug the 1px fidelity gap to the prototype doesn't justify keeping.
+  it('username/password inputs render at 16px, not the old 15px (iOS Safari auto-zoom-on-focus, ticket 2026-10-01#2)', () => {
+    render(<AuthModal open onSuccess={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.getByLabelText('Username').className).toContain('text-[16px]');
+    expect(screen.getByLabelText('Username').className).not.toContain('text-[15px]');
+    expect(screen.getByLabelText('Password').className).toContain('text-[16px]');
+    expect(screen.getByLabelText('Password').className).not.toContain('text-[15px]');
+  });
+
   it('register → onSuccess with the new token + the 1000-credit grant', async () => {
     const onSuccess = vi.fn();
     render(<AuthModal open onSuccess={onSuccess} onClose={vi.fn()} />);
