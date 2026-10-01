@@ -1,5 +1,52 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-01#1 — D70, Designer's login/signup sheet report against `Full Spec.html:2452-2475`/`4171-4184`/`4207-4214`. Verified every claim against the actual current source (not transcribed as-is) — most are confirmed real and precisely scoped; one claim is confirmed WRONG as stated (the drag handle exists, it's a contrast issue not a missing element) and item 1's real scope is bigger than "swap a handler" — there is currently NO mode-selection mechanism anywhere in this codebase, not a wrong one            [READY TO TICKET]
+From: Designer's own report (relayed by Owner, screenshots in `D70/`), verified via direct reads of `apps/web/src/components/AuthModal.tsx`, `apps/web/src/components/hub-chrome/BottomSheet.tsx`, `apps/web/src/components/hub-chrome/HubRibbon.tsx`, `apps/web/src/App.tsx` (`openAuth`/`onAccountTap`/`authOpen` — traced the FULL call chain, not just the header buttons), `apps/web/src/index.css` (every cited color/shadow token), `apps/web/src/screens/GameHub.tsx` (`PLAY_BTN_SHADOW`, the ledge precedent the ticket itself points at), and the LIVE production bundle (confirmed the deployed revision matches current `main` for every string checked)
+
+## Item 1 — auth mode: the real gap is bigger than "LOGIN wired to the wrong handler"
+
+**Traced the FULL call chain, not just the header buttons.** `HubRibbon.tsx`: `hub-login-chip` (`:148`) and `hub-signin-chip` (`:157`) both call the literal SAME `onClick={onWallet}` — not two handlers with one swapped, ONE handler, period. That traces through `GameHub.tsx:1105` (`onWallet={onOpenWallet}`) → `App.tsx`'s `onAccountTap` (`:1181-1184`, `if loggedIn → goToProfile; else → openAuth(null)`) → `openAuth` (`:485-487`, the ONLY function that ever calls `setAuthOpen(true)`, from EVERY call site in the file — PLAY-while-logged-out, JOIN-while-logged-out, profile-tap-while-logged-out, both header buttons, all of it) → `AuthModal`'s own internal `tab` state, which has no prop to seed it and always starts at `'register'` (signup).
+
+**Concretely: there is no `authMode` concept anywhere in this codebase today** — not a separate login-handler being bypassed, a mode dimension that was never built. Every single entry point, including the "must be logged in" ones the ticket cites (Play, Join, rewards claim, profile tap), currently lands on signup by default, not just the header LOGIN button.
+
+**Proposed shape, not guessed:** add `authMode: 'login' | 'register'` state in `App.tsx` alongside `authOpen`; give `openAuth` a second parameter (or a sibling helper) so every "must be logged in" call site requests `'login'` explicitly; give `HubRibbon` two distinct callbacks (`onLogin`/`onSignup`, replacing the single `onWallet` for the logged-out branch only — the logged-in WALLET pill keeps calling `onWallet` unchanged) so the header's two buttons can request different modes; thread a new `initialMode` prop into `AuthModal`, seeding `tab` via a `useEffect` keyed on `open` (reset every time the sheet opens, not just on mount — matching this component's own existing "always mounted, never remounts" architecture per its own top-of-file comment).
+
+**Scope note, not in the ticket's own citations but the same principle:** the bottom-nav "Account" tab, tapped while logged out, ALSO routes through `onAccountTap` → `openAuth(null)` — the same "must be logged in" shape as Play/Join/rewards. Recommend it also requests `'login'` mode for consistency, though flagging it as an inferred extension, not a literal citation match — PM's or Owner's call if it's out of scope.
+
+## Item 2 — submit button: confirmed missing entirely, exact reusable precedent identified
+
+**Confirmed via direct read (`AuthModal.tsx:189-196`): zero box-shadow, zero press-transform, on the submit button.** Just a flat `rounded-full bg-brand` pill. Text: `tab === 'register' ? 'Create Account' : 'Sign In'` — confirmed exactly matches the reported mismatch (should be `'Signup'`/`'Login'`, matching `authTitle`, not these two unrelated phrases).
+
+**The ticket's own "same rule as Play" is literally true — found the exact value to reuse, not a new one to invent.** `GameHub.tsx:65`: `const PLAY_BTN_SHADOW = '0 5px 0 #5F27B8';` — byte-identical to the ticket's own cited value. Reuse this constant (or its literal value) directly; no new shadow value needed. Press behavior: same `active:translate-y-[3px]` idiom `AuthModal.tsx`'s own tab buttons already use two sections below.
+
+## Item 3 — tab rail: color/shadow tokens are ALREADY exactly correct; container styling and order are not
+
+**Checked every cited color/shadow value against `index.css` directly, not assumed from the component.** `--rc-theme-toggle-active-shadow: 0 5px 0 #5F27B8`, `--rc-theme-toggle-inactive-bg: #2F2F49` (light: `#FFFFFF`), `--rc-theme-toggle-inactive-shadow: 0 5px 0 #1E1E33` (light: `0 5px 0 #C9C9D6`) — every one matches the ticket's own cited values exactly, byte for byte. **The individual tab buttons' own colors need no changes at all.**
+
+**What's actually wrong is the rail CONTAINER and the order, confirmed by direct read (`AuthModal.tsx:127`).** The container uses `bg-surface` (resolves to `var(--rc-surface)`, `#1a1a2e`/`#e9e9f0`) — the ticket wants `var(--rc-bg)` (`#0b0b0b`/`#ffffff`, confirmed in `index.css:81/211/262`) instead. Container radius is `rounded-[24px]`; ticket wants a full pill (`999px`). Individual tab radius is `rounded-[18px]`; ticket wants `999px` there too. Container padding is `p-1.5 pb-[11px]` (6/6/11/6px); ticket wants `5px 5px 10px 5px`. **Tab order in the JSX is `auth-tab-register` (Sign up) first, `auth-tab-login` (Login) second** — confirmed exactly matches the reported swap; needs reordering to LOGIN-first.
+
+## Item 4 — remaining 1:1 gaps, one correction found, rest confirmed real
+
+**The sheet shell itself (`BottomSheet.tsx`) needs NO changes — confirmed already exactly matching, not assumed.** Height `70%`, radius `34px 34px 52px 52px`, shadow `0 -18px 40px rgba(0,0,0,0.45)`, scrim `rgba(0,0,0,0.6)` with `320ms ease` opacity, drag mechanics (`dragStart`/`dragMove`/`dragEnd`, live-measured height, downward-only, past-half-height-closes) — all read directly, all already correct. This component is shared with `AffiliateHub.tsx`'s own sheet, so no changes here are low-risk to confirm but important not to touch unnecessarily.
+
+**Correction: the drag handle is NOT missing, confirmed against the LIVE bundle, not just the source.** `BottomSheet.tsx:142-152` renders a handle button unconditionally; `auth-modal-handle` is present in the deployed JS bundle I fetched directly from production. The reported "no handle" is very likely a visual-contrast issue, not an absent element: the handle is `56×5px` at `40%` opacity (`bg-[var(--rc-muted)]/40`) against the ticket's own spec of `50%` opacity (`opacity:0.5`) — close, but genuinely under-contrast enough to be easy to miss in a quick glance or a compressed screenshot. Recommend just bumping the opacity to match (`/50` instead of `/40`), not building a new element.
+
+**Title: confirmed real mismatch, including wording, not just casing.** Current: `{tab === 'register' ? 'Sign up' : 'Login'}` (mixed case, "Sign up" with a space). Ticket wants uppercase `LOGIN`/`SIGNUP` — note `SIGNUP` is one word, not "Sign Up" uppercased — matches the IMG_1527 screenshot's own "Sign up" (two words) vs the spec's one-word form exactly.
+
+**Font-family: confirmed entirely absent, against this codebase's own established convention elsewhere.** Grepped for `'Inter Tight'` usage: `ChatSheet.tsx`, `CurrencyPicker.tsx` both apply it as an explicit inline `fontFamily` style per the house pattern (the font FILE loads globally per `main.tsx`'s own comment, but the FAMILY still needs declaring per-component). `AuthModal.tsx` has zero such declarations anywhere — every text in this sheet currently falls back to the Tailwind default sans stack, not Inter Tight.
+
+**Field captions: confirmed entirely missing.** No caption element above either input anywhere in `AuthModal.tsx` — just placeholder text directly in the input (`placeholder="Username"`/`"Password"`). Ticket wants a separate caption row reading `USERNAME`/`PASSWORD` above each field, AND the placeholder text changed to `Enter username`/`Enter password` (confirmed current placeholders are the bare field names, not the "Enter ___" phrasing).
+
+**Input styling: confirmed close but not exact.** Current: `h-[50px] rounded-full bg-[var(--rc-bg)] px-5` — height and background and pill-radius already match; `px-5` is 20px against the ticket's cited `18px`; no `border:1.5px solid transparent` anywhere (functionally invisible today, but presumably reserved for a focus-ring treatment later — worth keeping even though it has no visible effect at rest, matching the ticket's own citation precisely).
+
+**Nothing extra on the sheet — confirmed, not assumed.** No guest link, no disclaimer copy, no close-X button anywhere in the current markup — these were already removed by an earlier ticket (`2026-09-13#4`, per `AuthModal.tsx`'s own top-of-file comment) and stayed removed. Matches the ticket's own "nothing else on the sheet" check.
+
+## Verification plan
+
+**Ask:** a `Pixelmatch` ≤0.5% check against the reference file, both modes, both themes, is the ticket's own stated bar — recommend PM run `tools/design-fidelity/` against this screen once the above lands, same harness already used for other screen rebuilds this migration. I have no browser tooling in this environment to do that check myself; recommend it run before calling this one done, not just a code-level review.
+
+---
+
 ### 2026-09-30#2 — `2026-09-30#1` (two sound bugs) SHIPPED in PR #783 (`82410c3`), independently re-verified. Item 2 matches my proposal exactly, genuinely tested. Item 1: PM found my own originally-proposed fix mechanism does NOT work — confirmed independently, not just trusted — and shipped a genuinely different, correct fix for a more precise root cause (a BACK-TO-BACK tying bust, not any tying bust). Flagging my own error plainly, not glossing over it            [VERIFIED — both items confirmed fixed, no open thread]
 From: PM's own cross-session report — independently re-verified via direct diff review, my own revert-confirm-restore on the Mines fix specifically (not just trusting PM's), running both test files myself, and a full monorepo suite run
 
