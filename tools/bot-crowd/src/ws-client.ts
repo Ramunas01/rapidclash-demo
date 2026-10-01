@@ -43,11 +43,15 @@ export class BotWsClient {
   private ws: WebSocket | null = null;
   private closed = false;
   private token = '';
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  /** Answered its last ping? Mirrors the server's own `socketAlive` idiom (D36, gateway.ts). */
+  private alive = true;
 
   constructor(
     private readonly endpoint: string,
     private readonly handlers: BotWsHandlers,
     private readonly reconnectDelayMs: number,
+    private readonly heartbeatIntervalMs = 30_000,
   ) {}
 
   /** Open the connection. The token is remembered so auto-reconnects reuse it. */
@@ -57,8 +61,16 @@ export class BotWsClient {
     const url = `${this.endpoint}?token=${encodeURIComponent(this.token)}`;
     const ws = new WebSocket(url);
     this.ws = ws;
+    this.alive = true;
 
-    ws.on('open', () => this.handlers.onOpen?.());
+    ws.on('open', () => {
+      this.alive = true;
+      this.startHeartbeat();
+      this.handlers.onOpen?.();
+    });
+    ws.on('pong', () => {
+      this.alive = true;
+    });
     ws.on('message', (data: WebSocket.RawData) => {
       let msg: Envelope;
       try {
@@ -72,9 +84,37 @@ export class BotWsClient {
       /* surfaced via the subsequent close; nothing actionable here */
     });
     ws.on('close', () => {
+      this.stopHeartbeat();
       this.handlers.onClose?.();
       if (!this.closed) setTimeout(() => this.connect(), this.reconnectDelayMs);
     });
+  }
+
+  // A container restart (or any failure that never delivers a FIN/RST to this process) leaves
+  // `ws`'s own 'close'/'error' events silent forever — the socket just looks OPEN and sits dead.
+  // Same fix as the server's D36 heartbeat, run symmetrically here: ping every tick, and if the
+  // PREVIOUS ping went unanswered, terminate() the socket ourselves. terminate() fires 'close'
+  // synchronously, so the existing reconnect-on-close path above handles the rest unchanged.
+  private startHeartbeat(): void {
+    this.stopHeartbeat();
+    this.heartbeatTimer = setInterval(() => {
+      const ws = this.ws;
+      if (!ws) return;
+      if (!this.alive) {
+        ws.terminate();
+        return;
+      }
+      this.alive = false;
+      ws.ping();
+    }, this.heartbeatIntervalMs);
+    this.heartbeatTimer.unref?.();
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
   }
 
   private route(msg: Envelope): void {
@@ -143,6 +183,7 @@ export class BotWsClient {
 
   disconnect(): void {
     this.closed = true;
+    this.stopHeartbeat();
     this.ws?.close();
     this.ws = null;
   }
