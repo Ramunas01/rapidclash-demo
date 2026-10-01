@@ -4,6 +4,7 @@ import {
   stripBotDisclosure,
   type AdminMatchLogEntry,
   type AvatarId,
+  type Currency,
   type EloLeaderboardEntry,
   type LeaderboardEntry,
   type NetWinningsLeaderboardEntry,
@@ -56,12 +57,20 @@ export interface MatchHistory {
   getPlayerStats(playerId: string): { gamesPlayed: number; wins: number; losses: number; draws: number; moneyWon: number; moneyLost: number };
   /** Ticket 2026-10-01#7 — `GET /admin/players/:id/log`'s match-centric view: every one of this
    *  account's settled matches (including `void`, unlike getRecentMatches — an admin wants to see
-   *  everything), newest-first, each with its own net delta and the account's real USD running
-   *  balance AT THAT POINT (reconstructed from the actual ledger entry stream, so it stays correct
-   *  even across a compaction checkpoint — see `AdminPlayerLogResponse`'s own doc comment in
-   *  protocol.ts for the one known limitation: a COMPACTED match's own row no longer appears
-   *  here individually, though its value still lives in the checkpoint's own lump sum). */
+   *  everything), newest-first, each with its own net delta and the account's real running balance
+   *  AT THAT POINT, in that match's own currency bucket (reconstructed from the actual ledger
+   *  entry stream across ALL currencies, so it stays correct even across a compaction checkpoint —
+   *  see `AdminPlayerLogResponse`'s own doc comment in protocol.ts for the one known limitation: a
+   *  COMPACTED match's own row no longer appears here individually, though its value still lives
+   *  in that currency's own checkpoint lump sum). Ticket 2026-10-01#10 fixed this from a USD-only
+   *  scoping that silently dropped every match settled in a non-USD bucket (e.g. the SOL default
+   *  every new account now joins with) — see the implementation's own comment for the bug. */
   getFullMatchLog(playerId: string): AdminMatchLogEntry[];
+  /** Ticket 2026-10-01#10, item 2 — latest of this account's own ledger activity (any currency)
+   *  and settled matches, derived at query time (accounts has no timestamp column to read
+   *  instead). `null` only for an account with neither (shouldn't occur in practice — register()
+   *  always grants — but a fresh/edge-case account must not crash the admin list). */
+  getLastSeenAt(playerId: string): string | null;
 }
 
 interface ResultRow {
@@ -483,16 +492,41 @@ export function createMatchHistory(
      ORDER BY settled_at ASC, rowid ASC`,
   );
 
-  // Ticket 2026-10-01#7: the account's own full USD ledger stream, chronological — the same
-  // "another module's table, reached lazily" idea as netStmt/matchNetStmt above (ledger_entry is
-  // owned/created by the ledger, not match-history). USD-only: the admin view doesn't need
-  // multi-currency precision for a demo-activity visibility tool.
-  let stmtUsdLedger: Database.Statement<[string], { type: string; amount: number; match_id: string | null }> | undefined;
-  function usdLedgerStmt(): Database.Statement<[string], { type: string; amount: number; match_id: string | null }> {
-    stmtUsdLedger ??= db.prepare<[string], { type: string; amount: number; match_id: string | null }>(
-      `SELECT type, amount, match_id FROM ledger_entry WHERE account_id = ? AND currency = 'USD' ORDER BY rowid ASC`,
+  // Ticket 2026-10-01#7 (currency scoping fixed 2026-10-01#10): the account's own full ledger
+  // stream, ACROSS EVERY CURRENCY, chronological — the same "another module's table, reached
+  // lazily" idea as netStmt/matchNetStmt above (ledger_entry is owned/created by the ledger, not
+  // match-history). Originally USD-only on the (wrong) reasoning that the admin view didn't need
+  // multi-currency precision — see getFullMatchLog's own comment for why that silently broke the
+  // feature for every SOL-default player.
+  let stmtLedgerAll: Database.Statement<[string], { amount: number; match_id: string | null; currency: Currency }> | undefined;
+  function ledgerAllStmt(): Database.Statement<[string], { amount: number; match_id: string | null; currency: Currency }> {
+    stmtLedgerAll ??= db.prepare<[string], { amount: number; match_id: string | null; currency: Currency }>(
+      `SELECT amount, match_id, currency FROM ledger_entry WHERE account_id = ? ORDER BY rowid ASC`,
     );
-    return stmtUsdLedger;
+    return stmtLedgerAll;
+  }
+
+  // Ticket 2026-10-01#10, item 2: latest of this account's own ledger activity (any currency) and
+  // settled matches. A UNION ALL of both tables' own timestamp columns, MAX'd in SQL rather than
+  // pulled into JS — cheap even as either table grows, and correct without needing to know in
+  // advance which table holds the more recent event for a given account. Prepared lazily for the
+  // same reason as netStmt/matchNetStmt above: ledger_entry is owned/created by the ledger, not
+  // match-history, but server.ts creates the ledger first, so it necessarily exists by the time
+  // any real caller reaches this.
+  let stmtLastSeen: Database.Statement<[string, string, string], { last_seen: string | null }> | undefined;
+  function lastSeenStmt(): Database.Statement<[string, string, string], { last_seen: string | null }> {
+    stmtLastSeen ??= db.prepare<[string, string, string], { last_seen: string | null }>(
+      `SELECT MAX(ts) AS last_seen FROM (
+         SELECT created_at AS ts FROM ledger_entry WHERE account_id = ?
+         UNION ALL
+         SELECT settled_at AS ts FROM match_results WHERE player1_id = ? OR player2_id = ?
+       )`,
+    );
+    return stmtLastSeen;
+  }
+
+  function getLastSeenAt(playerId: string): string | null {
+    return lastSeenStmt().get(playerId, playerId, playerId)?.last_seen ?? null;
   }
 
   /** Shared by getPlayerStats/getFullMatchLog — reframes one match_results row + its own net
@@ -526,21 +560,37 @@ export function createMatchHistory(
   function getFullMatchLog(playerId: string): AdminMatchLogEntry[] {
     // Chronological (oldest first — stmtAllForPlayer's own ORDER BY).
     const matchRows = stmtAllForPlayer.all(playerId, playerId);
-    const ledgerRows = usdLedgerStmt().all(playerId);
+    const ledgerRows = ledgerAllStmt().all(playerId);
 
-    // Replay the REAL ledger stream once, tracking running balance throughout — always correct,
-    // including GRANT/ADMIN_CREDIT/REWARD_CLAIM/OPENING_BALANCE rows a per-match view alone can't
-    // see. For each matchId, keep OVERWRITING its own entry — iterating in rowid order means the
-    // LAST write for a matchId is always its chronologically latest ledger row, giving "balance
-    // after this match's own last entry" correctly whether that match produced ONE ledger row for
-    // this player (a LOSER only ever gets their own BET_ESCROW debit — there's no separate
-    // SETTLE_WIN/SETTLE_REFUND for the losing side, so keying off entry TYPE instead of matchId
-    // would silently miss every loss) or two (a winner, or either side of a draw/void).
-    let running = 0;
+    // Replay the REAL ledger stream once, tracking a SEPARATE running balance PER CURRENCY —
+    // always correct, including GRANT/ADMIN_CREDIT/REWARD_CLAIM/OPENING_BALANCE rows a per-match
+    // view alone can't see. For each matchId, keep OVERWRITING its own entry (in both maps
+    // together): iterating in rowid order means the LAST write for a matchId is always its
+    // chronologically latest ledger row, giving "balance after this match's own last entry"
+    // correctly whether that match produced ONE ledger row for this player (a LOSER only ever
+    // gets their own BET_ESCROW debit — there's no separate SETTLE_WIN/SETTLE_REFUND for the
+    // losing side, so keying off entry TYPE instead of matchId would silently miss every loss) or
+    // two (a winner, or either side of a draw/void).
+    //
+    // Ticket 2026-10-01#10: this used to replay ONLY the USD-currency rows (a single `running`
+    // accumulator, ledger query hard-filtered to `currency = 'USD'`). A player whose matches
+    // settled in a non-USD bucket — e.g. SOL, the real app-wide default since ticket
+    // 2026-09-27#7/D69 — has ZERO USD-currency ledger rows carrying a match_id, so every one of
+    // their real matches fell into the "no ledger trace left, must be compacted away" branch
+    // below and silently vanished from the log, even though none of it was actually compacted
+    // (compaction only touches rows older than `retentionDays`, not an entire currency). Fixed by
+    // reading every currency's rows and keeping one running total per currency bucket, matching
+    // that match's own currency rather than assuming USD.
+    const runningByCurrency = new Map<Currency, number>();
     const runningBalanceByMatch = new Map<string, number>();
+    const currencyByMatch = new Map<string, Currency>();
     for (const row of ledgerRows) {
-      running += row.amount;
-      if (row.match_id) runningBalanceByMatch.set(row.match_id, running);
+      const running = (runningByCurrency.get(row.currency) ?? 0) + row.amount;
+      runningByCurrency.set(row.currency, running);
+      if (row.match_id) {
+        runningBalanceByMatch.set(row.match_id, running);
+        currencyByMatch.set(row.match_id, row.currency);
+      }
     }
 
     const log: AdminMatchLogEntry[] = [];
@@ -559,11 +609,20 @@ export function createMatchHistory(
         result: resultFor(mr, playerId),
         amount,
         runningBalance,
+        currency: currencyByMatch.get(mr.match_id)!,
         createdAt: mr.settled_at,
       });
     }
     return log.reverse(); // newest-first, matching getRecentMatches' own convention.
   }
 
-  return { recordResult, getLeaderboard, getRecentMatches, getPopularity, getPlayerStats, getFullMatchLog };
+  return {
+    recordResult,
+    getLeaderboard,
+    getRecentMatches,
+    getPopularity,
+    getPlayerStats,
+    getFullMatchLog,
+    getLastSeenAt,
+  };
 }

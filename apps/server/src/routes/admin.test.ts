@@ -500,4 +500,55 @@ describe('GET /admin/players and /admin/players/:id/log (ticket 2026-10-01#7)', 
     const logRes = await app.inject({ method: 'GET', url: `/admin/players/${playerId}/log`, headers: { authorization: `Bearer ${playerToken}` } });
     expect(logRes.statusCode).toBe(403);
   });
+
+  it('/admin/players includes a lastSeenAt timestamp (ticket 2026-10-01#10, item 2) — present from the registration grant alone', async () => {
+    const reg = await app.inject({ method: 'POST', url: '/auth/register', payload: { username: 'freshacct', password: 'pw' } });
+    const { playerId } = reg.json<{ playerId: string }>();
+    const res = await app.inject({ method: 'GET', url: '/admin/players', headers: { authorization: `Bearer ${adminToken}` } });
+    const player = res.json<{ playerId: string; lastSeenAt: string | null }[]>().find((p) => p.playerId === playerId);
+    expect(player?.lastSeenAt).not.toBeNull();
+  });
+});
+
+// Ticket 2026-10-01#10, item 4 — the real bug Owner's hands-on use surfaced: the detail log was
+// silently USD-only (both getFullMatchLog's own ledger query AND this route's ledgerEntries
+// filter), dropping every match a SOL-default player ever settled. Exercised at the HTTP layer —
+// the core-level regression already lives in match-history.test.ts — to confirm the route itself
+// doesn't re-introduce a currency filter on top of a now-fixed getFullMatchLog.
+describe('GET /admin/players/:id/log — non-USD currency (ticket 2026-10-01#10)', () => {
+  let app: FastifyInstance;
+  let services: ReturnType<typeof createServices>;
+  let adminToken: string;
+
+  beforeEach(async () => {
+    const db = new Database(':memory:');
+    services = createServices(db, [COINFLIP_NET_STUB]);
+    app = buildApp(services, [COINFLIP_NET_STUB], { seedAdmin: false });
+    const adminResult = await services.identity.register('admin', 'adminpw', 'admin');
+    adminToken = adminResult.token;
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it('a match settled in SOL appears in the log and its ledger rows are not filtered out', async () => {
+    const alice = await services.identity.register('alice', 'pw');
+    const bob = await services.identity.register('bob', 'pw');
+    services.ledger.escrow(alice.playerId, 'm1', 100, 'SOL');
+    services.ledger.escrow(bob.playerId, 'm1', 100, 'SOL');
+    services.ledger.settle('m1', 'win', alice.playerId, 200, 0.05, 'SOL');
+    services.matchHistory.recordResult('m1', 'coinflip', [alice.playerId, bob.playerId], 'win', alice.playerId, 100);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/admin/players/${alice.playerId}/log`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ matches: { matchId: string; currency: string }[]; ledgerEntries: { currency: string }[] }>();
+    expect(body.matches).toHaveLength(1);
+    expect(body.matches[0]).toMatchObject({ matchId: 'm1', currency: 'SOL' });
+    expect(body.ledgerEntries.some((e) => e.currency === 'SOL')).toBe(true);
+  });
 });

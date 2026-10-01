@@ -151,7 +151,9 @@ describe('createMatchHistory', () => {
 // stake column. These tests share one db between the ledger and match history.
 
 /** Play one fully-settled match end to end through the real ledger:
- *  both players escrow `stake`, the winner is paid pot−rake, PLATFORM takes rake. */
+ *  both players escrow `stake`, the winner is paid pot−rake, PLATFORM takes rake.
+ *  `currency` defaults to 'USD' (every existing call site stays unchanged); ticket 2026-10-01#10's
+ *  regression test passes a non-USD currency to prove getFullMatchLog no longer drops it. */
 function playMatch(
   ledger: ReturnType<typeof createLedger>,
   mh: ReturnType<typeof createMatchHistory>,
@@ -161,9 +163,10 @@ function playMatch(
   winner: string,
   stake: number,
   feeRate = 0.05,
+  currency: 'USD' | 'SOL' = 'USD',
 ) {
-  for (const p of players) ledger.escrow(p, matchId, stake, 'USD');
-  ledger.settle(matchId, 'win', winner, stake * 2, feeRate, 'USD');
+  for (const p of players) ledger.escrow(p, matchId, stake, currency);
+  ledger.settle(matchId, 'win', winner, stake * 2, feeRate, currency);
   mh.recordResult(matchId, gameId, players, 'win', winner, stake);
 }
 
@@ -782,6 +785,65 @@ describe('createMatchHistory — getPlayerStats / getFullMatchLog (ticket 2026-1
       const log = mh.getFullMatchLog('alice');
       expect(log).toHaveLength(1);
       expect(log[0].matchId).toBe('m1');
+    });
+
+    // Ticket 2026-10-01#10: regression for the real bug found in production — getFullMatchLog
+    // used to replay ONLY the 'USD' ledger rows to build its running-balance map, so a match
+    // settled in any other currency (e.g. SOL — the app-wide default since D69/ticket
+    // 2026-09-27#7) had zero USD-currency rows carrying its match_id, fell into the "no ledger
+    // trace, must be compacted away" branch, and silently vanished from the log entirely, even
+    // though nothing was actually compacted. This test's own absence is exactly how that shipped
+    // undetected in D74 (per Advisor's own ticket) — it must fail before the fix and pass after.
+    it('a match settled in a NON-USD currency (e.g. SOL) still appears in the log, tagged with its own currency', () => {
+      const { ledger, mh } = setup();
+      playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100, 0.05, 'SOL');
+
+      const log = mh.getFullMatchLog('alice');
+      expect(log).toHaveLength(1);
+      expect(log[0]).toMatchObject({ matchId: 'm1', result: 'win', amount: 90, currency: 'SOL' });
+      // Running balance is this match's own SOL-bucket balance, not mixed with alice's untouched
+      // USD grant.
+      expect(log[0].runningBalance).toBe(ledger.getBalance('alice', 'SOL'));
+      expect(ledger.getBalance('alice', 'USD')).not.toBe(log[0].runningBalance);
+    });
+
+    it('a player with matches in TWO different currencies gets each its own independent running balance, never mixed', () => {
+      const { ledger, mh } = setup();
+      const usdStart = ledger.getBalance('alice', 'USD');
+      const solStart = ledger.getBalance('alice', 'SOL');
+      playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100, 0.05, 'USD'); // +90 USD
+      playMatch(ledger, mh, 'm2', 'rps', ['alice', 'bob'], 'alice', 50, 0.05, 'SOL'); // +45 SOL
+
+      const log = mh.getFullMatchLog('alice'); // newest first: m2, m1
+      expect(log[0]).toMatchObject({ matchId: 'm2', currency: 'SOL', runningBalance: solStart + 45 });
+      expect(log[1]).toMatchObject({ matchId: 'm1', currency: 'USD', runningBalance: usdStart + 90 });
+    });
+  });
+
+  // Ticket 2026-10-01#10, item 2.
+  describe('getLastSeenAt', () => {
+    it('null for an account with neither ledger activity nor a settled match', () => {
+      const db = freshDb();
+      createLedger(db); // table must exist, same creation order as server.ts, even with 0 rows
+      const mh = createMatchHistory(db);
+      // No grant/match at all for 'ghost' — not even setup()'s own grant.
+      expect(mh.getLastSeenAt('ghost')).toBeNull();
+    });
+
+    it('reflects the GRANT when that is the only activity', () => {
+      const { ledger, mh } = setup();
+      // grant() writes one GRANT row per starting-balance currency (USD/SOL/USDT), each stamped
+      // independently — compare against the actual latest, not an assumed array position.
+      const entries = ledger.getEntries('alice');
+      const latest = entries.map((e) => e.createdAt).sort().at(-1);
+      expect(mh.getLastSeenAt('alice')).toBe(latest);
+    });
+
+    it('reflects whichever of a later match or a later ledger entry is actually more recent', () => {
+      const { ledger, mh } = setup();
+      playMatch(ledger, mh, 'm1', 'rps', ['alice', 'bob'], 'alice', 100);
+      const matchRow = mh.getFullMatchLog('alice')[0];
+      expect(mh.getLastSeenAt('alice')).toBe(matchRow.createdAt);
     });
   });
 });

@@ -8,6 +8,30 @@ interface Props {
   onBack(): void;
 }
 
+/** Ticket 2026-10-01#10, item 3: time-range filter options, each a fixed window ending now. 'all'
+ *  (no filter) is the default, matching the same show-everything-unless-opted-in posture as the
+ *  source/bot filters below. */
+const TIME_RANGES = [
+  { key: 'all', label: 'All time', ms: undefined },
+  { key: '24h', label: 'Last 24h', ms: 24 * 60 * 60 * 1000 },
+  { key: '7d', label: 'Last 7 days', ms: 7 * 24 * 60 * 60 * 1000 },
+  { key: '30d', label: 'Last 30 days', ms: 30 * 24 * 60 * 60 * 1000 },
+] as const;
+type TimeRangeKey = (typeof TIME_RANGES)[number]['key'];
+
+/** Ticket 2026-10-01#10, item 1: the same 🤖-prefix bot signal `match-history.ts`'s own
+ *  `avatarFor`/`gateway.ts`'s `resolveAvatarId` already use — there's no separate `isBot` schema
+ *  flag anywhere in this codebase, this prefix IS the bot signal. */
+function isBotName(displayName: string): boolean {
+  return displayName.startsWith('🤖');
+}
+
+/** Ticket 2026-10-01#10: amounts/balances are per-currency buckets, never implicitly USD — label
+ *  every figure with its own currency code rather than a bare `$`. */
+function withCurrency(amount: number, currency: string): string {
+  return `${amount} ${currency}`;
+}
+
 /**
  * Ticket 2026-10-01#7 — a hidden (`?mode=admin`, App.tsx's own `isAdminModeUrl`), internal-only
  * view of demo-link investor traffic: who registered through which link, and what they did once
@@ -20,12 +44,19 @@ interface Props {
  *
  * Owner's own two resolved decisions (2026-10-01): hidden route over a nav entry; the list shows
  * EVERY account by default (not just source-tagged ones), with an explicit filter toggle.
+ *
+ * Ticket 2026-10-01#10 (D75) — Owner's first hands-on use surfaced 3 more filters (hide-bots,
+ * last-seen column, time-range) plus a real bug (item 4, fixed in match-history.ts/admin.ts):
+ * the detail log was silently USD-only, dropping every match a SOL-default player (the app-wide
+ * default since D69) ever settled.
  */
 export function AdminScreen({ token, onBack }: Props) {
   const [players, setPlayers] = useState<AdminPlayerSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [sourceOnly, setSourceOnly] = useState(false);
+  const [hideBots, setHideBots] = useState(false);
+  const [timeRange, setTimeRange] = useState<TimeRangeKey>('all');
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [log, setLog] = useState<AdminPlayerLogResponse | null>(null);
@@ -53,10 +84,20 @@ export function AdminScreen({ token, onBack }: Props) {
       .finally(() => setLogLoading(false));
   }, [selectedId, token]);
 
-  const shownPlayers = useMemo(
-    () => (sourceOnly ? players.filter((p) => p.source) : players),
-    [players, sourceOnly],
-  );
+  // Ticket 2026-10-01#10, item 1: filters compose with AND, not OR (Advisor's explicit
+  // instruction) — e.g. "Demo-link only" + "Hide bots" together means source-tagged AND human.
+  const shownPlayers = useMemo(() => {
+    const rangeMs = TIME_RANGES.find((r) => r.key === timeRange)?.ms;
+    return players.filter((p) => {
+      if (sourceOnly && !p.source) return false;
+      if (hideBots && isBotName(p.displayName)) return false;
+      if (rangeMs !== undefined) {
+        if (!p.lastSeenAt) return false;
+        if (Date.now() - new Date(p.lastSeenAt).getTime() > rangeMs) return false;
+      }
+      return true;
+    });
+  }, [players, sourceOnly, hideBots, timeRange]);
 
   const selected = players.find((p) => p.playerId === selectedId);
 
@@ -104,9 +145,9 @@ export function AdminScreen({ token, onBack }: Props) {
                       <td className="py-1 pr-2">{m.opponent}</td>
                       <td className="py-1 pr-2">{m.result}</td>
                       <td className={`py-1 pr-2 ${m.amount > 0 ? 'text-green-400' : m.amount < 0 ? 'text-red-400' : ''}`}>
-                        {m.amount > 0 ? '+' : ''}{m.amount}
+                        {m.amount > 0 ? '+' : ''}{withCurrency(m.amount, m.currency)}
                       </td>
-                      <td className="py-1 pr-2">{m.runningBalance}</td>
+                      <td className="py-1 pr-2">{withCurrency(m.runningBalance, m.currency)}</td>
                       <td className="py-1 pr-2 text-white/50">{new Date(m.createdAt).toLocaleString()}</td>
                     </tr>
                   ))}
@@ -129,7 +170,7 @@ export function AdminScreen({ token, onBack }: Props) {
                   <tr key={e.id} data-testid={`admin-ledger-${e.id}`} className="border-b border-white/5">
                     <td className="py-1 pr-2">{e.type}</td>
                     <td className={`py-1 pr-2 ${e.amount > 0 ? 'text-green-400' : e.amount < 0 ? 'text-red-400' : ''}`}>
-                      {e.amount > 0 ? '+' : ''}{e.amount}
+                      {e.amount > 0 ? '+' : ''}{withCurrency(e.amount, e.currency)}
                     </td>
                     <td className="py-1 pr-2 text-white/50">{e.matchId ?? '—'}</td>
                     <td className="py-1 pr-2 text-white/50">{new Date(e.createdAt).toLocaleString()}</td>
@@ -158,15 +199,41 @@ export function AdminScreen({ token, onBack }: Props) {
           </button>
           <h1 className="text-lg font-bold">Players</h1>
         </div>
-        <label className="flex items-center gap-2 text-xs text-white/60">
-          <input
-            type="checkbox"
-            checked={sourceOnly}
-            onChange={(e) => setSourceOnly(e.target.checked)}
-            data-testid="admin-source-filter"
-          />
-          Demo-link only
-        </label>
+        <div className="flex items-center gap-4 text-xs text-white/60">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={sourceOnly}
+              onChange={(e) => setSourceOnly(e.target.checked)}
+              data-testid="admin-source-filter"
+            />
+            Demo-link only
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={hideBots}
+              onChange={(e) => setHideBots(e.target.checked)}
+              data-testid="admin-hide-bots-filter"
+            />
+            Hide bots
+          </label>
+          <label className="flex items-center gap-2">
+            Last seen
+            <select
+              value={timeRange}
+              onChange={(e) => setTimeRange(e.target.value as TimeRangeKey)}
+              data-testid="admin-time-range"
+              className="rounded bg-white/5 px-1 py-0.5 text-white"
+            >
+              {TIME_RANGES.map((r) => (
+                <option key={r.key} value={r.key}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       {loading && <p data-testid="admin-loading">Loading…</p>}
@@ -183,6 +250,7 @@ export function AdminScreen({ token, onBack }: Props) {
               <th className="py-1 pr-2">W/L/D</th>
               <th className="py-1 pr-2">Won</th>
               <th className="py-1 pr-2">Lost</th>
+              <th className="py-1 pr-2">Last seen</th>
             </tr>
           </thead>
           <tbody>
@@ -200,6 +268,9 @@ export function AdminScreen({ token, onBack }: Props) {
                 <td className="py-1 pr-2">{p.wins}/{p.losses}/{p.draws}</td>
                 <td className="py-1 pr-2 text-green-400">{p.moneyWon}</td>
                 <td className="py-1 pr-2 text-red-400">{p.moneyLost}</td>
+                <td className="py-1 pr-2 text-white/50" data-testid={`admin-lastseen-${p.playerId}`}>
+                  {p.lastSeenAt ? new Date(p.lastSeenAt).toLocaleString() : '—'}
+                </td>
               </tr>
             ))}
           </tbody>
