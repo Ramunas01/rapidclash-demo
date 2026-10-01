@@ -437,6 +437,27 @@ describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
     expect(sockets.length).toBe(0); // the WS (auth) is not opened until sign-in
   });
 
+  // Ticket 2026-10-01#1 (D70) item 1: the header's two logged-out pills previously called the
+  // literal SAME handler (`onWallet`), so both silently opened the sheet on signup — tapping LOGIN
+  // landed a user on the "Create Account" form. Now each pill requests its own mode.
+  it('the header LOGIN pill opens the auth modal on the LOGIN tab, SIGNUP opens on the SIGNUP tab', async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId('home-hub')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('hub-login-chip'));
+    await waitFor(() => expect(screen.getByTestId('auth-modal')).toHaveAttribute('aria-hidden', 'false'));
+    expect(screen.getByTestId('auth-tab-login')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('auth-title').textContent).toBe('LOGIN');
+
+    fireEvent.click(screen.getByTestId('auth-modal-scrim')); // dismiss, back to Home
+    await waitFor(() => expect(screen.getByTestId('auth-modal')).toHaveAttribute('aria-hidden', 'true'));
+
+    fireEvent.click(screen.getByTestId('hub-signin-chip'));
+    await waitFor(() => expect(screen.getByTestId('auth-modal')).toHaveAttribute('aria-hidden', 'false'));
+    expect(screen.getByTestId('auth-tab-register')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('auth-title').textContent).toBe('SIGNUP');
+  });
+
   // Ticket 2026-09-13#5, item 1: the prototype's own `goRewards` has no login check (only
   // `goAccount` gates) — a logged-out tap on the Rewards nav item must land directly on the
   // Rewards hub, not the auth wall. This REVERSES the old `onRewardsTap` gate (previously the
@@ -465,8 +486,13 @@ describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
     // conditionally unmounting), so presence alone no longer proves it's open — check its
     // `aria-hidden` visibility flag instead.
     await waitFor(() => expect(screen.getByTestId('auth-modal')).toHaveAttribute('aria-hidden', 'false'));
+    // Ticket 2026-10-01#1 (D70) item 1: a "must be logged in" entry point (JOIN) opens in LOGIN
+    // mode, not the old signup-always default.
+    expect(screen.getByTestId('auth-tab-login')).toHaveAttribute('aria-pressed', 'true');
 
-    // Register → token stored + WS connects.
+    // Switch to SIGNUP (this test exercises the register→land flow specifically; the mock only
+    // stubs `/auth/register` with real token data) → token stored + WS connects.
+    fireEvent.click(screen.getByTestId('auth-tab-register'));
     fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'neo' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'pw' } });
     fireEvent.click(screen.getByTestId('auth-submit'));
@@ -502,8 +528,13 @@ describe('App — logged-out Home + auth wall at PLAY (resume)', () => {
     // The auth wall fires only here. AuthModal is always mounted (ticket 2026-09-13#4), so check
     // its `aria-hidden` visibility flag rather than presence.
     await waitFor(() => expect(screen.getByTestId('auth-modal')).toHaveAttribute('aria-hidden', 'false'));
+    // Ticket 2026-10-01#1 (D70) item 1: a "must be logged in" entry point (PLAY) opens in LOGIN
+    // mode, not the old signup-always default.
+    expect(screen.getByTestId('auth-tab-login')).toHaveAttribute('aria-pressed', 'true');
 
-    // Register → token stored + WS connects.
+    // Switch to SIGNUP (this test exercises the register→land flow specifically; the mock only
+    // stubs `/auth/register` with real token data) → token stored + WS connects.
+    fireEvent.click(screen.getByTestId('auth-tab-register'));
     fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'neo' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'pw' } });
     fireEvent.click(screen.getByTestId('auth-submit'));

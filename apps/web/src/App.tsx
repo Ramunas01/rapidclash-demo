@@ -453,6 +453,10 @@ export function App() {
   // ── Auth wall (logged-out → commit-to-play) ─────────────────────────────────
   const loggedIn = token !== null;
   const [authOpen, setAuthOpen] = useState(false);
+  // Ticket 2026-10-01#1 (D70) item 1: which tab `AuthModal` opens on — threaded through to its own
+  // `initialMode` prop. Default 'register' is never actually OBSERVED (every `openAuth` call site
+  // passes its own mode explicitly before the sheet is ever shown), just a harmless initial value.
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('register');
   // The captured commit-to-play intent: after sign-in the user lands on this intent's hub with the
   // stake pre-armed (nothing auto-fires — they press PLAY to commit); cleared on cancel.
   const pendingResumeRef = useRef<AuthIntent | null>(null);
@@ -481,9 +485,13 @@ export function App() {
     setScreen('home');
   }, []);
 
-  /** Open the auth modal. `intent` (if any) sets where the user lands (stake armed) after sign-in. */
-  const openAuth = useCallback((intent: AuthIntent | null) => {
+  /** Open the auth modal. `intent` (if any) sets where the user lands (stake armed) after sign-in.
+   *  `mode` (ticket 2026-10-01#1, D70 item 1) picks which tab it opens on — every call site now
+   *  passes it explicitly; there's deliberately no default, so a future call site can't silently
+   *  land on the wrong tab by omission the way every "must be logged in" entry point used to. */
+  const openAuth = useCallback((intent: AuthIntent | null, mode: 'login' | 'register') => {
     pendingResumeRef.current = intent;
+    setAuthMode(mode);
     setAuthOpen(true);
   }, []);
   const closeAuth = useCallback(() => {
@@ -1038,7 +1046,7 @@ export function App() {
     // Auth wall: a logged-out PLAY captures the intent and opens the sign-in modal; on success
     // the user lands back on this hub with the stake armed and presses PLAY to post (no auto-fire).
     if (!token) {
-      openAuth({ action: 'play', gameId: pendingGameId, stake, timeControlId });
+      openAuth({ action: 'play', gameId: pendingGameId, stake, timeControlId }, 'login');
       return;
     }
     if (!wsRef.current) return;
@@ -1101,7 +1109,7 @@ export function App() {
     // the sign-in modal; on success the user lands on that hub with the stake armed to post their own.
     if (!token) {
       const found = lookupChallenge(matchId);
-      openAuth(found ? { action: 'join', matchId, gameId: found.gameId, stake: found.stake } : null);
+      openAuth(found ? { action: 'join', matchId, gameId: found.gameId, stake: found.stake } : null, 'login');
       return;
     }
     if (!wsRef.current) return;
@@ -1117,7 +1125,7 @@ export function App() {
   // hub with the stake armed to post their own — nothing auto-joins.
   const handleTakePublicChallenge = useCallback(
     (c: { matchId: string; gameId: string; stake: number }) => {
-      openAuth({ action: 'join', matchId: c.matchId, gameId: c.gameId, stake: c.stake });
+      openAuth({ action: 'join', matchId: c.matchId, gameId: c.gameId, stake: c.stake }, 'login');
     },
     [openAuth],
   );
@@ -1177,11 +1185,20 @@ export function App() {
     setLastSettlement(null);
   }, []);
 
-  // Wallet chip / Account tab: the profile when signed in, the sign-in modal when logged out.
+  // Wallet chip / bottom-nav Account tab: the profile when signed in, the sign-in modal (LOGIN
+  // mode — ticket 2026-10-01#1 item 1) when logged out. Also the header's LOGIN pill, via
+  // `HubRibbon`'s own `onLogin ?? onWallet` fallback — no separate handler needed for it, since its
+  // request is identical to this one.
   const onAccountTap = useCallback(() => {
     if (loggedIn) goToProfile();
-    else openAuth(null);
+    else openAuth(null, 'login');
   }, [loggedIn, goToProfile, openAuth]);
+
+  // The header's SIGNUP pill specifically (ticket 2026-10-01#1 item 1) — previously shared
+  // `onAccountTap` with LOGIN, silently opening in signup mode regardless of which pill was tapped.
+  const onAccountSignup = useCallback(() => {
+    openAuth(null, 'register');
+  }, [openAuth]);
 
   function renderScreen() {
     switch (screen) {
@@ -1198,6 +1215,7 @@ export function App() {
           onTakePublicChallenge={handleTakePublicChallenge}
           onSelectGame={handleSelectGame}
           onOpenWallet={onAccountTap}
+          onOpenSignup={onAccountSignup}
           onOpenRewards={goToRewards}
           onOpenAffiliate={goToAffiliate}
           onHome={goToHome}
@@ -1322,6 +1340,7 @@ export function App() {
           onUntrackChallenges={handleUntrackChallenges}
           onSelectGame={handleSelectGame}
           onOpenWallet={onAccountTap}
+          onOpenSignup={onAccountSignup}
           onOpenRewards={goToRewards}
           onOpenAffiliate={goToAffiliate}
           onOpenGameList={goToHome}
@@ -1395,7 +1414,7 @@ export function App() {
           2026-09-13#2 already fixed for the Menu overlay. `AuthModal` no longer takes
           `onGuestSuccess` — see its own top-of-file comment for why guest auth doesn't route
           through it any more. */}
-      <AuthModal open={authOpen} onSuccess={handleAuthSuccess} onClose={closeAuth} />
+      <AuthModal open={authOpen} initialMode={authMode} onSuccess={handleAuthSuccess} onClose={closeAuth} />
     </>
   );
 }

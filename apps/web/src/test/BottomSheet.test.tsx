@@ -44,6 +44,19 @@ describe('BottomSheet', () => {
     expect(screen.getByTestId('scrim').style.opacity).toBe('1');
   });
 
+  // Ticket 2026-10-01#1 (D70) item 4 correction: the drag handle was never actually MISSING (it's
+  // unconditionally rendered, confirmed present in the live production bundle too) — it was a
+  // contrast issue, 40% opacity against the design spec's 50%.
+  it('drag handle renders at 50% opacity (ticket 2026-10-01#1 item 4 — was 40%, a contrast gap, not a missing element)', () => {
+    render(
+      <BottomSheet open onClose={vi.fn()} sheetTestId="sheet" scrimTestId="scrim" handleTestId="handle">
+        content
+      </BottomSheet>,
+    );
+    expect(screen.getByTestId('handle').className).toContain('/50');
+    expect(screen.getByTestId('handle').className).not.toContain('/40');
+  });
+
   it('scrim tap calls onClose', () => {
     const onClose = vi.fn();
     render(

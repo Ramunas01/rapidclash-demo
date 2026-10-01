@@ -53,6 +53,9 @@ interface Props {
   /** Playable tile tap → that game's flow (coinflip→hub, others→stake-entry). */
   onSelectGame(meta: GameMeta): void;
   onOpenWallet(): void;
+  /** The header's SIGNUP pill specifically (ticket 2026-10-01#1, D70 item 1) — distinct from
+   *  `onOpenWallet`/LOGIN so the sheet opens on the right tab for each. */
+  onOpenSignup(): void;
   /** Rewards tab → the VIP/Rewards hub (issue #307). */
   onOpenRewards(): void;
   /** Menu overlay's own EARN → "Affiliate program" row (issue #423). */
@@ -73,7 +76,7 @@ interface Props {
  */
 export function HomeHubScreen({
   token, balances, challengesByGame, onTrackChallenges, onUntrackChallenges,
-  onTakeChallenge, onTakePublicChallenge, onSelectGame, onOpenWallet, onOpenRewards, onOpenAffiliate, onHome, loggedIn = true,
+  onTakeChallenge, onTakePublicChallenge, onSelectGame, onOpenWallet, onOpenSignup, onOpenRewards, onOpenAffiliate, onHome, loggedIn = true,
 }: Props) {
   const balance = balances.USD;
   const [games, setGames] = useState<GameMeta[]>([]);
@@ -206,7 +209,7 @@ export function HomeHubScreen({
 
   return (
     <div className={HUB_SHELL}>
-      <HubRibbon balances={loggedIn ? liveBalances : null} onLogo={onHome} onWallet={onOpenWallet} loggedIn={loggedIn} />
+      <HubRibbon balances={loggedIn ? liveBalances : null} onLogo={onHome} onWallet={onOpenWallet} onSignup={onOpenSignup} loggedIn={loggedIn} />
 
       <main data-testid="home-hub">
         <div className="mx-auto flex w-full max-w-md flex-col gap-6">
