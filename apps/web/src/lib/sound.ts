@@ -5,6 +5,8 @@ import diceWinUrl from '../assets/sounds/dice-win.mp3';
 import rejectUrl from '../assets/sounds/reject.wav';
 import minesGemUrl from '../assets/sounds/mines-gem.mp3';
 import minesMineUrl from '../assets/sounds/mines-mine.mp3';
+import blackjackCardDealUrl from '../assets/sounds/blackjack-card-deal.mp3';
+import blackjackCardFlipUrl from '../assets/sounds/blackjack-card-flip.mp3';
 
 /**
  * Minimal, dependency-free Web Audio wrapper for short UI sound effects.
@@ -38,6 +40,14 @@ const MANIFEST: Record<string, string> = {
   // ever reached.
   'mines-gem': minesGemUrl,
   'mines-mine': minesMineUrl,
+  // Ticket 2026-10-01#4 (D72): Designer-provided, same precedent as mines-gem/mines-mine — fired
+  // from BlackjackHub.tsx's BlackjackBoard on each card's own landing (deal) / the hole card's
+  // flip (see those call sites for the double-fire guard reasoning). No pooling/preload-on-entry
+  // code needed here either — preloadSounds() already decodes every MANIFEST entry uniformly
+  // ahead of any hub being reached, and play() mints an independent source node per call, so
+  // overlapping deal sounds during the opening stagger layer cleanly with no restart/interruption.
+  'blackjack-card-deal': blackjackCardDealUrl,
+  'blackjack-card-flip': blackjackCardFlipUrl,
 };
 
 export type SoundName = keyof typeof MANIFEST | string;
