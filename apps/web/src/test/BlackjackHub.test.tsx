@@ -10,6 +10,21 @@ import { setCurSel } from '../lib/currency.js';
 // canvas-confetti needs a real <canvas> (absent in jsdom) — mock it (matches the other hub tests).
 vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
 
+// Web Audio is absent in jsdom — mock the sound module so we can assert the deal/flip SFX wiring
+// (ticket 2026-10-01#4, D72) without touching real AudioContext (same idiom as MinesHub.test.tsx's
+// equivalent mock).
+const { playMock } = vi.hoisted(() => ({ playMock: vi.fn() }));
+vi.mock('../lib/sound.js', () => ({
+  play: playMock,
+  unlock: vi.fn(),
+  installUnlockOnFirstGesture: vi.fn(),
+  isMuted: () => false,
+  toggleMute: vi.fn(),
+  setMuted: vi.fn(),
+  subscribe: () => () => {},
+  preloadSounds: vi.fn(),
+}));
+
 type Props = Parameters<typeof BlackjackHubScreen>[0];
 
 function baseProps(over: Partial<Props> = {}): Props {
@@ -41,6 +56,120 @@ function inPlayView(over: Partial<BlackjackView> = {}): BlackjackView {
 }
 
 const c = (rank: string, suit = '♠'): { rank: string; suit: string } => ({ rank, suit });
+
+// Ticket 2026-10-01#4 (D72): deal/flip SFX — mocks play() and asserts the EXACT call count/order
+// per scenario, directly proving the double-fire guards actually work (not just reasoning about
+// them). Real (non-fake) timers throughout, same idiom as the Reveal-choreography describe block
+// above — Framer Motion's onAnimationComplete needs real animation time to elapse.
+describe('Ticket 2026-10-01#4 (D72): Blackjack deal/flip sounds', () => {
+  beforeEach(() => {
+// NOTE: this block is deliberately positioned BEFORE 'Advisor #10' (further down this file) —
+// that block's fake-timers + an infinite-repeat (`repeat: Infinity`) pulsing animation leaves
+// Framer Motion's shared frame-loop driver unable to complete any REAL animation for the rest
+// of this file's test run (confirmed empirically: these tests pass standalone and here, but
+// fail with a stuck 0-count if run anywhere after 'Advisor #10' in the same file). Pre-existing
+// test-infrastructure fragility, unrelated to this ticket's own implementation — not something
+// this ticket needs to fix, just work around by ordering.
+    vi.useRealTimers();
+    playMock.mockClear();
+  });
+
+  it('opening deal: exactly 4 deal sounds (own×2 + opp visible + hole landing), 0 flip', async () => {
+    render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: ['hit', 'stand'] })} />);
+    await waitFor(() => {
+      expect(playMock.mock.calls.filter((c2) => c2[0] === 'blackjack-card-deal')).toHaveLength(4);
+    }, { timeout: 8000 });
+    expect(playMock.mock.calls.filter((c2) => c2[0] === 'blackjack-card-flip')).toHaveLength(0);
+  }, 20000);
+
+  it('Hit×2 + Stand + 1 dealer draw: exactly 7 deal sounds, 1 flip, flip after every deal from play (not before)', async () => {
+    const { rerender } = render(
+      <BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: ['hit', 'stand'] })} />,
+    );
+    await waitFor(() => {
+      expect(playMock.mock.calls.filter((c2) => c2[0] === 'blackjack-card-deal')).toHaveLength(4);
+    }, { timeout: 8000 }); // opening deal lands first
+
+    // Hit #1 — own hand grows to 3 cards.
+    rerender(<BlackjackHubScreen {...baseProps({
+      currentMatchId: 'm1', legalMoves: ['hit', 'stand'],
+      gameState: inPlayView({ hands: { pid: { cards: [c('10'), c('7', '♥'), c('2')], done: false }, bob: { cards: [c('K', '♣')], done: false } } }),
+    })} />);
+    await waitFor(() => {
+      expect(playMock.mock.calls.filter((c2) => c2[0] === 'blackjack-card-deal')).toHaveLength(5);
+    }, { timeout: 8000 });
+
+    // Hit #2 — own hand grows to 4 cards.
+    rerender(<BlackjackHubScreen {...baseProps({
+      currentMatchId: 'm1', legalMoves: ['hit', 'stand'],
+      gameState: inPlayView({ hands: { pid: { cards: [c('10'), c('7', '♥'), c('2'), c('3')], done: false }, bob: { cards: [c('K', '♣')], done: false } } }),
+    })} />);
+    await waitFor(() => {
+      expect(playMock.mock.calls.filter((c2) => c2[0] === 'blackjack-card-deal')).toHaveLength(6);
+    }, { timeout: 8000 });
+
+    // Stand → terminal. The dealer (opponent) drew exactly 1 card during their own turn (nHits=1):
+    // the hole flips (1 flip) and that one hit card deals in (+1 deal → 7 total).
+    rerender(<BlackjackHubScreen {...baseProps({
+      currentMatchId: 'm1', legalMoves: [],
+      gameState: inPlayView({
+        hands: {
+          pid: { cards: [c('10'), c('7', '♥'), c('2'), c('3')], done: true },
+          bob: { cards: [c('K', '♣'), c('9'), c('2', '♥')], done: true }, // c0 + hole + 1 hit
+        },
+        winner: 'bob',
+      }),
+    })} />);
+
+    await waitFor(() => {
+      expect(playMock.mock.calls.filter((c2) => c2[0] === 'blackjack-card-deal')).toHaveLength(7);
+      expect(playMock.mock.calls.filter((c2) => c2[0] === 'blackjack-card-flip')).toHaveLength(1);
+    }, { timeout: 9000 });
+
+    // "Relative order" — the flip happens only after the 2 in-play hits' own deal sounds (staged,
+    // guaranteed by this test's own rerender sequence), never before. The flip vs. the dealer's own
+    // single hit-card deal (both fire off independent async completions — a useEffect vs. a Framer
+    // Motion animation-complete — within the SAME terminal transition) has no guaranteed relative
+    // order between each other, so this doesn't assert which of those two comes last.
+    const flipIdx = playMock.mock.calls.findIndex((c2) => c2[0] === 'blackjack-card-flip');
+    const dealsBeforeFlip = playMock.mock.calls.slice(0, flipIdx).filter((c2) => c2[0] === 'blackjack-card-deal');
+    expect(dealsBeforeFlip.length).toBeGreaterThanOrEqual(6); // opening (4) + both hits (2), at minimum
+  }, 25000);
+
+  it('a player-bust terminal (stand-pat opponent, no dealer hits): the flip still fires exactly once, never twice', async () => {
+    const { rerender } = render(
+      <BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: ['hit', 'stand'] })} />,
+    );
+    await waitFor(() => {
+      expect(playMock.mock.calls.filter((c2) => c2[0] === 'blackjack-card-deal')).toHaveLength(4);
+    }, { timeout: 8000 });
+
+    // Player busts; opponent never draws beyond their own 2 cards (c0 + hole, no hits) — this is
+    // exactly the `pulsing -> settled` re-resolution risk the ticket's own guard targets: the hole
+    // card's outer div transitions from its pulsing animate target straight to the terminal one.
+    rerender(<BlackjackHubScreen {...baseProps({
+      currentMatchId: 'm1', legalMoves: [],
+      gameState: inPlayView({
+        hands: {
+          pid: { cards: [c('10'), c('9'), c('5')], done: true }, // 24, busts
+          bob: { cards: [c('K', '♣'), c('9')], done: true }, // stand-pat, no hits
+        },
+        winner: 'bob',
+      }),
+    })} />);
+
+    await waitFor(() => {
+      expect(playMock.mock.calls.filter((c2) => c2[0] === 'blackjack-card-flip')).toHaveLength(1);
+    }, { timeout: 9000 });
+    // No dealer hits in this scenario → deal count stays at the opening 4 (never 5 from a spurious
+    // extra deal-sound firing off the outer div's re-resolution).
+    expect(playMock.mock.calls.filter((c2) => c2[0] === 'blackjack-card-deal')).toHaveLength(4);
+
+    // Give any spurious re-fire a real chance to show up before asserting it stayed single.
+    await new Promise((r) => setTimeout(r, 500));
+    expect(playMock.mock.calls.filter((c2) => c2[0] === 'blackjack-card-flip')).toHaveLength(1);
+  }, 20000);
+});
 
 describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
   beforeEach(() => {
