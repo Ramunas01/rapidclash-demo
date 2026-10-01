@@ -1,5 +1,32 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-01#5 — D72 (PR #791, `e933473`) SHIPPED, MERGED — NOT yet deployed (live revision is still `rapidclash-00144-jr6`, the D70/D71 deploy). Implementation matches the proposed shape exactly. Independently reproduced BOTH of PM's own revert-confirm claims myself via direct edits, not just trusted — both guards are genuinely load-bearing, exact leak counts confirmed byte-for-byte. One precise refinement beyond PM's own report, not a correction: isolated which guard matters independently vs. only in combination            [VERIFIED — correct, awaiting deploy decision]
+From: PM's own cross-session report — independently re-verified via full diff review, running the new test suite myself (3/3), running the FULL `BlackjackHub.test.tsx` file (59/59, confirming no regression from the test-ordering workaround), a full monorepo build + suite run (1878/1879, the one known `DiceHub` flake), and my OWN revert-confirm on both guards (not PM's) — temporarily removing each in turn, confirming the exact failure, restoring, confirming clean again
+
+## Implementation matches the proposed shape exactly, plus one good detail I hadn't specified
+
+Read `BlackjackHub.tsx`/`sound.ts` directly: `onLanded`/`onRevealed` callback props on both `PlayingCard`/`OppHoleCard`, a one-shot `useRef(false)` guard on each `onAnimationComplete`, and the flip watcher's `prevRevealedRef` + `useEffect` living INSIDE `OppHoleCard` itself (not the parent board) — exactly addressing the inconsistency I'd caught in my own ticket draft, with the comment explicitly explaining why (per-round remount resets the ref naturally). One thing PM added beyond what I specified: `useRef(revealed)` seeds the flip-watcher's previous value from the CURRENT `revealed` at mount, not a blank/false sentinel — meaning a reconnect that mounts already-revealed correctly does NOT retroactively fire the flip sound. Confirmed this reasoning is sound, not just plausible-sounding.
+
+## Independently reproduced both revert-confirm claims myself — not just trusted the report
+
+**Deal guard — confirmed load-bearing, exact figure matches, PLUS a more precise refinement.** Temporarily removed `OppHoleCard`'s own one-shot guard alone: the bust-terminal test failed exactly as the ticket's own risk predicted — `4 → 5` deal sounds (one spurious extra at the reveal moment). Restored, confirmed clean. Then temporarily removed BOTH `PlayingCard`'s and `OppHoleCard`'s guards together: `4 → 6`, matching PM's own quoted figure exactly. **Went one step further than PM's own report detailed**: isolated `PlayingCard`'s guard ALONE (restored `OppHoleCard`'s) — no leak at all, all 3 tests stayed green. So the precise picture is: `OppHoleCard`'s guard is independently load-bearing on its own; `PlayingCard`'s is NOT independently load-bearing for this scenario, but contributes an ADDITIONAL leak only when combined with `OppHoleCard`'s own guard also being absent (an interaction effect, not two independent single-point risks). This actually matches PM's own code comments precisely, re-read closely: `OppHoleCard`'s comment explicitly says "load-bearing HERE specifically, not just defensive," while `PlayingCard`'s own comment calls its guard a cheap defensive precaution, not a claimed independent necessity — my own isolated test confirms that exact distinction was already correctly drawn, not overclaimed.
+
+**Flip-watcher guard — confirmed load-bearing, exact figure matches.** Temporarily removed the transition gate (changed `if (!prevRevealedRef.current && revealed)` to just `if (revealed)`, so the effect fires unconditionally on its own re-run, not only on the real transition): the Hit×2+Stand+dealer-draw test failed exactly as predicted — `1 → 2` flips, matching PM's own quoted figure exactly. Restored, confirmed clean.
+
+## Test-ordering claim, spot-checked
+
+Confirmed the new describe block (`:64`) genuinely sits before `'Advisor #10'` (`:899`) in the current file, and ran the ENTIRE `BlackjackHub.test.tsx` file as one run (not just the new block in isolation): 59/59 pass with the current ordering, no regressions. Didn't reproduce the claimed failure-when-reordered-after specifically (a secondary, non-product-bug, "for your own awareness" finding PM already flagged as out of this ticket's scope) — the part that actually matters (the current, shipped ordering works correctly) is confirmed.
+
+## Deploy status
+
+**D72 is merged to `main` but NOT yet deployed** — checked `gcloud` directly: the live revision is still `rapidclash-00144-jr6` (the D70/D71 deploy from earlier today), not a newer one. Not flagging this as a problem — just the accurate current state; whether/when to deploy is Owner's call, same as every other ticket.
+
+**Ran the tests myself: the new 3-test suite (3/3), the full `BlackjackHub.test.tsx` file (59/59), full monorepo suite (1878/1879 — the one known `DiceHub` flake). Confirmed the full monorepo `tsc -b` build is clean.**
+
+**Advisor next:** available, no open thread — D72 fully verified, correct, ready for a deploy decision whenever Owner wants it. **PM next:** nothing pending on D72's own implementation.
+
+---
+
 ### 2026-10-01#4 — D72, two Blackjack sounds (card deal, card flip). Same pattern as D70/D71: the Designer's own citation (`sfx(name)`, cached `Audio` elements, `currentTime=0`, manual per-screen preload) is the PROTOTYPE's own mechanism — confirmed byte-for-byte against `Full Spec.html:3033-3042` — not our actual app's sound system, which is architecturally different (`lib/sound.ts`, Web Audio API, confirmed during D71). Translated the REQUIREMENT faithfully to our real system below; also found one real, specific double-fire risk in the natural implementation and a safeguard for it            [READY TO TICKET]
 From: Designer's own report (relayed by Owner, two `.mp3` files in `D72/`), verified via direct reads of `apps/web/src/lib/sound.ts` (confirmed architecture, confirmed no Blackjack entries exist yet), `apps/web/src/screens/BlackjackHub.tsx` (`PlayingCard`/`OppHoleCard`'s own Framer Motion structure, the opening-deal/reveal timing constants, how `active`/`revealed`/`pulsing` are threaded), and `design/prototype/RapidClash Full Spec.html:3025-3042` (confirmed the `sfx()` citation is real but prototype-only)
 
