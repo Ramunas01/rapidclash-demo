@@ -25,7 +25,7 @@ function baseProps(over: Partial<Props> = {}): Props {
     onUntrackChallenges: vi.fn(),
     onTakeChallenge: vi.fn(),
     onSelectGame: vi.fn(),
-    onOpenWallet: vi.fn(),
+    onOpenWallet: vi.fn(), onOpenSignup: vi.fn(),
     onOpenRewards: vi.fn(),
     onOpenAffiliate: vi.fn(),
     onHome: vi.fn(),
@@ -360,12 +360,28 @@ describe('HomeHubScreen (logged out)', () => {
     expect(urls.some((u) => u.includes('/open-challenges'))).toBe(true); // the public read IS used
   });
 
-  it('the wallet chip sign-in affordance invokes the sign-in handler', async () => {
+  // Ticket 2026-10-01#1 (D70) item 1: the header's two logged-out pills now request distinct auth
+  // modes — LOGIN still calls `onOpenWallet` (App.tsx's `onAccountTap` now opens it in LOGIN mode),
+  // SIGNUP calls the new, separate `onOpenSignup` — previously both called the SAME handler, so a
+  // SIGNUP tap couldn't be told apart from a LOGIN tap.
+  it('the LOGIN chip invokes onOpenWallet, not onOpenSignup', async () => {
     const onOpenWallet = vi.fn();
-    render(<HomeHubScreen {...baseProps({ loggedIn: false, token: '', onOpenWallet })} />);
+    const onOpenSignup = vi.fn();
+    render(<HomeHubScreen {...baseProps({ loggedIn: false, token: '', onOpenWallet, onOpenSignup })} />);
+    await waitFor(() => expect(screen.getByTestId('hub-login-chip')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('hub-login-chip'));
+    expect(onOpenWallet).toHaveBeenCalledTimes(1);
+    expect(onOpenSignup).not.toHaveBeenCalled();
+  });
+
+  it('the SIGNUP chip invokes onOpenSignup, not onOpenWallet', async () => {
+    const onOpenWallet = vi.fn();
+    const onOpenSignup = vi.fn();
+    render(<HomeHubScreen {...baseProps({ loggedIn: false, token: '', onOpenWallet, onOpenSignup })} />);
     await waitFor(() => expect(screen.getByTestId('hub-signin-chip')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('hub-signin-chip'));
-    expect(onOpenWallet).toHaveBeenCalledTimes(1);
+    expect(onOpenSignup).toHaveBeenCalledTimes(1);
+    expect(onOpenWallet).not.toHaveBeenCalled();
   });
 });
 

@@ -19,7 +19,25 @@ interface Props {
    *  longer unmounts on close and stale text would otherwise persist into the next open. */
   onSuccess(token: string, playerId: string, balances: Record<Currency, number>, username: string, avatarId: AvatarId): void;
   onClose(): void;
+  /** Ticket 2026-10-01#1 (D70) item 1: which tab the sheet opens on — every "must be logged in"
+   *  call site (Play/Join/rewards/profile-tap while logged out) requests `'login'`, the header's
+   *  own SIGNUP pill requests `'register'`. Synced into local `tab` state on every `open` (not just
+   *  mount — this component never unmounts, see its own top-of-file comment), so a caller doesn't
+   *  need to track `tab` itself. Optional, defaulting to `'register'` — the pre-existing default —
+   *  so a caller with no opinion about mode (most tests) doesn't need to pass it. */
+  initialMode?: 'login' | 'register';
 }
+
+// Full Spec.html:2452-2475's auth sheet: the title/tab-labels/captions/submit-button text all use
+// the plain Arial/Helvetica stack — 'Inter Tight' is reserved for the two input fields only (lines
+// 2463/2467's `authEmail`/`authPass`), not blanket-applied across the whole sheet.
+const AUTH_LABEL_FONT = 'Arial, Helvetica, sans-serif';
+const AUTH_INPUT_FONT = "'Inter Tight', Arial, Helvetica, sans-serif";
+// Full Spec.html:2472 (`submitAuth`'s own box-shadow) — byte-identical to GameHub.tsx's own
+// `PLAY_BTN_SHADOW` (`Full Spec.html:3823`), same purple-ledge family; inlined here rather than
+// imported since that constant is screen-local, not exported (components importing from screens
+// would invert this codebase's own dependency direction).
+const AUTH_SUBMIT_SHADOW = '0 5px 0 #5F27B8';
 
 /**
  * The auth wall (register/login), rebuilt as a bottom sheet (ticket 2026-09-13#4) against the
@@ -60,12 +78,20 @@ interface Props {
  * local, screen-scoped copies, not a shared mechanism) — not added here per the ticket's own
  * "don't add a new toast system" guidance; the structural rebuild is the priority.
  */
-export function AuthModal({ open, onSuccess, onClose }: Props) {
-  const [tab, setTab] = useState<'register' | 'login'>('register');
+export function AuthModal({ open, onSuccess, onClose, initialMode = 'register' }: Props) {
+  const [tab, setTab] = useState<'register' | 'login'>(initialMode);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Ticket 2026-10-01#1 (D70) item 1: re-sync `tab` to the caller's requested mode every time the
+  // sheet OPENS (not just on first mount) — this component is always mounted, so a later open with
+  // a different `initialMode` (e.g. LOGIN after an earlier SIGNUP open) must still re-seed, not
+  // leave `tab` stuck on whatever it was left at.
+  useEffect(() => {
+    if (open) setTab(initialMode);
+  }, [open, initialMode]);
 
   // On the body-scroll layout (#142) the page scrolls behind a fixed overlay; lock body scroll
   // while the auth wall is open so the form can't drift under the user. Now gated on `open`
@@ -113,8 +139,12 @@ export function AuthModal({ open, onSuccess, onClose }: Props) {
       handleTestId="auth-modal-handle"
       aria-label={tab === 'register' ? 'Sign up' : 'Login'}
     >
-      <h2 data-testid="auth-title" className="text-[22px] font-bold text-[var(--rc-text)]">
-        {tab === 'register' ? 'Sign up' : 'Login'}
+      <h2
+        data-testid="auth-title"
+        className="text-[24px] font-bold tracking-[0.5px] text-[var(--rc-text)]"
+        style={{ fontFamily: AUTH_LABEL_FONT }}
+      >
+        {tab === 'register' ? 'SIGNUP' : 'LOGIN'}
       </h2>
 
       {/* Mode toggle — colors/shadows identical to the Menu's own Dark/Light control
@@ -123,64 +153,81 @@ export function AuthModal({ open, onSuccess, onClose }: Props) {
           mode-toggle/submit buttons carry `onPointerDown="{{ navPress }}"` but no `data-nav`
           attribute — `navPress` no-ops without a `data-nav` key, so these buttons deliberately do
           NOT join the shared nav-bar-pop mechanism; they only get their own simple
-          `translateY(3px)` press-sink, same family as the Menu's Dark/Light buttons. */}
-      <div className="mt-5 flex gap-[10px] rounded-[24px] bg-surface p-1.5 pb-[11px]">
-        <button
-          type="button"
-          data-testid="auth-tab-register"
-          aria-pressed={tab === 'register'}
-          onClick={() => pickTab('register')}
-          className="flex h-[50px] flex-1 items-center justify-center rounded-[18px] text-sm font-semibold active:translate-y-[3px]"
-          style={{
-            background: tab === 'register' ? 'var(--brand-purple)' : 'var(--rc-theme-toggle-inactive-bg)',
-            boxShadow: tab === 'register' ? 'var(--rc-theme-toggle-active-shadow)' : 'var(--rc-theme-toggle-inactive-shadow)',
-            color: tab === 'register' ? '#FFFFFF' : 'var(--rc-muted)',
-            transition: 'background 240ms ease, box-shadow 240ms ease, transform 120ms ease',
-          }}
-        >
-          Sign up
-        </button>
+          `translateY(3px)` press-sink, same family as the Menu's Dark/Light buttons. LOGIN renders
+          first (ticket 2026-10-01#1 item 3 — matches `Full Spec.html:2457-2462`'s own DOM order,
+          `openLogin` before `openSignup`), container is a full pill on `--rc-bg` (not `--rc-surface`
+          /`rounded-[24px]`), each tab is a full pill at 40px (not `rounded-[18px]`/50px). */}
+      <div className="mt-5 flex gap-[9px] rounded-full bg-[var(--rc-bg)] p-[5px] pb-[10px]">
         <button
           type="button"
           data-testid="auth-tab-login"
           aria-pressed={tab === 'login'}
           onClick={() => pickTab('login')}
-          className="flex h-[50px] flex-1 items-center justify-center rounded-[18px] text-sm font-semibold active:translate-y-[3px]"
+          className="flex h-10 flex-1 items-center justify-center rounded-full text-[11px] font-bold tracking-[1px] active:translate-y-[3px]"
           style={{
             background: tab === 'login' ? 'var(--brand-purple)' : 'var(--rc-theme-toggle-inactive-bg)',
             boxShadow: tab === 'login' ? 'var(--rc-theme-toggle-active-shadow)' : 'var(--rc-theme-toggle-inactive-shadow)',
             color: tab === 'login' ? '#FFFFFF' : 'var(--rc-muted)',
+            fontFamily: AUTH_LABEL_FONT,
             transition: 'background 240ms ease, box-shadow 240ms ease, transform 120ms ease',
           }}
         >
-          Login
+          LOGIN
+        </button>
+        <button
+          type="button"
+          data-testid="auth-tab-register"
+          aria-pressed={tab === 'register'}
+          onClick={() => pickTab('register')}
+          className="flex h-10 flex-1 items-center justify-center rounded-full text-[11px] font-bold tracking-[1px] active:translate-y-[3px]"
+          style={{
+            background: tab === 'register' ? 'var(--brand-purple)' : 'var(--rc-theme-toggle-inactive-bg)',
+            boxShadow: tab === 'register' ? 'var(--rc-theme-toggle-active-shadow)' : 'var(--rc-theme-toggle-inactive-shadow)',
+            color: tab === 'register' ? '#FFFFFF' : 'var(--rc-muted)',
+            fontFamily: AUTH_LABEL_FONT,
+            transition: 'background 240ms ease, box-shadow 240ms ease, transform 120ms ease',
+          }}
+        >
+          SIGNUP
         </button>
       </div>
 
-      <form onSubmit={handleSubmit} className="mt-5 flex flex-col gap-3">
-        <input
-          type="text"
-          placeholder="Username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          required
-          autoComplete="username"
-          aria-label="Username"
-          className="h-[50px] w-full rounded-full bg-[var(--rc-bg)] px-5 text-sm font-semibold text-[var(--rc-text)] outline-none placeholder:text-[var(--rc-muted)]"
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          autoComplete={tab === 'register' ? 'new-password' : 'current-password'}
-          aria-label="Password"
-          className="h-[50px] w-full rounded-full bg-[var(--rc-bg)] px-5 text-sm font-semibold text-[var(--rc-text)] outline-none placeholder:text-[var(--rc-muted)]"
-        />
+      <form onSubmit={handleSubmit} className="flex flex-col">
+        <div className="mt-[18px] flex flex-col gap-[9px]">
+          <span className="text-[10px] font-bold tracking-[1px] text-[var(--rc-text)]" style={{ fontFamily: AUTH_LABEL_FONT }}>
+            USERNAME
+          </span>
+          <input
+            type="text"
+            placeholder="Enter username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+            autoComplete="username"
+            aria-label="Username"
+            className="h-[50px] w-full rounded-full border-[1.5px] border-transparent bg-[var(--rc-bg)] px-[18px] text-[15px] font-semibold text-[var(--rc-text)] outline-none placeholder:text-[var(--rc-muted)]"
+            style={{ fontFamily: AUTH_INPUT_FONT }}
+          />
+        </div>
+        <div className="mt-[18px] flex flex-col gap-[9px]">
+          <span className="text-[10px] font-bold tracking-[1px] text-[var(--rc-text)]" style={{ fontFamily: AUTH_LABEL_FONT }}>
+            PASSWORD
+          </span>
+          <input
+            type="password"
+            placeholder="Enter password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            autoComplete={tab === 'register' ? 'new-password' : 'current-password'}
+            aria-label="Password"
+            className="h-[50px] w-full rounded-full border-[1.5px] border-transparent bg-[var(--rc-bg)] px-[18px] text-[15px] font-semibold text-[var(--rc-text)] outline-none placeholder:text-[var(--rc-muted)]"
+            style={{ fontFamily: AUTH_INPUT_FONT }}
+          />
+        </div>
 
         {error && (
-          <p className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert" data-testid="auth-error">
+          <p className="mt-3 flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert" data-testid="auth-error">
             <AlertCircle className="h-4 w-4 flex-shrink-0" />
             {error}
           </p>
@@ -190,9 +237,10 @@ export function AuthModal({ open, onSuccess, onClose }: Props) {
           type="submit"
           disabled={loading}
           data-testid="auth-submit"
-          className="mt-1 flex h-[50px] w-full flex-none items-center justify-center gap-2 rounded-full bg-brand text-[13px] font-bold uppercase tracking-[1px] text-white disabled:cursor-not-allowed disabled:opacity-60"
+          className="mt-[26px] flex h-[50px] w-full flex-none items-center justify-center gap-2 rounded-full bg-brand text-[13px] font-bold uppercase tracking-[1px] text-white active:translate-y-[3px] disabled:cursor-not-allowed disabled:opacity-60"
+          style={{ boxShadow: AUTH_SUBMIT_SHADOW, fontFamily: AUTH_LABEL_FONT }}
         >
-          {loading ? (<><Loader2 className="h-4 w-4 animate-spin" /> Please wait…</>) : tab === 'register' ? 'Create Account' : 'Sign In'}
+          {loading ? (<><Loader2 className="h-4 w-4 animate-spin" /> Please wait…</>) : tab === 'register' ? 'SIGNUP' : 'LOGIN'}
         </button>
       </form>
     </BottomSheet>

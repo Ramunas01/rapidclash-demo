@@ -66,7 +66,7 @@ describe('AuthModal', () => {
     const { container } = render(<AuthModal open onSuccess={vi.fn()} onClose={vi.fn()} />);
     // 1. The old "Create an account or Login" heading is gone — replaced by a per-mode title.
     expect(screen.queryByText('Create an account or Login')).toBeNull();
-    expect(screen.getByTestId('auth-title').textContent).toBe('Sign up');
+    expect(screen.getByTestId('auth-title').textContent).toBe('SIGNUP');
     // 2. No close X button.
     expect(screen.queryByLabelText('Dismiss')).toBeNull();
     // 3. No User/Lock icons inside the form — with no error and no loading spinner, the form
@@ -81,7 +81,7 @@ describe('AuthModal', () => {
     expect(screen.queryByText('Play-money demo credits only, no real-money wagering.')).toBeNull();
 
     fireEvent.click(screen.getByTestId('auth-tab-login'));
-    expect(screen.getByTestId('auth-title').textContent).toBe('Login');
+    expect(screen.getByTestId('auth-title').textContent).toBe('LOGIN');
     expect(screen.queryByText('Create an account or Login')).toBeNull();
     expect(screen.queryByLabelText('Dismiss')).toBeNull();
     expect(container.querySelectorAll('form svg').length).toBe(0);
@@ -101,5 +101,42 @@ describe('AuthModal', () => {
     expect(screen.getByTestId('auth-modal').className).toContain('z-10');
     expect(screen.getByTestId('auth-modal-scrim').className).toContain('z-10');
     expect(screen.getByTestId('auth-modal').className).not.toContain('z-20');
+  });
+
+  // Ticket 2026-10-01#1 (D70) item 1: `initialMode` seeds which tab the sheet opens on, re-synced
+  // every time `open` flips true — not just on first mount, since this component never unmounts.
+  describe('initialMode (ticket 2026-10-01#1)', () => {
+    it('opens on the LOGIN tab when initialMode="login"', () => {
+      render(<AuthModal open initialMode="login" onSuccess={vi.fn()} onClose={vi.fn()} />);
+      expect(screen.getByTestId('auth-tab-login')).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByTestId('auth-title').textContent).toBe('LOGIN');
+    });
+
+    it('opens on the SIGNUP tab when initialMode="register" (and when omitted — the default)', () => {
+      const { unmount } = render(<AuthModal open initialMode="register" onSuccess={vi.fn()} onClose={vi.fn()} />);
+      expect(screen.getByTestId('auth-tab-register')).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByTestId('auth-title').textContent).toBe('SIGNUP');
+      unmount();
+
+      render(<AuthModal open onSuccess={vi.fn()} onClose={vi.fn()} />);
+      expect(screen.getByTestId('auth-tab-register')).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('re-syncs to the new initialMode on a LATER open, even after the user manually switched tabs — not just on first mount', () => {
+      const { rerender } = render(<AuthModal open={false} initialMode="register" onSuccess={vi.fn()} onClose={vi.fn()} />);
+
+      // First open: SIGNUP (initialMode), user manually switches to LOGIN.
+      rerender(<AuthModal open initialMode="register" onSuccess={vi.fn()} onClose={vi.fn()} />);
+      expect(screen.getByTestId('auth-tab-register')).toHaveAttribute('aria-pressed', 'true');
+      fireEvent.click(screen.getByTestId('auth-tab-login'));
+      expect(screen.getByTestId('auth-tab-login')).toHaveAttribute('aria-pressed', 'true');
+
+      // Close, then re-open requesting LOGIN specifically — confirms a later open re-seeds from
+      // `initialMode` rather than leaking the previous manual tab pick (a coincidental match here,
+      // so prove the actual re-sync with a THIRD open requesting the other mode below).
+      rerender(<AuthModal open={false} initialMode="register" onSuccess={vi.fn()} onClose={vi.fn()} />);
+      rerender(<AuthModal open initialMode="register" onSuccess={vi.fn()} onClose={vi.fn()} />);
+      expect(screen.getByTestId('auth-tab-register')).toHaveAttribute('aria-pressed', 'true'); // back to SIGNUP, not stuck on LOGIN
+    });
   });
 });

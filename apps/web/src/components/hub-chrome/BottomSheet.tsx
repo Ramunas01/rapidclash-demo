@@ -148,7 +148,7 @@ export function BottomSheet({
           onPointerMove={dragMove}
           onPointerUp={dragEnd}
           onPointerCancel={dragEnd}
-          className="mx-auto mb-2 mt-3 h-[5px] w-14 flex-none touch-none rounded-full bg-[var(--rc-muted)]/40"
+          className="mx-auto mb-2 mt-3 h-[5px] w-14 flex-none touch-none rounded-full bg-[var(--rc-muted)]/50"
         />
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 pb-8">{children}</div>
       </div>

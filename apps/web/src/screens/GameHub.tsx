@@ -219,6 +219,9 @@ export interface GameHubScreenProps {
   onUntrackChallenges(): void;
   onSelectGame(meta: GameMeta): void;
   onOpenWallet(): void;
+  /** The header's SIGNUP pill specifically (ticket 2026-10-01#1, D70 item 1) — distinct from
+   *  `onOpenWallet`/LOGIN so the sheet opens on the right tab for each. */
+  onOpenSignup(): void;
   onOpenGameList(): void;
   /** Rewards tab → the VIP/Rewards hub (issue #307). */
   onOpenRewards(): void;
@@ -455,7 +458,7 @@ export function GameHub(props: GameHubProps) {
     legalMoves,
     waitingExpiresAt, lobbyExpired, lastOutcome, lastSettlement, challengesByGame,
     onPlay, onCancel, onTakeChallenge, onTakePublicChallenge, onMakeMove, onForfeit, onDrawOffer, onDrawRevoke, onDrawAccept, onTrackChallenges,
-    onUntrackChallenges, onSelectGame, onOpenWallet, onOpenGameList, onOpenRewards, onOpenAffiliate, onResultDismiss,
+    onUntrackChallenges, onSelectGame, onOpenWallet, onOpenSignup, onOpenGameList, onOpenRewards, onOpenAffiliate, onResultDismiss,
     loggedIn = true, initialStake, initialTimeControl, isGuest = false,
   } = props;
 
@@ -1102,7 +1105,7 @@ export function GameHub(props: GameHubProps) {
 
   return (
     <div className={hubShellClass(isGuest)}>
-      <HubRibbon balances={loggedIn ? liveBalances : null} onLogo={onOpenGameList} onWallet={onOpenWallet} loggedIn={loggedIn} isGuest={isGuest} />
+      <HubRibbon balances={loggedIn ? liveBalances : null} onLogo={onOpenGameList} onWallet={onOpenWallet} onSignup={onOpenSignup} loggedIn={loggedIn} isGuest={isGuest} />
       {/* T4 (issue #489): `pinDark` pins `bodyChrome` (everything except HubRibbon above) to
           `.dark`'s token values regardless of the app-wide theme — an interim fix for hubs whose
           own per-game files never got a light-mode pass (T1–T3 only threaded light overrides

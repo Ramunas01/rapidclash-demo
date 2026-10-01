@@ -13,8 +13,19 @@ interface Props {
   balances: Record<Currency, number> | null;
   /** Tap the logo → home / game list. Ignored when `isGuest` (see below) — never called. */
   onLogo(): void;
-  /** Tap the auth control → account / wallet (or the sign-in modal when logged out). */
+  /** Tap the auth control → account / wallet (or the sign-in modal, LOGIN mode, when logged out —
+   *  ticket 2026-10-01#1 item 1). Still the ONLY handler for the logged-in WALLET pill; also the
+   *  logged-out LOGIN pill's fallback when `onLogin` isn't supplied (a caller whose own `loggedIn`
+   *  is always `true`, e.g. AffiliateHub/ProfileHub, can safely omit `onLogin`/`onSignup` — the
+   *  logged-out branch never renders there). */
   onWallet(): void;
+  /** Tap the logged-out LOGIN pill specifically. Falls back to `onWallet` when omitted — see its
+   *  own doc comment. */
+  onLogin?(): void;
+  /** Tap the logged-out SIGNUP pill specifically (ticket 2026-10-01#1 item 1 — previously called
+   *  the SAME `onWallet` as LOGIN, so every entry point silently opened in signup mode). Falls back
+   *  to `onWallet` when omitted, same reasoning as `onLogin`. */
+  onSignup?(): void;
   /** When false, the control is a Login/Sign-up pill — never a fake balance.
    *  Ticket 2026-09-15#7: default is `false` (fail closed, not fail open) — a caller that forgets
    *  to thread this through renders the safe logged-out pill, not a fake signed-in balance for a
@@ -79,7 +90,7 @@ interface Props {
  * USD-default override was reversed once every currency's balance became real, not just USD's).
  * The purple WALLET sub-pill stays right here, unchanged, still calling `onWallet` directly.
  */
-export function HubRibbon({ balances, onLogo, onWallet, loggedIn = false, isGuest = false }: Props) {
+export function HubRibbon({ balances, onLogo, onWallet, onLogin, onSignup, loggedIn = false, isGuest = false }: Props) {
   // Guest "Demo" badge stays USD-only by design (PR 3 scope) — everything else below is
   // byte-identical to pre-D69 behavior.
   const balance = balances === null ? null : balances.USD;
@@ -143,7 +154,7 @@ export function HubRibbon({ balances, onLogo, onWallet, loggedIn = false, isGues
             <div className="flex items-center gap-1 rounded-full bg-surface p-1">
               <button
                 type="button"
-                onClick={onWallet}
+                onClick={onLogin ?? onWallet}
                 aria-label="Log in"
                 data-testid="hub-login-chip"
                 className="whitespace-nowrap rounded-full px-[17px] py-[9px] text-[14px] font-bold tracking-[0.6px] text-[var(--rc-text)] focus:outline-none"
@@ -152,7 +163,7 @@ export function HubRibbon({ balances, onLogo, onWallet, loggedIn = false, isGues
               </button>
               <button
                 type="button"
-                onClick={onWallet}
+                onClick={onSignup ?? onWallet}
                 aria-label="Sign up"
                 data-testid="hub-signin-chip"
                 className="whitespace-nowrap rounded-full bg-brand px-[17px] py-[9px] text-[14px] font-bold tracking-[0.6px] text-white transition-colors hover:brightness-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
