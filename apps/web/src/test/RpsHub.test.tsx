@@ -145,7 +145,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     expect(screen.getByTestId('hub-board')).toBeInTheDocument();
     // Redaction: the opponent's pick is never shown before match.end — 2026-09-11#8/C's real
     // blue-bolt icon (not the ✊/✋/✌️ hand icons), replacing the old 🤫 emoji stand-in.
-    expect(screen.getByTestId('hub-opponent-pick').querySelector('[data-rc-rps-icon="redacted"]')).toBeInTheDocument();
+    expect(screen.getByTestId('hub-opponent-pick').getAttribute('data-rc-rps-icon')).toBe('redacted');
     fireEvent.click(screen.getByTestId('hub-move-rock'));
     expect(onMakeMove).toHaveBeenCalledWith('rock');
   });
@@ -186,7 +186,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
       );
       // Ticket 2026-09-25#3: the tie-reveal now shares the terminal reveal's own 700ms pre-flip
       // pause — the redacted tile stays put immediately after the tie, not an instant flip.
-      expect(screen.getByTestId('hub-opponent-pick').querySelector('[data-rc-rps-icon="redacted"]')).toBeInTheDocument();
+      expect(screen.getByTestId('hub-opponent-pick').getAttribute('data-rc-rps-icon')).toBe('redacted');
       act(() => { vi.advanceTimersByTime(700); });
       // Flipped: the redacted blue-bolt tile is gone; the opponent's real (scissors) throw is now in
       // the DOM (both flip faces are always present — backface-visibility is a visual-only 3D property
@@ -198,7 +198,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
       // After the flip-to-done beat (900ms) + hold (~1.5s), it falls back to the redacted tile.
       act(() => { vi.advanceTimersByTime(900); });
       act(() => { vi.advanceTimersByTime(1500); });
-      expect(screen.getByTestId('hub-opponent-pick').querySelector('[data-rc-rps-icon="redacted"]')).toBeInTheDocument();
+      expect(screen.getByTestId('hub-opponent-pick').getAttribute('data-rc-rps-icon')).toBe('redacted');
     } finally {
       vi.useRealTimers();
     }
@@ -244,7 +244,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
         );
       });
       expect(screen.queryByTestId('hub-opponent-pick-revealed')).toBeNull();
-      expect(screen.getByTestId('hub-opponent-pick').querySelector('[data-rc-rps-icon="redacted"]')).toBeInTheDocument();
+      expect(screen.getByTestId('hub-opponent-pick').getAttribute('data-rc-rps-icon')).toBe('redacted');
 
       // Past the terminal reveal's own pause: exactly one revealed opponent card, showing the
       // TERMINAL throw (rock) — not the stale tie's (scissors).
@@ -266,7 +266,7 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
     const gameState: RpsView = { players: ['pid', 'bob'], choices: {} };
     // No `events` at all — the common case (a provisional pick's broadcast carries none either).
     render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock', 'paper', 'scissors'] })} />);
-    expect(screen.getByTestId('hub-opponent-pick').querySelector('[data-rc-rps-icon="redacted"]')).toBeInTheDocument();
+    expect(screen.getByTestId('hub-opponent-pick').getAttribute('data-rc-rps-icon')).toBe('redacted');
   });
 
   it('own slot renders the player\'s chosen avatar preset (avatarId threaded into the own bar)', () => {
@@ -1009,8 +1009,22 @@ describe('RpsHubScreen — pick-tile labels and selection green (ticket 2026-09-
   it("ticket 2026-09-27#4: the redacted-opponent bolt path is imported from CardBack.tsx's BOLT_PATH, not a separate duplicate literal", () => {
     const gameState: RpsView = { players: ['pid', 'bob'], choices: {} };
     render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock', 'paper', 'scissors'] })} />);
-    const redacted = screen.getByTestId('hub-opponent-pick').querySelector('[data-rc-rps-icon="redacted"]');
-    expect(redacted?.querySelector('path')?.getAttribute('d')).toBe(BOLT_PATH);
+    const redacted = screen.getByTestId('hub-opponent-pick');
+    expect(redacted.querySelector('path')?.getAttribute('d')).toBe(BOLT_PATH);
+  });
+
+  // Ticket 2026-10-04#5 (D81): the live-board opponent redacted icon used to be wrapped in an
+  // extra, unstyled <span data-testid="hub-opponent-pick"> — the ONE structural difference between
+  // this render site and the other 2 RPS call sites (RpsIdle, RpsRevealFlipCard's front face),
+  // which both render the icon as a direct flex child with no wrapper, matching the prototype's own
+  // span-free markup. This asserts the testid'd element IS the svg icon itself now, not a wrapper
+  // around it.
+  it('ticket 2026-10-04#5: the live-board redacted icon has no wrapper span — the testid lands on the svg icon itself', () => {
+    const gameState: RpsView = { players: ['pid', 'bob'], choices: {} };
+    render(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock', 'paper', 'scissors'] })} />);
+    const redacted = screen.getByTestId('hub-opponent-pick');
+    expect(redacted.tagName.toLowerCase()).toBe('svg');
+    expect(redacted.getAttribute('data-rc-rps-icon')).toBe('redacted');
   });
 
   // Ticket 2026-09-27#4 (D66) item 2: the shared PLAY→PLAYING… button's busy opacity was 0.7, not
