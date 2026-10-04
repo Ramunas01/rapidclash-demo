@@ -9,6 +9,7 @@ import blackjackCardDealUrl from '../assets/sounds/blackjack-card-deal.mp3';
 import blackjackCardFlipUrl from '../assets/sounds/blackjack-card-flip.mp3';
 import coinflipCoinSpinUrl from '../assets/sounds/coinflip-coin-spin.mp3';
 import genericWinUrl from '../assets/sounds/generic-win.mp3';
+import chessPieceMoveUrl from '../assets/sounds/chess-piece-move.mp3';
 
 /**
  * Minimal, dependency-free Web Audio wrapper for short UI sound effects.
@@ -24,6 +25,12 @@ import genericWinUrl from '../assets/sounds/generic-win.mp3';
 
 /** name -> asset URL (Vite resolves the import to a URL string). Add clips here. */
 const MANIFEST: Record<string, string> = {
+  // Generic placeholder clip — kept ONLY as `sound.test.ts`'s own stand-in name for exercising this
+  // module's shared mechanics (mute, unlock, preload), unrelated to any one game. Ticket
+  // 2026-10-04#4 (D80) gave Chess its own dedicated `chess-piece-move` entry below instead of
+  // repointing this one — `move` had become Chess's de-facto move sound by being its only real
+  // caller, but retiring this key outright would have meant updating every one of sound.test.ts's
+  // own generic placeholder usages for no reason connected to that ticket's actual scope.
   move: moveUrl,
   play: playUrl,
   'dice-roll': diceRollUrl,
@@ -52,13 +59,21 @@ const MANIFEST: Record<string, string> = {
   'blackjack-card-flip': blackjackCardFlipUrl,
   // Ticket 2026-10-04#3 (D79): Designer-provided, same precedent as the entries above. Coin spin
   // fires once per real flip (Coin.tsx's own flip-kickoff effect, Coinflip-only call site); generic
-  // win fires on the shared OwnSlot win-fill's first frame, gated to Coinflip only for now via a
-  // new `winSoundName` prop (see GameHub.tsx/slotReveal.tsx) — NOT wired unconditionally into the
-  // shared win-reveal hook itself, since Blackjack already consumes that same mechanism and must
-  // stay silent on it. No preload code needed for either — same reasoning as every entry above,
-  // preloadSounds() already decodes this whole manifest uniformly on the first page-wide gesture.
+  // win fires on the shared OwnSlot win-fill's first frame, gated per-game via a new `winSoundName`
+  // prop (see GameHub.tsx/slotReveal.tsx) — NOT wired unconditionally into the shared win-reveal
+  // hook itself, since Blackjack already consumes that same mechanism and must stay silent on it.
+  // Ticket 2026-10-04#4 (D80) extended the `winSoundName` gate to Chess too (same mechanism, same
+  // key — see GameHub.tsx's own ternary). No preload code needed for either — same reasoning as
+  // every entry above, preloadSounds() already decodes this whole manifest uniformly on the first
+  // page-wide gesture.
   'coinflip-coin-spin': coinflipCoinSpinUrl,
   'generic-win': genericWinUrl,
+  // Ticket 2026-10-04#4 (D80): Chess's own dedicated move-sound clip — repoints ChessHub.tsx's
+  // existing play() call site (previously the generic `move` key above) to a name that actually
+  // matches what it plays, following the same per-sound-name convention every other entry here
+  // uses. The trigger itself (a FEN-change watcher) is unchanged — this ticket is an asset swap,
+  // not a retrigger (see ChessHub.tsx's own doc comment on that effect).
+  'chess-piece-move': chessPieceMoveUrl,
 };
 
 export type SoundName = keyof typeof MANIFEST | string;

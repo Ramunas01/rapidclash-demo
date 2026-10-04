@@ -950,10 +950,13 @@ export function GameHub(props: GameHubProps) {
               // frames get the identical fix via `BlackjackHub.tsx`'s local `cardFrameStyle`.
               winRingColor={gameId === 'dice' || gameId === 'mines' || gameId === 'rps' || gameId === 'coinflip' || gameId === 'chess' || gameId === 'blackjack' ? '#16A34A' : undefined}
               winFillColor={gameId === 'dice' || gameId === 'mines' || gameId === 'rps' || gameId === 'coinflip' || gameId === 'chess' || gameId === 'blackjack' ? '#16A34A' : undefined}
-              // Ticket 2026-10-04#3 (D79): Coinflip-only generic win sound, per Designer's own "don't
-              // switch it on for the other games until Povilas says so" — enabling it for another
-              // game later really is just adding that gameId to this one ternary.
-              winSoundName={gameId === 'coinflip' ? 'generic-win' : undefined}
+              // Ticket 2026-10-04#3 (D79): generic win sound, per Designer's own "don't switch it on
+              // for the other games until Povilas says so" — enabling it for another game later
+              // really is just adding that gameId to this one ternary. Ticket 2026-10-04#4 (D80)
+              // extended it to Chess: already resolves every win reason (checkmate, resignation,
+              // timeout, disconnect-forfeit) through the same winner===playerId check this ternary's
+              // own winRingColor/winFillColor already key off, so there's nothing new to branch on.
+              winSoundName={gameId === 'coinflip' || gameId === 'chess' ? 'generic-win' : undefined}
               // Ticket 2026-09-16#7 item 4: Mines-only — the shared outlineClasses() had no
               // per-verdict draw override until now (win/lose already did). Mines' own draw literal
               // (Full Spec.html:3787) is #FF8A1E — no other game currently needs this overridden.
