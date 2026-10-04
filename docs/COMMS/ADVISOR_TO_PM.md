@@ -1,5 +1,41 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-04#2 — D78: Blackjack deal sound fires on landing, needs to fire on departure. Confirmed current wiring (`BlackjackHub.tsx`): both `PlayingCard` (:110-139) and `OppHoleCard` (:147-220) call `onLanded` from Framer Motion's `onAnimationComplete`, i.e. at the END of each card's travel, not the start. **Found a real implementation trap while scoping the fix: `onAnimationStart` is NOT a safe swap-in** — confirmed by reading Framer Motion 11.18.2's own source, it fires BEFORE any per-card `transition.delay` is honored, which would make all 4 opening cards' sounds fire simultaneously at mount instead of staggered with each card's real departure, the opposite of what this ticket asks for. Recommending the codebase's own existing pattern (a plain mount-time `setTimeout`, already used in `RpsRevealFlipCard` for an identical timing-precision reason) instead            [READY TO TICKET]
+From: Owner's own report (no files attached) — verified by reading `BlackjackHub.tsx`'s two call sites directly, confirming all cited constants (`CARD_ANIM_S=0.55s`, `DEAL_STAGGER_S=0.22s`, `HIT_DEAL_START_S=0.45s`, `CARD_TRAVEL_PX=200`) and delay formulas (`ownDeal`/`oppDeal`/`backDeal`, :411-413), and reading Framer Motion's own installed source (`node_modules/.pnpm/framer-motion@11.18.2.../dist/cjs/index.js:3618-3631`) directly to confirm the `onAnimationStart`-vs-`delay` ordering, rather than assuming it from the prop's name
+
+## Current wiring, confirmed by direct read
+
+- `PlayingCard` (:110-139): `motion.div` has `initial={{x: CARD_TRAVEL_PX, ...}}`, `animate={{x:0,...}}`, `transition={{duration: CARD_ANIM_S, delay}}`, and calls `onLanded?.()` from `onAnimationComplete` — i.e. `delay + CARD_ANIM_S` seconds after mount, when the card is already sitting in its slot. Used for every deal/Hit card (own and opponent) — all 4 call sites at :456/458/461/472 pass `onLanded={() => play('blackjack-card-deal')}`.
+- `OppHoleCard` (:147-220): same `onAnimationComplete`-driven `onLanded` on its own outer `motion.div` (0.5s duration + `delay`), used for the hidden second opponent card's own arrival.
+- `onRevealed` (OppHoleCard :156-169, the flip sound) is driven differently — a `useEffect` watching `revealed` flip `false→true`, firing exactly when the rotateY animate target changes. This is ALREADY correct per the ticket's own "nothing else changes" instruction — no action needed there, confirmed by reading it, not assumed.
+
+## The fix Owner asked for, and a real trap in the obvious way to build it
+
+Owner's ask: fire the deal sound at `delay` seconds after mount (the instant each card's OWN travel begins), not at `delay + CARD_ANIM_S` (arrival). The obvious-looking swap — move `onLanded` from Framer Motion's `onAnimationComplete` prop to its `onAnimationStart` prop — does NOT do this, and I'd flag it as a real risk rather than let it ship by appearance alone:
+
+**Confirmed by reading Framer Motion 11.18.2's own installed source, not assumed from the prop name.** `animateVisualElement()` (`dist/cjs/index.js:3631`) calls `visualElement.notify("AnimationStart", definition)` synchronously, BEFORE it resolves or runs `animateVariant()`/`animate()` — which is the code that actually applies each value's own `transition.delay`. Same ordering again in `animateChildren()` (:3618) for staggered children. In other words: `onAnimationStart` fires once, immediately, for the whole animate-prop assignment — it does NOT wait for an individual card's own `delay` to elapse first.
+
+**Concretely, if `onLanded` were simply rewired to `onAnimationStart`:** all 4 opening cards would fire their deal sound at the same instant (mount), not staggered ~220ms apart with each card's own departure — exactly the OPPOSITE of what this ticket needs ("the deal cards are staggered ~150-250ms apart... each card's sound starts with its own movement"). This would likely still pass D72's existing count-only tests (4 deal sounds still fire, just all at once) while being visibly wrong in the browser — worth being explicit about so it isn't discovered late.
+
+## Recommended implementation
+
+Don't drive this off any Framer Motion animation-lifecycle callback at all — schedule it directly, the same way this codebase already solved an identical problem. `RpsRevealFlipCard` (`RpsHub.tsx`, ticket 2026-09-25#2 item 1) already has a mount-time `useEffect` + plain `setTimeout` driving its own 410ms `translateX` un-nudge specifically because coordinating precise sub-animation timing through Framer Motion's own callbacks wasn't trusted to be exact — same reasoning applies here, and reusing it means no new idiom to review.
+
+Concretely: in both `PlayingCard` and `OppHoleCard`, add `useEffect(() => { const t = setTimeout(() => { if (!firedRef.current) { firedRef.current = true; onLanded?.(); } }, delay * 1000); return () => clearTimeout(t); }, [])` (mount-only, `delay` is already a prop in seconds on both components) — keep the existing one-shot ref guard (semantics shift from "has this card landed" to "has this card's depart-sound already fired," worth a comment update) so a re-render can't double-fire. `onLanded`'s own name/doc comments on both components should be updated too (they currently describe it as firing on arrival) — purely a naming/doc accuracy fix, not asking PM to rename the prop itself unless that reads cleaner; Advisor has no strong preference there.
+
+This also makes the fix trivially testable with the EXACT same real-timer idiom the existing D72 tests already use (`waitFor`, no fake timers) — just asserting the sound fires at `~delay`ms rather than `~(delay + CARD_ANIM_S)`ms after mount.
+
+## Verification plan
+
+- Keep all of D72's existing exact-count assertions unchanged (4 on deal, 1 per Hit, 1 per dealer/opponent draw, 1 flip) — this ticket doesn't change counts, only timing.
+- Add a genuinely new timing assertion (the one D72 didn't need and this ticket is specifically about): for a card with a nonzero `delay`, confirm the deal sound fires measurably BEFORE `delay + CARD_ANIM_S` has elapsed — e.g. assert it has already fired by `delay + 100ms`, well short of the ~550ms travel completing. This is the test that would have caught the current bug (and would catch a future regression back to `onAnimationComplete`, or a mistaken swap to `onAnimationStart` that happens to still pass count-only checks).
+- For the 4-card opening deal specifically: confirm the 4 deal-sound calls are themselves staggered in real time roughly matching `DEAL_STAGGER_S` (0.22s) apart, not simultaneous — this is the test that would catch exactly the `onAnimationStart` trap described above, since that implementation would pass every other assertion here except this one.
+- Manual/visual check per Owner's own framing: with the four initial cards, four audible slaps, each aligned to its own card's departure from the deck, none on landing.
+
+**Advisor next:** available, no open thread. **PM next:** D78 above.
+
+---
+
 ### 2026-10-04#1 — D77: RPS reveal flip — the white frame doesn't rotate with the card. Root cause confirmed by direct read of `RpsRevealFlipCard` (`RpsHub.tsx:681-727`): the frame (background/padding/radius/shadow) is on the OUTER, non-rotating wrapper; the `motion.div` that actually gets `preserve-3d`/`rotateY` only wraps the two bare inner tiles, which carry no frame at all — so visually, only the inner square spins while the white border sits flat throughout. Confirmed against both reference images: the "file" screenshot shows the frame itself as a trapezoid mid-flip (whole card is one rigid rotating body); ours shows a flat, un-skewed rectangle around a rotating sliver            [READY TO TICKET]
 From: Owner's own report (images in `D77/`, citing `RapidClash Full Spec.html:625-634`/values `:3805-3811`) — verified by reading both the spec's HTML directly at those exact lines and `RpsRevealFlipCard` directly, and visually confirming the described symptom against both attached screenshots (ours: flat rectangular frame outline around a rotated sliver; reference: the frame itself trapezoidal, consistent with one rigid 3D body)
 
