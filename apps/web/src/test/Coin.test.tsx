@@ -487,3 +487,66 @@ describe('Coin — one-time intro animation (issue #262 Part 3)', () => {
     expect(rendererRenderCalls.count).toBe(rendersBeforeUnmount);
   });
 });
+
+// Ticket 2026-10-04#3 (D79): a real flip-starting hook for the coin-spin sound — fires exactly once
+// per round, strictly before the rotate loop's first tick, and never for the decorative page-entry
+// intro tease (a separate effect/loop entirely).
+describe('Coin — onSpinStart (ticket 2026-10-04#3, D79)', () => {
+  it('fires exactly once when a real flip starts, strictly before the rotate loop\'s first tick', () => {
+    const clock = installManualAnimationClock();
+    const onSpinStart = vi.fn();
+    const { rerender } = render(<Coin face={null} onSpinStart={onSpinStart} />);
+    expect(onSpinStart).not.toHaveBeenCalled(); // resting — no flip yet
+
+    rerender(<Coin face="tails" onSpinStart={onSpinStart} />);
+    // The callback runs synchronously inside the flip-kickoff effect, during the rerender itself —
+    // strictly before the rAF loop's own first tick (nothing has been advanced yet).
+    expect(onSpinStart).toHaveBeenCalledTimes(1);
+    expect(capturedMeshes[0].rotation.y).toBe(0); // confirms no tick has run yet at this point
+
+    clock.advance(100);
+    expect(onSpinStart).toHaveBeenCalledTimes(1); // still exactly once mid-flip, not re-fired per tick
+
+    for (let i = 0; i < 30 && clock.hasPending(); i++) clock.advance(300);
+    expect(screen.getByTestId('coin-face').getAttribute('data-face')).toBe('tails');
+    expect(onSpinStart).toHaveBeenCalledTimes(1); // still exactly once after landing
+  });
+
+  it('fires once per round — a second flip after returning to idle fires it again, not a stale single-shot', () => {
+    const clock = installManualAnimationClock();
+    const onSpinStart = vi.fn();
+    const { rerender } = render(<Coin face={null} onSpinStart={onSpinStart} />);
+
+    rerender(<Coin face="heads" onSpinStart={onSpinStart} />);
+    expect(onSpinStart).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 30 && clock.hasPending(); i++) clock.advance(300);
+
+    rerender(<Coin face={null} onSpinStart={onSpinStart} />); // back to idle between rounds
+    rerender(<Coin face="tails" onSpinStart={onSpinStart} />); // next round's own flip
+    expect(onSpinStart).toHaveBeenCalledTimes(2);
+  });
+
+  it('also fires under prefers-reduced-motion (the shorter settle shares the same flip-kickoff effect)', async () => {
+    stubMatchMedia(true);
+    installFakeAnimationClock();
+    const onSpinStart = vi.fn();
+    const { rerender } = render(<Coin face={null} onSpinStart={onSpinStart} />);
+    rerender(<Coin face="tails" onSpinStart={onSpinStart} />);
+    expect(onSpinStart).toHaveBeenCalledTimes(1);
+    await waitFor(
+      () => expect(screen.getByTestId('coin-face').getAttribute('data-face')).toBe('tails'),
+      { timeout: 500 },
+    );
+    expect(onSpinStart).toHaveBeenCalledTimes(1); // still exactly once once settled
+  });
+
+  it('never fires for the decorative page-entry intro tease — only a real flip triggers it', () => {
+    const clock = installManualAnimationClock();
+    const onSpinStart = vi.fn();
+    render(<Coin intro onSpinStart={onSpinStart} />);
+    clock.advance(100); // one frame into the intro's own tease
+    expect(onSpinStart).not.toHaveBeenCalled();
+    for (let i = 0; i < 30 && clock.hasPending(); i++) clock.advance(100); // run the intro to completion
+    expect(onSpinStart).not.toHaveBeenCalled(); // the whole intro sequence never calls it
+  });
+});

@@ -7,6 +7,8 @@ import minesGemUrl from '../assets/sounds/mines-gem.mp3';
 import minesMineUrl from '../assets/sounds/mines-mine.mp3';
 import blackjackCardDealUrl from '../assets/sounds/blackjack-card-deal.mp3';
 import blackjackCardFlipUrl from '../assets/sounds/blackjack-card-flip.mp3';
+import coinflipCoinSpinUrl from '../assets/sounds/coinflip-coin-spin.mp3';
+import genericWinUrl from '../assets/sounds/generic-win.mp3';
 
 /**
  * Minimal, dependency-free Web Audio wrapper for short UI sound effects.
@@ -48,6 +50,15 @@ const MANIFEST: Record<string, string> = {
   // overlapping deal sounds during the opening stagger layer cleanly with no restart/interruption.
   'blackjack-card-deal': blackjackCardDealUrl,
   'blackjack-card-flip': blackjackCardFlipUrl,
+  // Ticket 2026-10-04#3 (D79): Designer-provided, same precedent as the entries above. Coin spin
+  // fires once per real flip (Coin.tsx's own flip-kickoff effect, Coinflip-only call site); generic
+  // win fires on the shared OwnSlot win-fill's first frame, gated to Coinflip only for now via a
+  // new `winSoundName` prop (see GameHub.tsx/slotReveal.tsx) — NOT wired unconditionally into the
+  // shared win-reveal hook itself, since Blackjack already consumes that same mechanism and must
+  // stay silent on it. No preload code needed for either — same reasoning as every entry above,
+  // preloadSounds() already decodes this whole manifest uniformly on the first page-wide gesture.
+  'coinflip-coin-spin': coinflipCoinSpinUrl,
+  'generic-win': genericWinUrl,
 };
 
 export type SoundName = keyof typeof MANIFEST | string;

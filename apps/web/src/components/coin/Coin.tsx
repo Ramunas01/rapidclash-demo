@@ -304,11 +304,17 @@ export function Coin({
   size = 128,
   intro = false,
   className,
+  onSpinStart,
 }: {
   face?: CoinFace | null;
   size?: number;
   intro?: boolean;
   className?: string;
+  /** Ticket 2026-10-04#3 (D79): fires exactly once per real flip, right as it kicks off — strictly
+   *  BEFORE the rotate/rAF loop's first tick, never on arrival. Deliberately NOT wired into the
+   *  one-time page-entry `intro` tease (a separate effect below) — that's a decorative first-visit
+   *  animation, not a real round, so it must never fire this. */
+  onSpinStart?(): void;
 }) {
   const flipping = face != null;
   const target: CoinFace = face ?? 'heads';
@@ -441,6 +447,12 @@ export function Coin({
     }
 
     if (flipRef.current.animating) return; // a flip is already underway to somewhere — let it land.
+
+    // Ticket 2026-10-04#3 (D79): the real flip is genuinely starting here — this guard above
+    // already makes this one-shot per flip (no extra ref needed), and this fires strictly BEFORE
+    // `requestAnimationFrame(tick)` first runs below, covering both the full spin and the
+    // reduced-motion settle (both drive the SAME tick loop, just with a shorter `planFlip` duration).
+    onSpinStart?.();
 
     const reduce = prefersReducedMotion();
     const from = s.mesh.rotation.y;

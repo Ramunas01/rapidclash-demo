@@ -4,6 +4,7 @@ import type { CoinflipView } from '../App.js';
 import { Coin, COIN_FACE_TOKENS } from '../components/coin/Coin.js';
 import { DigitCountdown } from '../components/hub-shared/DigitCountdown.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
+import { play } from '../lib/sound.js';
 
 // Cosmetic pick countdown (seconds). Mirrors the coinflip module's `moveTimeoutMs` (10s) — the
 // SERVER runs the authoritative clock + seeded auto-pick; this is display-only (the Keno/Limbo
@@ -173,7 +174,7 @@ function CoinflipPanel(args: GameAreaArgs) {
         {/* The one persistent coin — mounted once for the whole hub visit. `intro` plays its one-time
          *  tease-and-spin the first time it settles at rest (see Coin.tsx); it never replays while this
          *  element stays mounted, including returning to idle after a result. */}
-        <Coin face={coinFace} size={COIN_SIZE_PX} intro />
+        <Coin face={coinFace} size={COIN_SIZE_PX} intro onSpinStart={() => play('coinflip-coin-spin')} />
       </div>
     </div>
   );

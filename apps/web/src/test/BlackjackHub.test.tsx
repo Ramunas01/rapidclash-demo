@@ -756,6 +756,10 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
           expect(c2.style.getPropertyValue('--tw-ring-color')).toBe('#16A34A');
         }
       }, { timeout: 2000 });
+      // Ticket 2026-10-04#3 (D79): Blackjack consumes this SAME shared OwnSlot win-fill mechanism
+      // as Coinflip, so the generic-win sound's per-game gate (GameHub.tsx's winSoundName ternary)
+      // must be proven real here, not just present — a win round on Blackjack must stay silent.
+      expect(playMock.mock.calls.filter((c2) => c2[0] === 'generic-win')).toHaveLength(0);
     });
 
     it('Loss: cards red + the bar shows a red outline only (no fill, no text)', async () => {

@@ -26,7 +26,7 @@ import { Credits, RcIcon } from '../components/hub-shared/RcIcon.js';
 import { CurrencyIcon } from '../components/hub-chrome/CurrencyPicker.js';
 import { useCurSel } from '../lib/currency.js';
 import { useTheme } from '../lib/theme.js';
-import { play, installUnlockOnFirstGesture } from '../lib/sound.js';
+import { play, installUnlockOnFirstGesture, type SoundName } from '../lib/sound.js';
 import { outlineClasses, outlineForOutcome, replaysOf, useDelayedFlag, useWinReveal, WIN_FILL_IN_MS, WIN_HOLD_MS, WIN_FADE_OUT_MS, type Verdict } from './hub-shared/slotReveal.js';
 
 /** How long after the result phase starts before the own-bar verdict lights (ms). */
@@ -950,6 +950,10 @@ export function GameHub(props: GameHubProps) {
               // frames get the identical fix via `BlackjackHub.tsx`'s local `cardFrameStyle`.
               winRingColor={gameId === 'dice' || gameId === 'mines' || gameId === 'rps' || gameId === 'coinflip' || gameId === 'chess' || gameId === 'blackjack' ? '#16A34A' : undefined}
               winFillColor={gameId === 'dice' || gameId === 'mines' || gameId === 'rps' || gameId === 'coinflip' || gameId === 'chess' || gameId === 'blackjack' ? '#16A34A' : undefined}
+              // Ticket 2026-10-04#3 (D79): Coinflip-only generic win sound, per Designer's own "don't
+              // switch it on for the other games until Povilas says so" — enabling it for another
+              // game later really is just adding that gameId to this one ternary.
+              winSoundName={gameId === 'coinflip' ? 'generic-win' : undefined}
               // Ticket 2026-09-16#7 item 4: Mines-only — the shared outlineClasses() had no
               // per-verdict draw override until now (win/lose already did). Mines' own draw literal
               // (Full Spec.html:3787) is #FF8A1E — no other game currently needs this overridden.
@@ -1308,9 +1312,22 @@ function OpponentSlot({ phase, opponentName, opponentAvatarId, scanNames, aside,
  *  plays the SHARED win animation (`useWinReveal`): a green fill + "You Win" kept ALONGSIDE the
  *  username (never swapped out), the green a background layer — 0.5 s fill-in → 2 s hold → 0.5 s
  *  fade-out → the persistent green outline. Loss/draw are outline-only (no fill/text). */
-function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdict, drawBeat, barShiftY, lossRingColor, winRingColor, winFillColor, drawRingColor, drawRingActive, gemRow, gemText, gemTextVisible }: { label: string; username?: string | null; avatarId?: AvatarId; isOwn: boolean; aside?: ReactNode; barVerdict?: Verdict | null; drawBeat?: boolean; barShiftY?: number; lossRingColor?: string; winRingColor?: string; winFillColor?: string; drawRingColor?: string; drawRingActive?: boolean; gemRow?: ReactNode; gemText?: string; gemTextVisible?: boolean }) {
+function OwnSlot({ label, username, avatarId = 'default', isOwn, aside, barVerdict, drawBeat, barShiftY, lossRingColor, winRingColor, winFillColor, winSoundName, drawRingColor, drawRingActive, gemRow, gemText, gemTextVisible }: { label: string; username?: string | null; avatarId?: AvatarId; isOwn: boolean; aside?: ReactNode; barVerdict?: Verdict | null; drawBeat?: boolean; barShiftY?: number; lossRingColor?: string; winRingColor?: string; winFillColor?: string; winSoundName?: SoundName; drawRingColor?: string; drawRingActive?: boolean; gemRow?: ReactNode; gemText?: string; gemTextVisible?: boolean }) {
   const win = barVerdict === 'win';
   const { contentVisible, fillShown, settled } = useWinReveal(win);
+
+  // Ticket 2026-10-04#3 (D79): an opt-in generic win sound (Coinflip-only for now, gated by the
+  // caller passing `winSoundName` — same per-game opt-in idiom as winRingColor/winFillColor above).
+  // Deliberately NOT built into useWinReveal itself, which Blackjack already consumes unconditionally
+  // — putting it there would turn the sound on for Blackjack's wins too, by accident. The false→true
+  // watcher on `win` (not `fillShown`) fires exactly once per round, on the fill's own first frame
+  // (`win` and `fillShown` both go true in the same render), same idiom BlackjackHub.tsx's own
+  // `OppHoleCard`/`prevRevealedRef` already uses for its flip-sound trigger.
+  const prevWinRef = useRef(win);
+  useEffect(() => {
+    if (!prevWinRef.current && win && winSoundName) play(winSoundName);
+    prevWinRef.current = win;
+  }, [win, winSoundName]);
 
   return (
     <div
