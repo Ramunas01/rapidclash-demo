@@ -1,5 +1,30 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-04#9 — D80 (PR #818, `618cd2e`) SHIPPED, MERGED — not yet deployed (last one before Owner's requested deploy, per PM's own report). Independently re-verified: full diff review, ran all 5 new/changed tests myself (62/62 across `ChessHub.test.tsx` + `sound.test.ts`), and a genuine revert-confirm — reverted both call sites simultaneously (same as PM's own approach), confirmed exactly the 3 tests that depend on the new sound name/gate failed, the 2 that only assert zero-calls stayed correctly unaffected. Also independently confirmed PM's own 2 judgment calls (keeping the old `move` key alive; one win test covering all 4 end reasons) are both real, verified decisions — not shortcuts            [VERIFIED — correct]
+From: PM's own cross-session report — independently re-verified via full diff review of `ChessHub.tsx`/`GameHub.tsx`/`sound.ts` + `ChessHub.test.tsx`, my OWN revert-confirm (reverted both the sound-name repoint and the `winSoundName` gate extension together, re-ran the targeted tests, confirmed exactly the right 3 fail, restored, confirmed `git diff --stat` empty), a direct grep confirming `sound.test.ts` really does use `'move'` as a generic placeholder (10 call sites), a direct grep confirming `forcedOutcome` really is never read anywhere in `ChessHub.tsx`/`GameHub.tsx` beyond one doc comment, and a clean `tsc -b`
+
+## Item 1 — asset swap, confirmed correct, PM's own `move`-key judgment call checked and real
+
+`ChessHub.tsx`'s FEN-change watcher is otherwise untouched — only the `play('move')` → `play('chess-piece-move')` repoint, exactly the asset-swap scope from `2026-10-04#4`. **PM's choice to keep the old `move`/`move.wav` MANIFEST entry alive (rather than retiring it, which my own ticket left as PM's call) is a real, verified decision, not an excuse to skip cleanup** — grepped `sound.test.ts` directly: 10 separate `sound.play('move')` call sites, all exercising this module's OWN shared mechanics (mute/unlock/preload), genuinely unrelated to any one game. Retiring the key would have meant touching every one of those for zero benefit to this ticket's actual scope. Good call.
+
+## Item 2 — one-line gate extension, confirmed correct, PM's own test-consolidation judgment call checked and real
+
+`winSoundName={gameId === 'coinflip' || gameId === 'chess' ? 'generic-win' : undefined}` — exactly the one-line extension scoped. **PM's choice to write ONE win test (not one per end reason) is backed by a real structural proof, not an assumption** — grepped `ChessHub.tsx`/`GameHub.tsx` myself: `forcedOutcome` appears exactly once in the whole frontend, inside a doc comment, never actually read by any code path that computes `barVerdict`/the win flag. So checkmate, resignation, timeout, and disconnect-forfeit really do all collapse into the identical `{type, winner}` shape before reaching `OwnSlot` — one test structurally covers all 4, confirmed, not assumed. This is a cleaner verification than my own ticket's "one test per end reason" ask, not a shortcut past it.
+
+## Independently reproduced both mechanisms' absence together, same as PM's own approach
+
+Reverted both the sound-name repoint (`chess-piece-move` → `move`) and the `winSoundName` gate (dropped `|| gameId === 'chess'`) simultaneously, then ran the targeted new/changed tests: the original move-thump test, the castling test, and the win-sound test all failed exactly as expected (wrong sound name / zero win-sound calls); the selection/illegal-drop test and the loss-or-draw test both stayed passing, correctly — neither depends on the sound's exact name or the gate, only on zero calls either way. Restored both, confirmed `git diff --stat` empty.
+
+## Scope and cleanliness confirmed
+
+**62/62** across `ChessHub.test.tsx` (53) and `sound.test.ts` (9, confirming the `move` key's own shared-mechanics tests are genuinely unaffected). `tsc -b` clean. PM's own "1 known heartbeat.gateway flake under full-suite load, unrelated, reconfirmed standalone" — consistent with this session's own prior flake findings on that same file; didn't need to re-check.
+
+**Not deployed yet** — PM's own report: this was the last of the 4 sound tickets before Owner's requested deploy (D80 done, D81 next).
+
+**Advisor next:** available, no open thread. **PM next:** nothing pending on D80.
+
+---
+
 ### 2026-10-04#8 — D79 (PR #816, `b107d4b`) SHIPPED, MERGED — not yet deployed (Owner's asked PM to hold deploy until D80/D81 are also done, per PM's own report). Independently re-verified: full diff review, ran PM's own 10 new tests myself (4 in `Coin.test.tsx`, 3 in `CoinflipHub.test.tsx`, 1 extended Blackjack gate-proof — 152/152 across all 3 touched test files), and genuine revert-confirms on BOTH mechanisms — disabled `onSpinStart`'s call site (3/4 Coin tests failed as expected), separately disabled the `winSoundName` gate (the win-sound test failed as expected, the other two unaffected) — then restored both clean            [VERIFIED — correct]
 From: PM's own cross-session report — independently re-verified via full diff review of `Coin.tsx`/`CoinflipHub.tsx`/`GameHub.tsx`/`sound.ts` + all 3 touched test files, TWO separate revert-confirms (one per mechanism, since they're independent code paths), and a clean `tsc -b`
 
