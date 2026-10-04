@@ -144,9 +144,10 @@ describe('Ticket 2026-10-01#4 (D72): Blackjack deal/flip sounds', () => {
       expect(playMock.mock.calls.filter((c2) => c2[0] === 'blackjack-card-deal')).toHaveLength(4);
     }, { timeout: 8000 });
 
-    // Player busts; opponent never draws beyond their own 2 cards (c0 + hole, no hits) — this is
-    // exactly the `pulsing -> settled` re-resolution risk the ticket's own guard targets: the hole
-    // card's outer div transitions from its pulsing animate target straight to the terminal one.
+    // Player busts on a 3rd (hit) card; opponent never draws beyond their own 2 cards (c0 + hole,
+    // no hits) — this is exactly the `pulsing -> settled` re-resolution risk the ticket's own guard
+    // targets: the hole card's outer div transitions from its pulsing animate target straight to
+    // the terminal one.
     rerender(<BlackjackHubScreen {...baseProps({
       currentMatchId: 'm1', legalMoves: [],
       gameState: inPlayView({
@@ -161,14 +162,60 @@ describe('Ticket 2026-10-01#4 (D72): Blackjack deal/flip sounds', () => {
     await waitFor(() => {
       expect(playMock.mock.calls.filter((c2) => c2[0] === 'blackjack-card-flip')).toHaveLength(1);
     }, { timeout: 9000 });
-    // No dealer hits in this scenario → deal count stays at the opening 4 (never 5 from a spurious
-    // extra deal-sound firing off the outer div's re-resolution).
-    expect(playMock.mock.calls.filter((c2) => c2[0] === 'blackjack-card-deal')).toHaveLength(4);
+    // Ticket 2026-10-04#2 (D78): the player's own hand grew from 2 to 3 cards this rerender (the
+    // bust card) — a genuinely NEW PlayingCard mount, with its own legitimate deal sound. Under the
+    // OLD arrival-based timing (`onAnimationComplete`), that sound needed a further ~550ms
+    // (CARD_ANIM_S) of real animation time to fire, so it reliably hadn't landed yet by this
+    // checkpoint and the count read 4. Under D78's departure-based timing it fires almost
+    // immediately (delay=0) — the count is now correctly 5, not a regression. No DEALER hits occur
+    // in this scenario, so 5 (not 6+) is still the ceiling: confirms the hole card's own
+    // pulsing→settled re-resolution does NOT spuriously re-fire its own already-fired departure
+    // sound, the actual risk this test's own title is about.
+    await waitFor(() => {
+      expect(playMock.mock.calls.filter((c2) => c2[0] === 'blackjack-card-deal')).toHaveLength(5);
+    }, { timeout: 2000 });
 
-    // Give any spurious re-fire a real chance to show up before asserting it stayed single.
+    // Give any spurious re-fire a real chance to show up before asserting it stayed single/stable.
     await new Promise((r) => setTimeout(r, 500));
     expect(playMock.mock.calls.filter((c2) => c2[0] === 'blackjack-card-flip')).toHaveLength(1);
+    expect(playMock.mock.calls.filter((c2) => c2[0] === 'blackjack-card-deal')).toHaveLength(5);
   }, 20000);
+
+  // Ticket 2026-10-04#2 (D78): Owner asked for the deal sound to fire on DEPARTURE (the instant a
+  // card leaves the deck, `delay` seconds after mount), not on ARRIVAL (`delay + CARD_ANIM_S`, the
+  // old onAnimationComplete wiring this file's own D72 tests above never needed to distinguish —
+  // they only assert eventual COUNTS, which the old wiring already satisfied). These two assert the
+  // actual timing, the thing D72's tests structurally can't catch.
+  it('the deal sound fires close to mount, well before the full ~550ms (CARD_ANIM_S) card-travel animation could possibly have completed', async () => {
+    render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: ['hit', 'stand'] })} />);
+    // The opening deal's first card has delay=0 — under the OLD onAnimationComplete wiring this
+    // could not possibly fire before CARD_ANIM_S (550ms) of REAL animation time has elapsed, a
+    // floor that doesn't shrink under test-environment slowness (motion duration is wall-clock
+    // real time, not CPU-bound). 300ms is comfortably inside that floor with real margin either way.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const count = playMock.mock.calls.filter((c2) => c2[0] === 'blackjack-card-deal').length;
+    expect(count).toBeGreaterThanOrEqual(1);
+
+    await waitFor(() => {
+      expect(playMock.mock.calls.filter((c2) => c2[0] === 'blackjack-card-deal')).toHaveLength(4);
+    }, { timeout: 8000 });
+  }, 10000);
+
+  it('the 4 opening deal sounds land staggered over real time, not simultaneously — the exact trap an onAnimationStart swap would hit (it fires once, synchronously, for the whole animate-prop assignment, BEFORE any per-card transition.delay is honored)', async () => {
+    render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlayView(), legalMoves: ['hit', 'stand'] })} />);
+    // Own-card index 1's own real delay is 2×DEAL_STAGGER_S = 440ms, the opponent's visible card is
+    // 220ms, the hole card is 660ms — none of the later three should have fired yet at 150ms, so
+    // the count here should read roughly 1 (just the delay=0 own card), never all 4. An accidental
+    // onAnimationStart swap would show 4 here almost immediately, since it fires synchronously at
+    // mount for every card regardless of its own individual delay.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const earlyCount = playMock.mock.calls.filter((c2) => c2[0] === 'blackjack-card-deal').length;
+    expect(earlyCount).toBeLessThan(4);
+
+    await waitFor(() => {
+      expect(playMock.mock.calls.filter((c2) => c2[0] === 'blackjack-card-deal')).toHaveLength(4);
+    }, { timeout: 8000 });
+  }, 10000);
 });
 
 describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {

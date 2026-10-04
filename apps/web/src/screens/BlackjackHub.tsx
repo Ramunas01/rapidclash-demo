@@ -107,24 +107,34 @@ function cardFrameStyle(frame: CardFrame): CSSProperties | undefined {
   return undefined;
 }
 
-function PlayingCard({ card, index, delay = 0, frame = null, onLanded }: { card: BlackjackCard; index: number; delay?: number; frame?: CardFrame; onLanded?(): void }) {
-  // Ticket 2026-10-01#4 (D72): a one-shot guard on `onAnimationComplete` — this card only ever
-  // mounts once (fresh cards get fresh keys, existing ones never remount), so Framer Motion should
-  // only ever fire this once anyway, but React's own dev-mode double-invoke (and the general
-  // principle of not trusting an animation library's exact internals) makes a structural guard
-  // cheaper than relying on that assumption holding.
-  const landedRef = useRef(false);
+function PlayingCard({ card, index, delay = 0, frame = null, onDeparted }: { card: BlackjackCard; index: number; delay?: number; frame?: CardFrame; onDeparted?(): void }) {
+  // Ticket 2026-10-04#2 (D78): Owner asked for the deal sound to fire the instant each card LEAVES
+  // the deck (`delay` seconds after mount), not when it ARRIVES in its slot (`delay + CARD_ANIM_S`,
+  // the old `onAnimationComplete` wiring). The obvious-looking swap — `onAnimationStart` instead —
+  // is NOT safe: confirmed by reading Framer Motion 11.18.2's own source directly
+  // (`animateVisualElement()`/`animateChildren()`), it fires synchronously for the whole
+  // animate-prop assignment BEFORE any individual `transition.delay` is honored, so all 4 opening
+  // cards would fire simultaneously at mount instead of staggered ~220ms apart with each card's
+  // own real departure — exactly backwards from what this ticket needs. Scheduled directly instead,
+  // same mount-time-`setTimeout` idiom `RpsRevealFlipCard` already uses (ticket 2026-09-25#2 item 1)
+  // for the identical reason (not trusting an animation library's own callback timing precision).
+  const firedRef = useRef(false);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (firedRef.current) return;
+      firedRef.current = true;
+      onDeparted?.();
+    }, delay * 1000);
+    return () => clearTimeout(t);
+    // Mount-only, same as RpsRevealFlipCard's own slide timer: this card never remounts with a new
+    // `delay` (fresh cards get fresh keys), so there's no later `delay` change to react to.
+  }, []);
   return (
     <motion.div
       data-testid="card"
       initial={{ x: CARD_TRAVEL_PX, y: -12, opacity: 0, rotateY: 90 }}
       animate={{ x: 0, y: 0, opacity: 1, rotateY: 0 }}
       transition={{ duration: CARD_ANIM_S, ease: [0.22, 1, 0.36, 1], delay }}
-      onAnimationComplete={() => {
-        if (landedRef.current) return;
-        landedRef.current = true;
-        onLanded?.();
-      }}
       style={{ marginLeft: index === 0 ? 0 : -22, zIndex: CARD_Z_BASE + index, ...cardFrameStyle(frame) }}
       className={cn(
         'relative flex h-20 w-14 flex-col items-center justify-center rounded-lg border border-black/10 bg-white font-bold shadow-lg transition-shadow duration-300',
@@ -144,15 +154,17 @@ function PlayingCard({ card, index, delay = 0, frame = null, onLanded }: { card:
  *  the reveal reads as a dealer turning it over, not a screen refresh). Redaction-safe: `card` is
  *  undefined until the server's terminal frame, and the front face is backface-hidden until the flip.
  *  Its testid is `card-back` while hidden and `card` once revealed, so counts stay truthful. */
-function OppHoleCard({ card, revealed, index, delay = 0, active = false, frame = null, onLanded, onRevealed }: { card?: BlackjackCard; revealed: boolean; index: number; delay?: number; active?: boolean; frame?: CardFrame; onLanded?(): void; onRevealed?(): void }) {
+function OppHoleCard({ card, revealed, index, delay = 0, active = false, frame = null, onDeparted, onRevealed }: { card?: BlackjackCard; revealed: boolean; index: number; delay?: number; active?: boolean; frame?: CardFrame; onDeparted?(): void; onRevealed?(): void }) {
   const pulsing = active && !revealed;
-  // Ticket 2026-10-01#4 (D72): a one-shot guard, same reasoning as PlayingCard's — but load-bearing
-  // HERE specifically, not just defensive: once `revealed` flips true, `pulsing` goes false and this
-  // div's own `animate` target re-resolves to the SAME values it's already sitting at (`x:0,
-  // opacity:1`). Framer Motion may still invoke `onAnimationComplete` for that re-resolution even
-  // though nothing visually moves — without this guard, that would fire a SPURIOUS extra deal sound
-  // at the exact reveal moment, colliding with the flip sound.
-  const landedRef = useRef(false);
+  // Ticket 2026-10-04#2 (D78): same mount-time setTimeout fix as PlayingCard's own, same reasoning
+  // (fire on departure, `delay` seconds after mount — not arrival, and not Framer Motion's own
+  // onAnimationStart, which fires before `delay` is honored at all). The one-shot guard here is
+  // load-bearing for a SEPARATE reason too, still real post-fix: once `revealed` flips true,
+  // `pulsing` goes false and this div's own `animate` target re-resolves to values it's already
+  // sitting at — but that re-resolution happens well after this mount-time timer has already fired
+  // once, so the guard here is purely defensive now (no second scheduling exists to double-fire),
+  // kept for the same "don't trust exactly-once assumptions" reasoning as before.
+  const firedRef = useRef(false);
   // Ticket 2026-10-01#4 (D72): the flip sound uses a state-transition watcher (false → true on
   // `revealed`), not `onAnimationStart` on the inner flip div below — that hook's exact mount-time
   // firing behavior isn't reliably knowable without a browser. This effect lives INSIDE this
@@ -167,6 +179,17 @@ function OppHoleCard({ card, revealed, index, delay = 0, active = false, frame =
     if (!prevRevealedRef.current && revealed) onRevealed?.();
     prevRevealedRef.current = revealed;
   }, [revealed, onRevealed]);
+  // Ticket 2026-10-04#2 (D78): mount-time setTimeout, same as PlayingCard's own — see that
+  // component's doc comment for why not onAnimationComplete/onAnimationStart.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (firedRef.current) return;
+      firedRef.current = true;
+      onDeparted?.();
+    }, delay * 1000);
+    return () => clearTimeout(t);
+    // Mount-only, same reasoning as PlayingCard's own.
+  }, []);
   return (
     <motion.div
       data-testid={revealed ? 'card' : 'card-back'}
@@ -176,11 +199,6 @@ function OppHoleCard({ card, revealed, index, delay = 0, active = false, frame =
       transition={pulsing
         ? { x: { duration: 0.5, ease: [0.22, 1, 0.36, 1], delay }, opacity: { duration: 0.5, delay }, y: { duration: 1.1, repeat: Infinity, ease: 'easeInOut', delay: delay + 0.5 } }
         : { duration: 0.5, ease: [0.22, 1, 0.36, 1], delay }}
-      onAnimationComplete={() => {
-        if (landedRef.current) return;
-        landedRef.current = true;
-        onLanded?.();
-      }}
       // Under the first card WHILE face-down (CARD_Z_BASE - 1, below index 0 — set from the start of
       // the deal, no snap); once revealed it rejoins the ascending OVER fan (CARD_Z_BASE + index).
       style={{ marginLeft: index === 0 ? 0 : -22, zIndex: revealed ? CARD_Z_BASE + index : CARD_Z_BASE - 1, perspective: 600, ...cardFrameStyle(frame) }}
@@ -453,12 +471,12 @@ function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, phase, ou
       <section data-testid="opp-hand" className="relative z-[1] flex flex-1 flex-col items-center justify-center gap-2">
         <HandTotalPill label={totalLabel(oppCards, oppFinal)} testid="opp-total" />
         <div className="flex items-end justify-center">
-          {oppCards[0] && <PlayingCard key={`opp-${keyRound}-0`} card={oppCards[0]} index={0} delay={oppDeal(0)} frame={pushFrame} onLanded={() => play('blackjack-card-deal')} />}
+          {oppCards[0] && <PlayingCard key={`opp-${keyRound}-0`} card={oppCards[0]} index={0} delay={oppDeal(0)} frame={pushFrame} onDeparted={() => play('blackjack-card-deal')} />}
           {/* Persistent hole card: face-down in play, flips in place to its value at the reveal/push. */}
-          <OppHoleCard key={`opp-hole-${keyRound}`} index={1} revealed={revealed} card={oppCards[1]} active={waitingOnOpponent} delay={backDeal} frame={pushFrame} onLanded={() => play('blackjack-card-deal')} onRevealed={() => play('blackjack-card-flip')} />
+          <OppHoleCard key={`opp-hole-${keyRound}`} index={1} revealed={revealed} card={oppCards[1]} active={waitingOnOpponent} delay={backDeal} frame={pushFrame} onDeparted={() => play('blackjack-card-deal')} onRevealed={() => play('blackjack-card-flip')} />
           {/* Opponent hits reveal only once revealed (decisive terminal or push) — deal in one-by-one. */}
           {revealed && oppCards.slice(2).map((c, j) => (
-            <PlayingCard key={`opp-hit-${keyRound}-${j}`} card={c} index={j + 2} delay={HIT_DEAL_START_S + j * DEAL_STAGGER_S} frame={pushFrame} onLanded={() => play('blackjack-card-deal')} />
+            <PlayingCard key={`opp-hit-${keyRound}-${j}`} card={c} index={j + 2} delay={HIT_DEAL_START_S + j * DEAL_STAGGER_S} frame={pushFrame} onDeparted={() => play('blackjack-card-deal')} />
           ))}
         </div>
       </section>
@@ -469,7 +487,7 @@ function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, phase, ou
       <section data-testid="own-hand" className="relative z-[1] flex flex-1 flex-col items-center justify-center gap-2">
         <HandTotalPill label={totalLabel(ownCards, ownFinal)} testid="own-total" />
         <div className="flex items-end justify-center">
-          {ownCards.map((c, i) => <PlayingCard key={`own-${keyRound}-${i}`} card={c} index={i} delay={ownDeal(i)} frame={pushFrame ?? ownFrame} onLanded={() => play('blackjack-card-deal')} />)}
+          {ownCards.map((c, i) => <PlayingCard key={`own-${keyRound}-${i}`} card={c} index={i} delay={ownDeal(i)} frame={pushFrame ?? ownFrame} onDeparted={() => play('blackjack-card-deal')} />)}
         </div>
       </section>
     </TableSurface>
