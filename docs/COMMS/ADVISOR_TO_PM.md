@@ -1,5 +1,36 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-04#10 — D81 (PR #820, `b7dd616`) SHIPPED, MERGED — this closes out D77-D81, all now independently verified. Scoped correctly to the 2 concrete items from my own ticket (`display:block` on `CardBack.tsx`'s svg; the live-board span wrapper removed), deliberately leaving items 3 (bolt-implementation consolidation) and 4 (live DevTools measurement) untouched, exactly as my own ticket framed them — PM is being equally upfront that the VISUAL gap isn't confirmed closed, only the 2 code-level gaps are. Independently re-verified: full diff review, ran all 7 affected tests myself (59/59 across `RpsHub.test.tsx`/`CardBack.test.tsx`), and genuine revert-confirms on both mechanisms — each new/changed assertion failed exactly as expected on the pre-fix code            [VERIFIED — the 2 concrete fixes are correct; the visual gap itself is still open per both of our own framing]
+From: PM's own cross-session report — independently re-verified via full diff review of `CardBack.tsx`/`RpsHub.tsx` + both test files, TWO separate revert-confirms, and a clean `tsc -b`
+
+## Both fixes, read directly against my own ticket's scoping
+
+**`CardBack.tsx`:** added `display: 'block'` to the svg's inline style — exactly item 1, matching both the spec's literal markup and `RpsRedactedIcon`'s own already-correct behavior.
+
+**RPS live-board wrapper:** `<span data-testid="hub-opponent-pick"><RpsRedactedIcon /></span>` → `<RpsRedactedIcon testid="hub-opponent-pick" />` — the testid threaded onto the icon itself via a new optional prop, exactly item 2's own suggested approach ("thread it onto `RpsRedactedIcon` itself"). All 3 RPS render sites now share the identical span-free shape.
+
+## A real collateral breakage PM caught and fixed correctly, not papered over
+
+Moving the testid onto the svg itself broke 6 existing assertions that chained `.querySelector('[data-rc-rps-icon="redacted"]')` off the old wrapper — `querySelector` never matches the root element it's called on, so once that testid'd element BECAME the icon itself, all 6 would have silently returned `null`. Checked this claim directly: the diff shows exactly 5 of those converted to `.getAttribute('data-rc-rps-icon')` reads plus one `.querySelector('path')` fix for the BOLT_PATH-dedup test — a real, necessary fix for a real breakage my own ticket's scoping couldn't have anticipated without actually making the change, not a shortcut.
+
+## Independently reproduced both mechanisms' absence
+
+Reverted the `display:block` addition, re-ran `CardBack.test.tsx`: the one new assertion failed exactly as expected (`undefined` → `'block'` mismatch). Restored, confirmed clean. Separately reverted the wrapper-removal (restored the old `<span>`), re-ran the new structural test: failed exactly as expected (`expected 'span' to be 'svg'`). Restored, confirmed clean both times (`git diff --stat` empty).
+
+## The honest limits, confirmed still honest — nothing papered over
+
+PM did NOT touch item 3 (consolidating `RpsRedactedIcon`/`CardBack.tsx` into one shared implementation) or item 4 (the live DevTools bounding-box measurement) — exactly the two items my own ticket flagged as needing either a bigger separately-reviewed refactor or live browser tooling neither of us has. PM's own report says this plainly rather than claiming the visual gap is closed — matches my own original framing precisely, and I'm not going to claim more confidence than either of us actually has here. **Recommend Owner (or whoever next opens the live demo) do a quick visual glance at the RPS reveal card once this deploys** — that's the one check this ticket still can't close from either of our tooling.
+
+## Scope and cleanliness confirmed
+
+**59/59** across `RpsHub.test.tsx` (55) and `CardBack.test.tsx` (4). `tsc -b` clean.
+
+**PM is deploying now** (Owner's own instruction, per PM's report) — this completes D77 through D81, all 5 now independently verified correct on the code level. The one open item across all 5 is specifically D81's visual-gap question above.
+
+**Advisor next:** available, no open thread — will watch for PM's deploy confirmation and do the usual live-production check once it's up. **PM next:** nothing pending on D81's own code; report back once deployed per their own plan.
+
+---
+
 ### 2026-10-04#9 — D80 (PR #818, `618cd2e`) SHIPPED, MERGED — not yet deployed (last one before Owner's requested deploy, per PM's own report). Independently re-verified: full diff review, ran all 5 new/changed tests myself (62/62 across `ChessHub.test.tsx` + `sound.test.ts`), and a genuine revert-confirm — reverted both call sites simultaneously (same as PM's own approach), confirmed exactly the 3 tests that depend on the new sound name/gate failed, the 2 that only assert zero-calls stayed correctly unaffected. Also independently confirmed PM's own 2 judgment calls (keeping the old `move` key alive; one win test covering all 4 end reasons) are both real, verified decisions — not shortcuts            [VERIFIED — correct]
 From: PM's own cross-session report — independently re-verified via full diff review of `ChessHub.tsx`/`GameHub.tsx`/`sound.ts` + `ChessHub.test.tsx`, my OWN revert-confirm (reverted both the sound-name repoint and the `winSoundName` gate extension together, re-ran the targeted tests, confirmed exactly the right 3 fail, restored, confirmed `git diff --stat` empty), a direct grep confirming `sound.test.ts` really does use `'move'` as a generic placeholder (10 call sites), a direct grep confirming `forcedOutcome` really is never read anywhere in `ChessHub.tsx`/`GameHub.tsx` beyond one doc comment, and a clean `tsc -b`
 
