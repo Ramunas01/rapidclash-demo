@@ -216,10 +216,17 @@ function ChessBoard({ playerId, gameState, legalMoves, onMove }: GameAreaArgs) {
   // moves (fen updates on every server position change). Skip the first fen (initial mount /
   // re-mount with an unchanged position) so we don't thump on the opening board. Presentation
   // only — no game-logic/redaction impact.
+  //
+  // Ticket 2026-10-04#4 (D80): repointed from the generic `move` clip to Chess's own dedicated
+  // `chess-piece-move` — this trigger already fired at exactly the right moment (confirmed:
+  // ChessPlay.tsx has no piece-travel animation to hook into instead, so firing on the same tick
+  // the board state updates already matches the "no travel animation" fallback rule D78/D79's own
+  // sounds needed a mount-time timer for), so this ticket is an asset swap, not a retrigger. A FEN
+  // change is one atomic position update, so a castling move (two pieces) still plays ONE sound.
   const prevFenRef = useRef<string | null>(null);
   useEffect(() => {
     if (!fen) return;
-    if (prevFenRef.current !== null && prevFenRef.current !== fen) play('move');
+    if (prevFenRef.current !== null && prevFenRef.current !== fen) play('chess-piece-move');
     prevFenRef.current = fen;
   }, [fen]);
 

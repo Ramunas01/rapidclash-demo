@@ -84,8 +84,10 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
     expect(playMock).not.toHaveBeenCalled(); // no thump on the first (initial) fen
 
     // A server position update (any player's move updates view.fen) → one thump.
+    // Ticket 2026-10-04#4 (D80): repointed from the generic 'move' clip to Chess's own dedicated
+    // 'chess-piece-move' — same trigger, new asset.
     rerender(<ChessHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ fen: AFTER_E4 }), legalMoves: asLegal([]) })} />);
-    expect(playMock).toHaveBeenCalledWith('move');
+    expect(playMock).toHaveBeenCalledWith('chess-piece-move');
     expect(playMock).toHaveBeenCalledTimes(1);
 
     // A further position change (the opponent's reply) thumps again.
@@ -95,6 +97,33 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
     // A re-render with an UNCHANGED fen must NOT thump.
     rerender(<ChessHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ fen: AFTER_C5 }), legalMoves: asLegal([]) })} />);
     expect(playMock).toHaveBeenCalledTimes(2);
+  });
+
+  // Ticket 2026-10-04#4 (D80): the verification plan's own extra cases — a castling move is still
+  // ONE fen transition (one sound), and neither selecting/deselecting a piece nor an illegal drop
+  // attempt ever mutates fen, so both stay silent.
+  it('a castling move (king+rook, one FEN transition) plays the move sound exactly once, not twice', () => {
+    const BEFORE_CASTLE = 'r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1';
+    const AFTER_CASTLE = 'r3k2r/8/8/8/8/8/8/2KR3R w kq - 1 1'; // white castled queenside
+    const { rerender } = render(
+      <ChessHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ fen: BEFORE_CASTLE }), legalMoves: asLegal([]) })} />,
+    );
+    expect(playMock).not.toHaveBeenCalled();
+    rerender(<ChessHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({ fen: AFTER_CASTLE }), legalMoves: asLegal([]) })} />);
+    expect(playMock).toHaveBeenCalledTimes(1);
+    expect(playMock).toHaveBeenCalledWith('chess-piece-move');
+  });
+
+  it('selecting a piece, and an illegal drop attempt, both play ZERO move sounds — neither ever mutates fen', () => {
+    render(
+      <ChessHubScreen {...baseProps({ currentMatchId: 'm1', gameState: view({}), legalMoves: asLegal(OPENING) })} />,
+    );
+    const board = screen.getByTestId('chess-board');
+    fireEvent.click(sq(board, 'e2')); // select — no move, no fen change
+    expect(playMock).not.toHaveBeenCalled();
+
+    fireEvent.click(sq(board, 'e5')); // not a legal destination for this piece per the OPENING list
+    expect(playMock).not.toHaveBeenCalled(); // attemptMove returns false, selection just updates, no fen change
   });
 
   it('#143: PLAY with no bet armed guides to the bet panel (no match starts); arming clears the cue, no auto-play', () => {
@@ -419,6 +448,51 @@ describe('ChessHubScreen (GameHub + ChessPanel)', () => {
       fireEvent.click(screen.getByTestId('hub-play'));
       await act(async () => { await vi.advanceTimersByTimeAsync(50); });
       expect(ownBar.className).not.toContain('ring-[3px]'); // outline cleared on PLAY
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Ticket 2026-10-04#4 (D80), item 2: the generic win sound, extended to Chess via the same
+  // `winSoundName` gate D79 built for Coinflip. Only ONE win-triggering test is needed per end
+  // reason — confirmed by reading the code, not assumed: `lastOutcome` is the single uniform
+  // `{type, winner}` shape every one of Chess's end reasons (checkmate's own ordinary match.end,
+  // resignation, timeout, opponent-disconnect-forfeit) resolves into before it ever reaches this
+  // component — `ChessHub.tsx` has no separate per-reason branch, and `forcedOutcome` (the
+  // resign/timeout/disconnect-side field on `ChessView`) is never actually read by this component
+  // or `GameHub.tsx` at all (grepped both — zero hits beyond one doc comment). So a win is a win
+  // here regardless of why the match ended; one test genuinely covers all 4 reasons structurally.
+  it('play("generic-win") fires exactly once on a win, in the same beat the bar\'s own green fill starts', async () => {
+    vi.useFakeTimers();
+    try {
+      renderToChessResult({ type: 'win', winner: 'alice' });
+      expect(playMock.mock.calls.filter((c) => c[0] === 'generic-win')).toHaveLength(0); // not yet — still mid pre-fill beat
+      await act(async () => { await vi.advanceTimersByTimeAsync(300); }); // past the 250ms bar-verdict beat → fill-in starts
+      expect(playMock.mock.calls.filter((c) => c[0] === 'generic-win')).toHaveLength(1);
+      // Stays at exactly 1 through the rest of the reveal (fill-in → hold → fade-out → settle).
+      await act(async () => { await vi.advanceTimersByTimeAsync(3200); });
+      expect(playMock.mock.calls.filter((c) => c[0] === 'generic-win')).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('play("generic-win") never fires on a loss or a draw — zero calls through the whole reveal, either way', async () => {
+    vi.useFakeTimers();
+    try {
+      renderToChessResult({ type: 'win', winner: 'bob' }); // a loss (opponent won)
+      await act(async () => { await vi.advanceTimersByTimeAsync(300 + 3200); });
+      expect(playMock.mock.calls.filter((c) => c[0] === 'generic-win')).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    playMock.mockClear();
+    vi.useFakeTimers();
+    try {
+      renderToChessResult({ type: 'draw' });
+      await act(async () => { await vi.advanceTimersByTimeAsync(300 + 3200); });
+      expect(playMock.mock.calls.filter((c) => c[0] === 'generic-win')).toHaveLength(0);
     } finally {
       vi.useRealTimers();
     }
