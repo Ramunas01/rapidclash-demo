@@ -1,5 +1,34 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-04#8 — D79 (PR #816, `b107d4b`) SHIPPED, MERGED — not yet deployed (Owner's asked PM to hold deploy until D80/D81 are also done, per PM's own report). Independently re-verified: full diff review, ran PM's own 10 new tests myself (4 in `Coin.test.tsx`, 3 in `CoinflipHub.test.tsx`, 1 extended Blackjack gate-proof — 152/152 across all 3 touched test files), and genuine revert-confirms on BOTH mechanisms — disabled `onSpinStart`'s call site (3/4 Coin tests failed as expected), separately disabled the `winSoundName` gate (the win-sound test failed as expected, the other two unaffected) — then restored both clean            [VERIFIED — correct]
+From: PM's own cross-session report — independently re-verified via full diff review of `Coin.tsx`/`CoinflipHub.tsx`/`GameHub.tsx`/`sound.ts` + all 3 touched test files, TWO separate revert-confirms (one per mechanism, since they're independent code paths), and a clean `tsc -b`
+
+## Both mechanisms, read directly against the ticket's own scoping
+
+**Coin spin:** `onSpinStart` fires exactly where I scoped it — right after `Coin.tsx`'s own `if (flipRef.current.animating) return;` guard, strictly before `planFlip()`/`requestAnimationFrame(tick)`. No new ref needed (that existing guard already makes it one-shot). Wired at `CoinflipHub.tsx`'s one `<Coin>` call site, new `play` import added. Confirmed NOT wired into the separate `intro` effect — grepped directly, `onSpinStart` appears exactly once in `Coin.tsx`, inside the flip effect only.
+
+**Generic win:** `winSoundName` is a new opt-in `SoundName` prop on `OwnSlot`, gated at `GameHub.tsx`'s existing per-game ternary (same line as `winRingColor`/`winFillColor`) — `gameId === 'coinflip'` only, exactly the "one line to enable elsewhere later" shape the ticket asked for. The trigger is a `prevWinRef` watching `win` flip `false→true` inside `OwnSlot` itself — NOT built into the shared `useWinReveal` hook, confirmed by reading `slotReveal.tsx` directly: that hook is untouched by this diff, so Blackjack (which also consumes it) can't be affected by construction, not just by the gate.
+
+## Independently reproduced both mechanisms' absence, not just read the fix
+
+**Spin:** removed the `onSpinStart?.()` call from `Coin.tsx`'s flip effect, re-ran the 4 new `Coin.test.tsx` tests — 3 failed (`toHaveBeenCalledTimes(1)` → 0 calls) exactly as expected. The 4th (never-fires-during-intro) still passed, correctly — it asserts zero calls either way, so it can't distinguish the two states; not a gap, just what that specific test is built to check. Restored, confirmed `git diff --stat` empty.
+
+**Win:** separately disabled the `winSoundName={gameId === 'coinflip' ? ... }` gate (forced `undefined`), re-ran the 3 new `CoinflipHub.test.tsx` tests — exactly the win-sound test failed (`1` → `0` calls), the spin-sound and loss-silence tests passed unaffected (correctly so, neither depends on this gate). Restored, confirmed clean again.
+
+## The Blackjack gate-proof, independently checked
+
+Re-ran `BlackjackHub.test.tsx`'s own extended win test directly — confirms `generic-win` stays at 0 calls on a real Blackjack win round, even though Blackjack consumes the identical shared `OwnSlot`/`useWinReveal` mechanism Coinflip's new sound rides on. This is the test that would have caught a "built into `useWinReveal` unconditionally" mistake; it passes because PM didn't make that mistake (confirmed above by reading `slotReveal.tsx` directly, not just by this test passing).
+
+## Scope and cleanliness confirmed
+
+**152/152 across all 3 touched test files** (`Coin.test.tsx`, `CoinflipHub.test.tsx`, `BlackjackHub.test.tsx`). `tsc -b` clean. PM's own correction-confirmation (no new preload code, just 2 `MANIFEST` entries) matches what I scoped in the original ticket exactly — re-confirmed by reading `sound.ts`'s diff directly, nothing beyond the two new imports/keys.
+
+**Not deployed yet** — per PM's own report, Owner wants D80 and D81 done first; noting this here for the record, not something I need to act on myself.
+
+**Advisor next:** available, no open thread. **PM next:** nothing pending on D79.
+
+---
+
 ### 2026-10-04#7 — D78 (PR #814, `cbb9592`) SHIPPED, MERGED — not yet deployed. Independently re-verified: full diff review, ran PM's own tests myself (5/5 in the D72/D78 describe block, 61/61 full file), and a genuine revert-confirm — restored the old `onAnimationComplete` wiring on both `PlayingCard`/`OppHoleCard` and confirmed the new timing test fails exactly as expected, restored the real fix clean. Also independently confirmed PM's own test-count correction (4→5 in the bust scenario) is a genuine, correctly-reasoned behavior change, not a hack to make a test pass            [VERIFIED — correct]
 From: PM's own cross-session report — independently re-verified via full diff review of `BlackjackHub.tsx`/`BlackjackHub.test.tsx`, my OWN revert-confirm (temporarily restored `onAnimationComplete` on both components, re-ran the new timing test, confirmed it fails with `0` calls where `≥1` was expected, restored, confirmed `git diff --stat` empty again), and a clean `tsc -b`
 
