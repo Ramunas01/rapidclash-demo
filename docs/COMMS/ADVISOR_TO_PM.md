@@ -1,5 +1,42 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-04#1 — D77: RPS reveal flip — the white frame doesn't rotate with the card. Root cause confirmed by direct read of `RpsRevealFlipCard` (`RpsHub.tsx:681-727`): the frame (background/padding/radius/shadow) is on the OUTER, non-rotating wrapper; the `motion.div` that actually gets `preserve-3d`/`rotateY` only wraps the two bare inner tiles, which carry no frame at all — so visually, only the inner square spins while the white border sits flat throughout. Confirmed against both reference images: the "file" screenshot shows the frame itself as a trapezoid mid-flip (whole card is one rigid rotating body); ours shows a flat, un-skewed rectangle around a rotating sliver            [READY TO TICKET]
+From: Owner's own report (images in `D77/`, citing `RapidClash Full Spec.html:625-634`/values `:3805-3811`) — verified by reading both the spec's HTML directly at those exact lines and `RpsRevealFlipCard` directly, and visually confirming the described symptom against both attached screenshots (ours: flat rectangular frame outline around a rotated sliver; reference: the frame itself trapezoidal, consistent with one rigid 3D body)
+
+## Root cause, confirmed by reading both sides directly
+
+**Spec (`Full Spec.html:625-634`) is a strict 3-level tree, rotation on the middle level only:**
+1. `:625` outer slot — `perspective:900px`, `transform:translateX({{rpsFlipX}})`, no background/border/padding.
+2. `:626` rotator — `transform-style:preserve-3d`, `transform:rotateY({{rpsFlipRot}})`. No background/frame here either.
+3. `:627-629` / `:631-634` — TWO faces, both children of the rotator, each carrying its OWN full frame (`border-radius:14px; background:{{rpsRightFrame}}; padding:6px; box-sizing:border-box; box-shadow:...; backface-visibility:hidden`) around its own inner tile (`border-radius:9px`). The front face additionally carries `transform:rotateY(180deg)`.
+
+So in the spec, the frame IS the face — duplicated on both faces — and the rotator itself has zero visuals. That's what makes the white edge turn with the card and go edge-on at 90°, like the reference screenshot.
+
+**Ours (`RpsRevealFlipCard`, `RpsHub.tsx:681-727`) only has 2 levels, with the frame on the wrong one:**
+- The OUTER `<div>` (:688-701) carries `background: frame`, `p-[6px]`, `rounded-[14px]`, the shadow, AND `perspective: 900` AND the `translateX` slide — it does not itself rotate (correct, matches the spec's outer slot) but it also wrongly owns the full frame styling (does NOT match the spec, where the outer slot has no visuals at all).
+- The `motion.div` (:702-724) is the actual rotator (`preserve-3d`, `rotateY 0→180`, 820ms) — correct mechanics, exactly matching the spec's timing/easing — but it wraps two bare `absolute inset-0 rounded-[9px]` tiles (:712-717, :718-723) with NO frame of their own at all.
+
+Net effect: the frame never enters the 3D transform context, so it can't foreshorten/go edge-on with the card — it just sits there as a flat rectangle around whatever sliver of the rotating inner tile is currently visible. This is a structural placement bug, not a timing/easing bug — the 820ms `cubic-bezier(0.42,0.04,0.24,1)` rotation, the 410ms `translateX(16px)` nudge, and the `rpsRightFrame`-driven color transition are all already correct and should not change.
+
+## Fix, precisely scoped
+
+Restructure `RpsRevealFlipCard` to match the spec's 3-level tree:
+1. Keep the outer `<div>` (:688-701) as the perspective + translateX slot, but STRIP its frame visuals — drop `background: frame`, the `rounded-[14px]` class, the `p-[6px]` padding, and the shadow class. It keeps only `width`/`height`/`perspective`/`transform: translateX(...)` and their transitions.
+2. The `motion.div` (:702-724) stays the rotator exactly as-is mechanically (`preserve-3d`, `rotateY` animate, 820ms cubic-bezier) — also no visuals added here.
+3. Give EACH of the two face `<div>`s (:712-717 and :718-723) the FULL frame treatment currently sitting on the outer wrapper: `rounded-[14px]`, `p-[6px]`, the `0 6px 16px rgba(0,0,0,0.28)` shadow, `background: frame` (with the existing `background 420ms ease` transition), `box-sizing: border-box`, plus their existing `backfaceVisibility: hidden`. Each face then needs its own inner tile wrapper (`rounded-[9px]`, the face's own `background` — `#4F4CEA` fixed on the back face, `tileBg` on the front face — flex-centered, `overflow-hidden`) nested one level inside the frame, matching the spec's own two-tier face structure (:627-629's frame→inner-tile pair, :631-634's same).
+4. The front face keeps its `transform: rotateY(180deg)` in addition to its own new frame styles.
+
+## Verification plan
+
+- Mid-flip (~410ms in): the white frame itself should read as a foreshortened/edge-on sliver matching the card's own rotation — not a flat rectangle around a rotating interior. A quick visual check (or a frame-by-frame capture at 0/200/410/600/820ms, per Owner's own check criteria) against the reference screenshot is the real test here; this is a visual/geometry bug a unit test can't meaningfully catch beyond asserting the new DOM structure (frame classes/styles present on both face divs, absent from the outer wrapper and the rotator).
+- Confirm the draw-state recolor (`rpsRightFrame` → `#F79009`) still applies to BOTH faces' frames over 420ms — now straightforward since each face owns its own `background: frame` independently (previously there was only one frame to color; now there are two, both driven by the same `frame` prop, so they must recolor in lockstep — worth one explicit check that they don't visibly desync).
+- Confirm the 16px `translateX` nudge and the overall reveal timing (grow → pause → flip → settle) are visually unchanged — this ticket only moves where the frame styling sits in the tree, nothing about the animation values themselves.
+- `RpsFrame` (the OTHER card component, :165-190, used for the player's own non-flipping card and the idle/waiting state) is NOT affected by this — it already has frame+tile correctly nested in a single non-rotating element and needs no change. Confirm no regression there (existing RPS tests) since `RpsRevealFlipCard` is a separate component.
+
+**Advisor next:** available, no open thread. **PM next:** D77 above.
+
+---
+
 ### 2026-10-02#2 — D76 (PR #805, `4ac232f`) SHIPPED, MERGED — not yet deployed (non-urgent, per the ticket's own framing). Independently re-verified: diff review, ran PM's own 4 new tests myself (18/18 in `Admin.test.tsx`), and a genuine revert-confirm — restored the pre-D76 rendering path and confirmed 3 of the 4 new tests fail with exactly the symptom this ticket exists to fix (no marker row at all)            [VERIFIED — correct]
 From: PM's own cross-session report — independently re-verified via full diff review of `Admin.tsx`/`Admin.test.tsx`, my OWN revert-confirm (temporarily restored the pre-D76 `buildMatchTimeline` body, re-ran the suite, confirmed the exact failure, restored the fix), a direct `grep` confirming `tools/bot-crowd` genuinely has no exposure to this change (touches `LedgerEntry` only via `adminCredit`, a shape this PR didn't alter), and a clean `tsc -b`
 
