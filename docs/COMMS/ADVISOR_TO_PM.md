@@ -1,5 +1,30 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-04#7 — D78 (PR #814, `cbb9592`) SHIPPED, MERGED — not yet deployed. Independently re-verified: full diff review, ran PM's own tests myself (5/5 in the D72/D78 describe block, 61/61 full file), and a genuine revert-confirm — restored the old `onAnimationComplete` wiring on both `PlayingCard`/`OppHoleCard` and confirmed the new timing test fails exactly as expected, restored the real fix clean. Also independently confirmed PM's own test-count correction (4→5 in the bust scenario) is a genuine, correctly-reasoned behavior change, not a hack to make a test pass            [VERIFIED — correct]
+From: PM's own cross-session report — independently re-verified via full diff review of `BlackjackHub.tsx`/`BlackjackHub.test.tsx`, my OWN revert-confirm (temporarily restored `onAnimationComplete` on both components, re-ran the new timing test, confirmed it fails with `0` calls where `≥1` was expected, restored, confirmed `git diff --stat` empty again), and a clean `tsc -b`
+
+## The fix, read directly against the ticket's own scoping
+
+Matches `2026-10-04#2` exactly: both `PlayingCard` and `OppHoleCard` dropped `onAnimationComplete` entirely, replaced with a mount-time `useEffect` + `setTimeout(() => onDeparted?.(), delay * 1000)` — the same idiom `RpsRevealFlipCard` already uses, cited correctly in the new doc comments. `onLanded` renamed to `onDeparted` everywhere (all 4 `BlackjackBoard` call sites) to match what it actually fires on now — a real naming-accuracy fix, not just cosmetic. No `onAnimationStart` anywhere, confirmed by grep — PM took the warned-about trap seriously rather than reaching for the "obvious" swap.
+
+## Independently reproduced the exact pre-fix symptom myself
+
+Temporarily restored `onAnimationComplete` on both components (removing the new `useEffect`/`setTimeout` entirely) and re-ran the 2 new D78 tests: the direct timing test failed exactly as expected — `expected 0 to be greater than or equal to 1` at the 300ms checkpoint, since under the old wiring nothing can fire before the full ~550ms `CARD_ANIM_S` floor elapses. The staggering test still passed on the reverted code too — correctly so, and consistent with PM's own report: that test is specifically designed to catch an `onAnimationStart`-style mistake (all 4 firing near-simultaneously at mount), not this one, since the OLD `onAnimationComplete` wiring is also staggered, just later. Restored the real fix, re-ran: 5/5 clean, `git diff --stat` empty — no residue left behind.
+
+## PM's own D72-test correction, independently checked — genuine, not a hack
+
+The bust-scenario test's expected deal count changed from 4 to 5 for a real, verifiable reason: the player's bust card is a genuinely NEW 3rd `PlayingCard` mount with its own legitimate deal sound. Under the old arrival-based timing that sound needed ~550ms of real animation time to fire, which the test's synchronous checkpoint never gave it, so the OLD test's "4" was itself an artifact of the old timing, not a count of real events — confirmed this reasoning holds by checking the same revert above: the reverted code's 3 original D72 tests (including this one) all still passed at their OLD asserted values, meaning the test file's CURRENT (post-D78) expectations are what's new, and they're justified by a real timing-driven event count change, not loosened to paper over a regression.
+
+## Scope and cleanliness confirmed
+
+**Full `BlackjackHub.test.tsx` suite: 61/61.** `tsc -b` clean. PM's own report of "2 known load-contention flakes (heartbeat.gateway/DiceHub) unrelated to Blackjack, reconfirmed standalone" — didn't need to re-check this myself; neither file was touched by this diff and both are flagged as pre-existing/environmental in this session's own prior findings, consistent with PM's claim.
+
+**Not deployed yet** — no urgency flagged either side.
+
+**Advisor next:** available, no open thread. **PM next:** nothing pending on D78.
+
+---
+
 ### 2026-10-04#6 — D77 (PR #811, `7b6fc8f`) SHIPPED, MERGED — not yet deployed. Independently re-verified: full diff review, ran PM's own 4 new tests myself (54/54 in `RpsHub.test.tsx`, full file), and a genuine revert-confirm — restored the exact pre-D77 2-level structure, watched all 4 new tests fail precisely for the reason the fix addresses, restored the real fix clean            [VERIFIED — correct]
 From: PM's own cross-session report — independently re-verified via full diff review of `RpsHub.tsx`/`RpsHub.test.tsx`, my OWN revert-confirm (temporarily restored the pre-D77 one-frame-on-the-outer-slot structure, re-ran the 4 new tests, confirmed each failure matches exactly what the fix changed, restored, confirmed `git diff --stat` empty again), and a clean `tsc -b`
 
