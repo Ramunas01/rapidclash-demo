@@ -135,9 +135,14 @@ function RpsHandIcon({ choice, size, color }: { choice: string | undefined; size
  *  check ("there should be exactly one bolt path in the codebase"). Same path, same value, pure
  *  dedup — `Coin.tsx`'s cap texture keeps its own independent `COIN_BOLT_PATH` copy rather than
  *  importing this one too (see that constant's own doc comment for why). */
-function RpsRedactedIcon() {
+/** Ticket 2026-10-04#5 (D81): optional `testid` prop, threaded directly onto the svg itself — the
+ *  live-board opponent card used to wrap this icon in an extra, unstyled `<span data-testid=
+ *  "hub-opponent-pick">`, the ONE structural difference between RPS's 3 render sites (the other 2
+ *  render this icon as a direct flex child, matching the prototype's own span-free markup exactly).
+ *  Threading the testid here instead removes that wrapper without losing the test hook. */
+function RpsRedactedIcon({ testid }: { testid?: string } = {}) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 351 374" width="74%" style={{ display: 'block' }} role="img" aria-label="Hidden" data-rc-rps-icon="redacted">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 351 374" width="74%" style={{ display: 'block' }} role="img" aria-label="Hidden" data-rc-rps-icon="redacted" data-testid={testid}>
       <path fill="#4340D8" d={BOLT_PATH} />
     </svg>
   );
@@ -549,8 +554,10 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, outcome, on
           <RpsFrame frame={FRAME_NEUTRAL} tileBg="#4F4CEA" size={cardW} height={cardH}>
             {/* Redaction: never reveal the opponent's choice before match.end (or outside the
                 tied-round reveal beat above). Solid #4F4CEA fill + bolt icon (Full Spec.html:628-629,
-                2026-09-11#8/C) — not the 🤫 emoji stand-in. */}
-            <span data-testid="hub-opponent-pick"><RpsRedactedIcon /></span>
+                2026-09-11#8/C) — not the 🤫 emoji stand-in. Ticket 2026-10-04#5 (D81): no wrapper
+                span — matches the other 2 RPS render sites and the prototype's own span-free
+                markup; the testid is threaded directly onto the icon itself now. */}
+            <RpsRedactedIcon testid="hub-opponent-pick" />
           </RpsFrame>
         )}
       </div>

@@ -26,6 +26,11 @@ describe('CardBack (shared SVG/CSS card back)', () => {
     // below for the safety-net half of the same fix.
     expect(bolt.getAttribute('class') ?? '').toContain('w-[74%]');
     expect(bolt.getAttribute('viewBox')).toBe('0 0 351 374');
+    // Ticket 2026-10-04#5 (D81): the spec's own literal markup sets display:block explicitly on
+    // this svg (Full Spec.html:629) — RPS's own RpsRedactedIcon already matched this, this one
+    // didn't. Without it, an inline-default <svg> picks up baseline-alignment whitespace from its
+    // own line box, which can read as an off-centre bolt inside a tightly-fitted flex parent.
+    expect((bolt as unknown as SVGElement).style.display).toBe('block');
     expect(panel.className).toContain('overflow-hidden');
     expect(art.getAttribute('style') ?? '').not.toMatch(/rotate/); // centred + upright by default
   });

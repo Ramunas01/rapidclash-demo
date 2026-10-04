@@ -51,7 +51,12 @@ export function CardBack({ className, style }: { className?: string; style?: CSS
           viewBox="0 0 351 374"
           data-testid="card-back-bolt"
           className="h-auto w-[74%]"
-          style={{ fill: 'var(--card-back-mark)' }}
+          // Ticket 2026-10-04#5 (D81): the spec's own literal markup (Full Spec.html:629) sets
+          // `display:block` explicitly on this svg — RPS's own RpsRedactedIcon already matches that
+          // (ticket 2026-10-04#5's own confirmed-cause #4), this one never did. Without it, an
+          // inline-default <svg> picks up a small amount of baseline-alignment whitespace from its
+          // own line box, which can read as an off-centre bolt inside a tightly-fitted flex parent.
+          style={{ fill: 'var(--card-back-mark)', display: 'block' }}
           aria-hidden="true"
         >
           <path d={BOLT_PATH} />
