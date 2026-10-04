@@ -16,6 +16,23 @@ vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
 // covered in isolation by Coin.test.tsx, which also exercises the stub's recorders directly).
 vi.mock('three', async () => import('./three-stub.js'));
 
+// Ticket 2026-10-04#3 (D79): Web Audio is absent in jsdom — mock the sound module so the
+// coin-spin/generic-win wiring can be asserted directly (same idiom as BlackjackHub.test.tsx's own
+// equivalent mock). Every other existing test in this file never asserts on `play()`, so this is a
+// pure addition, not a behavior change for them — they'd have silently no-op'd on the real
+// (fails-silently) implementation either way.
+const { playMock } = vi.hoisted(() => ({ playMock: vi.fn() }));
+vi.mock('../lib/sound.js', () => ({
+  play: playMock,
+  unlock: vi.fn(),
+  installUnlockOnFirstGesture: vi.fn(),
+  isMuted: () => false,
+  toggleMute: vi.fn(),
+  setMuted: vi.fn(),
+  subscribe: () => () => {},
+  preloadSounds: vi.fn(),
+}));
+
 // Force prefers-reduced-motion so the coin's flip takes its short ~450ms settle rather than the full
 // ~1.8-2.4s spin — these tests run under both real timers (default `waitFor` ~1s timeout) and fake
 // timers, and only the short path reliably lands within either. Coin.test.tsx covers the full-motion
@@ -552,6 +569,65 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
   // fall through to the shared `outlineClasses('draw')` class untouched by this ticket's changes,
   // since neither `winRingColor` nor `lossRingColor` gates that branch. No live path produces one
   // for this game today, so this is a structural note, not a tested behavior.
+
+  // Ticket 2026-10-04#3 (D79): the two new Coinflip sounds — coin-spin (every real flip) and the
+  // generic win sound (win rounds only, on the win-fill's own first frame).
+  describe('ticket 2026-10-04#3 (D79): coin-spin + generic-win sounds', () => {
+    beforeEach(() => playMock.mockClear());
+
+    it('play("coinflip-coin-spin") fires once per round, for every terminal outcome (win, loss, and a mid-match tie-reveal flip alike)', async () => {
+      vi.useFakeTimers();
+      try {
+        renderToTerminal({ type: 'win', winner: 'pid' });
+        // The coin's own flip-kickoff effect runs synchronously during the render that sets a real
+        // `face` — no timer advance needed for the spin sound specifically (unlike the bar's own
+        // staged verdict/fill timing, which is a separate, later beat).
+        expect(playMock.mock.calls.filter((c) => c[0] === 'coinflip-coin-spin')).toHaveLength(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('play("generic-win") fires exactly once on a win round, in the same beat the green fill first mounts', async () => {
+      vi.useFakeTimers();
+      try {
+        renderToTerminal({ type: 'win', winner: 'pid' });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(2600 + 50);
+        }); // → result phase
+        expect(playMock.mock.calls.filter((c) => c[0] === 'generic-win')).toHaveLength(0); // not yet — verdict hasn't landed
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(250 + 50);
+        }); // → win animation (fill-in) — `barVerdict` flips to 'win' here
+        expect(playMock.mock.calls.filter((c) => c[0] === 'generic-win')).toHaveLength(1);
+
+        // Stays at exactly 1 through the rest of the reveal (fill-in → hold → fade-out → settle) —
+        // no re-fire from the SAME round's own later renders.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(3000 + 50);
+        });
+        expect(playMock.mock.calls.filter((c) => c[0] === 'generic-win')).toHaveLength(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('play("generic-win") never fires on a loss — zero calls through the whole reveal', async () => {
+      vi.useFakeTimers();
+      try {
+        renderToTerminal({ type: 'win', winner: 'bob' }); // a loss (opponent won)
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(2600 + 50);
+        });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(250 + 50 + 3000 + 50);
+        });
+        expect(playMock.mock.calls.filter((c) => c[0] === 'generic-win')).toHaveLength(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
 
   it('JOIN balance-check: refuses clearly when the owner stake is uncovered, without taking', () => {
     const onTakeChallenge = vi.fn();
