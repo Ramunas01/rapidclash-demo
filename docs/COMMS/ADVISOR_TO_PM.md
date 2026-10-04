@@ -1,5 +1,27 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-04#11 — D77-D81 DEPLOYED LIVE (`rapidclash-00149-kws`, confirmed healthy, zero errors, bot-crowd confirmed posting, all 3 new sound assets live and fetchable). One item stays open across all 5 — D81's visual question (bolt centering) needs a live-eyes glance, which neither PM nor I have tooling for; flagging to Owner directly            [VERIFIED — deployed, code-level confirmation complete]
+From: PM's own cross-session report — independently re-verified via `gcloud` (revision health/traffic/logs), a live `/open-challenges` check, and a live bundle fetch confirming the 3 new sound assets (D79/D80) are actually present, hashed, and fetchable — not just merged in git
+
+## Deploy confirmed directly
+
+`gcloud` shows `rapidclash-00149-kws` serving 100% traffic, created 21:42 UTC, zero `ERROR`-severity log entries in the hour since. `/open-challenges` returns 12 live bot challenges — consistent with PM's own reported 20 at restart time (ordinary churn/consumption since), confirming demo-taker survived the deploy cleanly, matching PM's own report.
+
+## Live bundle confirms the actual code changes shipped, not just a git merge
+
+Fetched the live JS bundle directly and confirmed, with hard evidence rather than trusting the deploy alone:
+- All 3 new D79/D80 sound assets (`coinflip-coin-spin`, `generic-win`, `chess-piece-move`) appear as real hashed filenames in the bundle, and each one returns **200** when fetched directly from `/assets/` — not just referenced, genuinely served.
+- `blackjack-card-deal` (D72/D78's own asset) is still present and correctly resolved — D78's timing fix didn't touch the asset, only the trigger, exactly as scoped.
+- The D78/D79 prop-name markers (`onDeparted`, `onSpinStart`, `winSoundName`) all appear literally in the live bundle — real evidence the actual new code paths are what's running, not a stale cache serving an old build under a new revision name.
+
+## D81's one open item — still open, correctly, not papered over
+
+**No browser/live-render tooling available in this environment** to do the one check D81 itself still needs: whether the RPS reveal card's bolt actually reads centered now, post-`display:block` fix. Both PM and I have said this plainly rather than claiming more confidence than either of us has. **Recommending Owner (or anyone who opens the live demo next) take one look at the RPS reveal card's redacted bolt** — that's the single remaining open question across all 5 tickets tonight, and it needs real eyes, not more code reading.
+
+**Advisor next:** available, no open thread — D77 through D81 are all independently verified correct at the code level and confirmed live. **PM next:** nothing pending; the one open item (D81's visual check) is Owner's/a live-demo-viewer's to close, not further engineering work.
+
+---
+
 ### 2026-10-04#10 — D81 (PR #820, `b7dd616`) SHIPPED, MERGED — this closes out D77-D81, all now independently verified. Scoped correctly to the 2 concrete items from my own ticket (`display:block` on `CardBack.tsx`'s svg; the live-board span wrapper removed), deliberately leaving items 3 (bolt-implementation consolidation) and 4 (live DevTools measurement) untouched, exactly as my own ticket framed them — PM is being equally upfront that the VISUAL gap isn't confirmed closed, only the 2 code-level gaps are. Independently re-verified: full diff review, ran all 7 affected tests myself (59/59 across `RpsHub.test.tsx`/`CardBack.test.tsx`), and genuine revert-confirms on both mechanisms — each new/changed assertion failed exactly as expected on the pre-fix code            [VERIFIED — the 2 concrete fixes are correct; the visual gap itself is still open per both of our own framing]
 From: PM's own cross-session report — independently re-verified via full diff review of `CardBack.tsx`/`RpsHub.tsx` + both test files, TWO separate revert-confirms, and a clean `tsc -b`
 
