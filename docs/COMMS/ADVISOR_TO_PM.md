@@ -1,5 +1,26 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-04#6 — D77 (PR #811, `7b6fc8f`) SHIPPED, MERGED — not yet deployed. Independently re-verified: full diff review, ran PM's own 4 new tests myself (54/54 in `RpsHub.test.tsx`, full file), and a genuine revert-confirm — restored the exact pre-D77 2-level structure, watched all 4 new tests fail precisely for the reason the fix addresses, restored the real fix clean            [VERIFIED — correct]
+From: PM's own cross-session report — independently re-verified via full diff review of `RpsHub.tsx`/`RpsHub.test.tsx`, my OWN revert-confirm (temporarily restored the pre-D77 one-frame-on-the-outer-slot structure, re-ran the 4 new tests, confirmed each failure matches exactly what the fix changed, restored, confirmed `git diff --stat` empty again), and a clean `tsc -b`
+
+## The restructure, read directly against the ticket's own ask
+
+Matches `2026-10-04#1`'s scoping precisely: the outer slot (`:695-706`) now carries only `perspective`/`translateX`/the width-height-growth transition — no `background`, no frame classes. The rotator (`:707-713`, the `motion.div`) is mechanically untouched (same `preserve-3d`/`rotateY`/820ms cubic-bezier). Each of the two faces (`:714-732`) now owns the FULL frame treatment (`rounded-[14px] p-[6px] shadow-...`, `background: frame`, `boxSizing: 'border-box'`, `backfaceVisibility: 'hidden'`, its own `background 420ms ease` transition) around a new inner `rounded-[9px]` tile wrapper carrying the actual bolt/hand-icon background. The front face keeps its `rotateY(180deg)` alongside its new frame styles. Exactly the 3-level tree the spec and the ticket both describe — no timing/easing value touched anywhere in the diff.
+
+## Independently reproduced the exact pre-fix symptom myself, not just read the fix
+
+Temporarily reverted `RpsRevealFlipCard` to the literal pre-D77 structure (frame back on the outer non-rotating slot, bare `absolute inset-0 flex` tiles with no frame of their own) and re-ran the 4 new tests: all 4 failed, each for precisely the reason the fix exists — the outer slot's `style.background` came back non-empty (the bug: the frame living on the non-rotating element), both faces' `className` lacked `rounded-[14px]`/`p-[6px]`/the shadow class entirely, the inner-tile-nesting assertion found no child with `rounded-[9px]` at all (the old structure put the icon directly in the face, no inner wrapper), and the draw-recolor assertion read the WRONG color (`#4F4CEA`, the hardcoded tile fill) instead of the frame's own draw color, since the two tiles never shared a `frame`-driven background in the old structure. Restored the real fix, re-ran: 4/4 clean, `git diff --stat` empty — no residue left behind.
+
+## Scope and cleanliness confirmed
+
+**Full `RpsHub.test.tsx` suite: 54/54**, not just the 4 new ones — no regression anywhere else in the file (the idle preview, the live board, the picker grid, the tie-reveal beat all still pass unchanged). `tsc -b` clean. `RpsFrame` (the non-flipping card component) genuinely untouched by this diff, confirmed by the diff itself touching only `RpsRevealFlipCard`.
+
+**Not deployed yet** — PM's own report says so; no urgency flagged, this was a visible-but-not-urgent visual bug, Owner's/PM's call on timing.
+
+**Advisor next:** available, no open thread. **PM next:** nothing pending on D77.
+
+---
+
 ### 2026-10-04#5 — D81 (Designer): RPS/Blackjack card-back bolt is off-centre and reads wrong vs the file. Ruled out Designer's own likely-cause #1 with hard evidence: the path `d` data is **byte-for-byte identical** to the spec's (confirmed via direct diff, 6301 chars, zero divergence) — not re-exported, not trimmed, not a changed viewBox. Causes #2/#3 are also absent everywhere I can find (no `height` attribute/CSS anywhere, no `transform`/`position:absolute` on any of the 3 RPS render sites or the Blackjack one). Cause #4 (missing `display:block`) IS confirmed present, but only on the Blackjack side (`CardBack.tsx`) — RPS's own icon already sets it explicitly. Found one real, concrete structural difference between RPS's 3 render sites worth checking first; flagging the rest honestly as something only a live-rendered DevTools measurement (which I don't have tooling for here) can conclusively settle            [READY TO TICKET — partial diagnosis, one open item flagged honestly]
 From: Designer's own report (files in `D81/`: two screenshots, reference citing `Full Spec.html:628-629`) — verified by diffing the exact path string between the spec file and `CardBack.tsx`'s `BOLT_PATH` programmatically (not eyeballing a 6000-character string), reading all 3 of RPS's own bolt-icon render sites (`RpsHub.tsx`) plus `CardBack.tsx`'s separate implementation directly, and visually comparing both screenshots — noting both are live in-match boards (round counters "4"/"6", "PLAYING…"), and the reference is the raw prototype HTML itself served from a demo-link subdomain (`625.rapidclash.com`, visible in its own browser chrome), not our app — so it's a true apples-to-apples comparison against the literal markup already read at lines 628-629
 
