@@ -1024,3 +1024,80 @@ describe('RpsHubScreen — pick-tile labels and selection green (ticket 2026-09-
     expect(play.className).not.toContain('opacity-70');
   });
 });
+
+// Ticket 2026-10-04#1 (D77) — Owner's own report: the reveal flip's white frame stayed a flat
+// rectangle while only the inner tile spun in 3D. Root cause (confirmed by Advisor reading both
+// `RpsRevealFlipCard` and Full Spec.html:625-634 directly): the frame sat on the OUTER,
+// non-rotating slot instead of on the two rotating faces themselves. These assert the new DOM
+// structure — a visual/geometry bug a unit test can't meaningfully verify beyond confirming the
+// frame styling now lives where it needs to (both faces), not where it used to (the outer slot).
+describe('RpsHubScreen — reveal-flip card frame rotates WITH the card, not around it (ticket 2026-10-04#1, D77)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function renderRevealedCard(): HTMLElement {
+    const gameState: RpsView = { players: ['pid', 'bob'], choices: {}, round: 1 };
+    const events = [
+      { type: 'new_round', payload: { round: 1, replays: 1, revealedChoices: { pid: 'rock', bob: 'scissors' } } },
+    ];
+    render(
+      <RpsHubScreen
+        {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: ['rock', 'paper', 'scissors'], events })}
+      />,
+    );
+    act(() => {
+      vi.advanceTimersByTime(700); // Beat 1→2: the reveal card mounts (revealStage !== 'grow')
+    });
+    return screen.getByTestId('hub-opponent-pick-revealed');
+  }
+
+  function faces(card: HTMLElement): HTMLElement[] {
+    const rotator = card.firstElementChild as HTMLElement; // the preserve-3d motion.div
+    return Array.from(rotator.children) as HTMLElement[];
+  }
+
+  it('the outer (non-rotating) slot carries ONLY perspective + translateX — no background/frame styling of its own', () => {
+    const card = renderRevealedCard();
+    expect(card.style.perspective).toBe('900px');
+    expect(card.style.background).toBe(''); // the bug: this used to hold the frame color
+  });
+
+  it('BOTH rotating faces carry the full frame treatment (rounded-14, padding-6, shadow, a real background) — not just the inner tile', () => {
+    const card = renderRevealedCard();
+    const [frontFace, backFace] = faces(card);
+    expect(faces(card)).toHaveLength(2);
+    for (const face of [frontFace, backFace]) {
+      expect(face.className).toContain('rounded-[14px]');
+      expect(face.className).toContain('p-[6px]');
+      expect(face.className).toContain('shadow-[0_6px_16px_rgba(0,0,0,0.28)]');
+      expect(face.style.backfaceVisibility).toBe('hidden');
+      expect(face.style.background).not.toBe(''); // each face now owns a real frame color
+    }
+  });
+
+  it('each face nests its own inner 9px-radius tile one level inside its own frame (the spec\'s own two-tier face structure)', () => {
+    const card = renderRevealedCard();
+    const [frontFace] = faces(card);
+    const innerTile = frontFace.firstElementChild as HTMLElement;
+    expect(innerTile.className).toContain('rounded-[9px]');
+    expect(innerTile.style.background).toBe('rgb(79, 76, 234)'); // #4F4CEA, jsdom-normalized
+  });
+
+  it('the draw-recolor (frame → FRAME_DRAW at revealStage "done") lands on BOTH faces in lockstep, never desyncing', () => {
+    const card = renderRevealedCard();
+    const [frontFaceBefore, backFaceBefore] = faces(card);
+    // Before 'done': both faces sit at the neutral frame color, already identical.
+    expect(frontFaceBefore.style.background).toBe(backFaceBefore.style.background);
+
+    act(() => {
+      vi.advanceTimersByTime(900); // Beat 2→3: flip → done (REVEAL_FLIP_TO_DONE_MS)
+    });
+    const [frontFaceAfter, backFaceAfter] = faces(card);
+    expect(frontFaceAfter.style.background).toBe('rgb(247, 144, 9)'); // #F79009 (FRAME_DRAW), jsdom-normalized
+    expect(frontFaceAfter.style.background).toBe(backFaceAfter.style.background);
+  });
+});

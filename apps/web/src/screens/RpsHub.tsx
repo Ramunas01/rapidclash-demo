@@ -684,19 +684,26 @@ function RpsRevealFlipCard({ frame, tileBg, choice, size, height, testid }: { fr
     const t = setTimeout(() => setSlide(false), 410);
     return () => clearTimeout(t);
   }, []);
+  // Ticket 2026-10-04#1 (D77): restructured to the spec's own 3-level tree (Full Spec.html:625-634)
+  // — a visuals-less perspective+translateX slot, a visuals-less rotator, and TWO faces that each
+  // own their own full frame (background/padding/radius/shadow). Previously the frame sat on this
+  // OUTER slot (which never rotates) while the two inner tiles below had no frame of their own, so
+  // only the bare tile spun in 3D and the white border sat flat throughout a flip — a structural
+  // placement bug, not a timing/easing one; the 820ms rotation, the 410ms translateX nudge, and the
+  // 420ms background recolor are all unchanged from before, just moved onto the two faces below.
   return (
     <div
       data-testid={testid}
-      className="shrink-0 rounded-[14px] p-[6px] shadow-[0_6px_16px_rgba(0,0,0,0.28)]"
-      // Ticket 2026-09-12#1 item 2: same width/height growth as `RpsFrame` above (Full Spec.html:625's
-      // transition list — width/height 620ms cubic-bezier(0.3,0.9,0.32,1), background 420ms ease).
+      className="shrink-0"
       style={{
         width: size,
         height,
-        background: frame,
         perspective: 900,
         transform: `translateX(${slide ? '16px' : '0px'})`,
-        transition: `background 420ms ease, width 620ms ${EXPAND_EASE}, height 620ms ${EXPAND_EASE}, transform 410ms ease-in-out`,
+        // Ticket 2026-09-12#1 item 2's own width/height growth (Full Spec.html:625's transition
+        // list) stays here — width/height are real box-model properties of THIS slot, unlike
+        // background, which now lives on each face below instead.
+        transition: `width 620ms ${EXPAND_EASE}, height 620ms ${EXPAND_EASE}, transform 410ms ease-in-out`,
       }}
     >
       <motion.div
@@ -708,18 +715,24 @@ function RpsRevealFlipCard({ frame, tileBg, choice, size, height, testid }: { fr
       >
         {/* Front/hidden face — same solid #4F4CEA + bolt treatment as the non-flipping redacted
             tiles above (Full Spec.html:628-629), always this color regardless of theme, unlike the
-            back/revealed face below which uses the theme-conditional `tileBg`. */}
+            back/revealed face below which uses the theme-conditional `tileBg`. Carries its own full
+            frame (matching `RpsFrame`'s own rounded-14/padding-6/shadow shape above) so the white
+            edge itself rotates with the card instead of staying flat. */}
         <div
-          className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-[9px]"
-          style={{ background: '#4F4CEA', backfaceVisibility: 'hidden' }}
+          className="absolute inset-0 rounded-[14px] p-[6px] shadow-[0_6px_16px_rgba(0,0,0,0.28)]"
+          style={{ background: frame, boxSizing: 'border-box', backfaceVisibility: 'hidden', transition: 'background 420ms ease' }}
         >
-          <RpsRedactedIcon />
+          <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-[9px]" style={{ background: '#4F4CEA' }}>
+            <RpsRedactedIcon />
+          </div>
         </div>
         <div
-          className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-[9px]"
-          style={{ background: tileBg, backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
+          className="absolute inset-0 rounded-[14px] p-[6px] shadow-[0_6px_16px_rgba(0,0,0,0.28)]"
+          style={{ background: frame, boxSizing: 'border-box', backfaceVisibility: 'hidden', transform: 'rotateY(180deg)', transition: 'background 420ms ease' }}
         >
-          <RpsHandIcon choice={choice} size={70} />
+          <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-[9px]" style={{ background: tileBg }}>
+            <RpsHandIcon choice={choice} size={70} />
+          </div>
         </div>
       </motion.div>
     </div>
