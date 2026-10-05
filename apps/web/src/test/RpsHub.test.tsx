@@ -199,6 +199,9 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
       act(() => { vi.advanceTimersByTime(900); });
       act(() => { vi.advanceTimersByTime(1500); });
       expect(screen.getByTestId('hub-opponent-pick').getAttribute('data-rc-rps-icon')).toBe('redacted');
+      // Ticket 2026-10-05#1 (D82): the mid-match tie-reveal is a non-terminal beat that never
+      // touches outcome/barVerdict at all — structurally can't leak into the generic-win sound.
+      expect(playMock.mock.calls.filter((c) => c[0] === 'generic-win')).toHaveLength(0);
     } finally {
       vi.useRealTimers();
     }
@@ -573,6 +576,9 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
       expect(ownFill.style.background).toBe('rgb(22, 163, 74)'); // #16A34A, jsdom-normalized
       await waitFor(() => expect(ownBar.className).toContain('ring-[3px]'), { timeout: 4000 });
       expect(ownBar.style.getPropertyValue('--tw-ring-color')).toBe('#16A34A');
+      // Ticket 2026-10-05#1 (D82): RPS joins GameHub.tsx's winSoundName allow-list — fires exactly
+      // once, on the same beat the "you won" verdict/fill landed above.
+      expect(playMock.mock.calls.filter((c) => c[0] === 'generic-win')).toHaveLength(1);
     }, 10000);
 
     it('a LOSS rings the own bar var(--rc-loss), not the shared ring-destructive class', async () => {
@@ -587,6 +593,8 @@ describe('RpsHubScreen (GameHub + RpsPanel)', () => {
       await waitFor(() => expect(ownBar.className).toContain('ring-[3px]'), { timeout: 3000 });
       expect(ownBar.className).not.toContain('ring-destructive');
       expect(ownBar.style.getPropertyValue('--tw-ring-color')).toBe('var(--rc-loss)');
+      // Ticket 2026-10-05#1 (D82): win stays false the whole round on a loss — generic-win silent.
+      expect(playMock.mock.calls.filter((c) => c[0] === 'generic-win')).toHaveLength(0);
     }, 8000);
 
     it("an ordinary tie followed by a decisive match-end still waits for the TERMINAL reveal's own 700+900ms — no stale premature light-up", async () => {

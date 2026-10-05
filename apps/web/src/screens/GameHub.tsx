@@ -953,10 +953,17 @@ export function GameHub(props: GameHubProps) {
               // Ticket 2026-10-04#3 (D79): generic win sound, per Designer's own "don't switch it on
               // for the other games until Povilas says so" — enabling it for another game later
               // really is just adding that gameId to this one ternary. Ticket 2026-10-04#4 (D80)
-              // extended it to Chess: already resolves every win reason (checkmate, resignation,
-              // timeout, disconnect-forfeit) through the same winner===playerId check this ternary's
-              // own winRingColor/winFillColor already key off, so there's nothing new to branch on.
-              winSoundName={gameId === 'coinflip' || gameId === 'chess' ? 'generic-win' : undefined}
+              // extended it to Chess; ticket 2026-10-05#1 (D82) extends it again to
+              // Blackjack/Mines/RPS — all 3 already resolve their own win through the SAME
+              // winner===playerId check this ternary's own winRingColor/winFillColor already key
+              // off (Blackjack: beat-dealer/dealer-bust/natural-blackjack all collapse into the
+              // server's own `winner` field; Mines: barVerdict==='draw' structurally never fires —
+              // its own internal draw→rematch uses the separate drawRingActive mechanism, never
+              // `win`; RPS: the mid-match tie-reveal is a non-terminal beat that never touches
+              // `outcome`/`barVerdict` at all). Dice deliberately stays OUT of this ternary — its
+              // own `play('dice-win')` call site is fully independent of winSoundName/OwnSlot, so
+              // simply never adding 'dice' here is the entire "don't play both" guarantee.
+              winSoundName={gameId === 'coinflip' || gameId === 'chess' || gameId === 'blackjack' || gameId === 'mines' || gameId === 'rps' ? 'generic-win' : undefined}
               // Ticket 2026-09-16#7 item 4: Mines-only — the shared outlineClasses() had no
               // per-verdict draw override until now (win/lose already did). Mines' own draw literal
               // (Full Spec.html:3787) is #FF8A1E — no other game currently needs this overridden.

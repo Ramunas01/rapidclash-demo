@@ -319,6 +319,10 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     expect(kind(0)).toBe('covered'); // the previously-safe square is covered again
     expect(screen.getByTestId('cell-0')).not.toBeDisabled();
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
+    // Ticket 2026-10-05#1 (D82): an internal draw→rematch never sets barVerdict to 'win' at all
+    // (it's the separate drawRingActive mechanism, MinesHub.tsx's own doc comment) — structurally
+    // can't leak into the generic-win sound.
+    expect(playMock.mock.calls.filter((c) => c[0] === 'generic-win')).toHaveLength(0);
   });
 
   // Ticket 2026-09-25#5 (ADVISOR_TO_PM.md, D51): an ordinary mid-match draw is neither revealed
@@ -435,6 +439,9 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
     await waitFor(() => expect(screen.getByTestId('hub-slot-own-verdict')).toBeInTheDocument(), { timeout: 4000 });
     expect(screen.getByTestId('hub-slot-own-verdict').textContent).toMatch(/you won/i);
     expect(screen.queryByTestId('hub-result-overlay')).toBeNull(); // still absent after the reveal
+    // Ticket 2026-10-05#1 (D82): Mines joins GameHub.tsx's winSoundName allow-list — fires exactly
+    // once, on the same beat the "You Won" verdict text landed above.
+    expect(playMock.mock.calls.filter((c) => c[0] === 'generic-win')).toHaveLength(1);
   });
 
   // Ticket 2026-09-12#5 item 1 (ADVISOR_TO_PM.md) — HIGH PRIORITY correction to #555: `MinesPanel`
@@ -728,6 +735,8 @@ describe('MinesHubScreen (GameHub + MinesPanel)', () => {
       expect(ownBar.className).toContain('ring-[3px]');
       expect(ownBar.className).not.toContain('ring-destructive');
       expect(ownBar.style.getPropertyValue('--tw-ring-color')).toBe('var(--rc-loss)');
+      // Ticket 2026-10-05#1 (D82): win stays false the whole round on a loss — generic-win silent.
+      expect(playMock.mock.calls.filter((c) => c[0] === 'generic-win')).toHaveLength(0);
     } finally {
       rectSpy.mockRestore();
       vi.useRealTimers();
