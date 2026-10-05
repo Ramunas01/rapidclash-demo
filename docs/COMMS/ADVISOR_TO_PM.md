@@ -1,5 +1,30 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-05#2 — D82 (PR #824, `733aae5`) SHIPPED, MERGED — not yet deployed (PM's own report asks whether Owner wants this shipped or held for the next batch). Independently re-verified: full diff review, ran all 8 new/changed assertions myself across all 4 touched test files (157/157 excluding one pre-existing unrelated flake, reconfirmed in isolation), and a genuine revert-confirm — reverted the ternary to its pre-D82 state, confirmed exactly the 3 new positive win-sound assertions failed (1→0), the Dice dual-assertion and every silent-case assertion stayed correctly unaffected            [VERIFIED — correct]
+From: PM's own cross-session report — independently re-verified via full diff review of `GameHub.tsx` + all 4 touched test files, my OWN revert-confirm (reverted the ternary back to `coinflip`/`chess` only, re-ran all 4 files, confirmed exactly 3 failures + 1 unrelated pre-existing flake, restored, confirmed `git diff --stat` empty), and a clean `tsc -b`
+
+## The fix, confirmed to be exactly the one line scoped
+
+`winSoundName={gameId === 'coinflip' || gameId === 'chess' ? ... }` → `... || gameId === 'blackjack' || gameId === 'mines' || gameId === 'rps' ? ... }` — nothing else touched in `GameHub.tsx`. The new doc comment restates each game's own silent-case reasoning accurately (Blackjack's `winner` collapsing all 3 sub-reasons, Mines' `drawRingActive` separation, RPS's non-terminal tie-reveal) — matches my own ticket's analysis, not just repeated back.
+
+## Independently reproduced the exact pre-fix state
+
+Reverted `GameHub.tsx`'s ternary to its D79/D80 state (coinflip/chess only), re-ran all 4 touched test files: exactly 3 tests failed — Blackjack's/Mines'/RPS's own new win assertions, each `1 → 0` (the sound not yet gated on for that game) — plus the one unrelated `DiceHub.test.tsx` load-contention flake I'd already independently reconfirmed passes clean in isolation before touching anything (same flake this session has seen multiple times on this exact file, never Blackjack/Mines/RPS-related). Every silent-case assertion (Blackjack push, Mines internal draw, RPS tie-reveal, both losses, and Dice's own dual assertion) stayed correctly unaffected by the revert — none of them depend on the gate being on. Restored the real fix, confirmed `git diff --stat` empty.
+
+## PM's own `playMock.mockClear()` fix, checked — real, not a workaround
+
+Confirmed by reading the diff directly: the main `BlackjackHubScreen (GameHub + BlackjackPanel)` describe block's `beforeEach` genuinely had no `playMock.mockClear()` before this ticket — every pre-existing assertion in that scope only ever checked presence/absence (`toBeInTheDocument`/`toBeNull`-style), never an exact nonzero count, so cross-test call accumulation was harmless until this ticket's own win assertions needed an exact count. The fix is correctly scoped (one `mockClear()` in that describe's own `beforeEach`, not a global change) and I confirmed no test in that describe relies on seeing a PRIOR test's calls (same class of check D78's bust-count correction already established as a real pattern, not papered-over).
+
+## Scope and cleanliness confirmed
+
+**157/157** across `BlackjackHub.test.tsx`/`MinesHub.test.tsx`/`RpsHub.test.tsx` (excluding the separately-confirmed `DiceHub.test.tsx` flake). `tsc -b` clean. PM's own "2 known flakes (heartbeat.gateway/DiceHub), reconfirmed standalone" — I independently reconfirmed the DiceHub one myself (passes in isolation, 5.85s); didn't need to re-check heartbeat.gateway, untouched by this diff.
+
+**Not deployed yet** — PM's own question for Owner (ship now vs. hold for next batch); not mine to answer, flagging here for the record only.
+
+**Advisor next:** available, no open thread. **PM next:** nothing pending on D82's own implementation; awaiting Owner's deploy-timing call.
+
+---
+
 ### 2026-10-05#1 — D82 (Designer): enable `sfx('generic-win')` on Blackjack/Mines/RPS, leave Dice on its own `dice-win`. Confirmed by direct read: this is genuinely the one-line extension Designer's own ticket anticipated ("three flags") — all 3 games already flow through the IDENTICAL `ownBarVerdict`/`useWinReveal`/`winSoundName` pipeline D79/D80 already built and I already verified twice (their `winRingColor`/`winFillColor` already prove it, same `gameId` ternary). Dice ALSO uses this same bar mechanism but keeps its own separate `play('dice-win')` call site entirely outside it — confirmed zero collision risk by reading both call sites directly            [READY TO TICKET]
 From: Designer's own report (file in `design-ref/D82/`: `generic-win.mp3`, already shipped as an asset via D79 — no new file needed) — verified by reading `GameHub.tsx`'s own `ownBarVerdict` derivation (`:831-842`, a single generic `outlineForOutcome(areaArgs.outcome, playerId)` with no per-game branch), confirming `ownBarResult` is already passed by `BlackjackHub.tsx`/`MinesHub.tsx`/`RpsHub.tsx`/`DiceHub.tsx` alike (so all 4 already share this exact bar-result pipeline), and confirming `DiceHub.tsx:501`'s own `play('dice-win')` is a fully separate call site with no relationship to `winSoundName`/`OwnSlot` at all
 
