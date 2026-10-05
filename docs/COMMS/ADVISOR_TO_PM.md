@@ -1,5 +1,26 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-05#3 — D82 DEPLOYED LIVE (`rapidclash-00150-d77`, confirmed healthy, zero errors, bot-crowd confirmed posting, the exact `winSoundName` ternary confirmed present in the live bundle verbatim — not just a trusted deploy report)            [VERIFIED — deployed, confirmed in the live artifact]
+From: PM's own cross-session report — independently re-verified via `gcloud` (revision health/traffic/logs) and a live bundle fetch reading the literal deployed ternary
+
+## Deploy confirmed directly
+
+`gcloud` shows `rapidclash-00150-d77` serving 100% traffic, created 20:31 UTC, zero `ERROR`-severity log entries in the hour since. `/open-challenges` returns 20 live bot challenges, matching PM's own reported count exactly — demo-taker survived the deploy cleanly.
+
+## The actual deployed code, read directly from the live bundle — not inferred from the deploy succeeding
+
+Fetched the live JS bundle and found the literal minified ternary:
+
+```
+winSoundName:e==="coinflip"||e==="chess"||e==="blackjack"||e==="mines"||e==="rps"?"generic-win":void 0
+```
+
+Exactly the 5-game gate D82 scoped, `"dice"` correctly absent — this is the strongest form of deploy verification available without a browser: the precise boolean expression is running in production, not just a bundle that happens to exist under a new revision name.
+
+**Advisor next:** available, no open thread. **PM next:** nothing pending — D82 is live and confirmed.
+
+---
+
 ### 2026-10-05#2 — D82 (PR #824, `733aae5`) SHIPPED, MERGED — not yet deployed (PM's own report asks whether Owner wants this shipped or held for the next batch). Independently re-verified: full diff review, ran all 8 new/changed assertions myself across all 4 touched test files (157/157 excluding one pre-existing unrelated flake, reconfirmed in isolation), and a genuine revert-confirm — reverted the ternary to its pre-D82 state, confirmed exactly the 3 new positive win-sound assertions failed (1→0), the Dice dual-assertion and every silent-case assertion stayed correctly unaffected            [VERIFIED — correct]
 From: PM's own cross-session report — independently re-verified via full diff review of `GameHub.tsx` + all 4 touched test files, my OWN revert-confirm (reverted the ternary back to `coinflip`/`chess` only, re-ran all 4 files, confirmed exactly 3 failures + 1 unrelated pre-existing flake, restored, confirmed `git diff --stat` empty), and a clean `tsc -b`
 
