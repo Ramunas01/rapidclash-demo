@@ -1,5 +1,32 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-05#1 — D82 (Designer): enable `sfx('generic-win')` on Blackjack/Mines/RPS, leave Dice on its own `dice-win`. Confirmed by direct read: this is genuinely the one-line extension Designer's own ticket anticipated ("three flags") — all 3 games already flow through the IDENTICAL `ownBarVerdict`/`useWinReveal`/`winSoundName` pipeline D79/D80 already built and I already verified twice (their `winRingColor`/`winFillColor` already prove it, same `gameId` ternary). Dice ALSO uses this same bar mechanism but keeps its own separate `play('dice-win')` call site entirely outside it — confirmed zero collision risk by reading both call sites directly            [READY TO TICKET]
+From: Designer's own report (file in `design-ref/D82/`: `generic-win.mp3`, already shipped as an asset via D79 — no new file needed) — verified by reading `GameHub.tsx`'s own `ownBarVerdict` derivation (`:831-842`, a single generic `outlineForOutcome(areaArgs.outcome, playerId)` with no per-game branch), confirming `ownBarResult` is already passed by `BlackjackHub.tsx`/`MinesHub.tsx`/`RpsHub.tsx`/`DiceHub.tsx` alike (so all 4 already share this exact bar-result pipeline), and confirming `DiceHub.tsx:501`'s own `play('dice-win')` is a fully separate call site with no relationship to `winSoundName`/`OwnSlot` at all
+
+## The fix, confirmed to be exactly what it looks like
+
+`GameHub.tsx:959`: `winSoundName={gameId === 'coinflip' || gameId === 'chess' ? 'generic-win' : undefined}` → add `|| gameId === 'blackjack' || gameId === 'mines' || gameId === 'rps'`. Nothing else changes — same mechanism, same trigger (`OwnSlot`'s own `prevWinRef` watcher on `win` flipping `false→true`, firing on the exact tick the green fill mounts), same silence-on-loss/draw behavior, all already proven correct by D79/D80's own tests and my own two independent revert-confirms on that exact code path.
+
+## Each game's own listed win reasons, confirmed to already collapse into ONE server-reported `winner`, not something this ticket needs to re-derive
+
+**Blackjack** ("beating the dealer, dealer bust, natural blackjack all count; bust/push silent"): `ownBarFrameKind` is `outlineForOutcome(outcome, playerId)` — purely `outcome.winner === playerId ? 'win' : ...`, no sub-reason branching anywhere in the client. The server's own `Outcome` already collapses beat-dealer/dealer-bust/natural-blackjack into the same `winner` field (pre-existing game logic, untouched by this ticket) — confirmed there's no separate client-side case for any of the three. Bust is a loss (`winner` = opponent), push is `outcome.type === 'draw'` (per `BlackjackHub.tsx`'s own documented push handling) — both leave `win` false, so silence falls out for free.
+
+**Mines** ("fires when the result reveals you had more gems... draw → rematch is silent"): confirmed via `MinesHub.tsx`'s own doc comments (:565, ticket 2026-09-25#5) that `barVerdict==='draw'` structurally never fires for Mines at all — its own `outcome()` only ever returns `win`/`void`, and an internal draw is handled entirely by the SEPARATE `drawRingActive` mechanism, which `useWinReveal`'s own `win` flag never reads. So the draw→rematch beat can't spuriously flip `win` true — silence is structural, not something to add a guard for.
+
+**RPS** ("fires at the result after the flip when the player bar goes green; draw → re-run is silent"): same `ownBarResult`+`gateResultOnReveal` wiring as Blackjack (ticket 2026-09-25#3 item 2's own citation) — the bar's own win-fill is gated on `revealDone`/the TERMINAL reveal specifically, structurally separate from the mid-match tie-reveal beat (a non-terminal, auto-resetting flash with its own independent timing, per `RpsBoard`'s own doc comment). The tie-reveal never sets `outcome`/`barVerdict`, so it can't trigger `win` either.
+
+**Dice** (leave alone): `DiceHub.tsx:501`'s `if (myRoll > oppRoll) play('dice-win')` is a direct, independent call — not routed through `OwnSlot`/`winSoundName` at all. Dice is NOT being added to the `winSoundName` ternary, so there's no risk of both sounds firing together; this is true by simple omission, not a new guard needed.
+
+## Verification plan
+
+- One test per newly-enabled game (Blackjack/Mines/RPS), mirroring D79/D80's own shape exactly: a win fires `generic-win` once, in the same beat the green fill starts; loss stays silent; the game's own specific silent case (Blackjack push, Mines internal draw→rematch, RPS tie→re-run) stays silent through that beat too.
+- Reuse (don't just trust) the existing Dice regression: confirm a Dice win still fires `dice-win` exactly once and `generic-win` exactly zero times — this is the one case Designer explicitly called out as a "don't play both" risk, worth a dedicated assertion even though the mechanism makes it structurally safe.
+- Mute: already covered for free by the shared `play()` helper — no new plumbing, same as every prior sound ticket.
+
+**Advisor next:** available, no open thread. **PM next:** D82 above — low-risk, one-line change plus tests.
+
+---
+
 ### 2026-10-04#11 — D77-D81 DEPLOYED LIVE (`rapidclash-00149-kws`, confirmed healthy, zero errors, bot-crowd confirmed posting, all 3 new sound assets live and fetchable). One item stays open across all 5 — D81's visual question (bolt centering) needs a live-eyes glance, which neither PM nor I have tooling for; flagging to Owner directly            [VERIFIED — deployed, code-level confirmation complete]
 From: PM's own cross-session report — independently re-verified via `gcloud` (revision health/traffic/logs), a live `/open-challenges` check, and a live bundle fetch confirming the 3 new sound assets (D79/D80) are actually present, hashed, and fetchable — not just merged in git
 
