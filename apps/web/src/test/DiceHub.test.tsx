@@ -689,6 +689,13 @@ describe('DiceHubScreen', () => {
       rerender(<DiceHubScreen {...baseProps({ currentMatchId: 'm1', gameState: winRoll(), legalMoves: [] })} />);
       expect(playMock.mock.calls.some((c) => c[0] === 'dice-win')).toBe(false); // not yet — before its own beat
       await waitFor(() => expect(playMock.mock.calls.some((c) => c[0] === 'dice-win')).toBe(true), { timeout: 3000 });
+      // Ticket 2026-10-05#1 (D82): Designer explicitly called out "don't play both" as a real risk
+      // worth a dedicated test, not just trusting the structural argument — Dice is deliberately
+      // NOT in GameHub.tsx's winSoundName ternary, even though it shares the SAME OwnSlot win-fill
+      // bar mechanism (own ring/fill already enabled for Dice). Confirms dice-win fired exactly
+      // once and generic-win fired exactly zero times on this same win.
+      expect(playMock.mock.calls.filter((c) => c[0] === 'dice-win')).toHaveLength(1);
+      expect(playMock.mock.calls.filter((c) => c[0] === 'generic-win')).toHaveLength(0);
     });
   });
 });

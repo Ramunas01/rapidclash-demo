@@ -229,6 +229,10 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       if (u.includes('/games') || u.includes('/leaderboard')) return { ok: true, json: async () => [] } as Response;
       return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
     }));
+    // Ticket 2026-10-05#1 (D82): Blackjack now genuinely fires generic-win on a real win, so
+    // playMock's call history must not leak across tests in this describe the way it previously
+    // got away with (nothing here asserted on it before this ticket).
+    playMock.mockClear();
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -704,6 +708,9 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       expect(screen.getByTestId('hub-slot-own').className).not.toMatch(/ring-\[3px\]/);
       expect(screen.getByTestId('hub-slot-opponent').className).not.toMatch(/ring-\[3px\]/);
       expect(screen.queryByTestId('hub-result-overlay')).toBeNull();
+      // Ticket 2026-10-05#1 (D82): a push is outcome.type==='draw' — `win` stays false the whole
+      // round, so the generic-win sound (now enabled for Blackjack) must stay silent here too.
+      expect(playMock.mock.calls.filter((c2) => c2[0] === 'generic-win')).toHaveLength(0);
     });
 
     it('layout invariant: the "Push" overlay does not shift the cards (same positions with and without it)', async () => {
@@ -756,10 +763,11 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
           expect(c2.style.getPropertyValue('--tw-ring-color')).toBe('#16A34A');
         }
       }, { timeout: 2000 });
-      // Ticket 2026-10-04#3 (D79): Blackjack consumes this SAME shared OwnSlot win-fill mechanism
-      // as Coinflip, so the generic-win sound's per-game gate (GameHub.tsx's winSoundName ternary)
-      // must be proven real here, not just present — a win round on Blackjack must stay silent.
-      expect(playMock.mock.calls.filter((c2) => c2[0] === 'generic-win')).toHaveLength(0);
+      // Ticket 2026-10-05#1 (D82): Blackjack is now enabled in GameHub.tsx's winSoundName ternary
+      // (it was deliberately silent here under D79/D80, proven by this same assertion asserting
+      // zero back then) — fires exactly once, on the same beat the green fill/verdict text landed
+      // above.
+      expect(playMock.mock.calls.filter((c2) => c2[0] === 'generic-win')).toHaveLength(1);
     });
 
     it('Loss: cards red + the bar shows a red outline only (no fill, no text)', async () => {
@@ -782,6 +790,8 @@ describe('BlackjackHubScreen (GameHub + BlackjackPanel)', () => {
       const ownBar = screen.getByTestId('hub-slot-own');
       expect(ownBar.querySelector('.pointer-events-none.absolute.inset-0')).toBeNull(); // no fill layer
       expect(within(ownBar).queryByTestId('hub-slot-own-verdict')).toBeNull(); // no "You Win"
+      // Ticket 2026-10-05#1 (D82): win stays false the whole round on a loss — generic-win silent.
+      expect(playMock.mock.calls.filter((c2) => c2[0] === 'generic-win')).toHaveLength(0);
     });
   });
 
