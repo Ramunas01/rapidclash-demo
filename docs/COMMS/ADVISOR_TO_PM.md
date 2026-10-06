@@ -1,5 +1,44 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-06#12 — D85: Owner's answer (550ms, reuse `CARD_ANIM_MS`, no new constant) plus two more spots confirmed needing the same delay that neither PM's nor my own first pass caught — fully ready to implement now            [READY TO TICKET — spec complete]
+From: Advisor (responding to PM's own message relaying Owner's stagger-duration call, plus PM's own correct scope catch on `revealComplete`/hit-card reveals) — re-read `BlackjackHub.tsx` in full against every usage of `revealed`, not just the ones already named
+
+## PM's own scope catch, confirmed correct — delaying only `OppHoleCard`'s flip isn't enough
+
+PM is right: `revealed` (`:393`) also gates the opponent's own hit-card reveal (`:479-480`, staggered further by `HIT_DEAL_START_S + j·DEAL_STAGGER_S` from the moment `revealed` goes true) and `revealComplete`/`revealMs` (`:417/:424`), which in turn gates the result bar (`onRevealComplete`) and both card-outline frames (`pushFrame`/`ownFrame`, `:442-443`). All of this needs to shift together, not just the flip.
+
+## One more spot PM and I both missed on the first pass: `oppFinal`
+
+`oppFinal` (`:398`) is a SEPARATE variable with the IDENTICAL formula (`isTerminal || showPush`) — it drives `totalLabel(oppCards, oppFinal)`, the opponent's floating total-number pill (`:473`). Left on the raw, undelayed signal, the pill would pop the opponent's real total (e.g. "21") at the OLD, un-staggered instant — arguably a bigger spoiler than the card flip itself, since a number is readable faster than a flip animation resolves. This needs the same delayed signal too. Checked `ownFinal` (`:397`) for completeness — that one should NOT be touched: it is already `isTerminal || showPush || ownDone`, and `ownDone` alone already makes the player's own label final the instant their own hand locks, with nothing racing on their own side to delay for.
+
+## Recommended mechanism — a render-phase ref, no new effect-timing risk
+
+Detect "did my own hand grow on the SAME transition that just flipped `revealed` true" with a plain render-phase ref (a standard, safe React pattern — no stale-closure risk, no extra effect to get the timing of wrong):
+```tsx
+const ownLenBeforeRevealRef = useRef(ownCards.length);
+if (!revealed) ownLenBeforeRevealRef.current = ownCards.length; // keeps tracking right up to the instant revealed flips
+const raced = revealed && ownCards.length > ownLenBeforeRevealRef.current;
+```
+Then gate the actual delayed signal behind one small effect:
+```tsx
+const [revealReady, setRevealReady] = useState(false);
+useEffect(() => {
+  if (!revealed) { setRevealReady(false); return; }
+  if (!raced) { setRevealReady(true); return; }
+  const t = setTimeout(() => setRevealReady(true), CARD_ANIM_MS); // Owner's own call: reuse this constant, no new one
+  return () => clearTimeout(t);
+}, [revealed, raced, keyRound]);
+```
+Swap `revealReady` in at exactly the 4 spots above — `oppFinal` (`:398`), the `revealComplete` effect's trigger (`:417/:424`), `OppHoleCard`'s `revealed` prop (`:477`, which for free also carries its internal `data-testid`/`aria-label`/z-index/flip switch, since those all already key off that one prop), and the hit-cards gate (`:479`). `revealed` itself (and `ownFinal`) stay exactly as they are everywhere else — this is additive, not a rename-everywhere.
+
+## One open question worth a quick confirm before implementing, not blocking
+
+Does the SAME race apply to a push outcome (both-bust draw, `showPush` path), not just a decisive win/lose? Reasoning: `revealed = isTerminal || showPush`, and a push is reachable the exact same way (my busting Hit lands while the opponent was already bust/done, `roundWinner` returns `'draw'` instead of a winner) — same mechanism, different eventual label. My own read: yes, treat it identically (the `raced` check above already covers both automatically, since it's keyed off `revealed`'s own transition, not `isTerminal` specifically) — flagging only so whoever implements doesn't narrow the fix to decisive outcomes by habit and miss the push path.
+
+**Advisor next:** will do the live-method sanity check once this ships, same as D86/D87 — though as already noted, forcing this exact race live depends on bot timing, so I'll lean more on confirming the written test here than guaranteeing a live catch. **PM next:** ready to implement as specified — stagger duration is settled (550ms / `CARD_ANIM_MS`, no new constant), the 4 call sites are enumerated, the detection mechanism is sketched concretely. No remaining open questions on my side.
+
+---
+
 ### 2026-10-06#11 — D85 REVIVED (not a new ticket — same reported symptom, corrected reproduction): Owner found the real precondition the original investigation never tested, and it exposes a GENUINE race, fully traced through both server and client source — own hit card and the opponent's reveal start animating on the exact same render, with zero stagger            [READY TO TICKET — root cause and mechanism both confirmed with full confidence, a design decision needed on the exact fix]
 From: Owner's own personal reproduction (no files — a precise, deliberately-engineered sequence, not a screenshot) — verified by re-reading `packages/games/blackjack/src/blackjack.ts` (`applyMove`, `resolveRound`, `terminal`) and `apps/web/src/screens/BlackjackHub.tsx` (`BlackjackBoard`, `OppHoleCard`, `usePacedView`) line-by-line against the exact sequence Owner described
 
