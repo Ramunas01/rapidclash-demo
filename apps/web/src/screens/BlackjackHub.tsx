@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import type { BlackjackView, BlackjackCard } from '../App.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
 import { CardBack, DeckPile } from '../components/cards/CardBack.js';
+import { PillButton } from '../components/hub-shared/PillButton.js';
 import { play } from '../lib/sound.js';
 
 /** Per-player move budget (mirrors the module's meta.moveTimeoutMs). Display only —
@@ -508,50 +509,27 @@ function HandTotalPill({ label, testid }: { label: string; testid?: string }) {
 
 /** Ticket 2026-09-27#6 (D68, ADVISOR_TO_PM.md) item 3: Hit/Stand's own 3D-ledge construction —
  *  copied verbatim from `GameHub.tsx`'s own PLAY button (`PLAY_BTN_SHADOW`, `active:translate-y-
- *  [3px]`), except the transition only lists the two properties the ticket's own citation lists
- *  (`box-shadow 200ms ease, transform 120ms ease`), not Play's own four-property list. */
-const HIT_LEDGE = '0 5px 0 #5F27B8'; // Hit's own ledge — bg-brand's (#8B45F0) darker shade, matching PLAY_BTN_SHADOW's pairing
+ *  [3px]`). Ticket 2026-10-06#1 (D83) extracted this construction into the shared
+ *  `hub-shared/PillButton.tsx` (Coinflip's own HEADS/TAILS pick pills now reuse it too, per
+ *  Designer's own "the SAME component" phrasing) — these two constants are the only Blackjack-
+ *  specific piece left: Hit's ledge color and Stand's face+ledge color. */
+const HIT_LEDGE = '#5F27B8'; // Hit's own ledge — bg-brand's (#8B45F0) darker shade, matching PLAY_BTN_SHADOW's pairing
 const STAND_FACE = '#4F4CEA'; // literal, not var(--card-back) — a coincidental color match, not a reason to couple via a shared token (see doc comment below)
 const STAND_LEDGE = '#4340D8'; // literal, not var(--card-back-mark) — same reasoning
-const BTN_3D_TRANSITION = 'box-shadow 200ms ease, transform 120ms ease';
-/** Shared min-width (item 1) — the ticket's own explicit fallback value; no browser tooling in this
- *  environment to measure Stand's exact rendered width, and the ticket itself says this is fine
- *  ("wide enough for Stand", not pixel-exact). */
-const HIT_STAND_MIN_WIDTH = 92;
-/** Press-pulse duration (ms) — matches the ticket's own citation exactly (`Full Spec.html:3963-
- *  3969`), NOT `rcNavPop`'s own 420ms (a different keyframe/consumer, see below). */
-const NAV_BAR_POP_MS = 460;
 
 /** Item 6 — Hit / Stand, rendered into the player's OWN slot pill by the template. Gated by the
  *  server-issued legalMoves; fades in on your turn (the post-reveal linger). No Resign control —
  *  the server's disconnect → auto-stand path (BLACKJACK.md) is untouched.
  *
  *  Ticket 2026-09-27#6 (D68) items 1-4: the full 3D-button treatment — equal width, brand colors,
- *  a box-shadow ledge + press-release translateY (copied verbatim from `GameHub.tsx`'s own PLAY
- *  button construction), and a per-key "pop" press animation.
- *
- *  Item 4's press animation composes THREE separate existing precedents, not one copy-paste:
- *  the KEYFRAME is `rcNavBarPop` (`styles.css`) — already defined byte-for-byte matching the
- *  ticket's own citation, but orphaned: its only current consumer (`HubToolbar.tsx`'s bottom nav)
- *  pulses a shared bar container via a remount counter, since all 5 nav items share one literal
- *  key in the prototype — that mechanism doesn't fit here, since Hit/Stand have genuinely distinct
- *  keys and need to pulse independently. The STATE SHAPE (a single "last-pressed key" variable,
- *  each button's own conditional `animation`) is `rcNavPop`'s own shape instead (`GameHub.tsx`'s
- *  `popId`, `HomeHub.tsx`'s own copy) — a different keyframe/consumer than the one sharing this
- *  ticket's own keyframe name. The EVENT/TIMER wiring (`onPointerDown` + a fixed-duration
- *  `setTimeout` clear, restartable via a ref) is `GameHub.tsx`'s own `playShake` pattern — NOT
- *  `rcNavPop`'s own `onPointerUp`+`onAnimationEnd` release-triggered clear, since the ticket
- *  explicitly wants a press-triggered pulse with a plain timer, matching its own 460ms citation. */
+ *  a box-shadow ledge + press-release translateY, and a per-key "pop" press animation, all now
+ *  provided by the shared `PillButton` (ticket 2026-10-06#1/D83) — see that component's own doc
+ *  comment for the press-pulse/momentary-vs-persistent mechanics. Hit/Stand are the "momentary
+ *  action" consumer: `selected` is never passed, so the only press feedback is this file's own
+ *  `active:translate-y-[3px]` class, releasing the instant the pointer lifts — never a persistent
+ *  pressed pose the way Coinflip's HEADS/TAILS pick pills now use the same component for. */
 function BlackjackSlotControls({ legalMoves, onMove }: GameAreaArgs) {
   const isMyTurn = legalMoves.length > 0;
-  const [navPulse, setNavPulse] = useState<'hit' | 'stand' | null>(null);
-  const navPulseTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
-  useEffect(() => () => clearTimeout(navPulseTimeoutRef.current), []);
-  function pulse(key: 'hit' | 'stand') {
-    clearTimeout(navPulseTimeoutRef.current);
-    setNavPulse(key);
-    navPulseTimeoutRef.current = setTimeout(() => setNavPulse(null), NAV_BAR_POP_MS);
-  }
   return (
     <motion.span
       key={isMyTurn ? 'turn' : 'wait'}
@@ -564,39 +542,24 @@ function BlackjackSlotControls({ legalMoves, onMove }: GameAreaArgs) {
       style={{ transform: 'translateY(-2px)' }}
       className="flex items-center gap-2"
     >
-      <button
-        type="button"
-        data-testid="hit-btn"
+      <PillButton
+        label="Hit"
+        testid="hit-btn"
+        faceClassName="bg-brand"
+        ledge={HIT_LEDGE}
         disabled={!isMyTurn}
-        onPointerDown={() => pulse('hit')}
         onClick={() => onMove('hit')}
-        style={{
-          minWidth: HIT_STAND_MIN_WIDTH,
-          boxShadow: HIT_LEDGE,
-          transition: BTN_3D_TRANSITION,
-          animation: navPulse === 'hit' ? 'rcNavBarPop 420ms cubic-bezier(0.22,0.61,0.36,1)' : undefined,
-        }}
-        className="rounded-full bg-brand px-4 py-1.5 text-center text-sm font-bold text-white transition-opacity hover:opacity-90 active:translate-y-[3px] disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-      >
-        Hit
-      </button>
-      <button
-        type="button"
-        data-testid="stand-btn"
+        className="font-bold hover:opacity-90 active:translate-y-[3px]"
+      />
+      <PillButton
+        label="Stand"
+        testid="stand-btn"
+        faceColor={STAND_FACE}
+        ledge={STAND_LEDGE}
         disabled={!isMyTurn}
-        onPointerDown={() => pulse('stand')}
         onClick={() => onMove('stand')}
-        style={{
-          minWidth: HIT_STAND_MIN_WIDTH,
-          background: STAND_FACE,
-          boxShadow: `0 5px 0 ${STAND_LEDGE}`,
-          transition: `${BTN_3D_TRANSITION}, background-color 260ms ease`,
-          animation: navPulse === 'stand' ? 'rcNavBarPop 420ms cubic-bezier(0.22,0.61,0.36,1)' : undefined,
-        }}
-        className="rounded-full px-4 py-1.5 text-center text-sm font-bold text-white transition-opacity hover:brightness-110 active:translate-y-[3px] disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-      >
-        Stand
-      </button>
+        className="font-bold hover:brightness-110 active:translate-y-[3px]"
+      />
     </motion.span>
   );
 }

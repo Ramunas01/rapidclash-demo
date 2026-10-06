@@ -542,6 +542,22 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     }
   });
 
+  // Ticket 2026-10-06#1 (D83) item 4: the terminal/locked pill (no onClick) is deliberately left
+  // as the original flat capsule — it was never selected/ring'd to begin with (the bar-level
+  // result ring/fill already carries the outcome signal), so this ticket's own 3D-ledge treatment
+  // never applies to it. `terminal` is true the instant `renderToTerminal`'s second render lands
+  // (no reveal-staging wait needed — `OwnPills` returns the locked pill unconditionally once
+  // terminal, independent of the bar's own separately-staged win-fill timing).
+  it('ticket 2026-10-06#1 (D83): the locked/terminal pick pill stays the flat capsule — no ledge, no min-width, no pressed pose', () => {
+    renderToTerminal({ type: 'win', winner: 'pid' });
+    const locked = screen.getByTestId('coin-own-pick');
+    expect(locked.style.boxShadow).toBe('');
+    expect(locked.style.minWidth).toBe('');
+    expect(locked.style.transform).toBe('');
+    expect(locked.className).toContain('px-3');
+    expect(locked.className).not.toContain('px-4');
+  });
+
   it('Result loss (#156): outline only — no green fill, no "You Win" (regression guard); ticket 2026-09-26#3: the loss ring is now var(--rc-loss), not the shared ring-destructive class', async () => {
     vi.useFakeTimers();
     try {
@@ -1080,12 +1096,88 @@ describe('CoinflipHubScreen — choice controls: optimistic purple pick (#160)',
     expect(onMakeMove).toHaveBeenCalledWith('heads'); // onMove stays authoritative
   });
 
-  it('purple = SELECTION: the outline is the brand ring, never the green/red/orange result rings', () => {
+  // Ticket 2026-10-06#1 (D83): replaces the old purple-ring selection language entirely — selection
+  // is now the SAME pressed 3D pose Blackjack's Hit/Stand construction uses (shared `PillButton`):
+  // a permanent translateY(3px), a shallower ledge, and a brightness(0.85) filter, with no ring/
+  // outline anywhere. (The old test this replaces asserted `className` matched `/ring-brand/` —
+  // a false pass post-refactor, since the UNRELATED `focus-visible:ring-brand` a11y class, kept
+  // deliberately per Hit/Stand's own pattern, also contains that substring. `ring-offset` is the
+  // precise discriminator: it only ever appeared in the OLD selection ring, never in the
+  // focus-visible class, so its absence is what actually proves the old treatment is gone.)
+  it('ticket 2026-10-06#1 (D83): selection is the pressed 3D pose (translateY + reduced ledge + brightness), not a ring/outline — the old purple ring is gone entirely', () => {
     render(<CoinflipHubScreen {...pickWindow()} />);
-    fireEvent.click(screen.getByTestId('hub-move-heads'));
-    const cls = screen.getByTestId('hub-move-heads').className;
-    expect(cls).toMatch(/ring-brand/);
+    const heads = screen.getByTestId('hub-move-heads');
+    // Unselected: full raised pose, no brightness filter, no ring-offset anywhere.
+    expect(heads.style.transform).toBe('translateY(0)');
+    expect(heads.style.boxShadow).toBe('0 5px 0 #CA7B0D');
+    expect(heads.style.filter).toBe('');
+    expect(heads.className).not.toMatch(/ring-offset/);
+
+    fireEvent.click(heads);
+    // Selected: permanently pressed (stays, not just :active), shallower ledge, dimmed face.
+    expect(heads.style.transform).toBe('translateY(3px)');
+    expect(heads.style.boxShadow).toBe('0 2px 0 #CA7B0D');
+    expect(heads.style.filter).toBe('brightness(0.85)');
+    const cls = heads.className;
+    expect(cls).not.toMatch(/ring-offset/);
     expect(cls).not.toMatch(/ring-success|ring-destructive|ring-amber/);
+  });
+
+  // Ticket 2026-10-06#1 (D83) item 1: geometry reused byte-for-byte from Blackjack's own Hit/Stand
+  // (shared `PillButton`) — same min-width, same inter-pill gap (8px, up from the old 6px).
+  it('ticket 2026-10-06#1 (D83): HEADS/TAILS share Hit/Stand\'s own 92px min-width and 8px pill-gap', () => {
+    render(<CoinflipHubScreen {...pickWindow()} />);
+    const heads = screen.getByTestId('hub-move-heads');
+    const tails = screen.getByTestId('hub-move-tails');
+    expect(heads.style.minWidth).toBe('92px');
+    expect(tails.style.minWidth).toBe('92px');
+    const wrapper = heads.parentElement as HTMLElement;
+    expect(wrapper.className).toContain('gap-2');
+    expect(wrapper.className).not.toContain('gap-1.5');
+  });
+
+  // Ticket 2026-10-06#1 (D83), verification plan: pressing HEADS/TAILS fires the SAME
+  // `rcNavBarPop` pulse Hit/Stand's own tests already cover (same `navPulse`-timer idiom,
+  // mirrored via the shared `PillButton`), independently per pill, self-clearing after 460ms —
+  // and stays sunk afterward if it's the newly-selected side (the press-pulse and the persistent
+  // selected pose are two independent, simultaneously-true things, not one replacing the other).
+  it('ticket 2026-10-06#1 (D83): pressing HEADS fires the rcNavBarPop pulse once, self-clears after 460ms, independent of TAILS', () => {
+    vi.useFakeTimers();
+    try {
+      render(<CoinflipHubScreen {...pickWindow()} />);
+      const heads = screen.getByTestId('hub-move-heads');
+      const tails = screen.getByTestId('hub-move-tails');
+      expect(heads.style.animation).toBe('');
+
+      fireEvent.pointerDown(heads);
+      expect(heads.style.animation).toContain('rcNavBarPop');
+      expect(tails.style.animation).toBe(''); // per-pill, not a shared bar-wide pulse
+
+      fireEvent.click(heads); // the actual pick/selection — independent of the pulse
+      expect(heads.style.transform).toBe('translateY(3px)'); // selected and pressed...
+      expect(heads.style.animation).toContain('rcNavBarPop'); // ...the pulse hasn't cleared yet
+
+      act(() => { vi.advanceTimersByTime(460); });
+      expect(heads.style.animation).toBe(''); // pulse self-clears...
+      expect(heads.style.transform).toBe('translateY(3px)'); // ...but stays sunk — it's selected
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Ticket 2026-10-06#1 (D83) item 3's own explicit verification-plan line: tapping the
+  // ALREADY-selected pill causes no visual change (no re-pop, pose stays exactly as it was) —
+  // `handlePick` just re-sets the same `optimisticPick` value, no animation key changes.
+  it('ticket 2026-10-06#1 (D83): tapping the already-selected pill is a no-op — same pose, no re-pop', () => {
+    render(<CoinflipHubScreen {...pickWindow()} />);
+    const heads = screen.getByTestId('hub-move-heads');
+    fireEvent.click(heads);
+    expect(heads.style.transform).toBe('translateY(3px)');
+    const styleBefore = heads.getAttribute('style');
+
+    fireEvent.click(heads); // tap the already-selected side again
+    expect(heads.style.transform).toBe('translateY(3px)'); // unchanged — still pressed, not toggled off
+    expect(heads.getAttribute('style')).toBe(styleBefore);
   });
 
   it('only one pill is outlined at a time; the outline reflects OWN pick only, never the opponent', () => {
