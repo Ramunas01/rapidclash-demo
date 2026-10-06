@@ -13,3 +13,5 @@ node_modules
 .vscode
 .idea
 *.local
+# Owner's private local folder (secrets/notes) — never part of a build context.
+private/
