@@ -1,5 +1,54 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-06#9 — D87 (Designer, relayed by Owner as "D85" — numbering correction below): RPS board panel must be a fixed 266px box, not auto-height — confirmed real, root cause found, every one of Designer's own citations verified byte-exact against the real spec file            [READY TO TICKET]
+From: Designer's own report, relayed by Owner (files in `design-ref/D85/`: two screenshots, mid-match vs. post-reveal) — verified by reading `apps/web/src/screens/RpsHub.tsx` in full (`RpsPanel`, `RpsBoard`, `RpsIdle`) and diffing every one of Designer's own cited lines/values against the real `design/prototype/RapidClash Full Spec.html` directly (not trusted as written)
+
+## Ticket-numbering correction, flagged per Owner's own request — not self-reconciled
+
+Owner's message labeled this **D85** — but `D85` is already assigned in this log to a different ticket (`2026-10-06#4`, the Blackjack bust-deal-timing investigation, closed as "could not reproduce"). This is a genuinely different topic, not a continuation. Also worth knowing: **`D86` is already informally in use too** — PM's own branch/PR/commit for the bolt-mark consolidation (`2026-10-06#8`) used `fix/d86-bolt-mark-consolidation` and the merged commit is literally titled "D86 -- consolidate the bolt-mark svg" (confirmed on `main`, `778ae1d`), even though I never assigned that item a Designer ticket number myself (it was my own follow-up, not a Designer-sourced ticket). So the next genuinely free number is **D87** — used for this ticket below. Flagging this so the Designer/Owner's own ticket counter can resync; not fixing it myself since it's a numbering-source question, not a code one.
+
+## Every one of Designer's own citations checked directly — all exact, zero corrections needed
+
+Unusual for this log: normally at least one citation needs a correction. Not this time. Diffed line-for-line against `design/prototype/RapidClash Full Spec.html`:
+- Line 606's full style string — `border-radius:22px`, `padding:18px 14px 14px 14px`, `box-sizing:border-box`, `height:266px`, `display:flex`, `flex-direction:column`, `justify-content:center`, `gap:18px`, `opacity:{{rpsBoardOp}}`, `transition:opacity 380ms ease` — **verbatim match**, character for character.
+- Line 642's choices-row style string — **verbatim match**.
+- Values at 3804-3814 (`rpsGap`/`rpsCardW`/`rpsCardH`/`rpsVsW`/`rpsChoicesOp`/`rpsChoicesH`/`rpsChoicesPE`) — **all verbatim match**, including the exact ternary logic, not just the numbers.
+- `rpsExpanded()` = `reveal | flip | done` at line 3263 — **confirmed exact**, including the cited line number.
+
+## Root cause, confirmed directly in the real code — matches Designer's own diagnosis exactly
+
+`RpsPanel` (`RpsHub.tsx:646-657`) — the actual DOM element matching the spec's 266px panel (`rounded-[22px] bg-[var(--rc-surface)]`, same corner radius and surface token, already correctly identified via an earlier ticket's own comment at `:621`) — **has no height, no flex, no justify-content today**: just `className="rounded-[22px] bg-[var(--rc-surface)] p-4"` plus an opacity transition. Its single child (`RpsBoard` or `RpsIdle`) sizes it by pure intrinsic content height. Confirmed via `GameHub.tsx:904` that `renderGameArea(areaArgs)` (this exact panel) sits as a plain sibling in normal vertical flow between `<OpponentSlot>` and `<OwnSlot>` (`:903`/`:905`) — no absolute positioning anywhere in between — so a content-height change here genuinely cascades to push the player bar and everything below it, precisely the symptom in both screenshots.
+
+## Two additional, smaller drifts found independently — not in Designer's own ticket, same area, worth fixing in the same pass
+
+1. **Padding**: current `p-4` = 16px all sides (Tailwind). Spec is `18px 14px 14px 14px` (asymmetric, more on top). Real, measurable, not what Designer's ticket called out but directly adjacent to the fix.
+2. **Row gap**: `RpsBoard`'s own outer div (`:488`... actually `:485`, `className="flex flex-col items-center gap-4"`) and `RpsIdle`'s own outer div (`:215`, same `gap-4`) both use Tailwind `gap-4` = **16px**. Spec's panel-level gap (line 606, between the cards row and the choices row) is **18px**. Both call sites need the same correction, since `RpsIdle` renders through the identical panel markup for the idle phase (same structure; per its own doc comment, idle is just the "every pick-op sits at 0" state of the same layout, not a separate one).
+
+## One thing already correct — scope is narrower than the full ticket text might suggest
+
+Item 4's own transition-curve claim ("cards, gap, VS width and choices collapse all run 620ms `cubic-bezier(0.3,0.9,0.32,1)`, starting on the same frame") — **already true in the current code.** `EXPAND_EASE` (`RpsHub.tsx:56`) is already `'cubic-bezier(0.3,0.9,0.32,1)'` verbatim, and it's already threaded through all 4 of the relevant transitions (`gap` `:488`, VS `width` `:502`, cards' own `width`/`height` inside `RpsFrame`, and the choices wrapper's `max-height` `:584`). Nothing to change there — the fix is scoped to the panel's own box model (height/flex/padding) and the two gap values above, not the animation timing.
+
+## Recommended diff
+
+**`RpsPanel`** (`RpsHub.tsx:649-653`):
+```tsx
+className="h-[266px] box-border flex flex-col justify-center rounded-[22px] bg-[var(--rc-surface)] pt-[18px] px-[14px] pb-[14px]"
+style={{ opacity: args.barSlideActive ? 0.28 : 1, transition: 'opacity 380ms ease' }}
+```
+(Tailwind arbitrary-value utilities, matching this file's own existing convention of inline `style` only for state-dependent values — 266/18/14/14 never change, so they don't need to be inline.)
+
+**`RpsBoard`**'s outer div (`:485`) and **`RpsIdle`**'s outer div (`:215`): `gap-4` → `gap-[18px]` in both places.
+
+**`RpsIdle`**'s own `py-3` (`:215`, extra vertical padding): once the parent panel is fixed-height and vertically centers its single child itself, this padding is likely redundant or double-counts against the centering — flagging for whoever implements to check visually and drop it if it pushes idle off-center; not confirming the exact pixel effect from source alone, since it depends on the final rendered content height.
+
+## Why this should be safe to verify quickly
+
+Checked `RpsHub.test.tsx` directly: the only existing assertion against either touched wrapper is `hub-rps-panel`'s own `style.opacity` (3 call sites) — nothing currently asserts className, height, or gap on either div, so this change shouldn't collide with any existing test. Recommend the implementer add one new assertion (panel's own rendered height stays 266px — or at minimum its className carries `h-[266px]`) so a future refactor can't silently reintroduce auto-height.
+
+**Advisor next:** will independently re-verify live via `chrome-devtools-mcp` once this ships — same method as `2026-10-06#7` (real `getBoundingClientRect()` on the panel across idle/run/reveal/done, not a screenshot eyeball), matching Designer's own "Check" section (panel height constant across phases, nothing below it moves). **PM next:** ready to dispatch as-is; the numbering question above is the only open item, and it's Owner's to resolve, not a blocker to starting the code.
+
+---
+
 ### 2026-10-06#8 — D81 follow-up: bolt-mark consolidation, fully scoped and ready to implement — zero behavior change, every call site untouched            [READY TO TICKET]
 From: Advisor (Owner asked this be acted on directly; still Advisor's own `docs/` boundary per `WORKING_AGREEMENT.md` — implementation is PM/Programmer's, this is the complete spec)
 
