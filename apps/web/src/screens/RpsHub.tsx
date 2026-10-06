@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import type { RpsView } from '../App.js';
 import { useTheme } from '../lib/theme.js';
 import { DigitCountdown } from '../components/hub-shared/DigitCountdown.js';
-import { BOLT_PATH } from '../components/cards/CardBack.js';
+import { BoltMark } from '../components/cards/CardBack.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
 
 const RPS_CHOICES = [
@@ -139,13 +139,11 @@ function RpsHandIcon({ choice, size, color }: { choice: string | undefined; size
  *  live-board opponent card used to wrap this icon in an extra, unstyled `<span data-testid=
  *  "hub-opponent-pick">`, the ONE structural difference between RPS's 3 render sites (the other 2
  *  render this icon as a direct flex child, matching the prototype's own span-free markup exactly).
- *  Threading the testid here instead removes that wrapper without losing the test hook. */
+ *  Threading the testid here instead removes that wrapper without losing the test hook.
+ *  Ticket 2026-10-06#8 (D81 follow-up): now a thin wrapper over `CardBack.tsx`'s shared `BoltMark`
+ *  (one bolt svg for both card backs and this icon) — signature unchanged, so no call site moves. */
 function RpsRedactedIcon({ testid }: { testid?: string } = {}) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 351 374" width="74%" style={{ display: 'block' }} role="img" aria-label="Hidden" data-rc-rps-icon="redacted" data-testid={testid}>
-      <path fill="#4340D8" d={BOLT_PATH} />
-    </svg>
-  );
+  return <BoltMark fill="#4340D8" testid={testid} rpsIcon />;
 }
 
 /** rpsTileBg (Full Spec.html:3819): the sunken tile behind each card's icon / each picker button.
