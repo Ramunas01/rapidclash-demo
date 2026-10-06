@@ -212,7 +212,7 @@ function RpsFrame({
 function RpsIdle() {
   const tileBg = useRpsTileBg();
   return (
-    <div className="flex flex-col items-center gap-4 py-3">
+    <div className="flex flex-col items-center gap-[18px]">
       <div className="flex items-center justify-center" style={{ gap: CARD_GAP }}>
         <RpsFrame frame={FRAME_NEUTRAL} tileBg={tileBg} size={CARD_W} height={CARD_H} testid="hub-idle-my-pick">
           <span className="text-3xl opacity-0">•</span>
@@ -482,7 +482,7 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, outcome, on
   }, [windowEndsAt, serverClockOffset]);
 
   return (
-    <div className="flex flex-col items-center gap-4" data-testid="hub-board">
+    <div className="flex flex-col items-center gap-[18px]" data-testid="hub-board">
       {/* You — VS + countdown — Opponent (opponent hidden until the terminal reveal beat below).
           Full Spec.html:608 (gap), :616 (VS column width), :618 (countdown float). */}
       <div className="flex items-center justify-center" style={{ gap: cardGap, transition: `gap 620ms ${EXPAND_EASE}` }}>
@@ -633,7 +633,15 @@ function RpsBoard({ playerId, opponentId, gameState, events, onMove, outcome, on
  *  same name) — matches `rpsBoardOp: rpsMatching ? 0.28 : 1` (`Full Spec.html:3795`) exactly, same
  *  380ms ease transition as the outer `isRps` div itself uses (`:606`). This is what makes the
  *  opponent/own bars sliding toward the VS label (the bar-slide mechanism, `matchBarSlide`) actually
- *  read against a receded table instead of blending into a same-toned board. */
+ *  read against a receded table instead of blending into a same-toned board.
+ *
+ *  Ticket 2026-10-06#9 (D87): a FIXED 266px box (Full Spec.html:606 — `height:266px; box-sizing:
+ *  border-box; display:flex; flex-direction:column; justify-content:center; padding:18px 14px 14px
+ *  14px`), not auto-height. It used to size to its child's content, so when the choices row collapses
+ *  at the reveal the panel shrank and the own-player bar below it (a plain sibling in GameHub's flow)
+ *  jumped up. The 234px inner area fits the run phase exactly (130px cards + 18px gap + 86px choices
+ *  row); the reveal's 176px cards with the row collapsed sit centred instead. The spec's own `gap:18px`
+ *  lives on `RpsBoard`/`RpsIdle`'s outer div, since this panel only ever has that one child. */
 // Ticket 2026-09-25#1 item 3 (ADVISOR_TO_PM.md): `currentMatchId` isn't part of `GameAreaArgs`
 // (it lives on the sibling `GameHubScreenProps`), so `RpsHubScreen` below threads it in as an
 // extra prop rather than widening the shared interface — the same pattern DiceHub.tsx uses for
@@ -648,7 +656,7 @@ function RpsPanel({ currentMatchId, ...args }: GameAreaArgs & { currentMatchId: 
   return (
     <div
       data-testid="hub-rps-panel"
-      className="rounded-[22px] bg-[var(--rc-surface)] p-4"
+      className="box-border flex h-[266px] flex-col justify-center rounded-[22px] bg-[var(--rc-surface)] px-[14px] pb-[14px] pt-[18px]"
       style={{ opacity: args.barSlideActive ? 0.28 : 1, transition: 'opacity 380ms ease' }}
     >
       {showBoard ? <RpsBoard key={currentMatchId ?? 'idle'} {...args} /> : <RpsIdle />}
