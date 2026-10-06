@@ -1,5 +1,26 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-06#7 — D81 CLOSED: the one open item (bolt centering) directly measured live via `chrome-devtools-mcp` — pixel-exact centered on both the RPS and Blackjack sides. One ask from the original ticket (component consolidation) is confirmed never implemented — flagging, not silently dropping it            [CLOSED — the visual gap this ticket was waiting on is confirmed fixed; one optional structural item remains undone]
+From: Advisor (direct live inspection — same `chrome-devtools-mcp` session as `2026-10-06#6`) — verified by real matches on production (RPS vs `crazypov`, Blackjack vs `snakeeyes`, account `advisor_d84_probe`), measuring the actual live DOM bounding boxes of the redacted-bolt svg against its card-face container, not a screenshot eyeball
+
+## The measurement Designer's own ticket asked for, finally done live
+
+`2026-10-04#5` (D81's original ticket) and `2026-10-04#10`/`#11` (the PR that shipped 2 of its 4 items) both left the same thing explicitly open: whether the bolt reads centered post-fix, "needs a live render, flagged for whoever has that tooling" — neither PM nor I had it at the time. Did the actual measurement now:
+
+**RPS live-board opponent card** (`RpsHub.tsx:553`, the exact site that had the `<span>` wrapper removed): live `getBoundingClientRect()` on the real `viewBox="0 0 351 374"` bolt svg against its face container — `marginLeft: 10.40625`, `marginRight: 10.40625` (identical to the sub-pixel), `marginTop: 27.46875`, `marginBottom: 27.46875` (identical). Zero deviation on both axes, not just within Designer's own 1px tolerance.
+
+**Blackjack's `CardBack.tsx`** (the `display:block` fix): measured all 3 live deck-pile instances visible in one match — pairs of `(marginLeft, marginRight)` = `(5, 5)` and `(5.828125, 5.828125)`, pairs of `(marginTop, marginBottom)` = `(14.0625, 14.078125)` and `(16.734375, 16.75)` — every pair matches to within 0.016px (floating-point rounding noise, not a real offset). Confirmed on 3 independent instances, not just one.
+
+Both fixes from PR #820 (`b7dd616`) are doing exactly what they were meant to, confirmed from the real DOM, not inferred from the diff.
+
+## Item 3 (component consolidation) — confirmed never done, flagging rather than dropping
+
+My own original ticket's recommendation 3 ("one shared `<CardBackBolt>` so there's exactly one implementation to keep in sync, not two that can quietly drift the way Blackjack's already has") was explicitly scoped out of PR #820 by design (`2026-10-04#10`: "deliberately leaving items 3... untouched, exactly as my own ticket framed them"). Checked directly: `git log -- apps/web/src/screens/RpsHub.tsx apps/web/src/components/cards/CardBack.tsx` shows no consolidation commit since — `RpsRedactedIcon` and `CardBack.tsx` are still two independently-authored svg implementations sharing only the `BOLT_PATH` constant. This was part of Designer's own original "Fix" instruction (singular shared component), not purely my own suggestion, so noting it here rather than letting it quietly disappear now that the visible symptom is fixed. Not blocking — purely an anti-drift refactor, no current visual bug depends on it.
+
+**Advisor next:** available, no open thread. **PM next:** nothing required — D81's actual complaint (off-center bolt) is confirmed fixed on both games. The consolidation item is optional; worth folding into whenever either `CardBack.tsx` or `RpsRedactedIcon` is next touched, rather than a dedicated ticket on its own.
+
+---
+
 ### 2026-10-06#6 — D84: `chrome-devtools-mcp` now live in this session — could NOT reproduce the stripe on Chromium, live, across multiple real matches, desktop and mobile-emulated, with Owner independently watching the same browser and agreeing            [FOLLOW-UP — negative result, but the strongest evidence yet on where the bug ISN'T]
 From: Advisor (direct live inspection — `chrome-devtools-mcp`, newly available this session, resolving the tooling gap every prior D84 entry was blocked on) — verified via real matches played on production (`https://rapidclash-847070222251.us-central1.run.app`, throwaway account `advisor_d84_probe`) against live opponents from the open-games pool, with DevTools attached throughout
 
