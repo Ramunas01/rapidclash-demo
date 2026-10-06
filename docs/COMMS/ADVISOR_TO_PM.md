@@ -1,5 +1,54 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-06#1 — D83 (Designer): Coinflip HEADS/TAILS pills should be the same construction as Blackjack's Hit/Stand (3D ledge + pressed-down selected state), not the current flat capsule + purple ring. Confirmed every delta by direct read, not assumed: `CoinflipHub.tsx`'s `SidePill` has no box-shadow ledge at all, no shared min-width, smaller padding/font than Hit/Stand, a 6px pill-gap vs Hit/Stand's 8px, and uses a purple outline ring for selection — all 5 confirmed absent/different, matching the two attached screenshots exactly. **One factual correction flagged, then resolved per Designer's own direct call (relayed live by Owner: "leave the colors untouched")**: the brief assumes TAILS' face is the card-back blue `#4F4CEA` and says to reuse Stand's own ledge (`#4340D8`) for it — our actual `--coin-tails-face` token is `#556EF6`, a deliberately different blue (an earlier ticket's own CSS comment: "Designer's EXACT spec, decoupled from --card-back"). Flagged this mismatch precisely; Designer's own answer was to use the brief's literal numbers as written regardless, not my own alternative — so `#4340D8` it is, documented here so the known hue mismatch isn't mistaken for an oversight later            [READY TO TICKET]
+From: Designer's own report (files in `design-ref/D83/`: two screenshots, HEIC — converted locally to compare directly, not skipped) — verified by reading `CoinflipHub.tsx`'s `SidePill`/`OwnPills` and `BlackjackHub.tsx`'s `BlackjackSlotControls` (Hit/Stand) directly side by side, confirming `--coin-tails-face`'s real value in `index.css` (not assumed from the brief's own text), and relaying the color-mismatch question to Owner live, who confirmed Designer's answer directly
+
+## Every delta confirmed by direct read, matching both screenshots exactly
+
+`SidePill` (`CoinflipHub.tsx:187-217`) today: `rounded-full px-3 py-1.5 text-[12px] ...` — no box-shadow anywhere, no explicit height/min-width (sizes itself to each label independently), selected state is `ring-2 ring-brand ring-offset-2 ring-offset-surface` (a purple outline). The pill-pair wrapper (`:267`) uses `gap-1.5` (6px).
+
+`BlackjackSlotControls`'s Hit/Stand (`BlackjackHub.tsx:545-602`, ticket 2026-09-27#6/D68) today: `rounded-full px-4 py-1.5 text-sm font-bold ...`, `minWidth: HIT_STAND_MIN_WIDTH` (92px, shared by both buttons), `boxShadow: '0 5px 0 #5F27B8'` (Hit) / `'0 5px 0 #4340D8'` (Stand), `active:translate-y-[3px]`, a `navPulse`-driven `rcNavBarPop 420ms cubic-bezier(0.22,0.61,0.36,1)` press animation (`NAV_BAR_POP_MS = 460` for the clear-timer, matching the brief's own citation exactly). The pill-pair wrapper uses `gap-2` (8px).
+
+Confirmed visually against both screenshots: Coinflip's HEADS/TAILS read visibly shorter/flatter than Hit/Stand, exactly matching what the code comparison predicts — this isn't a subjective "make it feel more similar" ask, it's 5 concrete, already-shipped CSS properties Hit/Stand has that Coinflip's pill genuinely lacks.
+
+## Recommended implementation: extract ONE shared component, don't duplicate the recipe a second time
+
+Designer's own phrasing — "the SAME component as Hit/Stand" (singular) — and this codebase's own established precedent (D81's "one shared CardBack component" ask, resolved the same way) both point the same direction: factor Hit/Stand's existing construction into a shared `hub-shared/` component (e.g. `PillButton`: face, ledge, label, selected, disabled, onClick, a shared `navPulse` key) and have BOTH `BlackjackSlotControls` and Coinflip's `SidePill` render it, rather than copy-pasting the recipe into `CoinflipHub.tsx` a second time. This also means `BlackjackSlotControls`'s own already-tested press/ledge mechanics get reused byte-for-byte, not re-derived and risked diverging later.
+
+## Item 3 (selected state) — precise mapping from the brief's own CSS to React state
+
+- Remove `ring-2 ring-brand ring-offset-2 ring-offset-surface` entirely — no outline/ring token stays anywhere on this component after this ticket.
+- Selected: keep the pressed pose permanently (not just on `:active`) — `transform: translateY(3px)`, reduced ledge `0 2px 0 <ledge>` (down from the unselected `0 5px 0 <ledge>`), and the face's own `filter: brightness(0.85)` (the brief's own first-choice option over the inset-overlay alternative — simpler, one property, no new rgba literal to introduce).
+- Unselected: full raised pose (`translateY(0)`, `0 5px 0 <ledge>`, no brightness filter).
+- Transition list exactly as specified: `transform 120ms ease, box-shadow 200ms ease, filter 200ms ease`.
+- Tapping the already-selected pill: no visual change (already true today structurally — `handlePick` just re-sets the same `optimisticPick` value, no animation keys change) — worth one explicit test rather than assuming.
+
+## Item 2 (colours) — HEADS derived per the brief's own method; TAILS uses the brief's literal value per Designer's own direct call
+
+**HEADS**: face stays `COIN_FACE_TOKENS.heads.face` (`--coin-heads-face`, `#F2A63B`) — the brief's own "current orange, exactly as is" instruction applies cleanly, no discrepancy. The brief gives no literal ledge hex for HEADS, only the derivation method ("same hue/saturation, same lightness drop as purple → ledge") — applying it: **`#CA7B0D`** (H=35°, S=88%, L 59.0%→42.2%, same 16.9-point absolute lightness drop purple→`#5F27B8` uses).
+
+**TAILS**: confirmed by reading `index.css` directly that the brief's own conditional premise ("if the face is the card-back `#4F4CEA`") is false for our actual token — `--coin-tails-face` is `#556EF6` (set by an earlier, deliberate ticket decoupling it from `--card-back` — its own comment says so explicitly), a visibly different, more saturated blue. Flagged this to Owner directly before ticketing; Designer's own answer (relayed live: "leave the colors untouched") was to use the brief's literal fallback as written, not an adjusted value computed for the real token. **Ledge: `#4340D8`** (Stand's own ledge, reused verbatim) — a known, deliberate hue mismatch against `#556EF6`, not an oversight; recorded here so it reads as intentional if anyone compares it to HEADS' own cleanly-derived ledge later.
+
+## Item 1 (geometry) — reuse Hit/Stand's own values exactly, not re-derived
+
+Min-width, height (via `px-4 py-1.5 text-sm`), border-radius (`rounded-full`), and the inter-pill gap (`gap-2`, 8px — not Coinflip's current `gap-1.5`) all come directly from `BlackjackSlotControls`'s own already-shipped values, inherited for free once the shared component (above) is used for both. "Right-edge alignment in the bar" is already structural — both render through the exact same `renderSlotAside`/`OwnSlot` aside mechanism in `GameHub.tsx`, so no separate positioning fix is needed, just confirming the shared component doesn't introduce its own margin/alignment quirk.
+
+## Item 4 (locked state) — confirmed there is currently nothing to change
+
+Checked directly: `SidePill`'s own `disabled` prop exists but is **never actually passed `true` at any of its 3 call sites** (`:253`/`:270`/`:307`) — dead plumbing, not a shipped behavior. `OwnPills` goes straight from "both pills fully interactive" to "terminal: one flat locked pill, no styling at all" (`:249-253`) with no dimmed-but-visible intermediate state today. The brief's own "if they dim" framing is conditional, matching this — there's nothing currently dimming, so there's nothing to fix here; just confirming (not inventing) that IF a future ticket adds a locked-but-visible state, `opacity-50` on the whole pill (matching Play's own rule) is the right shape, not a stripe/partial treatment.
+
+## Verification plan
+
+- Visual: side-by-side screenshot of both pills (idle unselected, HEADS selected, TAILS selected) against Hit/Stand — same geometry within 1px, per the brief's own check.
+- Press: tapping HEADS/TAILS fires the `rcNavBarPop` pop once (same `navPulse`-timer idiom Hit/Stand already tests), stays sunk afterward if it's the newly-selected side.
+- Tapping the already-selected side: no pop, no visual change — assert explicitly, don't assume.
+- No ring/outline class anywhere on this component after the change — grep-checkable.
+- Terminal/locked pill (the single flat pick shown after the round ends) stays visually unaffected by this ticket — it already renders through a separate, un-styled branch untouched by any of items 1-3.
+
+**Advisor next:** available, no open thread. **PM next:** D83 above — recommend the shared-component extraction, but the per-pill visual properties are precisely scoped either way.
+
+---
+
 ### 2026-10-05#3 — D82 DEPLOYED LIVE (`rapidclash-00150-d77`, confirmed healthy, zero errors, bot-crowd confirmed posting, the exact `winSoundName` ternary confirmed present in the live bundle verbatim — not just a trusted deploy report)            [VERIFIED — deployed, confirmed in the live artifact]
 From: PM's own cross-session report — independently re-verified via `gcloud` (revision health/traffic/logs) and a live bundle fetch reading the literal deployed ternary
 
