@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { cn } from '@/lib/utils';
 import type { CoinflipView } from '../App.js';
 import { Coin, COIN_FACE_TOKENS } from '../components/coin/Coin.js';
 import { DigitCountdown } from '../components/hub-shared/DigitCountdown.js';
+import { PillButton } from '../components/hub-shared/PillButton.js';
 import { GameHub, type GameHubScreenProps, type GameAreaArgs } from './GameHub.js';
 import { play } from '../lib/sound.js';
 
@@ -38,9 +38,22 @@ const COIN_SIZE_PX = 216;
 
 // The H/T pick pills mirror the flat coin's face colours one-to-one (orange heads / card-back-blue
 // tails) — the fill IS the identity cue. Token-driven, shared with FlatCoin (no hardcoded hex).
+//
+// Ticket 2026-10-06#1 (D83): each side's own ledge color (for the new 3D-pill construction, see
+// `SidePill` below). HEADS is derived per the brief's own method — same hue/saturation as the
+// face, the same 16.9-point absolute lightness drop Blackjack's own Hit face→ledge uses — since
+// the brief gave no literal hex for HEADS, only this derivation. TAILS: Owner's own explicit call
+// (relayed live, 2026-10-06) was to LEAVE the real `--coin-tails-face` token (#556EF6) untouched
+// rather than adopt the brief's literal `#4340D8` fallback — that fallback was only ever a
+// stand-in for a DIFFERENT, incorrectly-assumed face color (`#4F4CEA`, Blackjack's own Stand) that
+// was never actually ours. So TAILS' ledge is derived via the SAME method applied to HEADS (same
+// hue/saturation as the real #556EF6, the same 16.9-point drop) instead of reusing an unrelated
+// literal — a known, deliberate deviation from the brief's own fallback number, not an oversight.
+const HEADS_LEDGE = '#CA7B0D';
+const TAILS_LEDGE = '#0C2FE9';
 const SIDES = [
-  { id: 'heads', label: 'Heads', face: COIN_FACE_TOKENS.heads.face },
-  { id: 'tails', label: 'Tails', face: COIN_FACE_TOKENS.tails.face },
+  { id: 'heads', label: 'Heads', face: COIN_FACE_TOKENS.heads.face, ledge: HEADS_LEDGE },
+  { id: 'tails', label: 'Tails', face: COIN_FACE_TOKENS.tails.face, ledge: TAILS_LEDGE },
 ] as const;
 
 /** The server's terminal frame carries the flip `result` (stripped pre-terminal by viewFor). */
@@ -180,10 +193,18 @@ function CoinflipPanel(args: GameAreaArgs) {
   );
 }
 
-/** A filled side capsule: orange HEADS / blue TAILS (mirrors the flat coin). Always shows the face colour. Tappable in the
- *  pick window; static (locked) at the reveal. No dot icon — the fill IS the identity cue.
- *  `selected` rings the capsule in brand PURPLE — the selection language, kept distinct from the
- *  green/red/orange result rings (which act on the whole player bar, not the capsule). */
+/** A filled side pill: orange HEADS / blue TAILS (mirrors the flat coin). Always shows the face
+ *  colour — no dot icon, the fill IS the identity cue.
+ *
+ *  Ticket 2026-10-06#1 (D83): the LIVE pick-window pill (onClick present) now uses the same 3D
+ *  "ledge" construction as Blackjack's Hit/Stand (the shared `PillButton`), as a PERSISTENT
+ *  toggle — the pressed pose stays until deselected, replacing the old purple
+ *  `ring-2 ring-brand ring-offset-2 ring-offset-surface` outline entirely (no ring/outline token
+ *  remains on this component). The LOCKED/terminal pill (no onClick — the single flat pick shown
+ *  after the round ends, or the opponent's revealed pick) is deliberately left as the original
+ *  flat capsule — Item 4's own confirmation: that state was never selected/ring'd to begin with
+ *  (the bar-level win/lose/draw ring already carries the outcome signal there), so this ticket
+ *  doesn't touch it. */
 function SidePill({
   side,
   disabled,
@@ -197,22 +218,30 @@ function SidePill({
   onClick?: () => void;
   testid?: string;
 }) {
-  const Tag = onClick ? 'button' : 'div';
+  if (onClick) {
+    return (
+      <PillButton
+        label={side.label}
+        faceColor={side.face}
+        ledge={side.ledge}
+        selected={Boolean(selected)}
+        disabled={disabled}
+        onClick={onClick}
+        testid={testid ?? `hub-move-${side.id}`}
+        className="font-extrabold uppercase tracking-wide"
+      />
+    );
+  }
   return (
-    <Tag
-      {...(onClick ? { type: 'button' as const, onClick, disabled, 'aria-pressed': selected } : {})}
+    <div
       data-testid={testid ?? `hub-move-${side.id}`}
       data-selected={selected || undefined}
       aria-label={side.label}
-      className={cn(
-        'flex items-center justify-center rounded-full px-3 py-1.5 text-[12px] font-extrabold uppercase tracking-wide text-white transition-all',
-        onClick && 'disabled:cursor-not-allowed disabled:opacity-50',
-        selected && 'ring-2 ring-brand ring-offset-2 ring-offset-surface'
-      )}
+      className="flex items-center justify-center rounded-full px-3 py-1.5 text-[12px] font-extrabold uppercase tracking-wide text-white"
       style={{ background: side.face }}
     >
       {side.label}
-    </Tag>
+    </div>
   );
 }
 
@@ -264,7 +293,9 @@ function OwnPills({ args }: { args: GameAreaArgs }) {
   }
 
   return (
-    <span className="flex items-center gap-1.5" role="group" aria-label="Pick a side">
+    // Ticket 2026-10-06#1 (D83) item 1: gap-2 (8px), matching Hit/Stand's own pill-pair spacing —
+    // was gap-1.5 (6px).
+    <span className="flex items-center gap-2" role="group" aria-label="Pick a side">
       {SIDES.map((s) => (
         // Both pills stay tappable the whole window — tapping either just moves the purple outline.
         <SidePill
