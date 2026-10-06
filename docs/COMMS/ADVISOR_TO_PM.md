@@ -1,5 +1,40 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-06#11 — D85 REVIVED (not a new ticket — same reported symptom, corrected reproduction): Owner found the real precondition the original investigation never tested, and it exposes a GENUINE race, fully traced through both server and client source — own hit card and the opponent's reveal start animating on the exact same render, with zero stagger            [READY TO TICKET — root cause and mechanism both confirmed with full confidence, a design decision needed on the exact fix]
+From: Owner's own personal reproduction (no files — a precise, deliberately-engineered sequence, not a screenshot) — verified by re-reading `packages/games/blackjack/src/blackjack.ts` (`applyMove`, `resolveRound`, `terminal`) and `apps/web/src/screens/BlackjackHub.tsx` (`BlackjackBoard`, `OppHoleCard`, `usePacedView`) line-by-line against the exact sequence Owner described
+
+## Ticket-numbering call: reviving D85, not opening a new number
+
+This is the SAME symptom Designer originally reported (`2026-10-06#4`) — "my result arrives alongside/after the opponent's reveal instead of settling first" — just reproduced via a different, more precise precondition than my own original synthetic test used. Not a new, independent complaint, so it belongs under the existing number rather than consuming one of the D87/D88 slots this session already had to sort out today. My original close ("could not reproduce") stands as accurate for the EXACT scenario it tested — this is new evidence about a DIFFERENT, narrower precondition, not a retraction.
+
+## Owner's own reproduction, restated precisely, and confirmed real
+
+The precondition my original test never covered: **the opponent is ALREADY done (stood, or already bust) BEFORE my own Hit lands**, and that same Hit busts me. In that specific case — and only that case — my own bust card and the opponent's full reveal arrive in the exact same server broadcast and animate on the exact same client render, with no sequencing between them. My original test (`2026-10-06#4`) explicitly used the opposite precondition ("opponent UNCHANGED, still mid-hand, non-terminal") — which is why it correctly found no race: there was nothing to race against yet in that setup.
+
+## Server side — confirmed synchronous, one broadcast, both signals together
+
+`applyMove` (`blackjack.ts:237-248`) on a `hit`: pushes the card, sets `me.done = true` if the push busts (`handValue(me.cards) > BUST_THRESHOLD`). The very next line (`:253`) checks `next.players.every(p => next.hands[p].done)` — if the opponent's hand was ALREADY `done` from an earlier move, this is true on THIS SAME call, and `resolveRound` (`:140`) runs synchronously, setting `s.winner` before the function returns. `broadcastMoveResult` sends this one combined `state` unconditionally (confirmed already in `2026-10-06#4`). `viewFor` (`:272-298`) for a terminal state returns the FULL reveal to both players — so the one message out carries my new card AND the opponent's real hidden card together. There is no second, later message — this is the mechanism, not a guess.
+
+## Client side — confirmed zero stagger between my own card and the opponent's flip
+
+`BlackjackBoard` (`BlackjackHub.tsx`): the race precondition means `usePacedView`'s `current` (shown) frame was non-terminal (I hadn't acted yet) and `incoming` is terminal — so the pacing hold (`TERMINAL_HOLD_MS` = 1100ms, `:345`) fires and the ENTIRE new frame (my new card bundled with the reveal) snaps in together after that hold, not staggered within it — `usePacedView` paces WHICH frame is shown, never what happens inside one.
+
+Once that frame applies: my own 3rd card is a fresh key (`own-${round}-2`, never rendered before) mounting with `delay={ownDeal(2)}` — confirmed `ownDeal(i)` (`:430`) only staggers during the OPENING 4-card deal (`opening` requires `ownCards.length === 2`, already false once a 3rd card exists) — so `delay = 0`. Its own slide-in animation is `CARD_ANIM_S` = 0.55s (`:32-33`).
+
+`OppHoleCard`'s flip (`:210-214`) is driven directly by its `revealed` prop with `animate={{ rotateY: revealed ? 0 : 180 }}`, `transition={{ duration: CARD_ANIM_S }}` — **no `delay` at all**, unlike the outer wrapper's own transition which does carry one. `revealed` (`BlackjackBoard:393`) flips `false → true` on the EXACT SAME render that mounts my new 3rd card. **Both animations start in the same React commit, same 550ms duration** — confirmed directly from both components' own transition props, not inferred. Designer's own intent (per Owner's relay) — mine lands, THEN the opponent reveals — needs a deliberate stagger that does not exist today; nothing currently delays `revealed`'s effect (or the opponent's own hit-card reveals, `:479-481`, same `revealed &&` gate) to wait for my own new card to finish.
+
+## Scope, precisely — confirmed this is Hit-specific, not Stand
+
+A Stand never adds a card (`me.done = true` only, `:247`) — `ownCards.length` is unchanged on that transition, so there's nothing of mine "in flight" to race against a simultaneous reveal; Standing into an already-terminal opponent is fine as-is. The race is specifically: **a Hit that busts me (or exhausts the deck), where the opponent was already done beforehand.** A non-bust Hit never sets `done = true`, so it never triggers `resolveRound` on that same move — confirmed no other Hit shape can trigger this.
+
+## What I'm not guessing at — the exact fix needs one design call
+
+The mechanism and its scope are fully confirmed, not speculative (unlike D84's own still-open mystery) — but the right FIX is a choreography decision, not a pure bug patch, so I'm flagging the shape rather than picking a number myself: **detect this specific transition** (own hand's card count increased on the SAME frame `isTerminal` flips true) and **delay the opponent's reveal start** (`OppHoleCard`'s effective `revealed`, and the `revealed &&` gate on the opponent's own hit-card reveals, `:479`) by `CARD_ANIM_MS` relative to normal, so my own new card visibly lands first. Needs one Designer/Owner call: is a full `CARD_ANIM_MS` (550ms) stagger right, or does Designer want something shorter/longer — I'd rather ask than invent a number. Recommend whoever implements write the same kind of throwaway reproduction my original investigation did (opponent pre-set `done: true`, player hits into a bust in one call) and assert the opponent's hole card's `revealed`/flip does NOT fire until after the own card's own travel window — a concrete, checkable bar, not just "feels right."
+
+**Advisor next:** available — will sanity-check the chosen stagger value once PM/Designer settle it, same live-match method as D86/D87 once this ships (hard to force deterministically against a real bot's randomized thinking delay, so I'd lean on a written test plus one or two live attempts, not a guaranteed live repro). **PM next:** ready to ticket once the stagger-duration question above is answered; the mechanism itself needs no further investigation.
+
+---
+
 ### 2026-10-06#10 — D86 + D87 DEPLOYED LIVE, both independently re-verified via `chrome-devtools-mcp` on production — zero drift from the merged diffs, exact numbers predicted ahead of time now confirmed            [VERIFIED — deployed, live-confirmed]
 From: Advisor (direct live inspection, `rapidclash-00151-s7v`, production) — real matches played on `advisor_d84_probe`, measuring actual DOM via `getBoundingClientRect()`/`getComputedStyle`, not a screenshot eyeball
 
