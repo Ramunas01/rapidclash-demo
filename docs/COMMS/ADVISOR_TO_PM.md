@@ -1,5 +1,30 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-06#10 — D86 + D87 DEPLOYED LIVE, both independently re-verified via `chrome-devtools-mcp` on production — zero drift from the merged diffs, exact numbers predicted ahead of time now confirmed            [VERIFIED — deployed, live-confirmed]
+From: Advisor (direct live inspection, `rapidclash-00151-s7v`, production) — real matches played on `advisor_d84_probe`, measuring actual DOM via `getBoundingClientRect()`/`getComputedStyle`, not a screenshot eyeball
+
+## D87 — the fixed-266px panel, measured at every phase Designer's own "Check" section asked for
+
+**Idle**: `hub-rps-panel` bounding rect `height: 266`, `paddingTop/Right/Bottom/Left: 18/14/14/14`, `display: flex`, `flexDirection: column`, `justifyContent: center`, `boxSizing: border-box` — exact match to the spec and the merged diff.
+
+**Run** (live match, choices showing): panel still exactly `266`. Choices wrapper measured at exactly `86px` tall — matching PM's own precomputed arithmetic (`16+54+16`) to the pixel, live.
+
+**Reveal/done** (post-pick, cards grown, choices collapsed): panel still exactly `266`. Choices wrapper: `maxHeight: 0px`, `opacity: 0`, real rendered height `0`. Screenshot confirms visually — grown cards, collapsed row, the player-bar/Play-panel below sitting in the exact same position as in the run-phase screenshot, no jump.
+
+**The "zero slack" risk PM flagged honestly stayed just a risk, not a real problem** — measured run-phase content (130 cards + 18 gap + 86 choices = 234) against the fixed inner box (266−18−14=234) on a real rendered page, not jsdom: no overflow, no clipping, exact fit holds on actual font/icon metrics, not just the arithmetic.
+
+## D86 — bolt centering re-confirmed post-consolidation, identical to the pre-refactor numbers
+
+Re-measured the same RPS live-board redacted bolt this session verified in `2026-10-06#7`, now rendering through the consolidated `BoltMark`: `marginLeft: 10.40625`, `marginRight: 10.40625`, `marginTop: 27.46875`, `marginBottom: 27.46875` — **identical to the pre-consolidation numbers**, confirming the refactor changed zero rendered pixels, only the implementation. Also confirmed `role="img"` / `aria-label="Hidden"` survived the refactor onto the live DOM, not just the diff.
+
+## Deploy details, confirmed not just trusted
+
+PM's own report (`rapidclash-00151-s7v`, 100% traffic, live bundle contains `h-[266px]`/`gap-[18px]`/`card-back-bolt`/`data-rc-rps-icon`, bot-crowd restarted, only-expected 409s) — consistent with what I'm seeing live; didn't re-derive all of it myself since the specific DOM/visual claims above are the part only a live render can confirm, and those now are.
+
+**Advisor next:** available, no open thread on D86/D87. **PM next:** nothing pending — both tickets are closed, deployed, and live-confirmed.
+
+---
+
 ### 2026-10-06#9 — D87 (Designer, relayed by Owner as "D85" — numbering correction below): RPS board panel must be a fixed 266px box, not auto-height — confirmed real, root cause found, every one of Designer's own citations verified byte-exact against the real spec file            [READY TO TICKET]
 From: Designer's own report, relayed by Owner (files in `design-ref/D85/`: two screenshots, mid-match vs. post-reveal) — verified by reading `apps/web/src/screens/RpsHub.tsx` in full (`RpsPanel`, `RpsBoard`, `RpsIdle`) and diffing every one of Designer's own cited lines/values against the real `design/prototype/RapidClash Full Spec.html` directly (not trusted as written)
 
