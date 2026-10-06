@@ -395,7 +395,35 @@ function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, phase, ou
   // reveal, or while the pushed hands are held; the opponent's is final only when fully revealed.
   const ownDone = Boolean(playerId && view?.hands[playerId]?.done);
   const ownFinal = isTerminal || showPush || ownDone;
-  const oppFinal = isTerminal || showPush;
+
+  // Ticket 2026-10-06#11/#12 (D85): when my own Hit busts (or exhausts the deck) while the opponent
+  // was ALREADY done, the server resolves the round on that same move — ONE frame carries both my
+  // new card and the full reveal, so my card's deal-in and the opponent's reveal used to start on
+  // the same commit. Detect that race (my hand grew on the very transition that flipped `revealed`)
+  // and hold the opponent's whole reveal — flip, hit cards, total pill, reveal-complete timer — back
+  // by CARD_ANIM_MS so my card visibly lands first (Owner's call: reuse this constant, no new one).
+  // Lengths are remembered PER ROUND, not as one "last seen" value. On the push path the re-dealt
+  // frame (next round's fresh 2-card deal) and `drawBeat` are each applied from an effect
+  // (usePacedView here, GameHub's replays watcher there); today they batch into one render, so the
+  // board never sees the fresh deal without the push. If they ever split, a single "last seen" length
+  // would remember that fresh deal and flag an ordinary push as a race; keyed by round, the push
+  // always compares against the resolved round's own last in-play length. Render-phase ref writes
+  // are idempotent (same value per render).
+  const ownLenByRoundRef = useRef(new Map<number, number>());
+  if (!revealed) ownLenByRoundRef.current.set(round, ownCards.length);
+  const ownLenBeforeReveal = ownLenByRoundRef.current.get(keyRound);
+  const raced = revealed && ownLenBeforeReveal != null && ownCards.length > ownLenBeforeReveal;
+  const [raceHoldDone, setRaceHoldDone] = useState(false);
+  useEffect(() => {
+    if (!raced) { setRaceHoldDone(false); return; }
+    const id = setTimeout(() => setRaceHoldDone(true), CARD_ANIM_MS);
+    return () => clearTimeout(id);
+  }, [raced, keyRound]);
+  // The opponent-side reveal signal: identical to `revealed` except held back during a race.
+  // Computed inline (not set from an effect) so the ordinary, un-raced reveal starts on the exact
+  // same commit it always has.
+  const revealReady = revealed && (!raced || raceHoldDone);
+  const oppFinal = revealReady;
 
   // ── Reveal-complete choreography (ONE source of truth for the result presentation timing) ──
   // The reveal animates the opponent's cards: the hole card flips (CARD_ANIM_MS), then any HIT cards
@@ -413,15 +441,16 @@ function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, phase, ou
   // lockstep with the last card, never ahead of it (Advisor #10). Pushes gate the card outline
   // locally but never signal the hub (the bars stay silent on a push; suppressDrawBar).
   const [revealComplete, setRevealComplete] = useState(false);
+  // D85: keyed on `revealReady`, so a raced reveal's timer starts when the reveal actually starts.
   useEffect(() => {
-    if (!revealed) { setRevealComplete(false); return; }
+    if (!revealReady) { setRevealComplete(false); return; }
     const id = setTimeout(() => {
       setRevealComplete(true);
       if (isTerminal) onRevealComplete?.();
     }, revealMs);
     return () => clearTimeout(id);
     // keyRound re-arms the timer for each fresh reveal (a new round / the terminal after a push).
-  }, [revealed, revealMs, keyRound, isTerminal, onRevealComplete]);
+  }, [revealReady, revealMs, keyRound, isTerminal, onRevealComplete]);
 
   // Opening deal (item 4): the four initial cards arrive one-by-one — own[0], opp[0], own[1],
   // opp-hidden — via a per-card stagger. Only the opening frame staggers; a later Hit / the
@@ -470,13 +499,18 @@ function BlackjackBoard({ playerId, opponentId, gameState, legalMoves, phase, ou
           the SAME resolved cards in a held/framed state (red/orange outline) — keyed by the resolved
           round so they carry their identities straight from the last in-play frame. */}
       <section data-testid="opp-hand" className="relative z-[1] flex flex-1 flex-col items-center justify-center gap-2">
-        <HandTotalPill label={totalLabel(oppCards, oppFinal)} testid="opp-total" />
+        {/* D85: during a raced reveal's hold the terminal frame already carries the opponent's FULL
+            hand, but only the first card is face-up — so the pill totals just that card until the
+            reveal starts. (Otherwise identical: outside the hold, oppCards is already redacted to one
+            card whenever the reveal hasn't started.) */}
+        <HandTotalPill label={totalLabel(revealReady ? oppCards : oppCards.slice(0, 1), oppFinal)} testid="opp-total" />
         <div className="flex items-end justify-center">
           {oppCards[0] && <PlayingCard key={`opp-${keyRound}-0`} card={oppCards[0]} index={0} delay={oppDeal(0)} frame={pushFrame} onDeparted={() => play('blackjack-card-deal')} />}
           {/* Persistent hole card: face-down in play, flips in place to its value at the reveal/push. */}
-          <OppHoleCard key={`opp-hole-${keyRound}`} index={1} revealed={revealed} card={oppCards[1]} active={waitingOnOpponent} delay={backDeal} frame={pushFrame} onDeparted={() => play('blackjack-card-deal')} onRevealed={() => play('blackjack-card-flip')} />
-          {/* Opponent hits reveal only once revealed (decisive terminal or push) — deal in one-by-one. */}
-          {revealed && oppCards.slice(2).map((c, j) => (
+          <OppHoleCard key={`opp-hole-${keyRound}`} index={1} revealed={revealReady} card={oppCards[1]} active={waitingOnOpponent} delay={backDeal} frame={pushFrame} onDeparted={() => play('blackjack-card-deal')} onRevealed={() => play('blackjack-card-flip')} />
+          {/* Opponent hits reveal only once revealed (decisive terminal or push) — deal in one-by-one.
+              D85: gated on `revealReady`, so a raced reveal's hits wait for my own card to land. */}
+          {revealReady && oppCards.slice(2).map((c, j) => (
             <PlayingCard key={`opp-hit-${keyRound}-${j}`} card={c} index={j + 2} delay={HIT_DEAL_START_S + j * DEAL_STAGGER_S} frame={pushFrame} onDeparted={() => play('blackjack-card-deal')} />
           ))}
         </div>

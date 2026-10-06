@@ -1226,3 +1226,142 @@ describe('BlackjackHubScreen — guest mode chrome (issue #297)', () => {
     expect(screen.getByTestId('hub-nav-games')).toBeInTheDocument();
   });
 });
+
+// Ticket 2026-10-06#11/#12 (D85): my busting Hit when the opponent was ALREADY done resolves the round
+// on that same move — one frame carries my new card AND the reveal. The opponent's whole reveal
+// (hole flip, hit cards, total pill) must wait CARD_ANIM_MS (550ms) so my card visibly lands first.
+// Un-raced reveals (and un-raced pushes) must keep starting immediately, exactly as before.
+describe('Blackjack D85: opponent reveal waits for my own busting card to land', () => {
+  const TERMINAL_HOLD_MS = 1100; // usePacedView's hold before a terminal frame is shown
+  const CARD_ANIM_MS = 550;
+  const opp = () => within(screen.getByTestId('opp-hand'));
+  const own = () => within(screen.getByTestId('own-hand'));
+  const advance = (ms: number) => act(() => { vi.advanceTimersByTime(ms); });
+
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('raced decisive terminal: my 3rd card shows at once, but the hole flip, the hit card and the true total wait 550ms', () => {
+    // The opponent already stood (done) on K + hidden hole + one hit; I'm still live on 10/7.
+    const inPlay = inPlayView({
+      hands: { pid: { cards: [c('10'), c('7', '♥')], done: false }, bob: { cards: [c('K', '♣')], done: true } },
+    });
+    const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlay, legalMoves: ['hit', 'stand'] })} />);
+    // I hit a 9 → bust (26). The server resolves on that move: ONE terminal frame, new card + reveal.
+    const terminal = inPlayView({
+      hands: {
+        pid: { cards: [c('10'), c('7', '♥'), c('9')], done: true },
+        bob: { cards: [c('K', '♣'), c('5', '♦'), c('3')], done: true }, // 18
+      },
+      winner: 'bob',
+    });
+    rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, legalMoves: [], lastOutcome: { type: 'win', winner: 'bob' }, lastSettlement: { delta: -10, newBalance: 990, currency: 'USD' } })} />);
+    advance(TERMINAL_HOLD_MS);
+
+    // My busting card is on the table immediately…
+    expect(own().getAllByTestId('card')).toHaveLength(3);
+    // …while the opponent's side still reads exactly as it did in play: one face-up card, the
+    // face-down hole, no hit card yet, and the pill totals only the face-up K.
+    expect(opp().getAllByTestId('card')).toHaveLength(1);
+    expect(opp().getByTestId('card-back')).toBeInTheDocument();
+    expect(screen.getByTestId('opp-total').textContent).toBe('10');
+
+    advance(CARD_ANIM_MS - 1);
+    expect(opp().getByTestId('card-back')).toBeInTheDocument();
+    expect(screen.getByTestId('opp-total').textContent).toBe('10');
+
+    // My card has landed → the reveal starts: hole flips, hit card deals in, true total shows.
+    advance(1);
+    expect(opp().queryByTestId('card-back')).toBeNull();
+    expect(opp().getAllByTestId('card')).toHaveLength(3);
+    expect(screen.getByTestId('opp-total').textContent).toBe('18');
+  });
+
+  it('raced decisive terminal: the reveal-complete card outline shifts by the same 550ms', () => {
+    const inPlay = inPlayView({
+      hands: { pid: { cards: [c('10'), c('7', '♥')], done: false }, bob: { cards: [c('K', '♣')], done: true } },
+    });
+    const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlay, legalMoves: ['hit', 'stand'] })} />);
+    const terminal = inPlayView({
+      hands: {
+        pid: { cards: [c('10'), c('7', '♥'), c('9')], done: true },
+        bob: { cards: [c('K', '♣'), c('8', '♦')], done: true }, // stand-pat: revealMs = just the flip
+      },
+      winner: 'bob',
+    });
+    rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, legalMoves: [], lastOutcome: { type: 'win', winner: 'bob' }, lastSettlement: { delta: -10, newBalance: 990, currency: 'USD' } })} />);
+    advance(TERMINAL_HOLD_MS);
+    const ringed = () => own().getAllByTestId('card').some((el) => /ring-\[3px\]/.test(el.className));
+    // Old timing would have completed the reveal at +CARD_ANIM_MS (the flip) — not yet now.
+    advance(CARD_ANIM_MS);
+    expect(ringed()).toBe(false);
+    // Held start (+550) + the flip (+550) → reveal complete, the lose outline lands.
+    advance(CARD_ANIM_MS);
+    expect(ringed()).toBe(true);
+  });
+
+  it('control — un-raced decisive terminal (I had already stood): the reveal starts the instant the frame shows', () => {
+    const inPlay = inPlayView({
+      hands: { pid: { cards: [c('K'), c('Q', '♥')], done: true }, bob: { cards: [c('9', '♣')], done: false } },
+    });
+    const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlay, legalMoves: [] })} />);
+    const terminal = inPlayView({
+      hands: { pid: { cards: [c('K'), c('Q', '♥')], done: true }, bob: { cards: [c('9', '♣'), c('8', '♦')], done: true } },
+      winner: 'pid',
+    });
+    rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: null, gameState: terminal, legalMoves: [], lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 19, newBalance: 1019, currency: 'USD' } })} />);
+    advance(TERMINAL_HOLD_MS);
+    expect(opp().queryByTestId('card-back')).toBeNull();
+    expect(opp().getAllByTestId('card')).toHaveLength(2);
+    expect(screen.getByTestId('opp-total').textContent).toBe('17');
+  });
+
+  it('raced push (my Hit busts into an already-bust opponent → both-bust draw): same 550ms hold', () => {
+    const inPlay = inPlayView({
+      hands: { pid: { cards: [c('K'), c('5', '♥')], done: false }, bob: { cards: [c('10', '♣')], done: true } },
+    });
+    const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlay, legalMoves: ['hit', 'stand'] })} />);
+    const pushed = inPlayView({
+      round: 1, draws: 1, replays: 1,
+      hands: { pid: { cards: [c('2'), c('3')], done: false }, bob: { cards: [c('4')], done: false } },
+      lastResult: {
+        round: 0, result: 'draw',
+        hands: {
+          pid: { cards: [c('K'), c('5', '♥'), c('Q')], total: 25 }, // my busting Hit
+          bob: { cards: [c('10', '♣'), c('9'), c('8')], total: 27 }, // already bust
+        },
+      },
+    });
+    rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: pushed, legalMoves: [] })} />);
+    expect(screen.getByTestId('push-label')).toBeInTheDocument();
+    expect(own().getAllByTestId('card')).toHaveLength(3);
+    expect(opp().getByTestId('card-back')).toBeInTheDocument();
+    advance(CARD_ANIM_MS);
+    expect(opp().queryByTestId('card-back')).toBeNull();
+    expect(opp().getAllByTestId('card')).toHaveLength(3);
+  });
+
+  it('control — un-raced push (I had stood; the opponent\'s move tied it): no hold, even though the draw beat lags the re-dealt frame by a render', () => {
+    const inPlay = inPlayView({
+      hands: { pid: { cards: [c('5'), c('4', '♥'), c('8')], done: true }, bob: { cards: [c('K', '♣')], done: false } }, // stood on 3 cards (17)
+    });
+    const { rerender } = render(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: inPlay, legalMoves: [] })} />);
+    const pushed = inPlayView({
+      round: 1, draws: 1, replays: 1,
+      // The held round-0 hand (3 cards) is longer than the fresh round-1 deal (2): whatever frames the
+      // board passes through on the way into the push, an un-raced push must never be held.
+      hands: { pid: { cards: [c('2'), c('3')], done: false }, bob: { cards: [c('4')], done: false } },
+      lastResult: {
+        round: 0, result: 'draw',
+        hands: {
+          pid: { cards: [c('5'), c('4', '♥'), c('8')], total: 17 },
+          bob: { cards: [c('K', '♣'), c('4', '♦'), c('3')], total: 17 },
+        },
+      },
+    });
+    rerender(<BlackjackHubScreen {...baseProps({ currentMatchId: 'm1', gameState: pushed, legalMoves: [] })} />);
+    expect(screen.getByTestId('push-label')).toBeInTheDocument();
+    expect(opp().queryByTestId('card-back')).toBeNull();
+    expect(opp().getAllByTestId('card')).toHaveLength(3);
+  });
+});
