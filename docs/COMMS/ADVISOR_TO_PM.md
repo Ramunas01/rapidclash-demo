@@ -1,5 +1,81 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-06#8 — D81 follow-up: bolt-mark consolidation, fully scoped and ready to implement — zero behavior change, every call site untouched            [READY TO TICKET]
+From: Advisor (Owner asked this be acted on directly; still Advisor's own `docs/` boundary per `WORKING_AGREEMENT.md` — implementation is PM/Programmer's, this is the complete spec)
+
+## Why this is safe to hand straight to a Programmer with no further scoping
+
+Read both implementations in full, not just the earlier diff-level summary. They are NOT a trivial copy-paste duplicate — they differ in 3 real ways, which is exactly why a naive merge would be wrong and why this needs a parameterized shared component, not a shared literal:
+
+| | `CardBack.tsx`'s own svg (:50-63) | `RpsRedactedIcon` (`RpsHub.tsx:143-149`) |
+|---|---|---|
+| Fill | `style.fill: 'var(--card-back-mark)'` on the svg (themeable) | hardcoded `fill="#4340D8"` on the `<path>` (fixed, deliberately non-theme-conditional per its own doc comment) |
+| Accessibility | `aria-hidden="true"` (parent `CardBack` div is already `aria-hidden`) | `role="img" aria-label="Hidden"` + `data-rc-rps-icon="redacted"` — genuinely announced, confirmed live earlier this session (`image "Hidden"` in the a11y snapshot) |
+| Sizing | Tailwind `className="h-auto w-[74%]"` | attribute `width="74%"` (no `h-auto`) |
+| Test hook | `data-testid="card-back-bolt"` (fixed) | optional `testid` prop, threaded by the caller |
+
+Row 3 is cosmetically different syntax for the identical computed result — confirmed identical by my own live measurement in `2026-10-06#7` (both center to sub-pixel precision). Rows 1-2 are real, load-bearing differences that must survive the refactor.
+
+## Exact diff shape
+
+**In `CardBack.tsx`**, export one new small component (this file is already the project's own stated "ONE source of truth" for card-back visuals, per its own top-of-file doc comment — the natural home):
+
+```tsx
+export function BoltMark({
+  fill,
+  testid,
+  rpsIcon,
+}: {
+  fill: string;
+  testid?: string;
+  /** RPS's own redacted-pick semantics: announced to a11y (not hidden) + the `data-rc-rps-icon`
+   *  hook its own tests already key off. Omit for a purely decorative use (Blackjack's card backs). */
+  rpsIcon?: boolean;
+}) {
+  return (
+    <svg
+      viewBox="0 0 351 374"
+      className="h-auto w-[74%]"
+      style={{ fill, display: 'block' }}
+      data-testid={testid}
+      {...(rpsIcon
+        ? { role: 'img', 'aria-label': 'Hidden', 'data-rc-rps-icon': 'redacted' }
+        : { 'aria-hidden': true })}
+    >
+      <path d={BOLT_PATH} />
+    </svg>
+  );
+}
+```
+
+Then **`CardBack.tsx`'s own render** (:50-63) collapses from the full inline `<svg>` block to:
+```tsx
+<BoltMark fill="var(--card-back-mark)" testid="card-back-bolt" />
+```
+
+And **`RpsRedactedIcon`** (`RpsHub.tsx:143-149`) becomes a thin wrapper, its own public signature completely unchanged (so all 3 of its own call sites — `:231`, `:560`, `:733` — need zero edits):
+```tsx
+function RpsRedactedIcon({ testid }: { testid?: string } = {}) {
+  return <BoltMark fill="#4340D8" testid={testid} rpsIcon />;
+}
+```
+(`RpsHub.tsx`'s existing `import { BOLT_PATH } from '../components/cards/CardBack.js'` either drops, since `BoltMark` now owns the `<path>`, or stays if anything else in the file still needs the raw constant — grep before removing it.)
+
+## Why this is zero-behavior-change, not just "should be"
+
+Every attribute present on either original svg is still present, via the `rpsIcon` branch: `data-testid="card-back-bolt"` (CardBack test, `CardBack.test.tsx:19`), `data-rc-rps-icon="redacted"` (asserted at ~15 separate call sites across `RpsHub.test.tsx`), `role="img"`/`aria-label="Hidden"`, and both fill values, verbatim. No call site anywhere changes its own props or JSX — `RpsRedactedIcon` keeps its exact name, signature, and all 3 existing invocations. This means the full existing test suites for both files should pass completely unmodified; if anything fails, that's a real sign the refactor missed something, not a test that needs updating to match.
+
+## Verification plan for whoever picks this up
+
+1. Full diff review — confirm no call site touched outside the 2 files above.
+2. Run `CardBack.test.tsx` + `RpsHub.test.tsx` unmodified — expect 100% pass, zero new/changed assertions needed.
+3. A genuine revert-confirm isn't meaningful here (there's no new behavior to prove, only old behavior to preserve) — instead, the bar is: unmodified tests stay green.
+4. I'll independently re-run my own live `chrome-devtools-mcp` centering measurement from `2026-10-06#7` against the merged result once deployed, same as every other ticket in this log — confirms the consolidation didn't quietly reintroduce the original D81 bug.
+
+**Advisor next:** available — will do the live re-verification once this ships. **PM next:** ready to dispatch as-is; no open questions, no `needs-owner` item, no ambiguity requiring a decision.
+
+---
+
 ### 2026-10-06#7 — D81 CLOSED: the one open item (bolt centering) directly measured live via `chrome-devtools-mcp` — pixel-exact centered on both the RPS and Blackjack sides. One ask from the original ticket (component consolidation) is confirmed never implemented — flagging, not silently dropping it            [CLOSED — the visual gap this ticket was waiting on is confirmed fixed; one optional structural item remains undone]
 From: Advisor (direct live inspection — same `chrome-devtools-mcp` session as `2026-10-06#6`) — verified by real matches on production (RPS vs `crazypov`, Blackjack vs `snakeeyes`, account `advisor_d84_probe`), measuring the actual live DOM bounding boxes of the redacted-bolt svg against its card-face container, not a screenshot eyeball
 
