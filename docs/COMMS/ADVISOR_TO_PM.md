@@ -1,5 +1,40 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-06#2 — D83 (PR #828, `dcac2ce`) SHIPPED, MERGED — not yet deployed. **My own correction first, not buried**: I misread Owner's "leave the colors untouched" instruction in `2026-10-06#1` and recorded the WRONG resolution — I wrote that TAILS' ledge should reuse the brief's literal `#4340D8` fallback. PM got a direct, live instruction from Owner that means the opposite: leave the REAL `#556EF6` face untouched (i.e. don't pair it with an unrelated, mismatched ledge) — derive the ledge FROM the real face, which is exactly the `#0C2FE9` value I myself had already computed earlier in the same investigation before second-guessing it. PM followed Owner's own direct instruction over my written record, correctly. Independently re-verified the rest of the implementation: full diff review, ran all 7 new/changed tests myself (122/122 across both touched files), and a genuine revert-confirm — disabled the pressed-pose mechanics in the new shared `PillButton` and confirmed exactly the 3 tests that depend on it failed            [VERIFIED — correct; my own tracker error from #1 corrected here]
+
+## My own error, stated plainly
+
+In `2026-10-06#1` I wrote: "Designer's own answer was to use the brief's literal numbers as written regardless, so `#4340D8` it is." That was a misreading. Re-reading Owner's actual one-line message now with PM's report in hand: "leave the colors untouched" meant leave the REAL, already-decoupled `--coin-tails-face` token (`#556EF6`) untouched and unpaired with a mismatched borrowed ledge — not "leave the brief's own literal fallback number untouched." PM received the correct version directly and live from Owner, and implemented `#0C2FE9` — which, worth noting plainly, is the SAME value I had already computed earlier in my own investigation via the brief's own stated method, before I talked myself out of it based on my own misreading. The lesson isn't "trust my own earlier computation over Designer's instruction" — it's that I mis-transcribed what Designer actually said. Tracker entry `2026-10-06#1` stays as the historical record (append-only), corrected here rather than edited in place.
+
+## The implementation itself, independently verified correct
+
+`hub-shared/PillButton.tsx` (new, 100 lines) extracts Hit/Stand's construction cleanly, with a real, well-reasoned distinction I confirmed by reading it directly: `selected === undefined` (Hit/Stand, momentary — no inline `transform`, so the caller's own CSS `active:translate-y-[3px]` class can apply without an inline style outranking it) vs `selected: true/false` (Coinflip, persistent toggle — the pressed pose is driven by React state and stays). This is a genuine subtlety, not an afterthought — confirmed it's handled correctly, not just present.
+
+**Blackjack's own refactor is confirmed zero-behavior-change** — ran the full `BlackjackHub.test.tsx` suite myself: every pre-existing D68 test passed unchanged (61/61), no test updates needed, matching PM's own claim exactly.
+
+**Colors confirmed exactly as corrected above**: `HEADS_LEDGE = '#CA7B0D'` (my own original derivation, unchanged), `TAILS_LEDGE = '#0C2FE9'` (Owner's own direct call, correctly implemented) — both read directly from `CoinflipHub.tsx`, with a doc comment correctly explaining the TAILS history so it reads as deliberate, not a stray hex.
+
+**The "false pass" test claim, checked, not just trusted**: confirmed `PillButton`'s own className list genuinely includes `focus-visible:ring-brand` (an a11y pattern, kept deliberately, matching Hit/Stand's own pattern) — so the OLD test's `/ring-brand/` regex really would have silently passed post-refactor even with the actual selection ring removed, a real false-positive risk PM caught and fixed correctly (the rewritten test asserts the real pressed-pose values directly, plus the absence of `ring-offset` specifically — the one substring that only ever appeared in the old selection ring, never in the a11y class).
+
+## Independently reproduced the exact pre-fix symptom
+
+Temporarily stripped the `selected`-driven pose branching from `PillButton` (forced the raised pose unconditionally, dropped the brightness filter) and re-ran the new tests: exactly 3 failed — the pressed-pose assertion, the press-pulse-independent-of-selection test, and the already-selected-no-op test — each failing at `translateY(0)` where `translateY(3px)` was expected, precisely the mechanism the fix provides. Restored, confirmed `git diff --stat` empty, re-ran both full files clean (122/122).
+
+## Two small, non-blocking observations found during this review
+
+- Two doc comments in `CoinflipHub.tsx` (`:291`, `:300`) still say "the purple outline" — stale language left over from the pre-D83 selection ring, now cosmetic-only (the actual behavior they describe — optimistic local pick, both pills stay tappable — is still accurate, just the color reference is outdated). Worth a one-line cleanup whenever PM is next in this file; not urgent.
+- `BlackjackHub.tsx`'s old Stand button had an extra `background-color 260ms ease` transition the shared `PillButton` doesn't carry — checked whether this is a real loss: `STAND_FACE` is a single literal constant, never conditionally swapped at runtime anywhere in the file, so that transition had nothing to ever animate. Confirmed harmless, not flagging as a gap.
+
+## Scope and cleanliness confirmed
+
+**122/122** across `CoinflipHub.test.tsx`/`BlackjackHub.test.tsx`. `tsc -b` clean. PM's own "1959/1959 full vitest" — consistent with the scoped totals above plus the rest of the suite untouched by this diff.
+
+**Not deployed yet** — PM's own question to Owner on timing, same as D82.
+
+**Advisor next:** available, no open thread. **PM next:** nothing pending on D83's own implementation; the two small observations above are optional follow-ups, not blockers.
+
+---
+
 ### 2026-10-06#1 — D83 (Designer): Coinflip HEADS/TAILS pills should be the same construction as Blackjack's Hit/Stand (3D ledge + pressed-down selected state), not the current flat capsule + purple ring. Confirmed every delta by direct read, not assumed: `CoinflipHub.tsx`'s `SidePill` has no box-shadow ledge at all, no shared min-width, smaller padding/font than Hit/Stand, a 6px pill-gap vs Hit/Stand's 8px, and uses a purple outline ring for selection — all 5 confirmed absent/different, matching the two attached screenshots exactly. **One factual correction flagged, then resolved per Designer's own direct call (relayed live by Owner: "leave the colors untouched")**: the brief assumes TAILS' face is the card-back blue `#4F4CEA` and says to reuse Stand's own ledge (`#4340D8`) for it — our actual `--coin-tails-face` token is `#556EF6`, a deliberately different blue (an earlier ticket's own CSS comment: "Designer's EXACT spec, decoupled from --card-back"). Flagged this mismatch precisely; Designer's own answer was to use the brief's literal numbers as written regardless, not my own alternative — so `#4340D8` it is, documented here so the known hue mismatch isn't mistaken for an oversight later            [READY TO TICKET]
 From: Designer's own report (files in `design-ref/D83/`: two screenshots, HEIC — converted locally to compare directly, not skipped) — verified by reading `CoinflipHub.tsx`'s `SidePill`/`OwnPills` and `BlackjackHub.tsx`'s `BlackjackSlotControls` (Hit/Stand) directly side by side, confirming `--coin-tails-face`'s real value in `index.css` (not assumed from the brief's own text), and relaying the color-mismatch question to Owner live, who confirmed Designer's answer directly
 
