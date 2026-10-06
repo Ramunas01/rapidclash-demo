@@ -1123,3 +1123,39 @@ describe('RpsHubScreen — reveal-flip card frame rotates WITH the card, not aro
     expect(frontFaceAfter.style.background).toBe(backFaceAfter.style.background);
   });
 });
+
+// Ticket 2026-10-06#9 (D87): the RPS panel is a FIXED 266px box (Full Spec.html:606), not
+// auto-height — it used to size to its content, so collapsing the choices row at the reveal shrank
+// it and jumped the own-player bar below. jsdom doesn't lay out, so this pins the box-model classes
+// across every phase rather than measuring a rendered height.
+describe('RpsHubScreen — fixed-height board panel (ticket 2026-10-06#9)', () => {
+  const PANEL_BOX = ['box-border', 'flex', 'h-[266px]', 'flex-col', 'justify-center', 'pt-[18px]', 'px-[14px]', 'pb-[14px]'];
+  const expectFixedPanel = () => {
+    const panel = screen.getByTestId('hub-rps-panel');
+    for (const c of PANEL_BOX) expect(panel.classList.contains(c)).toBe(true);
+    expect(panel.classList.contains('p-4')).toBe(false);
+  };
+
+  it('keeps the same fixed 266px flex-centred box across idle, in-match and the result reveal, with the spec\'s 18px row gap', () => {
+    const gameState: RpsView = { players: ['pid', 'bob'], choices: { pid: 'rock', bob: 'scissors' } };
+    const { rerender } = render(<RpsHubScreen {...baseProps()} />);
+    expectFixedPanel();
+    const idleRoot = screen.getByTestId('hub-idle-my-pick').parentElement!.parentElement!;
+    expect(idleRoot.classList.contains('gap-[18px]')).toBe(true);
+    // No extra vertical padding: the panel centres its child itself, and idle's content (130 + 18 + 86)
+    // already fills the 234px inner area exactly — `py-3` would overflow it.
+    expect(idleRoot.classList.contains('py-3')).toBe(false);
+
+    rerender(<RpsHubScreen {...baseProps({ currentMatchId: 'm1', gameState, legalMoves: [] })} />);
+    expectFixedPanel();
+    expect(screen.getByTestId('hub-board').classList.contains('gap-[18px]')).toBe(true);
+
+    rerender(
+      <RpsHubScreen
+        {...baseProps({ currentMatchId: null, gameState, lastOutcome: { type: 'win', winner: 'pid' }, lastSettlement: { delta: 9, newBalance: 1009, currency: 'USD' } })}
+      />,
+    );
+    expect(screen.getByTestId('hub-board')).toBeInTheDocument();
+    expectFixedPanel();
+  });
+});
