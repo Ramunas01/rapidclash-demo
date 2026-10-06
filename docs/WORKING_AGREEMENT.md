@@ -7,14 +7,14 @@ How three contributors — one human and three AI assistants — collaborate thr
 - **Advisor (Claude — chat or Claude Code; see "Advisor access model" below).** Owns `docs/`. Writes and revises specs and ADRs. Does not write production code. Consulted on architecture and scope changes.
 - **Project Manager (WSL AI agent).** Owns the roadmap and the issue tracker. Breaks specs into issues with acceptance criteria, sequences work, reviews PRs against the acceptance criteria, and keeps the board honest. Holds the review gate but not the merge button on direction-level changes.
 - **Programmer (Claude Code, WSL).** Owns implementation under `packages/` and `apps/`. Works on feature branches, opens PRs that reference an issue, keeps PRs small and reviewable.
-- **Owner (Ramunas).** Final say on direction and scope. Presses merge on anything that changes the charter, an ADR, or the contract. Resolves anything ambiguous.
+- **Owner (Ramunas).** Final say on direction and scope. Approves anything that changes the charter, an ADR, or the contract — usually in live dialogue with the session proposing it, rather than by pressing merge personally (see "Who presses merge" below). Resolves anything ambiguous.
 
 ## Advisor access model
 
 The Advisor role has one boundary (`docs/` only, no production code) but can run on either of two front-ends — check which one you are before assuming a mechanic, since they differ in what they can physically do:
 
 - **Web-chat Claude (no filesystem tool).** Reads the repo via `git clone --depth 1` (needs the repo public, or a fresh export). Cannot write to the working copy or push — produces edited files as chat outputs for the owner/PM to apply and commit. This is the mechanics `ADVISOR_HANDOVER.md` §3 was written for; treat that section as this front-end's manual, not a universal description of "the Advisor."
-- **Claude Code running locally (e.g. this CLI on the owner's machine, reaching the repo over a WSL filesystem mount).** Reads and writes the working copy directly — including a private repo — and can run `git` itself: create a branch, commit, and push. The role boundary doesn't change just because the tooling got stronger: still `docs/` only, and a docs-touching branch is **pushed for review, never merged to `main` by the Advisor** (owner approval + merge, per "Branching & PRs" above). Branch before editing, same as any other contributor — don't accumulate uncommitted edits on `main`.
+- **Claude Code running locally (e.g. this CLI on the owner's machine, reaching the repo over a WSL filesystem mount).** Reads and writes the working copy directly — including a private repo — and can run `git` itself: create a branch, commit, and push. The role boundary doesn't change just because the tooling got stronger: still `docs/` only, and a docs-touching branch needs **Owner approval before it merges** — once the Owner has read and confirmed it, the Advisor merges it itself (per "Who presses merge" under "Branching & PRs" below). Branch before editing, same as any other contributor — don't accumulate uncommitted edits on `main`.
 
 Practical note for the Claude Code front-end (first exercised 2026-08-13, on the welcome-email copy fix in the sibling `rapidclash-landing` repo): if `git` reports **"detected dubious ownership"** on a repo reached through a UNC-style WSL mount (`\\wsl.localhost\...`) from a Windows-side session, don't add a `safe.directory` exception from that side — run git through `wsl.exe -e bash -lc "cd ~/projects/<repo> && git ..."` instead. That executes as the WSL-native user, matches the checkout's real ownership, and sidesteps the mismatch entirely.
 
@@ -27,6 +27,7 @@ Practical note for the Claude Code front-end (first exercised 2026-08-13, on the
 - Every PR references the issue it closes and states which acceptance criteria it satisfies.
 - CI must pass (build + tests) before review.
 - A PR touching `docs/`, `CODEOWNERS`, or the shared contract requires owner approval. Implementation-only PRs can merge on PM approval.
+- **Who presses merge (Owner-confirmed 2026-10-06).** Each session merges its own PRs: the Advisor merges its own `docs/` PRs, the PM merges its own implementation PRs. The Owner gives approval in live dialogue — typically by reading the change on screen and confirming it — and only occasionally merges or checks a PR personally. "Owner approval" above means that confirmation, not the Owner pressing the button. Don't merge another session's PR unless the Owner explicitly asks you to.
 - One PR, one concern. A PR that changes the contract *and* implements a feature is split.
 - **Clean up after merge.** Delete the remote branch on merge (`gh pr merge --delete-branch` or equivalent). If you worked in a `git worktree`, remove it (`git worktree remove <path>`) and delete the local branch — a leftover worktree keeps the branch un-deletable and clutters the next agent's `git worktree list`.
 
