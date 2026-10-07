@@ -10,10 +10,10 @@ vi.mock('canvas-confetti', () => ({ default: vi.fn() }));
 // Web Audio is absent in jsdom — mock the sound module so we can assert the dice-roll/dice-win
 // wiring (ticket 2026-09-12#3 item 1) without touching real AudioContext (same idea as
 // ChessHub.test.tsx's equivalent mock for the move-thump sound).
-const { playMock } = vi.hoisted(() => ({ playMock: vi.fn() }));
+const { playMock, unlockMock } = vi.hoisted(() => ({ playMock: vi.fn(), unlockMock: vi.fn() }));
 vi.mock('../lib/sound.js', () => ({
   play: playMock,
-  unlock: vi.fn(),
+  unlock: unlockMock,
   installUnlockOnFirstGesture: vi.fn(),
   isMuted: () => false,
   toggleMute: vi.fn(),
@@ -49,8 +49,30 @@ describe('DiceHubScreen', () => {
       return { ok: true, json: async () => ({ balances: balancesOf(1000), entries: [] }) } as Response;
     }));
     playMock.mockClear();
+    unlockMock.mockClear();
   });
   afterEach(() => vi.unstubAllGlobals());
+
+  // Ticket 2026-10-07#2 (D89): the shared PLAY handler re-unlocks audio on every press — the one
+  // ACTIVE recovery point at session start (sound.ts's other paths are passive). Exercised via Dice,
+  // like the shared PLAY sound above, since it's GameHub's one PlayPanel for every hub.
+  it('ticket 2026-10-07#2 (D89): every PLAY press re-unlocks audio before its own sound — with a bet armed AND on the no-bet guide path', () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const onPlay = vi.fn();
+    render(<DiceHubScreen {...baseProps({ onPlay })} />);
+
+    fireEvent.click(screen.getByTestId('hub-play')); // no bet → guideToBet() ('reject' cue)
+    expect(unlockMock).toHaveBeenCalledTimes(1);
+    expect(onPlay).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('hub-bet-10'));
+    fireEvent.click(screen.getByTestId('hub-play')); // a real start ('play' cue)
+    expect(unlockMock).toHaveBeenCalledTimes(2);
+    expect(onPlay).toHaveBeenCalledWith(10);
+    // unlock() runs BEFORE the PLAY sound, so a revived context can voice that same click.
+    const playIdx = playMock.mock.calls.findIndex((c) => c[0] === 'play');
+    expect(unlockMock.mock.invocationCallOrder[1]).toBeLessThan(playMock.mock.invocationCallOrder[playIdx]);
+  });
 
   it('Idle: arming a bet enables PLAY (shared GameHub)', () => {
     const onPlay = vi.fn();

@@ -26,7 +26,7 @@ import { Credits, RcIcon } from '../components/hub-shared/RcIcon.js';
 import { CurrencyIcon } from '../components/hub-chrome/CurrencyPicker.js';
 import { useCurSel } from '../lib/currency.js';
 import { useTheme } from '../lib/theme.js';
-import { play, installUnlockOnFirstGesture, type SoundName } from '../lib/sound.js';
+import { play, unlock, installUnlockOnFirstGesture, type SoundName } from '../lib/sound.js';
 import { outlineClasses, outlineForOutcome, replaysOf, useDelayedFlag, useWinReveal, WIN_FILL_IN_MS, WIN_HOLD_MS, WIN_FADE_OUT_MS, type Verdict } from './hub-shared/slotReveal.js';
 
 /** How long after the result phase starts before the own-bar verdict lights (ms). */
@@ -1590,6 +1590,13 @@ function PlayPanel({
     playShakeTimeoutRef.current = setTimeout(() => setPlayShake(false), 560);
   }
   function handlePlayPress() {
+    // Ticket 2026-10-07#2 (D89): active audio recovery at every session start. The first-gesture,
+    // visibilitychange and onstatechange paths in sound.ts are all PASSIVE — if the context dies in a
+    // way none of them catches (or their non-gesture resume() is refused), sound stayed dead until a
+    // hard refresh. PLAY is a real user gesture every game routes through, so re-unlocking here gives
+    // resume() the gesture iOS may insist on. unlock() is idempotent — a no-op when already running.
+    // First line, so the guideToBet() 'reject' cue below benefits too.
+    unlock();
     if (armedStake == null) { guideToBet(); return; } // no bet → guide; do NOT start a match
     // Ticket 2026-09-12#3 item 1: the prototype's ONE shared PLAY handler (`playMines()`,
     // `Full Spec.html:3830-3833`) fires `this.sfx('play')` unconditionally, before any per-game

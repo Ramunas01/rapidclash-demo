@@ -18,7 +18,8 @@ function captureInstance(instance: FakeAudioContext): void {
 }
 
 class FakeAudioContext {
-  state: 'suspended' | 'running' | 'closed' = 'suspended';
+  // 'interrupted' is WebKit's non-standard audio-session state (ticket 2026-10-07#2, D89).
+  state: 'suspended' | 'running' | 'closed' | 'interrupted' = 'suspended';
   destination = {} as AudioDestinationNode;
   onstatechange: ((ev: Event) => void) | null = null;
   resume = vi.fn(async () => {
@@ -204,6 +205,52 @@ describe('sound module', () => {
       lastCtx!.onstatechange?.(new Event('statechange')); // still 'running' — nothing to revive
 
       expect(lastCtx!.resume.mock.calls.length).toBe(resumeCalls); // unchanged — no extra resume() attempt
+    });
+  });
+
+  // Ticket 2026-10-07#2 (D89): unlock() used to resume ONLY from 'suspended', so a context stuck in
+  // WebKit's 'interrupted' audio-session state could never be revived — not by onstatechange, not by
+  // a later gesture (PLAY now re-unlocks — see GameHub.tsx's handlePlayPress).
+  describe("non-'suspended' dead states (ticket 2026-10-07#2, D89)", () => {
+    it("a context stuck in WebKit's 'interrupted' state is revived by the next unlock() (e.g. a PLAY press)", async () => {
+      const sound = await freshSound();
+      await sound.preloadSounds();
+      sound.unlock();
+      expect(lastCtx?.state).toBe('running');
+
+      lastCtx!.state = 'interrupted'; // a call / Siri / another app took the audio session
+      sound.play('move');
+      expect(startSpy).not.toHaveBeenCalled(); // play() correctly stays silent while not running
+
+      sound.unlock();
+      await Promise.resolve();
+      expect(lastCtx?.state).toBe('running');
+      sound.play('move');
+      expect(startSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("onstatechange into 'interrupted' attempts a resume (it used to be skipped)", async () => {
+      const sound = await freshSound();
+      await sound.preloadSounds();
+      sound.unlock();
+      const resumeCalls = lastCtx!.resume.mock.calls.length;
+
+      lastCtx!.state = 'interrupted';
+      lastCtx!.onstatechange?.(new Event('statechange'));
+
+      expect(lastCtx!.resume.mock.calls.length).toBe(resumeCalls + 1);
+    });
+
+    it("a 'closed' context is never resumed (resume() on a closed context always rejects)", async () => {
+      const sound = await freshSound();
+      await sound.preloadSounds();
+      sound.unlock();
+      const resumeCalls = lastCtx!.resume.mock.calls.length;
+
+      lastCtx!.state = 'closed';
+      sound.unlock();
+
+      expect(lastCtx!.resume.mock.calls.length).toBe(resumeCalls);
     });
   });
 });
