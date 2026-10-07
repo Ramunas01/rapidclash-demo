@@ -186,7 +186,13 @@ export function unlock(): void {
   const context = ensureContext();
   if (!context) return;
   void preloadSounds();
-  if (context.state === 'suspended') {
+  // Ticket 2026-10-07#2 (D89): resume from ANY non-running, non-closed state — not just 'suspended'.
+  // WebKit adds a non-standard 'interrupted' state (audio-session interruptions: a call, Siri,
+  // another app taking the session) that the old `=== 'suspended'` check skipped entirely, so
+  // neither onstatechange nor a PLAY gesture could ever revive a context stuck there. (Typed as a
+  // plain string since lib.dom's AudioContextState doesn't list 'interrupted'.)
+  const state: string = context.state;
+  if (state !== 'running' && state !== 'closed') {
     void context.resume().catch(() => {
       /* resume can reject if there was no real gesture — ignore */
     });
