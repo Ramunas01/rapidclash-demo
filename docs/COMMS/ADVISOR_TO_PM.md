@@ -1,5 +1,36 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-07#2 — D89 (tester Giedrius, relayed by Owner, Lithuanian original translated below): sound intermittently goes dead across account-switch/game-navigation, stays dead until a hard refresh. The two passive recovery mechanisms already shipped (`2026-09-22#6`, `2026-09-30#1`) only react to specific signals (`visibilitychange`, the context's own `onstatechange`) — there's no THIRD, ACTIVE check at the one moment that matters most: the start of a new play session. Owner's own suggested fix is exactly right and cheap to add            [READY TO TICKET — real gap confirmed, low-risk one-line fix, can't fully confirm Giedrius's exact repro without an iOS device]
+From: Tester Giedrius's own report, relayed by Owner (no files) — verified by reading `lib/sound.ts` in full and grepping every real call site of `unlock()` across the app, not trusting the file's own top-of-file doc comment at face value
+
+## Giedrius's report, translated, for the record
+
+"Logged in this morning with the new account — sound is there in BJ. Log out. Log in with the old account — sound is there. Play BJ once — sound is there. Go to Dice — sound is gone. Go to [check] the old account — no sound. Log in again to the old account — still no sound. Refresh the screen — USD switched to SOL [display only, looks unrelated, not investigated here]. Switch back to USD, go to Dice — sound is there. Log out of the old account, go to the new one — sound is there." Owner adds their own separate experience: sound vanishing, "usually returns after a screen lock/unlock."
+
+## What's already shipped and working, credited directly
+
+Two real, already-merged mitigations exist for exactly this class of bug: `2026-09-22#6` added a permanent `document.visibilitychange` listener that calls `unlock()` (which `resume()`s the `AudioContext`) whenever the tab becomes visible again — covers Owner's own "screen lock/unlock, usually returns" experience, and the "usually" is the tell (see below). `2026-09-30#1` item 2 added `ctx.onstatechange` watching the context's own state directly, since a hardware mute-switch toggle or other OS-level audio interruption doesn't fire `visibilitychange` at all. Both are real, both already work for the signals they watch.
+
+## The gap: nothing proactively re-checks at the one moment every session actually needs sound
+
+Grepped every call site of the bare `unlock()` function, not just `installUnlockOnFirstGesture` (`sound.ts`'s own top doc comment claims it's "called from the first tap/click/keydown, and from PLAY" — checked git history, this phrasing has been there since the file's first commit, describing INTENT, not a dedicated call site): `unlock()` is called from exactly 3 places, and all 3 are inside `sound.ts` itself — the one-time global gesture handler (`:223`, removes itself after firing ONCE, ever, for the page's whole lifetime), the `onstatechange` handler (`:152`), and the `visibilitychange` handler (`:239`). **There is no call tied to the PLAY button, or to starting a new game session, anywhere in the app** — confirmed by grepping every `.tsx`/`.ts` file outside `sound.ts` for `unlock(`, zero hits. So if the context ever ends up suspended by some cause that doesn't trip EITHER passive listener — plausible on iOS Safari around account-switching/SPA navigation, which neither signal is designed to catch — sound stays dead with no recovery path until something else happens to call `unlock()` (a real page refresh re-creates everything from scratch, including a fresh gesture-driven unlock opportunity — exactly why Owner's own refresh fixed it).
+
+## Owner's own proposed fix is exactly the right shape, and cheap
+
+Owner's instinct — check/ensure sound is active before each playing session — is precisely the missing third layer. The natural, single insertion point: `GameHub.tsx:1592`'s `handlePlayPress()`, already confirmed (by its own existing comment, `:1594-1599`) to be "the prototype's ONE shared PLAY handler" that every game (RPS/Mines/Dice/Chess/Coinflip/Blackjack alike) already routes through — one call there covers every game uniformly, no per-hub duplication. `unlock()` is already explicitly documented as idempotent and safe to call repeatedly (`sound.ts:182-184`), so adding it here has no downside even on the vast majority of presses where the context is already fine.
+
+## What I can't confirm, stated plainly
+
+I can't reproduce Giedrius's exact sequence — it's iOS Safari-specific (account-switching + navigation), same `chrome-devtools-mcp`-is-Blink-only wall as D84/D88. I also can't rule out that something ELSE besides a silently-stuck-suspended context explains part of the report (the USD/SOL flip in the middle reads as unrelated noise from an exploratory tester, not a sound issue — flagging it rather than silently dropping it, but not chasing it here). What I can say with confidence: the gap identified above is real, independent of whether it's the complete explanation for every line of that report, and closing it is low-risk and directly matches what Owner already proposed.
+
+## Recommended fix
+
+In `GameHub.tsx`'s `handlePlayPress()` (`:1592`), add `unlock()` as the first line (before the existing `play('play')` at `:1600`) — import `unlock` alongside the already-imported `play`/`installUnlockOnFirstGesture` (`:29`). No test currently asserts `handlePlayPress` does NOT call `unlock()`, so this shouldn't collide with anything existing; worth adding one new assertion that it does, mirroring the existing `sound.test.ts` coverage style for the other two recovery paths (`2026-09-22#6`/`2026-09-30#1`).
+
+**Advisor next:** available — will note if the live-checks I'm already doing for other tickets happen to show sound working/not working as a side observation, but can't dedicate real device time to this one specifically. **PM next:** ready to dispatch — a true one-line fix (plus its test), no open design question, no Designer input needed (this is a pure reliability fix, not a visual/behavior decision).
+
+---
+
 ### 2026-10-07#1 — D88 (Designer/Owner, iOS Safari only): a brief (~2s) ghost of the previous HEADS/TAILS pick pills bleeds through under the locked result pill during Coinflip's reveal. Strong, code-grounded root-cause hypothesis — the exact DOM swap that happens at `terminal`, likely racing an in-flight WebKit compositing layer — but can't be confirmed on this session's Blink-only tooling. Two candidate fixes, ordered by risk            [READY TO TICKET — hypothesis strong, needs an Apple device to confirm either fix actually lands]
 From: Owner's own report, relayed with a screenshot (`design-ref/D88/IMG_6554.PNG`, several testers independently reported the same thing) — verified by reading `CoinflipHub.tsx`'s `OwnPills`/`SidePill` and `hub-shared/PillButton.tsx` directly; could not attempt a live repro — `chrome-devtools-mcp` is Blink-only (Chromium), and every report names Apple devices specifically, same structural limitation as D84's own still-partly-open mystery
 
