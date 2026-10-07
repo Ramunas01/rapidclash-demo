@@ -558,6 +558,38 @@ describe('CoinflipHubScreen (Part 2 — live state machine)', () => {
     expect(locked.className).not.toContain('px-4');
   });
 
+  // Ticket 2026-10-07#1 (D88, iOS Safari): at terminal the live HEADS/TAILS button pair is swapped
+  // for the flat locked pill in one render, and WebKit left the old pills' ledges painted under it
+  // for ~2s. Containment fix: ONE wrapper — its own compositing layer, paint-contained — is the SAME
+  // DOM node across that swap, so the pills never paint into the bar's own backing store. jsdom
+  // can't render WebKit's compositing, so this pins the structure + styles the fix relies on.
+  it('ticket 2026-10-07#1 (D88): the own pick pills sit in ONE persistent, paint-contained layer across the live → locked swap', () => {
+    const live: CoinflipView = { players: ['pid', 'bob'], choices: { pid: 'heads' } };
+    const { rerender } = render(
+      <CoinflipHubScreen {...baseProps({ username: 'neo', currentMatchId: 'm1', gameState: live, legalMoves: ['heads', 'tails'] })} />,
+    );
+    const layer = screen.getByTestId('coin-own-pills-layer');
+    expect(within(layer).getByTestId('hub-move-heads').tagName).toBe('BUTTON');
+    expect(within(layer).getByTestId('hub-move-tails').tagName).toBe('BUTTON');
+    expect(layer.style.transform).toBe('translateZ(0)');
+    expect(layer.style.contain).toBe('paint');
+    // Clip room for everything legitimate (pop scale / focus ring 3px; ledge + selected dip 9px
+    // below), cancelled by equal negative margins so the bar layout is unchanged.
+    expect([layer.style.paddingTop, layer.style.paddingRight, layer.style.paddingBottom, layer.style.paddingLeft]).toEqual(['3px', '3px', '9px', '3px']);
+    expect([layer.style.marginTop, layer.style.marginRight, layer.style.marginBottom, layer.style.marginLeft]).toEqual(['-3px', '-3px', '-9px', '-3px']);
+
+    const terminal: CoinflipView = { players: ['pid', 'bob'], choices: { pid: 'heads', bob: 'tails' }, result: 'heads' };
+    rerender(
+      <CoinflipHubScreen {...baseProps({ username: 'neo', currentMatchId: 'm1', gameState: terminal, legalMoves: [] })} />,
+    );
+    // The swap still happens instantly (D83 item 4 untouched)…
+    expect(screen.queryByTestId('hub-move-heads')).toBeNull();
+    expect(screen.queryByTestId('hub-move-tails')).toBeNull();
+    // …but INSIDE the very same layer node — it was never unmounted and remounted.
+    expect(screen.getByTestId('coin-own-pills-layer')).toBe(layer);
+    expect(within(layer).getByTestId('coin-own-pick')).toBeInTheDocument();
+  });
+
   it('Result loss (#156): outline only — no green fill, no "You Win" (regression guard); ticket 2026-09-26#3: the loss ring is now var(--rc-loss), not the shared ring-destructive class', async () => {
     vi.useFakeTimers();
     try {

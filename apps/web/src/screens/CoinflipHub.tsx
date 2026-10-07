@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { CoinflipView } from '../App.js';
 import { Coin, COIN_FACE_TOKENS } from '../components/coin/Coin.js';
 import { DigitCountdown } from '../components/hub-shared/DigitCountdown.js';
@@ -279,7 +279,7 @@ function OwnPills({ args }: { args: GameAreaArgs }) {
     // Locked result frame: show the chosen side flat — the bar carries the outcome signal.
     const side = SIDES.find((s) => s.id === myChoice);
     if (!side) return null;
-    return <SidePill side={side} testid="coin-own-pick" />;
+    return <OwnPillsLayer><SidePill side={side} testid="coin-own-pick" /></OwnPillsLayer>;
   }
 
   // The H/T selector lives in the pill ONLY during the live pick window — never on the idle tile.
@@ -295,16 +295,46 @@ function OwnPills({ args }: { args: GameAreaArgs }) {
   return (
     // Ticket 2026-10-06#1 (D83) item 1: gap-2 (8px), matching Hit/Stand's own pill-pair spacing —
     // was gap-1.5 (6px).
-    <span className="flex items-center gap-2" role="group" aria-label="Pick a side">
-      {SIDES.map((s) => (
-        // Both pills stay tappable the whole window — tapping either just moves the purple outline.
-        <SidePill
-          key={s.id}
-          side={s}
-          selected={selected === s.id}
-          onClick={() => handlePick(s.id)}
-        />
-      ))}
+    <OwnPillsLayer>
+      <span className="flex items-center gap-2" role="group" aria-label="Pick a side">
+        {SIDES.map((s) => (
+          // Both pills stay tappable the whole window — tapping either just moves the purple outline.
+          <SidePill
+            key={s.id}
+            side={s}
+            selected={selected === s.id}
+            onClick={() => handlePick(s.id)}
+          />
+        ))}
+      </span>
+    </OwnPillsLayer>
+  );
+}
+
+/** Ticket 2026-10-07#1 (D88, iOS Safari only): at `terminal` the live HEADS/TAILS `PillButton` pair
+ *  (often still mid-transition/pop from a last-second tap) is swapped for one flat locked pill in a
+ *  single render, and WebKit was leaving the two old pills' 5px LEDGES (their `0 5px 0` box-shadows)
+ *  painted under the locked pill for ~2s, until the win/lose ring repainted that region
+ *  (`design-ref/D88/IMG_6554.PNG`: an orange and a blue arc exactly where the old ledges sat).
+ *  Containment only — the swap and its timing are untouched (D83 item 4: instant flatten).
+ *
+ *  This ONE wrapper is the same element across that swap (both branches above render it at the
+ *  same position, so React keeps the node). `translateZ(0)` gives it its own compositing layer, so
+ *  the pills paint only into this layer's backing store rather than the bar's — when the layer
+ *  shrinks from the pair to the single pill, the vacated area falls back to a bar surface the pills
+ *  were never drawn into. `contain: paint` clips anything inside to this box. The padding (+ equal
+ *  negative margins, so layout is unchanged) keeps everything legitimate inside the clip: 3px for
+ *  the pop's scale(1.012) and the focus ring, 9px below for the 5px ledge + the 3px selected dip.
+ *  Unverified on a real Apple device at ship time (Blink-only tooling); if the ghost survives,
+ *  the next step is the Advisor's candidate 2 (a brief hold before the flatten — a Designer call). */
+function OwnPillsLayer({ children }: { children: ReactNode }) {
+  return (
+    <span
+      data-testid="coin-own-pills-layer"
+      className="flex items-center"
+      style={{ transform: 'translateZ(0)', contain: 'paint', padding: '3px 3px 9px', margin: '-3px -3px -9px' }}
+    >
+      {children}
     </span>
   );
 }
