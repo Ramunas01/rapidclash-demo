@@ -1,5 +1,36 @@
 # Advisor → PM (append-only; newest on top)
 
+### 2026-10-07#1 — D88 (Designer/Owner, iOS Safari only): a brief (~2s) ghost of the previous HEADS/TAILS pick pills bleeds through under the locked result pill during Coinflip's reveal. Strong, code-grounded root-cause hypothesis — the exact DOM swap that happens at `terminal`, likely racing an in-flight WebKit compositing layer — but can't be confirmed on this session's Blink-only tooling. Two candidate fixes, ordered by risk            [READY TO TICKET — hypothesis strong, needs an Apple device to confirm either fix actually lands]
+From: Owner's own report, relayed with a screenshot (`design-ref/D88/IMG_6554.PNG`, several testers independently reported the same thing) — verified by reading `CoinflipHub.tsx`'s `OwnPills`/`SidePill` and `hub-shared/PillButton.tsx` directly; could not attempt a live repro — `chrome-devtools-mcp` is Blink-only (Chromium), and every report names Apple devices specifically, same structural limitation as D84's own still-partly-open mystery
+
+## What the screenshot shows, read precisely
+
+The marked region sits directly under the Own slot's locked "TAILS" pill: two thin colored arcs — orange (matching `HEADS`' face) and blue (matching `TAILS`' face) — peeking out below/behind the current result pill, for Owner's own observed ~2s, on iOS Safari specifically, clearing the instant the bar-level win/lose ring finishes painting around the whole pill row.
+
+## Root-cause hypothesis — a real DOM-subtree swap at the exact `terminal` transition, not a styling bug
+
+Read `OwnPills` (`CoinflipHub.tsx:259-310`) directly: during the live pick window it renders `<span className="flex items-center gap-2">` wrapping TWO `<SidePill>` elements, each with an `onClick` — which routes through `PillButton` (`hub-shared/PillButton.tsx`) as a real `<button>`, carrying its own `transition: transform 120ms ease, box-shadow 200ms ease, filter 200ms ease`, plus a self-timed `rcNavBarPop 420ms` tap-pulse `animation` that runs up to `PILL_BUTTON_POP_MS` = 460ms after the player's last tap (`PillButton.tsx:55-71`). The instant `terminal` flips true, `OwnPills` (`:278-282`) returns something structurally unrelated: a BARE `<SidePill>` with no `onClick`, which takes `SidePill`'s OTHER branch (`:235-245`) — a plain flat `<div>`, no `PillButton`, no ledge, no transition at all, and no wrapping `<span>` either. **Two `<button>` elements — one of which may still be mid-animation from the player's own last-second tap — get unmounted, replaced by one unrelated flat `<div>`, in a single render.**
+
+This is a known class of WebKit-specific bug: removing a DOM node while it still has an active CSS transition/animation targeting a compositing property (`transform`, `filter`, `box-shadow` — exactly this component's own transition list) can leave Safari's GPU-composited layer for that node visually "stuck" for a beat after removal, until a LATER, unrelated repaint of the same screen region forces WebKit to recompute it — which lines up exactly with Owner's own observation that the ghost clears the instant the win/lose ring (a separate, later CSS transition covering the same area) finishes. Chromium handles layer teardown differently, which is consistent with every report naming Apple devices only. I can't prove this on this session's own tooling — `chrome-devtools-mcp` runs Blink even in mobile-emulation mode — but it's a precise, falsifiable mechanism, not a guess dressed up as one.
+
+## Owner's own "rim twice" instinct — half right, redirected to the actual lever
+
+The intuition that a repaint can hide this is correct (it's WHY the ghost clears when the win/lose ring lands) — but duplicating the rim animation itself doesn't address WHY a stray layer exists in the first place, and risks its own visible double-flash as a new artifact. The actual lever is the SWAP that creates the stray layer, not the ring that incidentally cleans it up later.
+
+## Candidate fix 1 — try first: pure containment, zero behavior/timing change, no existing test touched
+
+Give the pill-pair's own wrapper (`GameHub.tsx:1448`, `{aside && <span className="flex shrink-0 items-center gap-2">{aside}</span>}` — same shape at `:1292` for the opponent side) a clipping boundary sized to CONTAIN any stray compositing bleed from the unmounted pills, without changing anything about when the swap happens. **Caveat that must be respected**: `PillButton`'s own `boxShadow: '0 5px 0 <ledge>'` (`:81`) extends 5px below the pill's own layout box — a naive `overflow: hidden` on this exact wrapper would clip that shadow on every OTHER state too (a real, visible regression), so the clip boundary needs a few px of bottom padding/margin to accommodate the ledge, not a bare `overflow-hidden` class slapped on directly. Lowest risk: doesn't touch `CoinflipHub.tsx` or `PillButton.tsx` at all, doesn't change the instant-flatten timing D83 item 4 already confirmed, and the existing `2026-10-06#1` test (`CoinflipHub.test.tsx:551`, "terminal is true the instant... the locked pill... independent of the bar's own staged timing") stays exactly as true as it is today.
+
+## Candidate fix 2 — if containment alone doesn't fully hold on a real device: a brief hold before the flatten, matching this codebase's own established pattern
+
+This codebase already solves "don't let a visual swap race an in-flight animation" the same way twice today — `BlackjackHub.tsx`'s `usePacedView`/`TERMINAL_HOLD_MS` and the `revealReady` hold just shipped in `2026-10-06#11/#12` (D85). The same shape here: hold the live `PillButton` pair mounted for ~500ms past `terminal` (long enough to clear `PILL_BUTTON_POP_MS` = 460ms plus a small buffer) before swapping to the flat locked pill — guarantees the unmount never lands on an actively-animating node, closing the mechanism at the root rather than masking its symptom.
+
+**This is a real, user-visible timing change to something Designer explicitly confirmed yesterday** (D83 item 4: the locked pill flattens the INSTANT terminal, no hold) — not something to ship without checking back with Designer/Owner first. It would also require rewriting the exact existing test cited above, not just leaving it alone. Flagging this plainly rather than bundling it into "zero collateral damage" the way `2026-10-06#11/#12` could honestly claim.
+
+**Advisor next:** available — can't live-verify either fix myself (Blink-only tooling, Apple-only symptom), same limitation as D84; will review whichever diff ships against this reasoning. **PM next:** try candidate 1 first since it's strictly lower-risk and self-contained; only escalate to candidate 2 (and the Designer check-back it needs) if a real Apple-device test after candidate 1 ships shows the ghost still there.
+
+---
+
 ### 2026-10-06#12 — D85: Owner's answer (550ms, reuse `CARD_ANIM_MS`, no new constant) plus two more spots confirmed needing the same delay that neither PM's nor my own first pass caught — fully ready to implement now            [READY TO TICKET — spec complete]
 From: Advisor (responding to PM's own message relaying Owner's stagger-duration call, plus PM's own correct scope catch on `revealComplete`/hit-card reveals) — re-read `BlackjackHub.tsx` in full against every usage of `revealed`, not just the ones already named
 
