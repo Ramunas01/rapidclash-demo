@@ -88,6 +88,23 @@ function AudioCtor(): typeof AudioContext | null {
 }
 
 let ctx: AudioContext | null = null;
+
+// Ticket 2026-10-08#1 (D89 follow-up): stall detection. Owner's on-device test showed iOS can leave
+// the context reporting 'running' while its output is dead (after a screen lock) — PLAY, game
+// switches and lock/unlock all went through unlock(), which only acts on a NON-running state, so
+// nothing recovered it; only backgrounding the browser (iOS rebuilding the page's audio) did. A
+// healthy running context's clock (`currentTime`) advances with wall time; a stalled one's doesn't.
+// One reference sample, re-baselined on EVERY state change: a legitimately suspended context's
+// clock also stops, so comparing across a suspend → resume would wrongly read as a stall.
+let sample: { ctxTime: number; wallMs: number } | null = null;
+/** Minimum wall-clock gap before a frozen clock counts as a stall (avoids judging on jitter). */
+const STALL_MIN_WALL_MS = 1500;
+/** A context whose clock advanced less than this fraction of the wall-clock gap is stalled. */
+const STALL_MAX_CLOCK_RATIO = 0.2;
+
+function takeSample(context: AudioContext): void {
+  sample = { ctxTime: context.currentTime, wallMs: performance.now() };
+}
 const buffers = new Map<string, AudioBuffer>();
 let preloaded = false;
 
@@ -143,12 +160,17 @@ function ensureContext(): AudioContext | null {
   if (!Ctor) return null;
   try {
     ctx = new Ctor();
+    sample = null; // a fresh context starts suspended — baseline once it's actually running
     // Ticket 2026-09-30#1 item 2: the 2026-09-22#6 visibilitychange listener only catches
     // screen-lock/backgrounding — it never fires for a hardware mute-switch toggle, since that
     // doesn't hide/background the page. iOS/WebKit can suspend/interrupt the AudioContext for
     // other OS-level audio-session reasons too. Listening to the context's own state directly
     // catches all of them, not just the one proxy signal visibilitychange represents.
     ctx.onstatechange = () => {
+      // D89 follow-up: re-baseline the stall sample on every state change (see `sample` above) —
+      // from "now" if running, otherwise cleared until it runs again.
+      if (ctx?.state === 'running') takeSample(ctx);
+      else sample = null;
       if (ctx?.state !== 'running') unlock();
     };
   } catch {
@@ -183,8 +205,43 @@ export async function preloadSounds(): Promise<void> {
  * Idempotent and safe to call repeatedly (tap/click/keydown/PLAY).
  */
 export function unlock(): void {
-  const context = ensureContext();
+  let context = ensureContext();
   if (!context) return;
+  // D89 follow-up: a 'running' context whose clock has stopped is dead — throw it away and build a
+  // fresh one (what backgrounding the browser does for us today). Decoded AudioBuffers aren't bound
+  // to a context, so the existing `buffers` are reused as-is; nothing is re-fetched. Any caller can
+  // trigger this: on a PLAY press the new context resumes inside a real gesture; from a passive
+  // caller a refused resume() is absorbed below and the next PLAY retries.
+  if (context.state === 'running') {
+    const now = performance.now();
+    if (sample) {
+      const wallMs = now - sample.wallMs;
+      const clockMs = (context.currentTime - sample.ctxTime) * 1000;
+      if (wallMs >= STALL_MIN_WALL_MS && clockMs < wallMs * STALL_MAX_CLOCK_RATIO) {
+        // Console-only diagnostic (Safari remote Web Inspector), so the next field report can say
+        // whether this actually fired.
+        console.warn('[sound] AudioContext reports running but its clock is stalled — recreating', {
+          wallMs: Math.round(wallMs),
+          clockMs: Math.round(clockMs),
+        });
+        const dead = context;
+        dead.onstatechange = null; // its 'closed' transition must not re-enter unlock()
+        void dead.close().catch(() => {
+          /* closing a broken context can reject — ignore */
+        });
+        ctx = null;
+        sample = null;
+        context = ensureContext();
+        if (!context) return;
+      } else {
+        takeSample(context);
+      }
+    } else {
+      takeSample(context);
+    }
+  } else {
+    sample = null;
+  }
   void preloadSounds();
   // Ticket 2026-10-07#2 (D89): resume from ANY non-running, non-closed state — not just 'suspended'.
   // WebKit adds a non-standard 'interrupted' state (audio-session interruptions: a call, Siri,

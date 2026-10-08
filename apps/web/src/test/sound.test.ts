@@ -22,6 +22,11 @@ class FakeAudioContext {
   state: 'suspended' | 'running' | 'closed' | 'interrupted' = 'suspended';
   destination = {} as AudioDestinationNode;
   onstatechange: ((ev: Event) => void) | null = null;
+  // D89 follow-up (2026-10-08#1): a controllable audio clock + close(), for stall detection.
+  currentTime = 0;
+  close = vi.fn(async () => {
+    this.state = 'closed';
+  });
   resume = vi.fn(async () => {
     this.state = 'running'; // set synchronously so play() sees 'running' right after unlock()
   });
@@ -251,6 +256,108 @@ describe('sound module', () => {
       sound.unlock();
 
       expect(lastCtx!.resume.mock.calls.length).toBe(resumeCalls);
+    });
+  });
+
+  // Ticket 2026-10-08#1 (D89 follow-up): on iOS the context can report 'running' while its output
+  // is dead (Owner's on-device test: after a screen lock, only backgrounding the browser restored
+  // sound). A 'running' context whose clock has stopped is recreated; decoded buffers are reused.
+  describe('stalled-clock recovery (ticket 2026-10-08#1)', () => {
+    let nowMs = 0;
+    beforeEach(() => {
+      nowMs = 0;
+      vi.spyOn(performance, 'now').mockImplementation(() => nowMs);
+    });
+    afterEach(() => vi.restoreAllMocks());
+
+    it("a 'running' context whose clock froze is closed and replaced; the replacement plays a buffer decoded by the OLD context", async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const sound = await freshSound();
+      await sound.preloadSounds();
+      sound.unlock(); // resumes → running
+      const dead = lastCtx!;
+      sound.unlock(); // first running observation → baseline only, never judged
+      expect(dead.close).not.toHaveBeenCalled();
+
+      nowMs += 5000; // 5s of wall time pass, but the clock is frozen at 0 (dead output)
+      sound.unlock(); // e.g. the next PLAY press
+      await Promise.resolve();
+
+      expect(dead.close).toHaveBeenCalledTimes(1);
+      const fresh = lastCtx!;
+      expect(fresh).not.toBe(dead); // a brand-new AudioContext was constructed
+      expect(fresh.resume).toHaveBeenCalled();
+      expect(fresh.state).toBe('running');
+      expect(dead.onstatechange).toBeNull(); // the old one's 'closed' transition can't re-enter unlock()
+      expect(warn).toHaveBeenCalledTimes(1);
+
+      // Reuse, not re-fetch: nothing was decoded on the new context, yet play() works on it.
+      expect(fresh.decodeAudioData).not.toHaveBeenCalled();
+      sound.play('move');
+      expect(startSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('a healthy context whose clock keeps pace with wall time is never recreated', async () => {
+      const sound = await freshSound();
+      await sound.preloadSounds();
+      sound.unlock();
+      const ctx = lastCtx!;
+      sound.unlock(); // baseline
+      for (let i = 0; i < 3; i++) {
+        nowMs += 5000;
+        ctx.currentTime += 5;
+        sound.unlock();
+      }
+      expect(ctx.close).not.toHaveBeenCalled();
+      expect(lastCtx).toBe(ctx);
+    });
+
+    it('a legitimate suspend → resume (clock stopped while suspended) is NOT read as a stall', async () => {
+      const sound = await freshSound();
+      await sound.preloadSounds();
+      sound.unlock();
+      const ctx = lastCtx!;
+      sound.unlock(); // baseline at t=0, clock 0
+
+      // Screen locks: the context suspends for 30s and its clock stops, as it should.
+      ctx.state = 'suspended';
+      ctx.onstatechange?.(new Event('statechange')); // re-baseline (cleared) + auto-resume attempt
+      await Promise.resolve();
+      nowMs += 30_000;
+      // The resume lands; the clock picks up where it stopped.
+      ctx.onstatechange?.(new Event('statechange')); // now 'running' → baseline from here
+      nowMs += 2000;
+      ctx.currentTime += 2;
+      sound.unlock(); // PLAY after unlocking the phone — healthy
+
+      expect(ctx.close).not.toHaveBeenCalled();
+      expect(lastCtx).toBe(ctx);
+    });
+
+    it("Owner's case — resumed after a screen lock but dead: the FIRST PLAY afterwards already recovers it", async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const sound = await freshSound();
+      await sound.preloadSounds();
+      sound.unlock();
+      const dead = lastCtx!;
+      dead.state = 'suspended'; // screen lock
+      dead.onstatechange?.(new Event('statechange'));
+      await Promise.resolve(); // auto-resume lands → 'running' again…
+      dead.onstatechange?.(new Event('statechange')); // …and the 'running' transition baselines the clock
+      nowMs += 3000; // …but output is dead: the clock never moves again
+      sound.unlock(); // the very first PLAY press after unlocking the phone
+      expect(dead.close).toHaveBeenCalledTimes(1);
+      expect(lastCtx).not.toBe(dead);
+    });
+
+    it('a brand-new context is never judged on its first running observation, however late it comes', async () => {
+      const sound = await freshSound();
+      sound.unlock(); // created + resumed
+      const ctx = lastCtx!;
+      nowMs += 60_000; // long gap, clock still 0 — but no baseline exists yet
+      sound.unlock();
+      expect(ctx.close).not.toHaveBeenCalled();
+      expect(lastCtx).toBe(ctx);
     });
   });
 });
